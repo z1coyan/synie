@@ -1,3 +1,10 @@
+/**
+ * 物料单位转换（`via(invMaterials, material_id)`：判定递归母物料，不设独立权限点）。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、单条 `loadAuthorizedFrom`、写前取行 `loadAuthorized(forUpdate)`。
+ * 「持 create 或 update 均可」的多码析取由路由 guard 的 `anyOf` 表达（旧本地包装已删）。
+ */
 import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
@@ -10,10 +17,12 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { hasPermission, requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
 import { toDate, wireDecimal } from './helpers.ts'
 import { materialUnitResourceMeta } from './meta.ts'
 
@@ -31,16 +40,11 @@ export interface MaterialUnit {
 const AUDIT = auditFieldsOf(materialUnitResourceMeta())
 const META = materialUnitResourceMeta()
 
-/**
- * 多码任一即可（单位转换沿用物料的 create/update/delete 码）。
- * @deprecated 扫荡期过渡：改用 guard(资源, 动作, { anyOf })（工单 11）
- */
-function requireAnyPermission(actor: Actor | null, ...codes: string[]): asserts actor is Actor {
-  if (!codes.some((code) => hasPermission(actor, code))) {
-    requirePermission(actor, codes[0]!)
-  }
-}
+export const MATERIAL_UNIT_RESOURCE = 'invMaterialUnits'
 
+const TABLE = META.table
+/** 列表与单条共用同一份投影（别名与 listAuthorized 的 alias 必须逐字一致） */
+const ALIAS = 'material_unit'
 const SOURCE = sql`
   FROM (
     SELECT mu.id, mu.factor, mu.inserted_at, mu.updated_at, mu.material_id, mu.unit_id,
@@ -51,27 +55,35 @@ const SOURCE = sql`
     JOIN bas_unit u ON u.id = mu.unit_id
   ) material_unit
 `
+const SELECT = sql`SELECT id, factor, inserted_at, updated_at, material_id, unit_id,
+  material_name, unit_name, unit_symbol`
 
-export function createMaterialUnitService(db: Kysely<Database>) {
-  async function get(actor: Actor, id: string): Promise<MaterialUnit> {
-    requirePermission(actor, 'base.material:read')
-    const rows = await sql<Record<string, unknown>>`
-      SELECT id, factor, inserted_at, updated_at, material_id, unit_id,
-             material_name, unit_name, unit_symbol
-      ${SOURCE} WHERE id = ${id}::uuid
-    `.execute(db)
-    if (rows.rows.length === 0) throw new ApiError('not_found', '物料单位转换不存在')
-    return mapRow(rows.rows[0]!)
+export function createMaterialUnitService(db: Kysely<Database>, registry: Registry) {
+  const target = registry.authzTarget(MATERIAL_UNIT_RESOURCE)
+
+  async function get(permit: Permit, id: string): Promise<MaterialUnit> {
+    return loadAuthorizedFrom({
+      db,
+      permit,
+      target,
+      alias: ALIAS,
+      source: SOURCE,
+      select: SELECT,
+      id,
+      mapRow,
+      notFoundMessage: '物料单位转换不存在',
+    })
   }
 
-  async function list(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'base.material:read')
-    return listFromSource({
+  async function list(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target,
+      alias: ALIAS,
       resource: META,
       source: SOURCE,
-      select: sql`SELECT id, factor, inserted_at, updated_at, material_id, unit_id,
-        material_name, unit_name, unit_symbol`,
+      select: SELECT,
       defaultOrder: sql`"id" ASC`,
       query,
       mapRow,
@@ -79,10 +91,9 @@ export function createMaterialUnitService(db: Kysely<Database>) {
   }
 
   async function create(
-    actor: Actor,
+    permit: Permit,
     input: { materialId: string; unitId: string; factor: string },
   ): Promise<MaterialUnit> {
-    requireAnyPermission(actor, 'base.material:update', 'base.material:create')
     const factor = validateFactor(input.factor)
     if (!input.materialId || !input.unitId) {
       throw ApiError.validation('物料单位转换参数不合法', {
@@ -103,7 +114,7 @@ export function createMaterialUnitService(db: Kysely<Database>) {
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = await getInTx(trx, row.id)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'inv_material_unit',
           recordId: item.id,
           recordLabel: item.unit.name,
@@ -121,19 +132,20 @@ export function createMaterialUnitService(db: Kysely<Database>) {
   }
 
   async function update(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: { unitId?: string; factor?: string },
   ): Promise<MaterialUnit> {
-    requireAnyPermission(actor, 'base.material:update', 'base.material:create')
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('inv_material_unit')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '物料单位转换不存在')
+      await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '物料单位转换不存在',
+      })
       const before = await getInTx(trx, id)
       const unitId = input.unitId ?? before.unitId
       const factor = input.factor != null ? validateFactor(input.factor) : before.factor
@@ -155,7 +167,7 @@ export function createMaterialUnitService(db: Kysely<Database>) {
         ])
       }
       const updated = await getInTx(trx, id)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_material_unit',
         recordId: id,
         recordLabel: updated.unit.name,
@@ -167,19 +179,20 @@ export function createMaterialUnitService(db: Kysely<Database>) {
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requireAnyPermission(actor, 'base.material:update', 'base.material:delete')
+  async function remove(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('inv_material_unit')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '物料单位转换不存在')
+      await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '物料单位转换不存在',
+      })
       const item = await getInTx(trx, id)
       await trx.deleteFrom('inv_material_unit').where('id', '=', id).execute()
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_material_unit',
         recordId: id,
         recordLabel: item.unit.name,
@@ -197,9 +210,7 @@ export type MaterialUnitService = ReturnType<typeof createMaterialUnitService>
 
 async function getInTx(db: DbHandle, id: string): Promise<MaterialUnit> {
   const rows = await sql<Record<string, unknown>>`
-    SELECT id, factor, inserted_at, updated_at, material_id, unit_id,
-           material_name, unit_name, unit_symbol
-    ${SOURCE} WHERE id = ${id}::uuid
+    ${SELECT}${SOURCE} WHERE id = ${id}::uuid
   `.execute(db)
   if (rows.rows.length === 0) throw new ApiError('not_found', '物料单位转换不存在')
   return mapRow(rows.rows[0]!)

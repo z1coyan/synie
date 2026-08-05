@@ -18,7 +18,7 @@ export async function seedOutsourced(
 ): Promise<OutsourcedResult> {
   const s04 = md.suppliers.S04!
 
-  const bom = await deps.manufacturingMaster.createBom(actor, {
+  const bom = await deps.manufacturingMaster.createBom(permitFor(deps, actor, 'mfgBoms', 'create'), {
     materialId: md.materials.busbar!.id,
     planName: '委外方案',
     note: '委外加工配方(示例)',
@@ -31,7 +31,7 @@ export async function seedOutsourced(
     await createBOMComponent(deps, actor, bom.id, md, row.key, row.qty, row.loss, null)
   }
   const scrap = md.materials.scrap_copper!
-  await deps.manufacturingMaster.createByproduct(actor, {
+  await deps.manufacturingMaster.createByproduct(permitFor(deps, actor, 'mfgBomByproducts', 'update'), {
     bomId: bom.id,
     quantity: '0.06',
     note: '委外下料边角料',
@@ -40,15 +40,18 @@ export async function seedOutsourced(
   })
 
   const partyLabel = s04.shortName || s04.name
-  const wh = await deps.warehouses.create(actor, {
-    name: `${sc.company.code} - 外协仓-${partyLabel}`,
-    isLeaf: true,
-    isOutsourced: true,
-    partyType: 'supplier',
-    partyId: s04.id,
-    companyId: sc.company.id,
-    parentId: sc.warehouses.root,
-  })
+  const wh = await deps.warehouses.create(
+    permitFor(deps, actor, 'invWarehouses', 'create'),
+    {
+      name: `${sc.company.code} - 外协仓-${partyLabel}`,
+      isLeaf: true,
+      isOutsourced: true,
+      partyType: 'supplier',
+      partyId: s04.id,
+      companyId: sc.company.id,
+      parentId: sc.warehouses.root,
+    },
+  )
 
   const order1 = await createOutsourcedOrder(
     deps,

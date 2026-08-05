@@ -1,7 +1,12 @@
 /**
- * 模具设计（mfg_mold_design）：生产域独立实体，1:1 挂物料。
+ * 模具设计（mfg_mold_design）：生产域独立实体，1:1 挂物料（两表都无公司列 → global）。
  * 创建时同事务自动建资产类物料（material_type='ASSET'，分类取生产设置「模具物料分类」，
  * 编号走 base.material 既有规则）；编辑同步物料名称/规格/单位；删除级联删物料。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
+ * 跨资源写（每次写模具必然连带写物料）用路由的 `allOf` 声明式门控——
+ * 模具动作码 ∧ 物料同名动作码，凭证范围取格上最小；物料行本身再走
+ * `loadAuthorized(invMaterials, forUpdate)`（既是授权也是 1:1 伴生行的行锁）。
  */
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
@@ -14,12 +19,15 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf, pickAuditFields } from '~/platform/audit/spec.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
-import { listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
+import { MATERIAL_RESOURCE } from '~/modules/inventory/material-service.ts'
 import { materialResourceMeta } from '~/modules/inventory/meta.ts'
-import { requirePermission, mfgWriteError, runeCount, trimOptional } from './helpers.ts'
+import { mfgWriteError, runeCount, trimOptional } from './helpers.ts'
 import { moldDesignResourceMeta } from './meta.ts'
 import type { ListQueryInput } from './types.ts'
 
@@ -41,6 +49,14 @@ export interface MoldDesign {
 }
 
 const META = moldDesignResourceMeta()
+
+export const MOLD_DESIGN_RESOURCE = 'mfgMoldDesigns'
+
+const MOLD_TABLE = META.table
+const MATERIAL_TABLE = materialResourceMeta().table
+/** 列表与单条共用同一份投影（别名与 listAuthorized 的 alias 必须逐字一致） */
+const ALIAS = 'mold_design'
+const SELECT = sql`SELECT *`
 
 const MOLD_AUDIT = auditFieldsOf(META)
 /** 模具服务写物料的动作级局部审计面（客户物料/启用等列模具流程不触碰） */
@@ -65,12 +81,30 @@ const SOURCE = sql`
   ) mold_design
 `
 
-export function createMoldDesignService(db: Kysely<Database>, numbering: NumberingService) {
+export function createMoldDesignService(
+  db: Kysely<Database>,
+  numbering: NumberingService,
+  registry: Registry,
+) {
+  const target = registry.authzTarget(MOLD_DESIGN_RESOURCE)
+  const materialTarget = registry.authzTarget(MATERIAL_RESOURCE)
+
+  /** 1:1 伴生物料行：授权取行 + 行锁（模具行已先行取过，加锁顺序恒为模具先行） */
+  const lockMaterial = (trx: DbHandle, permit: Permit, materialId: string) =>
+    loadAuthorized({
+      db: trx,
+      permit,
+      target: materialTarget,
+      table: MATERIAL_TABLE,
+      id: materialId,
+      forUpdate: true,
+      notFoundMessage: '模具物料不存在',
+    })
+
   async function create(
-    actor: Actor,
+    permit: Permit,
     input: { name: string; spec?: string | null; moldType: string; unitId: string },
   ): Promise<MoldDesign> {
-    requirePermission(actor, 'mfg.mold_design:create')
     const normalized = normalize(input)
     return withTx(db, async (trx) => {
       // 模具物料分类：生产设置单行配置，受信任读（不检 mfg.setting 权限）
@@ -140,7 +174,7 @@ export function createMoldDesignService(db: Kysely<Database>, numbering: Numberi
           .values({ mold_type: normalized.moldType, material_id: material.id })
           .returningAll()
           .executeTakeFirstOrThrow()
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'inv_material',
           recordId: material.id,
           recordLabel: material.name,
@@ -158,7 +192,7 @@ export function createMoldDesignService(db: Kysely<Database>, numbering: Numberi
             MATERIAL_AUDIT,
           ),
         })
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_mold_design',
           recordId: design.id,
           recordLabel: material.name,
@@ -179,18 +213,29 @@ export function createMoldDesignService(db: Kysely<Database>, numbering: Numberi
     })
   }
 
-  async function get(actor: Actor, id: string): Promise<MoldDesign> {
-    requirePermission(actor, 'mfg.mold_design:read')
-    return getInTx(db, id)
+  async function get(permit: Permit, id: string): Promise<MoldDesign> {
+    return loadAuthorizedFrom({
+      db,
+      permit,
+      target,
+      alias: ALIAS,
+      source: SOURCE,
+      select: SELECT,
+      id,
+      mapRow,
+      notFoundMessage: '模具设计不存在',
+    })
   }
 
-  async function list(actor: Actor, query: ListQueryInput) {
-    requirePermission(actor, 'mfg.mold_design:read')
-    return listFromSource({
+  async function list(permit: Permit, query: ListQueryInput) {
+    return listAuthorized({
       db,
+      permit,
+      target,
+      alias: ALIAS,
       resource: META,
       source: SOURCE,
-      select: sql`SELECT *`,
+      select: SELECT,
       defaultOrder: sql`"material_code" ASC, "id" ASC`,
       query,
       mapRow,
@@ -198,7 +243,7 @@ export function createMoldDesignService(db: Kysely<Database>, numbering: Numberi
   }
 
   async function update(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       name?: string
@@ -208,16 +253,18 @@ export function createMoldDesignService(db: Kysely<Database>, numbering: Numberi
       unitId?: string
     },
   ): Promise<MoldDesign> {
-    requirePermission(actor, 'mfg.mold_design:update')
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('mfg_mold_design')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '模具设计不存在')
+      await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: MOLD_TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '模具设计不存在',
+      })
       const before = await getInTx(trx, id)
+      await lockMaterial(trx, permit, before.materialId)
       const normalized = normalize({
         name: input.name ?? before.materialName,
         spec: input.specPresent ? (input.spec ?? null) : before.materialSpec,
@@ -271,7 +318,7 @@ export function createMoldDesignService(db: Kysely<Database>, numbering: Numberi
         MOLD_AUDIT,
       )
       if (Object.keys(designChanges).length > 0) {
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_mold_design',
           recordId: id,
           recordLabel: after.materialName,
@@ -300,7 +347,7 @@ export function createMoldDesignService(db: Kysely<Database>, numbering: Numberi
         MATERIAL_AUDIT,
       )
       if (Object.keys(materialChanges).length > 0) {
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'inv_material',
           recordId: after.materialId,
           recordLabel: after.materialName,
@@ -313,17 +360,19 @@ export function createMoldDesignService(db: Kysely<Database>, numbering: Numberi
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'mfg.mold_design:delete')
+  async function remove(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('mfg_mold_design')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '模具设计不存在')
+      await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: MOLD_TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '模具设计不存在',
+      })
       const item = await getInTx(trx, id)
+      await lockMaterial(trx, permit, item.materialId)
       const stock = await trx
         .selectFrom('inv_stock_entry')
         .select('id')
@@ -342,7 +391,7 @@ export function createMoldDesignService(db: Kysely<Database>, numbering: Numberi
           { code: '23503', message: '模具物料已被业务引用,不能删除' },
         ])
       }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'mfg_mold_design',
         recordId: id,
         recordLabel: item.materialName,
@@ -353,7 +402,7 @@ export function createMoldDesignService(db: Kysely<Database>, numbering: Numberi
           MOLD_AUDIT,
         ),
       })
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_material',
         recordId: item.materialId,
         recordLabel: item.materialName,
@@ -380,7 +429,7 @@ export function createMoldDesignService(db: Kysely<Database>, numbering: Numberi
 export type MoldDesignService = ReturnType<typeof createMoldDesignService>
 
 async function getInTx(db: DbHandle, id: string): Promise<MoldDesign> {
-  const rows = await sql<Record<string, unknown>>`SELECT * ${SOURCE} WHERE id = ${id}::uuid`.execute(db)
+  const rows = await sql<Record<string, unknown>>`${SELECT}${SOURCE} WHERE id = ${id}::uuid`.execute(db)
   if (rows.rows.length === 0) throw new ApiError('not_found', '模具设计不存在')
   return mapRow(rows.rows[0]!)
 }

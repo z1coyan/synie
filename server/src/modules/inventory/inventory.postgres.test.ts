@@ -76,6 +76,12 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
     return decision.permit
   }
+  /** 主数据（分类/物料/单位转换/仓库）：夹具现取凭证（superAdmin → rowFilter 全集） */
+  const masterPermit = (resource: string, action: string) => {
+    const decision = authz.decideFor(actor, resource, action)
+    if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+    return decision.permit
+  }
   const companyPermit = () => {
     const decision = authz.decideFor(actor, 'basCompanies', 'create')
     if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
@@ -262,14 +268,14 @@ run('PG 集成（库存单据状态机与引擎）', () => {
       tracked.ruleIds.push(rule.id)
     }
 
-    const cat = await inv.categories.create(actor, {
+    const cat = await inv.categories.create(masterPermit('invMaterialCategories', 'create'), {
       code: `T${suffix}C`,
       name: `分类${suffix}`,
       isLeaf: true,
     })
     tracked.categoryIds.push(cat.id)
 
-    const mat = await inv.materials.create(actor, {
+    const mat = await inv.materials.create(masterPermit('invMaterials', 'create'), {
       name: `物料${suffix}`,
       categoryId: cat.id,
       defaultUnitId: unitId,
@@ -283,7 +289,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
 
     const warehouses = []
     for (const label of ['出', '入', '途']) {
-      const w = await inv.warehouses.create(actor, {
+      const w = await inv.warehouses.create(masterPermit('invWarehouses', 'create'), {
         name: `T${suffix}${label}`,
         companyId: company.id,
         isLeaf: true,
@@ -411,35 +417,35 @@ run('PG 集成（库存单据状态机与引擎）', () => {
       tracked.ruleIds.push(rule.id)
     }
 
-    const cat = await inv.categories.create(actor, {
+    const cat = await inv.categories.create(masterPermit('invMaterialCategories', 'create'), {
       code: `B${edgeSuffix}C`,
       name: `边界分类${edgeSuffix}`,
       isLeaf: true,
     })
     tracked.categoryIds.push(cat.id)
-    const mat = await inv.materials.create(actor, {
+    const mat = await inv.materials.create(masterPermit('invMaterials', 'create'), {
       name: `边界料${edgeSuffix}`,
       categoryId: cat.id,
       defaultUnitId: unitId,
     })
     tracked.materialIds.push(mat.id)
 
-    const whA = await inv.warehouses.create(actor, {
+    const whA = await inv.warehouses.create(masterPermit('invWarehouses', 'create'), {
       name: `B${edgeSuffix}A`,
       companyId: company.id,
       isLeaf: true,
     })
-    const whB = await inv.warehouses.create(actor, {
+    const whB = await inv.warehouses.create(masterPermit('invWarehouses', 'create'), {
       name: `B${edgeSuffix}B`,
       companyId: company.id,
       isLeaf: true,
     })
-    const whT = await inv.warehouses.create(actor, {
+    const whT = await inv.warehouses.create(masterPermit('invWarehouses', 'create'), {
       name: `B${edgeSuffix}T`,
       companyId: company.id,
       isLeaf: true,
     })
-    const whOff = await inv.warehouses.create(actor, {
+    const whOff = await inv.warehouses.create(masterPermit('invWarehouses', 'create'), {
       name: `B${edgeSuffix}停`,
       companyId: company.id,
       isLeaf: true,
@@ -578,19 +584,19 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     })
     tracked.companyIds.push(company.id)
 
-    const cat = await inv.categories.create(actor, {
+    const cat = await inv.categories.create(masterPermit('invMaterialCategories', 'create'), {
       code: `TC${typeSuffix}`,
       name: `类型分类${typeSuffix}`,
       isLeaf: true,
     })
     tracked.categoryIds.push(cat.id)
-    const virtualMat = await inv.materials.create(actor, {
+    const virtualMat = await inv.materials.create(masterPermit('invMaterials', 'create'), {
       name: `虚拟料${typeSuffix}`,
       categoryId: cat.id,
       defaultUnitId: unitId,
       materialType: 'VIRTUAL',
     })
-    const assetMat = await inv.materials.create(actor, {
+    const assetMat = await inv.materials.create(masterPermit('invMaterials', 'create'), {
       name: `资产料${typeSuffix}`,
       categoryId: cat.id,
       defaultUnitId: unitId,
@@ -598,19 +604,19 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     })
     tracked.materialIds.push(virtualMat.id, assetMat.id)
 
-    const wh = await inv.warehouses.create(actor, {
+    const wh = await inv.warehouses.create(masterPermit('invWarehouses', 'create'), {
       name: `类型仓${typeSuffix}`,
       companyId: company.id,
       isLeaf: true,
     })
     tracked.warehouseIds.push(wh.id)
-    const whB = await inv.warehouses.create(actor, {
+    const whB = await inv.warehouses.create(masterPermit('invWarehouses', 'create'), {
       name: `类型仓二${typeSuffix}`,
       companyId: company.id,
       isLeaf: true,
     })
     tracked.warehouseIds.push(whB.id)
-    const whT = await inv.warehouses.create(actor, {
+    const whT = await inv.warehouses.create(masterPermit('invWarehouses', 'create'), {
       name: `类型仓三${typeSuffix}`,
       companyId: company.id,
       isLeaf: true,
@@ -708,7 +714,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     })
     tracked.companyIds.push(company.id)
 
-    const cat = await inv.categories.create(actor, {
+    const cat = await inv.categories.create(masterPermit('invMaterialCategories', 'create'), {
       code: `LC${lockSuffix}`,
       name: `类型锁分类${lockSuffix}`,
       isLeaf: true,
@@ -716,7 +722,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     tracked.categoryIds.push(cat.id)
 
     // 不传类型默认 STOCK
-    const mat = await inv.materials.create(actor, {
+    const mat = await inv.materials.create(masterPermit('invMaterials', 'create'), {
       name: `默认料${lockSuffix}`,
       categoryId: cat.id,
       defaultUnitId: unitId,
@@ -726,7 +732,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
 
     // 非法枚举值拒绝
     await expect(
-      inv.materials.create(actor, {
+      inv.materials.create(masterPermit('invMaterials', 'create'), {
         name: `非法料${lockSuffix}`,
         categoryId: cat.id,
         defaultUnitId: unitId,
@@ -735,12 +741,14 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     ).rejects.toMatchObject({ code: 'validation' })
 
     // 无库存分录时类型可改
-    const changed = await inv.materials.update(actor, mat.id, { materialType: 'VIRTUAL' })
+    const changed = await inv.materials.update(masterPermit('invMaterials', 'update'), mat.id, {
+      materialType: 'VIRTUAL',
+    })
     expect(changed.materialType).toBe('VIRTUAL')
-    await inv.materials.update(actor, mat.id, { materialType: 'STOCK' })
+    await inv.materials.update(masterPermit('invMaterials', 'update'), mat.id, { materialType: 'STOCK' })
 
     // 审核一笔入库产生库存分录后,类型锁定(含已作废分录)
-    const wh = await inv.warehouses.create(actor, {
+    const wh = await inv.warehouses.create(masterPermit('invWarehouses', 'create'), {
       name: `类型锁仓${lockSuffix}`,
       companyId: company.id,
       isLeaf: true,
@@ -762,7 +770,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     })
     await inv.stockDocs.audit(permit(), doc.id)
     await expect(
-      inv.materials.update(actor, mat.id, { materialType: 'ASSET' }),
+      inv.materials.update(masterPermit('invMaterials', 'update'), mat.id, { materialType: 'ASSET' }),
     ).rejects.toMatchObject({ code: 'conflict' })
   })
 
@@ -784,11 +792,11 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     tracked.companyIds.push(company.id, partner.id)
 
     // create 公司时已种子三仓；再调 seedDefaults 应返回 0
-    const again = await inv.warehouses.seedDefaults(actor, company.id)
+    const again = await inv.warehouses.seedDefaults(masterPermit('invWarehouses', 'create'), company.id)
     expect(again).toBe(0)
 
     // 协作方不能是本公司；绑定 partner
-    const outWh = await inv.warehouses.create(actor, {
+    const outWh = await inv.warehouses.create(masterPermit('invWarehouses', 'create'), {
       name: `外协仓${seedSuffix}`,
       companyId: company.id,
       isLeaf: true,
@@ -799,14 +807,16 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     tracked.warehouseIds.push(outWh.id)
     expect(outWh.isOutsourced).toBe(true)
 
-    const hit = await inv.warehouses.listOutsourced(actor, 'COMPANY', partner.id, {
-      limit: 50,
-      offset: 0,
-    })
+    const hit = await inv.warehouses.listOutsourced(
+      masterPermit('invWarehouses', 'read'),
+      'COMPANY',
+      partner.id,
+      { limit: 50, offset: 0 },
+    )
     expect(hit.results.some((w) => w.id === outWh.id)).toBe(true)
 
     const miss = await inv.warehouses.listOutsourced(
-      actor,
+      masterPermit('invWarehouses', 'read'),
       'COMPANY',
       '00000000-0000-0000-0000-000000000099',
       { limit: 50, offset: 0 },
@@ -814,7 +824,10 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     expect(miss.count).toBe(0)
 
     await expect(
-      inv.warehouses.listOutsourced(actor, 'CUSTOMER', partner.id, { limit: 10, offset: 0 }),
+      inv.warehouses.listOutsourced(masterPermit('invWarehouses', 'read'), 'CUSTOMER', partner.id, {
+        limit: 10,
+        offset: 0,
+      }),
     ).rejects.toMatchObject({ code: 'validation' })
   })
 })

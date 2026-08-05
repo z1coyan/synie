@@ -41,10 +41,10 @@ export function createInventoryServices(
   const inventory = createInventoryEngine()
   return {
     inventory,
-    categories: createMaterialCategoryService(db),
-    materials: createMaterialService(db, numbering),
-    materialUnits: createMaterialUnitService(db),
-    warehouses: createWarehouseService(db),
+    categories: createMaterialCategoryService(db, registry),
+    materials: createMaterialService(db, numbering, registry),
+    materialUnits: createMaterialUnitService(db, registry),
+    warehouses: createWarehouseService(db, registry),
     stockDocs: createStockDocService(db, numbering, inventory, registry),
     stockTransfers: createStockTransferService(db, numbering, inventory, registry),
     stockCounts: createStockCountService(db, numbering, inventory, registry),

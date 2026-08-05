@@ -1,6 +1,11 @@
 /**
  * 制造主数据：工序 / 工艺模板 / BOM（配料·路线·副产品）
  * 行为对齐 server-go/internal/domain/manufacturing/master
+ *
+ * 全部 global 形态（工序/工艺模板/BOM 三张表都无 company_id，全公司共享一套工艺主数据）。
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、单条与写前取行 `loadAuthorized(forUpdate)`。
+ * BOM 状态机与「行物料不能是母物料」等是领域不变量，留在本文件抛 conflict/validation。
  */
 import { decimal, isDecimalString, toDecimalString } from '@synie/shared'
 import { sql } from 'kysely'
@@ -14,14 +19,15 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
+import type { AuthzTarget } from '~/platform/meta/resource-authz.ts'
 import type { ResourceMeta } from '~/platform/meta/types.ts'
-import { listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { loadAuthorized } from '~/db/load.ts'
 import {
-  requirePermission,
-  requireCreateOrUpdate,
   ensureMaterial,
   ensureUnitAllowed,
   mfgWriteError,
@@ -51,6 +57,22 @@ import type {
   TemplateItem,
 } from './types.ts'
 
+export const OPERATION_RESOURCE = 'mfgOperations'
+export const TEMPLATE_RESOURCE = 'mfgProcessTemplates'
+export const TEMPLATE_ITEM_RESOURCE = 'mfgProcessTemplateItems'
+export const BOM_RESOURCE = 'mfgBoms'
+export const BOM_COMPONENT_RESOURCE = 'mfgBomComponents'
+export const BOM_ROUTE_RESOURCE = 'mfgBomRoutes'
+export const BOM_BYPRODUCT_RESOURCE = 'mfgBomByproducts'
+
+const OP_TABLE = 'mfg_operation'
+const TPL_TABLE = 'mfg_process_template'
+const TPL_ITEM_TABLE = 'mfg_process_template_item'
+const BOM_TABLE = 'mfg_bom'
+const COMP_TABLE = 'mfg_bom_component'
+const ROUTE_TABLE = 'mfg_bom_route'
+const BYP_TABLE = 'mfg_bom_byproduct'
+
 const OP_AUDIT = auditFieldsOf(operationResourceMeta())
 const TPL_AUDIT = auditFieldsOf(processTemplateResourceMeta())
 const BOM_AUDIT = auditFieldsOf(bomResourceMeta())
@@ -59,13 +81,53 @@ const ROUTE_AUDIT = auditFieldsOf(bomRouteResourceMeta())
 const TPL_ITEM_AUDIT = auditFieldsOf(processTemplateItemResourceMeta())
 const BYP_AUDIT = auditFieldsOf(bomByproductResourceMeta())
 
-export function createMasterService(db: Kysely<Database>, numbering: NumberingService) {
+export function createMasterService(
+  db: Kysely<Database>,
+  numbering: NumberingService,
+  registry: Registry,
+) {
+  const opTarget = registry.authzTarget(OPERATION_RESOURCE)
+  const tplTarget = registry.authzTarget(TEMPLATE_RESOURCE)
+  const tplItemTarget = registry.authzTarget(TEMPLATE_ITEM_RESOURCE)
+  const bomTarget = registry.authzTarget(BOM_RESOURCE)
+  const compTarget = registry.authzTarget(BOM_COMPONENT_RESOURCE)
+  const routeTarget = registry.authzTarget(BOM_ROUTE_RESOURCE)
+  const bypTarget = registry.authzTarget(BOM_BYPRODUCT_RESOURCE)
+
+  /** 授权取行（不命中一律 not_found）；forUpdate 即写路径的行锁 */
+  const rowOf = (
+    handle: DbHandle,
+    permit: Permit,
+    target: AuthzTarget,
+    table: string,
+    id: string,
+    notFound: string,
+    forUpdate = false,
+  ) =>
+    loadAuthorized({ db: handle, permit, target, table, id, forUpdate, notFoundMessage: notFound })
+
+  const lockOperation = async (trx: DbHandle, permit: Permit, id: string): Promise<Operation> =>
+    mapOperation((await rowOf(trx, permit, opTarget, OP_TABLE, id, '工序不存在', true)) as never)
+
+  const lockTemplate = async (
+    trx: DbHandle,
+    permit: Permit,
+    id: string,
+  ): Promise<ProcessTemplate> =>
+    mapTemplate(
+      (await rowOf(trx, permit, tplTarget, TPL_TABLE, id, '工艺模板不存在', true)) as never,
+    )
+
+  const lockBom = async (trx: DbHandle, permit: Permit, id: string): Promise<Bom> => {
+    if (!id) throw ApiError.validation('BOM行参数不合法', { bomId: ['必填'] })
+    return mapBom((await rowOf(trx, permit, bomTarget, BOM_TABLE, id, 'BOM不存在', true)) as never)
+  }
+
   // —— 工序 ——
   async function createOperation(
-    actor: Actor,
+    permit: Permit,
     input: { code?: string | null; name: string; note?: string | null },
   ): Promise<Operation> {
-    requirePermission(actor, 'mfg.operation:create')
     const { code, name, note } = normalizeHead(input.code ?? '', input.name, input.note, '工序')
     return withTx(db, async (trx) => {
       let finalCode = code
@@ -79,7 +141,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapOperation(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_operation',
           recordId: item.id,
           recordLabel: item.code,
@@ -96,26 +158,30 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
     })
   }
 
-  async function getOperation(actor: Actor, id: string): Promise<Operation> {
-    requirePermission(actor, 'mfg.operation:read')
-    const row = await db.selectFrom('mfg_operation').selectAll().where('id', '=', id).executeTakeFirst()
-    if (!row) throw new ApiError('not_found', '工序不存在')
-    return mapOperation(row)
+  async function getOperation(permit: Permit, id: string): Promise<Operation> {
+    return mapOperation((await rowOf(db, permit, opTarget, OP_TABLE, id, '工序不存在')) as never)
   }
 
-  async function listOperations(actor: Actor, query: ListQueryInput) {
-    requirePermission(actor, 'mfg.operation:read')
-    return listSimple(db, operationResourceMeta(), sql` FROM mfg_operation`, query, mapOperationRow, sql`"code" ASC, "id" ASC`)
+  async function listOperations(permit: Permit, query: ListQueryInput) {
+    return listSimple(
+      db,
+      permit,
+      opTarget,
+      OP_TABLE,
+      operationResourceMeta(),
+      query,
+      mapOperationRow,
+      sql`"code" ASC, "id" ASC`,
+    )
   }
 
   async function updateOperation(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: { name?: string; note?: string | null; notePresent?: boolean },
   ): Promise<Operation> {
-    requirePermission(actor, 'mfg.operation:update')
     return withTx(db, async (trx) => {
-      const before = await lockOperation(trx, id)
+      const before = await lockOperation(trx, permit, id)
       const name = input.name !== undefined ? input.name : before.name
       const note = input.notePresent ? (input.note ?? null) : before.note
       const n = normalizeHead(before.code, name, note, '工序')
@@ -129,7 +195,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
         const after = mapOperation(row)
         const changes = auditDiff(opSnap(before), opSnap(after), OP_AUDIT)
         if (Object.keys(changes).length > 0) {
-          await writeAudit(trx, actor, {
+          await writeAudit(trx, permit.actor, {
             resource: 'mfg_operation',
             recordId: id,
             recordLabel: after.code,
@@ -145,10 +211,9 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
     })
   }
 
-  async function deleteOperation(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'mfg.operation:delete')
+  async function deleteOperation(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const item = await lockOperation(trx, id)
+      const item = await lockOperation(trx, permit, id)
       const ref = await sql<{ ok: boolean }>`
         SELECT EXISTS(
           SELECT 1 FROM mfg_bom_route WHERE operation_id = ${id}
@@ -165,7 +230,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
           { code: '23503', message: '工序已被工艺路线或工艺模板引用,不能删除' },
         ])
       }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'mfg_operation',
         recordId: id,
         recordLabel: item.code,
@@ -178,10 +243,9 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
 
   // —— 工艺模板 ——
   async function createTemplate(
-    actor: Actor,
+    permit: Permit,
     input: { code?: string | null; name: string; note?: string | null },
   ): Promise<ProcessTemplate> {
-    requirePermission(actor, 'mfg.route_template:create')
     const { code, name, note } = normalizeHead(input.code ?? '', input.name, input.note, '工艺模板')
     return withTx(db, async (trx) => {
       let finalCode = code
@@ -195,7 +259,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapTemplate(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_process_template',
           recordId: item.id,
           recordLabel: item.code,
@@ -212,23 +276,17 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
     })
   }
 
-  async function getTemplate(actor: Actor, id: string): Promise<ProcessTemplate> {
-    requirePermission(actor, 'mfg.route_template:read')
-    const row = await db
-      .selectFrom('mfg_process_template')
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst()
-    if (!row) throw new ApiError('not_found', '工艺模板不存在')
-    return mapTemplate(row)
+  async function getTemplate(permit: Permit, id: string): Promise<ProcessTemplate> {
+    return mapTemplate((await rowOf(db, permit, tplTarget, TPL_TABLE, id, '工艺模板不存在')) as never)
   }
 
-  async function listTemplates(actor: Actor, query: ListQueryInput) {
-    requirePermission(actor, 'mfg.route_template:read')
+  async function listTemplates(permit: Permit, query: ListQueryInput) {
     return listSimple(
       db,
+      permit,
+      tplTarget,
+      TPL_TABLE,
       processTemplateResourceMeta(),
-      sql` FROM mfg_process_template`,
       query,
       mapTemplateRow,
       sql`"code" ASC, "id" ASC`,
@@ -236,13 +294,12 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
   }
 
   async function updateTemplate(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: { name?: string; note?: string | null; notePresent?: boolean },
   ): Promise<ProcessTemplate> {
-    requirePermission(actor, 'mfg.route_template:update')
     return withTx(db, async (trx) => {
-      const before = await lockTemplate(trx, id)
+      const before = await lockTemplate(trx, permit, id)
       const name = input.name !== undefined ? input.name : before.name
       const note = input.notePresent ? (input.note ?? null) : before.note
       const n = normalizeHead(before.code, name, note, '工艺模板')
@@ -255,7 +312,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       const after = mapTemplate(row)
       const changes = auditDiff(opSnap(before), opSnap(after), TPL_AUDIT)
       if (Object.keys(changes).length > 0) {
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_process_template',
           recordId: id,
           recordLabel: after.code,
@@ -268,10 +325,9 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
     })
   }
 
-  async function deleteTemplate(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'mfg.route_template:delete')
+  async function deleteTemplate(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const item = await lockTemplate(trx, id)
+      const item = await lockTemplate(trx, permit, id)
       try {
         await trx.deleteFrom('mfg_process_template').where('id', '=', id).execute()
       } catch (err) {
@@ -279,7 +335,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
           { code: '23503', message: '工艺模板已被引用,不可删除' },
         ])
       }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'mfg_process_template',
         recordId: id,
         recordLabel: item.code,
@@ -292,7 +348,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
 
   // —— 工艺模板行 ——
   async function createTemplateItem(
-    actor: Actor,
+    permit: Permit,
     input: {
       templateId: string
       operationId: string
@@ -301,13 +357,12 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       isOutsourced?: boolean
     },
   ): Promise<TemplateItem> {
-    requireCreateOrUpdate(actor, 'mfg.route_template')
     const route = normalizeRoute(input)
     if (!input.templateId) {
       throw ApiError.validation('工艺模板行参数不合法', { templateId: ['必填'] })
     }
     return withTx(db, async (trx) => {
-      await lockExists(trx, 'mfg_process_template', input.templateId, '工艺模板不存在')
+      await lockTemplate(trx, permit, input.templateId)
       try {
         const row = await trx
           .insertInto('mfg_process_template_item')
@@ -321,7 +376,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapTemplateItem(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_process_template_item',
           recordId: item.id,
           recordLabel: item.id,
@@ -338,23 +393,19 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
     })
   }
 
-  async function getTemplateItem(actor: Actor, id: string): Promise<TemplateItem> {
-    requirePermission(actor, 'mfg.route_template:read')
-    const row = await db
-      .selectFrom('mfg_process_template_item')
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst()
-    if (!row) throw new ApiError('not_found', '工艺模板行不存在')
-    return mapTemplateItem(row)
+  async function getTemplateItem(permit: Permit, id: string): Promise<TemplateItem> {
+    return mapTemplateItem(
+      (await rowOf(db, permit, tplItemTarget, TPL_ITEM_TABLE, id, '工艺模板行不存在')) as never,
+    )
   }
 
-  async function listTemplateItems(actor: Actor, query: ListQueryInput & { templateId?: string }) {
-    requirePermission(actor, 'mfg.route_template:read')
+  async function listTemplateItems(permit: Permit, query: ListQueryInput & { templateId?: string }) {
     return listChildren(
       db,
+      permit,
+      tplItemTarget,
+      TPL_ITEM_TABLE,
       processTemplateItemResourceMeta(),
-      sql` FROM mfg_process_template_item`,
       query,
       'template_id',
       query.templateId,
@@ -364,7 +415,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
   }
 
   async function updateTemplateItem(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       operationId?: string
@@ -374,7 +425,6 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       isOutsourced?: boolean
     },
   ): Promise<TemplateItem> {
-    requirePermission(actor, 'mfg.route_template:update')
     return withTx(db, async (trx) => {
       const parent = await trx
         .selectFrom('mfg_process_template_item')
@@ -382,7 +432,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
         .where('id', '=', id)
         .executeTakeFirst()
       if (!parent) throw new ApiError('not_found', '工艺模板行不存在')
-      await lockExists(trx, 'mfg_process_template', parent.template_id, '工艺模板不存在')
+      await lockTemplate(trx, permit, parent.template_id)
       const beforeRow = await trx
         .selectFrom('mfg_process_template_item')
         .selectAll()
@@ -413,7 +463,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
         const after = mapTemplateItem(row)
         const changes = auditDiff(tplItemSnap(before), tplItemSnap(after), TPL_ITEM_AUDIT)
         if (Object.keys(changes).length > 0) {
-          await writeAudit(trx, actor, {
+          await writeAudit(trx, permit.actor, {
             resource: 'mfg_process_template_item',
             recordId: id,
             recordLabel: id,
@@ -431,8 +481,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
     })
   }
 
-  async function deleteTemplateItem(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'mfg.route_template:update')
+  async function deleteTemplateItem(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
       const parent = await trx
         .selectFrom('mfg_process_template_item')
@@ -440,7 +489,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
         .where('id', '=', id)
         .executeTakeFirst()
       if (!parent) throw new ApiError('not_found', '工艺模板行不存在')
-      await lockExists(trx, 'mfg_process_template', parent.template_id, '工艺模板不存在')
+      await lockTemplate(trx, permit, parent.template_id)
       const row = await trx
         .selectFrom('mfg_process_template_item')
         .selectAll()
@@ -450,7 +499,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       if (!row) throw new ApiError('not_found', '工艺模板行不存在')
       const item = mapTemplateItem(row)
       await trx.deleteFrom('mfg_process_template_item').where('id', '=', id).execute()
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'mfg_process_template_item',
         recordId: id,
         recordLabel: id,
@@ -463,7 +512,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
 
   // —— BOM ——
   async function createBom(
-    actor: Actor,
+    permit: Permit,
     input: {
       code?: string | null
       materialId: string
@@ -473,7 +522,6 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       status?: BomStatus | null
     },
   ): Promise<Bom> {
-    requirePermission(actor, 'mfg.bom:create')
     const n = normalizeBom(input.code ?? '', input.planName, input.note, input.materialId)
     const status = parseBomStatus(input.status ?? 'draft', { allowDraft: true })
     return withTx(db, async (trx) => {
@@ -498,7 +546,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapBom(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_bom',
           recordId: item.id,
           recordLabel: item.code,
@@ -513,20 +561,25 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
     })
   }
 
-  async function getBom(actor: Actor, id: string): Promise<Bom> {
-    requirePermission(actor, 'mfg.bom:read')
-    const row = await db.selectFrom('mfg_bom').selectAll().where('id', '=', id).executeTakeFirst()
-    if (!row) throw new ApiError('not_found', 'BOM不存在')
-    return mapBom(row)
+  async function getBom(permit: Permit, id: string): Promise<Bom> {
+    return mapBom((await rowOf(db, permit, bomTarget, BOM_TABLE, id, 'BOM不存在')) as never)
   }
 
-  async function listBoms(actor: Actor, query: ListQueryInput) {
-    requirePermission(actor, 'mfg.bom:read')
-    return listSimple(db, bomResourceMeta(), sql` FROM mfg_bom`, query, mapBomRow, sql`"code" ASC, "id" ASC`)
+  async function listBoms(permit: Permit, query: ListQueryInput) {
+    return listSimple(
+      db,
+      permit,
+      bomTarget,
+      BOM_TABLE,
+      bomResourceMeta(),
+      query,
+      mapBomRow,
+      sql`"code" ASC, "id" ASC`,
+    )
   }
 
   async function updateBom(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       planName?: string | null
@@ -535,9 +588,8 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       notePresent?: boolean
     },
   ): Promise<Bom> {
-    requirePermission(actor, 'mfg.bom:update')
     return withTx(db, async (trx) => {
-      const before = await lockBom(trx, id)
+      const before = await lockBom(trx, permit, id)
       const planName = input.planNamePresent ? (input.planName ?? null) : before.planName
       const note = input.notePresent ? (input.note ?? null) : before.note
       const n = normalizeBom(before.code, planName, note, before.materialId)
@@ -554,7 +606,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       const after = mapBom(row)
       const changes = auditDiff(bomSnap(before), bomSnap(after), BOM_AUDIT)
       if (Object.keys(changes).length > 0) {
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_bom',
           recordId: id,
           recordLabel: after.code,
@@ -567,10 +619,9 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
     })
   }
 
-  async function deleteBom(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'mfg.bom:delete')
+  async function deleteBom(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const item = await lockBom(trx, id)
+      const item = await lockBom(trx, permit, id)
       if (item.status !== 'draft') {
         throw new ApiError('conflict', '仅草稿 BOM 可删除；启用过的请停用')
       }
@@ -581,7 +632,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
           { code: '23503', message: 'BOM已被业务数据引用,不可删除' },
         ])
       }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'mfg_bom',
         recordId: id,
         recordLabel: item.code,
@@ -593,25 +644,23 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
   }
 
   /** 草稿/停用 → 启用 */
-  async function activateBom(actor: Actor, id: string): Promise<Bom> {
-    requirePermission(actor, 'mfg.bom:update')
-    return setBomStatus(actor, id, 'active', 'activate')
+  async function activateBom(permit: Permit, id: string): Promise<Bom> {
+    return setBomStatus(permit, id, 'active', 'activate')
   }
 
   /** 启用 → 停用 */
-  async function deactivateBom(actor: Actor, id: string): Promise<Bom> {
-    requirePermission(actor, 'mfg.bom:update')
-    return setBomStatus(actor, id, 'inactive', 'deactivate')
+  async function deactivateBom(permit: Permit, id: string): Promise<Bom> {
+    return setBomStatus(permit, id, 'inactive', 'deactivate')
   }
 
   async function setBomStatus(
-    actor: Actor,
+    permit: Permit,
     id: string,
     next: BomStatus,
     actionName: string,
   ): Promise<Bom> {
     return withTx(db, async (trx) => {
-      const before = await lockBom(trx, id)
+      const before = await lockBom(trx, permit, id)
       if (before.status === next) return before
       if (next === 'active') {
         if (before.status !== 'draft' && before.status !== 'inactive') {
@@ -631,7 +680,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
         .returningAll()
         .executeTakeFirstOrThrow()
       const after = mapBom(row)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'mfg_bom',
         recordId: id,
         recordLabel: after.code,
@@ -645,7 +694,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
 
   // —— 配料行 ——
   async function createComponent(
-    actor: Actor,
+    permit: Permit,
     input: {
       bomId: string
       materialId: string
@@ -655,9 +704,8 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       note?: string | null
     },
   ): Promise<BomComponent> {
-    requireCreateOrUpdate(actor, 'mfg.bom')
     return withTx(db, async (trx) => {
-      const bom = await lockBom(trx, input.bomId)
+      const bom = await lockBom(trx, permit, input.bomId)
       const quantity = parseQty(input.quantity)
       const lossRate = parseLossRate(input.lossRate)
       validateLine(bom.materialId, input.materialId, quantity, lossRate)
@@ -677,7 +725,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapComponent(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_bom_component',
           recordId: item.id,
           recordLabel: item.id,
@@ -694,23 +742,19 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
     })
   }
 
-  async function getComponent(actor: Actor, id: string): Promise<BomComponent> {
-    requirePermission(actor, 'mfg.bom:read')
-    const row = await db
-      .selectFrom('mfg_bom_component')
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst()
-    if (!row) throw new ApiError('not_found', 'BOM配料行不存在')
-    return mapComponent(row)
+  async function getComponent(permit: Permit, id: string): Promise<BomComponent> {
+    return mapComponent(
+      (await rowOf(db, permit, compTarget, COMP_TABLE, id, 'BOM配料行不存在')) as never,
+    )
   }
 
-  async function listComponents(actor: Actor, query: ListQueryInput & { bomId?: string }) {
-    requirePermission(actor, 'mfg.bom:read')
+  async function listComponents(permit: Permit, query: ListQueryInput & { bomId?: string }) {
     return listChildren(
       db,
+      permit,
+      compTarget,
+      COMP_TABLE,
       bomComponentResourceMeta(),
-      sql` FROM mfg_bom_component`,
       query,
       'bom_id',
       query.bomId,
@@ -720,7 +764,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
   }
 
   async function updateComponent(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       bomId?: string
@@ -733,7 +777,6 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       notePresent?: boolean
     },
   ): Promise<BomComponent> {
-    requirePermission(actor, 'mfg.bom:update')
     return withTx(db, async (trx) => {
       const beforeRow = await trx
         .selectFrom('mfg_bom_component')
@@ -746,7 +789,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       if (input.bomId && input.bomId !== before.bomId) {
         throw ApiError.validation('制造主数据锚点不可修改', { bomId: ['创建后不可换BOM'] })
       }
-      const bom = await lockBom(trx, before.bomId)
+      const bom = await lockBom(trx, permit, before.bomId)
       const materialId = input.materialId ?? before.materialId
       const unitId = input.unitId ?? before.unitId
       const quantity = input.quantity !== undefined ? parseQty(input.quantity) : before.quantity
@@ -774,7 +817,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
         const after = mapComponent(row)
         const changes = auditDiff(compSnap(before), compSnap(after), COMP_AUDIT)
         if (Object.keys(changes).length > 0) {
-          await writeAudit(trx, actor, {
+          await writeAudit(trx, permit.actor, {
             resource: 'mfg_bom_component',
             recordId: id,
             recordLabel: id,
@@ -792,8 +835,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
     })
   }
 
-  async function deleteComponent(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'mfg.bom:update')
+  async function deleteComponent(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
       const beforeRow = await trx
         .selectFrom('mfg_bom_component')
@@ -802,10 +844,10 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
         .forUpdate()
         .executeTakeFirst()
       if (!beforeRow) throw new ApiError('not_found', 'BOM配料行不存在')
-      await lockBom(trx, beforeRow.bom_id)
+      await lockBom(trx, permit, beforeRow.bom_id)
       const item = mapComponent(beforeRow)
       await trx.deleteFrom('mfg_bom_component').where('id', '=', id).execute()
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'mfg_bom_component',
         recordId: id,
         recordLabel: id,
@@ -818,7 +860,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
 
   // —— 工艺路线行 ——
   async function createRoute(
-    actor: Actor,
+    permit: Permit,
     input: {
       bomId: string
       operationId: string
@@ -827,10 +869,9 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       isOutsourced?: boolean
     },
   ): Promise<BomRoute> {
-    requireCreateOrUpdate(actor, 'mfg.bom')
     const route = normalizeRoute(input)
     return withTx(db, async (trx) => {
-      await lockBom(trx, input.bomId)
+      await lockBom(trx, permit, input.bomId)
       try {
         const row = await trx
           .insertInto('mfg_bom_route')
@@ -844,7 +885,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapRoute(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_bom_route',
           recordId: item.id,
           recordLabel: item.id,
@@ -861,19 +902,19 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
     })
   }
 
-  async function getRoute(actor: Actor, id: string): Promise<BomRoute> {
-    requirePermission(actor, 'mfg.bom:read')
-    const row = await db.selectFrom('mfg_bom_route').selectAll().where('id', '=', id).executeTakeFirst()
-    if (!row) throw new ApiError('not_found', 'BOM工艺路线行不存在')
-    return mapRoute(row)
+  async function getRoute(permit: Permit, id: string): Promise<BomRoute> {
+    return mapRoute(
+      (await rowOf(db, permit, routeTarget, ROUTE_TABLE, id, 'BOM工艺路线行不存在')) as never,
+    )
   }
 
-  async function listRoutes(actor: Actor, query: ListQueryInput & { bomId?: string }) {
-    requirePermission(actor, 'mfg.bom:read')
+  async function listRoutes(permit: Permit, query: ListQueryInput & { bomId?: string }) {
     return listChildren(
       db,
+      permit,
+      routeTarget,
+      ROUTE_TABLE,
       bomRouteResourceMeta(),
-      sql` FROM mfg_bom_route`,
       query,
       'bom_id',
       query.bomId,
@@ -883,7 +924,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
   }
 
   async function updateRoute(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       operationId?: string
@@ -893,7 +934,6 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       isOutsourced?: boolean
     },
   ): Promise<BomRoute> {
-    requirePermission(actor, 'mfg.bom:update')
     return withTx(db, async (trx) => {
       const beforeRow = await trx
         .selectFrom('mfg_bom_route')
@@ -902,7 +942,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
         .forUpdate()
         .executeTakeFirst()
       if (!beforeRow) throw new ApiError('not_found', 'BOM工艺路线行不存在')
-      await lockBom(trx, beforeRow.bom_id)
+      await lockBom(trx, permit, beforeRow.bom_id)
       const before = mapRoute(beforeRow)
       const route = normalizeRoute({
         operationId: input.operationId ?? before.operationId,
@@ -926,7 +966,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
         const after = mapRoute(row)
         const changes = auditDiff(routeSnap(before), routeSnap(after), ROUTE_AUDIT)
         if (Object.keys(changes).length > 0) {
-          await writeAudit(trx, actor, {
+          await writeAudit(trx, permit.actor, {
             resource: 'mfg_bom_route',
             recordId: id,
             recordLabel: id,
@@ -944,8 +984,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
     })
   }
 
-  async function deleteRoute(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'mfg.bom:update')
+  async function deleteRoute(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
       const beforeRow = await trx
         .selectFrom('mfg_bom_route')
@@ -954,10 +993,10 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
         .forUpdate()
         .executeTakeFirst()
       if (!beforeRow) throw new ApiError('not_found', 'BOM工艺路线行不存在')
-      await lockBom(trx, beforeRow.bom_id)
+      await lockBom(trx, permit, beforeRow.bom_id)
       const item = mapRoute(beforeRow)
       await trx.deleteFrom('mfg_bom_route').where('id', '=', id).execute()
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'mfg_bom_route',
         recordId: id,
         recordLabel: id,
@@ -970,7 +1009,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
 
   // —— 副产品 ——
   async function createByproduct(
-    actor: Actor,
+    permit: Permit,
     input: {
       bomId: string
       materialId: string
@@ -979,9 +1018,8 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       note?: string | null
     },
   ): Promise<BomByproduct> {
-    requireCreateOrUpdate(actor, 'mfg.bom')
     return withTx(db, async (trx) => {
-      const bom = await lockBom(trx, input.bomId)
+      const bom = await lockBom(trx, permit, input.bomId)
       const quantity = parseQty(input.quantity)
       validateLine(bom.materialId, input.materialId, quantity, null)
       await ensureMaterial(trx, input.materialId, ['STOCK'], 'BOM行')
@@ -999,7 +1037,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapByproduct(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_bom_byproduct',
           recordId: item.id,
           recordLabel: item.id,
@@ -1016,23 +1054,19 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
     })
   }
 
-  async function getByproduct(actor: Actor, id: string): Promise<BomByproduct> {
-    requirePermission(actor, 'mfg.bom:read')
-    const row = await db
-      .selectFrom('mfg_bom_byproduct')
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst()
-    if (!row) throw new ApiError('not_found', 'BOM副产品行不存在')
-    return mapByproduct(row)
+  async function getByproduct(permit: Permit, id: string): Promise<BomByproduct> {
+    return mapByproduct(
+      (await rowOf(db, permit, bypTarget, BYP_TABLE, id, 'BOM副产品行不存在')) as never,
+    )
   }
 
-  async function listByproducts(actor: Actor, query: ListQueryInput & { bomId?: string }) {
-    requirePermission(actor, 'mfg.bom:read')
+  async function listByproducts(permit: Permit, query: ListQueryInput & { bomId?: string }) {
     return listChildren(
       db,
+      permit,
+      bypTarget,
+      BYP_TABLE,
       bomByproductResourceMeta(),
-      sql` FROM mfg_bom_byproduct`,
       query,
       'bom_id',
       query.bomId,
@@ -1042,7 +1076,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
   }
 
   async function updateByproduct(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       bomId?: string
@@ -1053,7 +1087,6 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       notePresent?: boolean
     },
   ): Promise<BomByproduct> {
-    requirePermission(actor, 'mfg.bom:update')
     return withTx(db, async (trx) => {
       const beforeRow = await trx
         .selectFrom('mfg_bom_byproduct')
@@ -1066,7 +1099,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       if (input.bomId && input.bomId !== before.bomId) {
         throw ApiError.validation('制造主数据锚点不可修改', { bomId: ['创建后不可换BOM'] })
       }
-      const bom = await lockBom(trx, before.bomId)
+      const bom = await lockBom(trx, permit, before.bomId)
       const materialId = input.materialId ?? before.materialId
       const unitId = input.unitId ?? before.unitId
       const quantity = input.quantity !== undefined ? parseQty(input.quantity) : before.quantity
@@ -1090,7 +1123,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
         const after = mapByproduct(row)
         const changes = auditDiff(bypSnap(before), bypSnap(after), BYP_AUDIT)
         if (Object.keys(changes).length > 0) {
-          await writeAudit(trx, actor, {
+          await writeAudit(trx, permit.actor, {
             resource: 'mfg_bom_byproduct',
             recordId: id,
             recordLabel: id,
@@ -1108,8 +1141,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
     })
   }
 
-  async function deleteByproduct(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'mfg.bom:update')
+  async function deleteByproduct(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
       const beforeRow = await trx
         .selectFrom('mfg_bom_byproduct')
@@ -1118,10 +1150,10 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
         .forUpdate()
         .executeTakeFirst()
       if (!beforeRow) throw new ApiError('not_found', 'BOM副产品行不存在')
-      await lockBom(trx, beforeRow.bom_id)
+      await lockBom(trx, permit, beforeRow.bom_id)
       const item = mapByproduct(beforeRow)
       await trx.deleteFrom('mfg_bom_byproduct').where('id', '=', id).execute()
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'mfg_bom_byproduct',
         recordId: id,
         recordLabel: id,
@@ -1134,14 +1166,13 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
 
   /** 从工艺模板快照带入路线（BOM 尚无路线行时） */
   async function applyRouteTemplate(
-    actor: Actor,
+    permit: Permit,
     bomId: string,
     templateId: string,
   ): Promise<BomRoute[]> {
-    requirePermission(actor, 'mfg.bom:update')
     return withTx(db, async (trx) => {
-      const bom = await lockBom(trx, bomId)
-      await lockExists(trx, 'mfg_process_template', templateId, '工艺模板不存在')
+      const bom = await lockBom(trx, permit, bomId)
+      await lockTemplate(trx, permit, templateId)
       const countRow = await trx
         .selectFrom('mfg_bom_route')
         .select(db.fn.countAll<string>().as('c'))
@@ -1171,7 +1202,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapRoute(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_bom_route',
           recordId: item.id,
           recordLabel: item.id,
@@ -1181,7 +1212,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
         })
         result.push(item)
       }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'mfg_bom',
         recordId: bom.id,
         recordLabel: bom.code,
@@ -1334,63 +1365,25 @@ function validateLine(
   }
 }
 
-async function lockOperation(db: DbHandle, id: string): Promise<Operation> {
-  const row = await db
-    .selectFrom('mfg_operation')
-    .selectAll()
-    .where('id', '=', id)
-    .forUpdate()
-    .executeTakeFirst()
-  if (!row) throw new ApiError('not_found', '工序不存在')
-  return mapOperation(row)
-}
-
-async function lockTemplate(db: DbHandle, id: string): Promise<ProcessTemplate> {
-  const row = await db
-    .selectFrom('mfg_process_template')
-    .selectAll()
-    .where('id', '=', id)
-    .forUpdate()
-    .executeTakeFirst()
-  if (!row) throw new ApiError('not_found', '工艺模板不存在')
-  return mapTemplate(row)
-}
-
-async function lockBom(db: DbHandle, id: string): Promise<Bom> {
-  if (!id) throw ApiError.validation('BOM行参数不合法', { bomId: ['必填'] })
-  const row = await db
-    .selectFrom('mfg_bom')
-    .selectAll()
-    .where('id', '=', id)
-    .forUpdate()
-    .executeTakeFirst()
-  if (!row) throw new ApiError('not_found', 'BOM不存在')
-  return mapBom(row)
-}
-
-async function lockExists(
-  db: DbHandle,
-  table: 'mfg_process_template' | 'mfg_operation' | 'mfg_bom',
-  id: string,
-  notFound: string,
-): Promise<void> {
-  const row = await db.selectFrom(table).select('id').where('id', '=', id).forUpdate().executeTakeFirst()
-  if (!row) throw new ApiError('not_found', notFound)
-}
-
+/** 裸表列表：alias 即表名（`FROM 表` 无别名），授权谓词由 listAuthorized 自动 AND */
 async function listSimple<T>(
   db: DbHandle,
+  permit: Permit,
+  target: AuthzTarget,
+  table: string,
   resource: ResourceMeta,
-  source: ReturnType<typeof sql>,
   query: ListQueryInput,
   mapRow: (r: Record<string, unknown>) => T,
   defaultOrder: ReturnType<typeof sql>,
 ) {
   normalizeList(query)
-  return listFromSource({
+  return listAuthorized({
     db,
+    permit,
+    target,
+    alias: table,
     resource,
-    source,
+    source: sql` FROM ${sql.raw(table)}`,
     select: sql`SELECT *`,
     defaultOrder,
     query,
@@ -1398,10 +1391,13 @@ async function listSimple<T>(
   })
 }
 
+/** 子行列表：via 链的 EXISTS 递归母单（母单谓词），父键筛选是领域条件 */
 async function listChildren<T>(
   db: DbHandle,
+  permit: Permit,
+  target: AuthzTarget,
+  table: string,
   resource: ResourceMeta,
-  source: ReturnType<typeof sql>,
   query: ListQueryInput,
   parentCol: string,
   parentId: string | undefined,
@@ -1409,10 +1405,13 @@ async function listChildren<T>(
   defaultOrder: ReturnType<typeof sql>,
 ) {
   normalizeList(query)
-  return listFromSource({
+  return listAuthorized({
     db,
+    permit,
+    target,
+    alias: table,
     resource,
-    source,
+    source: sql` FROM ${sql.raw(table)}`,
     select: sql`SELECT *`,
     defaultOrder,
     query,

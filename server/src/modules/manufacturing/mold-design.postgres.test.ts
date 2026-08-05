@@ -25,7 +25,14 @@ run('PG 集成（模具设计）', () => {
   const db = createDb(url!)
   const registry = createSealedResourceRegistry()
   const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
+  const authz = createAuthzEnforcer(registry)
   const mfg = createManufacturingServices(db, numbering, registry)
+  /** 模具/物料双资源现取凭证（superAdmin → rowFilter 全集；码级门控见断言用例） */
+  const moldPermit = (action: string) => {
+    const decision = authz.decideFor(actor, 'mfgMoldDesigns', action)
+    if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+    return decision.permit
+  }
   const actor: Actor = testActor({
     userId: '',
     username: 'mold-test',
@@ -147,7 +154,7 @@ run('PG 集成（模具设计）', () => {
     await seedOnce
     await setMoldCategory(null)
     await expect(
-      mfg.moldDesigns.create(actor, {
+      mfg.moldDesigns.create(moldPermit('create'), {
         name: `冲孔模-${suffix}`,
         moldType: 'STAMPING',
         unitId,
@@ -158,7 +165,7 @@ run('PG 集成（模具设计）', () => {
   test('创建模具设计：同事务自动建资产物料并 1:1 关联', async () => {
     await seedOnce
     await setMoldCategory(categoryId)
-    const design = await mfg.moldDesigns.create(actor, {
+    const design = await mfg.moldDesigns.create(moldPermit('create'), {
       name: `冲孔模-${suffix}`,
       spec: 'Φ12×60',
       moldType: 'STAMPING',
@@ -184,14 +191,14 @@ run('PG 集成（模具设计）', () => {
 
     // 枚举校验
     await expect(
-      mfg.moldDesigns.create(actor, { name: 'x', moldType: 'FOO', unitId }),
+      mfg.moldDesigns.create(moldPermit('create'), { name: 'x', moldType: 'FOO', unitId }),
     ).rejects.toMatchObject({ code: 'validation' })
   })
 
   test('编辑同步物料名称/规格；有转换行时单位不可改', async () => {
     await seedOnce
     await setMoldCategory(categoryId)
-    const design = await mfg.moldDesigns.create(actor, {
+    const design = await mfg.moldDesigns.create(moldPermit('create'), {
       name: `弯曲模-${suffix}`,
       moldType: 'FORMING',
       unitId,
@@ -199,7 +206,7 @@ run('PG 集成（模具设计）', () => {
     tracked.designs.push(design.id)
     tracked.materials.push(design.materialId)
 
-    const updated = await mfg.moldDesigns.update(actor, design.id, {
+    const updated = await mfg.moldDesigns.update(moldPermit('update'), design.id, {
       name: `弯曲模改-${suffix}`,
       spec: 'R5',
       specPresent: true,
@@ -233,7 +240,7 @@ run('PG 集成（模具设计）', () => {
       .values({ material_id: design.materialId, unit_id: unit2, factor: '2' })
       .execute()
     await expect(
-      mfg.moldDesigns.update(actor, design.id, { unitId: unit2 }),
+      mfg.moldDesigns.update(moldPermit('update'), design.id, { unitId: unit2 }),
     ).rejects.toMatchObject({ code: 'validation' })
     await db.deleteFrom('bas_unit').where('id', '=', unit2).execute().catch(() => {})
   })
@@ -241,7 +248,7 @@ run('PG 集成（模具设计）', () => {
   test('删除级联删物料；有库存分录时拦截', async () => {
     await seedOnce
     await setMoldCategory(categoryId)
-    const design = await mfg.moldDesigns.create(actor, {
+    const design = await mfg.moldDesigns.create(moldPermit('create'), {
       name: `定位模-${suffix}`,
       moldType: 'POSITIONING',
       unitId,
@@ -263,12 +270,12 @@ run('PG 集成（模具设计）', () => {
         posting_date: new Date('2026-08-03T00:00:00Z'),
       })
       .execute()
-    await expect(mfg.moldDesigns.remove(actor, design.id)).rejects.toMatchObject({
+    await expect(mfg.moldDesigns.remove(moldPermit('delete'), design.id)).rejects.toMatchObject({
       code: 'conflict',
     })
     await db.deleteFrom('inv_stock_entry').where('material_id', '=', design.materialId).execute()
 
-    await mfg.moldDesigns.remove(actor, design.id)
+    await mfg.moldDesigns.remove(moldPermit('delete'), design.id)
     const gone = await db
       .selectFrom('inv_material')
       .select('id')
@@ -283,22 +290,36 @@ run('PG 集成（模具设计）', () => {
     expect(goneDesign).toBeUndefined()
   })
 
-  test('权限门控：无 mfg.mold_design 权限拒绝', async () => {
+  /**
+   * 码级门控归 guard（服务层零鉴权代码），故这里断言的是**判定内核**：
+   * 缺码 deny（HTTP 上即 403），持码 permit。跨资源写的 allOf 一并验：
+   * 只有 mfg.mold_design:create 而没有 base.material:create 时判定 deny——
+   * 建模具必然连带建物料，两码缺一不可。
+   */
+  test('码级门控：缺模具码 deny；缺物料码（跨资源 allOf）同样 deny', async () => {
     await seedOnce
-    const restricted: Actor = testActor({
-      userId: '',
-      username: 'mold-noauth',
-      name: null,
+    const materialCreate = `${authz.targetOf('invMaterials').prefix}:create`
+    const moldCreate = `${authz.targetOf('mfgMoldDesigns').prefix}:create`
+    const none: Actor = testActor({ superAdmin: false, allCompanies: true, permissions: new Set() })
+    expect(authz.decideFor(none, 'mfgMoldDesigns', 'create').outcome).toBe('deny')
+    expect(authz.decideFor(none, 'mfgMoldDesigns', 'read').outcome).toBe('deny')
+
+    const moldOnly: Actor = testActor({
       superAdmin: false,
       allCompanies: true,
-      permissions: new Set(),
-      companyIds: [],
+      permissions: new Set([moldCreate]),
     })
-    await expect(
-      mfg.moldDesigns.create(restricted, { name: 'x', moldType: 'OTHER', unitId }),
-    ).rejects.toMatchObject({ code: 'forbidden' })
-    await expect(mfg.moldDesigns.list(restricted, { limit: 10, offset: 0 })).rejects.toMatchObject({
-      code: 'forbidden',
+    expect(
+      authz.decideFor(moldOnly, 'mfgMoldDesigns', 'create', { allOf: [materialCreate] }).outcome,
+    ).toBe('deny')
+
+    const both: Actor = testActor({
+      superAdmin: false,
+      allCompanies: true,
+      permissions: new Set([moldCreate, materialCreate]),
     })
+    expect(
+      authz.decideFor(both, 'mfgMoldDesigns', 'create', { allOf: [materialCreate] }).outcome,
+    ).toBe('permit')
   })
 })

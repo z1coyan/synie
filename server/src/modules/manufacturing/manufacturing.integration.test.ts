@@ -37,6 +37,12 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
     return decision.permit
   })()
+  /** 主数据（工序/工艺模板/BOM 及子行）：各资源现取凭证 */
+  const masterPermit = (resource: string, action: string) => {
+    const decision = authz.decideFor(actor, resource, action)
+    if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+    return decision.permit
+  }
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10)
   const currencyId = crypto.randomUUID()
   const companyId = crypto.randomUUID()
@@ -196,19 +202,19 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
   })
 
   test('工序/工艺模板/BOM 配料与模板带入', async () => {
-    const op = await mfg.master.createOperation(actor, {
+    const op = await mfg.master.createOperation(masterPermit('mfgOperations', 'create'), {
       code: `OP${suffix}`,
       name: `冲网-${suffix}`,
     })
     cleanupIds.operations.push(op.id)
     expect(op.code).toBe(`OP${suffix}`)
 
-    const tpl = await mfg.master.createTemplate(actor, {
+    const tpl = await mfg.master.createTemplate(masterPermit('mfgProcessTemplates', 'create'), {
       code: `T${suffix}`,
       name: `模板-${suffix}`,
     })
     cleanupIds.templates.push(tpl.id)
-    await mfg.master.createTemplateItem(actor, {
+    await mfg.master.createTemplateItem(masterPermit('mfgProcessTemplateItems', 'update'), {
       templateId: tpl.id,
       operationId: op.id,
       seq: 10,
@@ -216,7 +222,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       isOutsourced: false,
     })
 
-    const bom = await mfg.master.createBom(actor, {
+    const bom = await mfg.master.createBom(masterPermit('mfgBoms', 'create'), {
       code: `B${suffix}`,
       materialId,
       planName: '自用',
@@ -224,7 +230,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     cleanupIds.boms.push(bom.id)
     expect(bom.status).toBe('draft')
 
-    const comp = await mfg.master.createComponent(actor, {
+    const comp = await mfg.master.createComponent(masterPermit('mfgBomComponents', 'update'), {
       bomId: bom.id,
       materialId: componentId,
       unitId,
@@ -235,7 +241,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     expect(comp.lossRate).toBe('0.05')
 
     await expect(
-      mfg.master.createComponent(actor, {
+      mfg.master.createComponent(masterPermit('mfgBomComponents', 'update'), {
         bomId: bom.id,
         materialId, // 自引用
         unitId,
@@ -243,28 +249,30 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       }),
     ).rejects.toMatchObject({ code: 'validation' })
 
-    const routes = await mfg.master.applyRouteTemplate(actor, bom.id, tpl.id)
+    const routes = await mfg.master.applyRouteTemplate(masterPermit('mfgBoms', 'update'), bom.id, tpl.id)
     expect(routes).toHaveLength(1)
     expect(routes[0]!.operationId).toBe(op.id)
     expect(routes[0]!.requirement).toBe('注意毛刺')
 
-    await expect(mfg.master.applyRouteTemplate(actor, bom.id, tpl.id)).rejects.toMatchObject({
-      code: 'conflict',
-    })
+    await expect(
+      mfg.master.applyRouteTemplate(masterPermit('mfgBoms', 'update'), bom.id, tpl.id),
+    ).rejects.toMatchObject({ code: 'conflict' })
 
-    const active = await mfg.master.activateBom(actor, bom.id)
+    const active = await mfg.master.activateBom(masterPermit('mfgBoms', 'update'), bom.id)
     expect(active.status).toBe('active')
-    const inactive = await mfg.master.deactivateBom(actor, bom.id)
+    const inactive = await mfg.master.deactivateBom(masterPermit('mfgBoms', 'update'), bom.id)
     expect(inactive.status).toBe('inactive')
-    await expect(mfg.master.deleteBom(actor, bom.id)).rejects.toMatchObject({ code: 'conflict' })
-    await mfg.master.activateBom(actor, bom.id)
+    await expect(
+      mfg.master.deleteBom(masterPermit('mfgBoms', 'delete'), bom.id),
+    ).rejects.toMatchObject({ code: 'conflict' })
+    await mfg.master.activateBom(masterPermit('mfgBoms', 'update'), bom.id)
 
-    const draftOnly = await mfg.master.createBom(actor, {
+    const draftOnly = await mfg.master.createBom(masterPermit('mfgBoms', 'create'), {
       code: `BD${suffix}`,
       materialId,
       planName: '可删草稿',
     })
-    await mfg.master.deleteBom(actor, draftOnly.id)
+    await mfg.master.deleteBom(masterPermit('mfgBoms', 'delete'), draftOnly.id)
 
     // 工单选 BOM 快照
     const d = await mfg.demands.createDemand(permit, {
@@ -715,14 +723,14 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
   })
 
   test('创建工单可直接挂启用中 BOM 并快照', async () => {
-    const bom = await mfg.master.createBom(actor, {
+    const bom = await mfg.master.createBom(masterPermit('mfgBoms', 'create'), {
       code: `BCR${suffix}`,
       materialId,
       planName: '创建时挂',
       status: 'active',
     })
     cleanupIds.boms.push(bom.id)
-    await mfg.master.createComponent(actor, {
+    await mfg.master.createComponent(masterPermit('mfgBomComponents', 'update'), {
       bomId: bom.id,
       materialId: componentId,
       unitId,
@@ -914,7 +922,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
 
     // BOM 母物料/配料行/副产品行均限库存类
     await expect(
-      mfg.master.createBom(actor, {
+      mfg.master.createBom(masterPermit('mfgBoms', 'create'), {
         code: `BV${suffix}`,
         materialId: virtualMaterialId,
       }),
@@ -922,13 +930,13 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       code: 'validation',
       fields: { materialId: ['仅库存类物料可进该单据'] },
     })
-    const bom = await mfg.master.createBom(actor, {
+    const bom = await mfg.master.createBom(masterPermit('mfgBoms', 'create'), {
       code: `BS${suffix}`,
       materialId,
     })
     cleanupIds.boms.push(bom.id)
     await expect(
-      mfg.master.createComponent(actor, {
+      mfg.master.createComponent(masterPermit('mfgBomComponents', 'update'), {
         bomId: bom.id,
         materialId: virtualMaterialId,
         unitId,
@@ -939,7 +947,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       fields: { materialId: ['仅库存类物料可进该单据'] },
     })
     await expect(
-      mfg.master.createByproduct(actor, {
+      mfg.master.createByproduct(masterPermit('mfgBomByproducts', 'update'), {
         bomId: bom.id,
         materialId: assetMaterialId,
         unitId,

@@ -134,12 +134,15 @@ async function ensureFinishedWarehouse(
     WHERE company_id = ${company.id}::uuid AND name = ${name}
   `.execute(deps.db)
   if (existing.rows[0]) return existing.rows[0].id
-  const created = await deps.warehouses.create(actor, {
-    name,
-    isLeaf: true,
-    companyId: company.id,
-    parentId: rootId,
-  })
+  const created = await deps.warehouses.create(
+    permitFor(deps, actor, 'invWarehouses', 'create'),
+    {
+      name,
+      isLeaf: true,
+      companyId: company.id,
+      parentId: rootId,
+    },
+  )
   return created.id
 }
 
@@ -186,7 +189,7 @@ export async function seedMaster(
   const materials: MasterData['materials'] = {}
   for (const spec of materialSpecs()) {
     const catId = await leafCategory(deps.db, spec.category)
-    const created = await deps.materials.create(actor, {
+    const created = await deps.materials.create(permitFor(deps, actor, 'invMaterials', 'create'), {
       name: spec.name,
       spec: spec.spec,
       categoryId: catId,
@@ -199,7 +202,7 @@ export async function seedMaster(
   }
 
   const pack = await unitBySymbol(deps.db, '包')
-  await deps.materialUnits.create(actor, {
+  await deps.materialUnits.create(permitFor(deps, actor, 'invMaterialUnits', 'update'), {
     materialId: materials.carton!.id,
     unitId: pack,
     factor: '0.05',

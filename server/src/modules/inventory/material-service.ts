@@ -1,3 +1,10 @@
+/**
+ * 物料主档（全局共享，无公司列）。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、单条 `loadAuthorizedFrom`、写前取行 `loadAuthorized(forUpdate)`。
+ * global 形态只有码级判定；默认单位/物料类型的引用保护是领域不变量，留在本文件。
+ */
 import type { ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
@@ -10,11 +17,13 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
 import { runeLen, toDate, trimOrNull } from './helpers.ts'
 import { materialResourceMeta } from './meta.ts'
 
@@ -48,6 +57,11 @@ const AUDIT = auditFieldsOf(materialResourceMeta())
 
 const META = materialResourceMeta()
 
+export const MATERIAL_RESOURCE = 'invMaterials'
+
+const TABLE = META.table
+/** 列表与单条共用同一份投影（别名与 listAuthorized 的 alias 必须逐字一致） */
+const ALIAS = 'material'
 const SOURCE = sql`
   FROM (
     SELECT m.id,m.code,m.material_type,m.name,m.spec,m.customer_part_no,m.is_customer_material,m.active,
@@ -61,29 +75,40 @@ const SOURCE = sql`
     LEFT JOIN sal_customers customer ON customer.id=m.customer_id
   ) material
 `
+const SELECT = sql`SELECT id,code,material_type,name,spec,customer_part_no,is_customer_material,active,
+  inserted_at,updated_at,category_id,default_unit_id,customer_id,
+  category_code,category_name,unit_name,unit_symbol,customer_code,customer_name`
 
-export function createMaterialService(db: Kysely<Database>, numbering: NumberingService) {
-  async function get(actor: Actor, id: string): Promise<Material> {
-    requirePermission(actor, 'base.material:read')
-    const rows = await sql<Record<string, unknown>>`
-      SELECT id,code,material_type,name,spec,customer_part_no,is_customer_material,active,
-             inserted_at,updated_at,category_id,default_unit_id,customer_id,
-             category_code,category_name,unit_name,unit_symbol,customer_code,customer_name
-      ${SOURCE} WHERE id = ${id}::uuid
-    `.execute(db)
-    if (rows.rows.length === 0) throw new ApiError('not_found', '物料不存在')
-    return mapRow(rows.rows[0]!)
+export function createMaterialService(
+  db: Kysely<Database>,
+  numbering: NumberingService,
+  registry: Registry,
+) {
+  const target = registry.authzTarget(MATERIAL_RESOURCE)
+
+  async function get(permit: Permit, id: string): Promise<Material> {
+    return loadAuthorizedFrom({
+      db,
+      permit,
+      target,
+      alias: ALIAS,
+      source: SOURCE,
+      select: SELECT,
+      id,
+      mapRow,
+      notFoundMessage: '物料不存在',
+    })
   }
 
-  async function list(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'base.material:read')
-    return listFromSource({
+  async function list(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target,
+      alias: ALIAS,
       resource: META,
       source: SOURCE,
-      select: sql`SELECT id,code,material_type,name,spec,customer_part_no,is_customer_material,active,
-        inserted_at,updated_at,category_id,default_unit_id,customer_id,
-        category_code,category_name,unit_name,unit_symbol,customer_code,customer_name`,
+      select: SELECT,
       defaultOrder: sql`"code" ASC, "id" ASC`,
       query,
       mapRow,
@@ -91,7 +116,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
   }
 
   async function create(
-    actor: Actor,
+    permit: Permit,
     input: {
       name: string
       materialType?: string
@@ -104,7 +129,6 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
       customerId?: string | null
     },
   ): Promise<Material> {
-    requirePermission(actor, 'base.material:create')
     const normalized = normalizeCreate(input)
     return withTx(db, async (trx) => {
       await validateRelations(trx, normalized)
@@ -146,7 +170,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = await getInTx(trx, row.id)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'inv_material',
           recordId: item.id,
           recordLabel: item.name,
@@ -165,7 +189,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
   }
 
   async function update(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       name?: string
@@ -182,15 +206,17 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
       customerIdPresent?: boolean
     },
   ): Promise<Material> {
-    requirePermission(actor, 'base.material:update')
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('inv_material')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '物料不存在')
+      await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '物料不存在',
+      })
+      // 锁行后按投影重读（before 即锁定行的映射，改前值一律取自它）
       const before = await getInTx(trx, id)
       const draft = {
         name: input.name ?? before.name,
@@ -207,7 +233,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
       }
       const normalized = normalizeCreate(draft)
       await validateRelations(trx, normalized)
-      if (normalized.defaultUnitId !== locked.default_unit_id) {
+      if (normalized.defaultUnitId !== before.defaultUnitId) {
         const unit = await trx
           .selectFrom('inv_material_unit')
           .select('id')
@@ -229,7 +255,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
           })
         }
       }
-      if (normalized.materialType !== locked.material_type) {
+      if (normalized.materialType !== before.materialType) {
         const stock = await trx
           .selectFrom('inv_stock_entry')
           .select('id')
@@ -240,8 +266,8 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
         }
       }
       if (
-        normalized.isCustomerMaterial !== locked.is_customer_material ||
-        normalized.customerId !== (locked.customer_id ?? null)
+        normalized.isCustomerMaterial !== before.isCustomerMaterial ||
+        normalized.customerId !== before.customerId
       ) {
         const ref = await sql<{ exists: boolean }>`
           SELECT EXISTS(
@@ -280,7 +306,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
         ])
       }
       const updated = await getInTx(trx, id)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_material',
         recordId: id,
         recordLabel: updated.name,
@@ -292,16 +318,17 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'base.material:delete')
+  async function remove(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('inv_material')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '物料不存在')
+      await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '物料不存在',
+      })
       const stock = await trx
         .selectFrom('inv_stock_entry')
         .select('id')
@@ -317,7 +344,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
           { code: '23503', message: '物料已被引用或关联记录不存在' },
         ])
       }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_material',
         recordId: id,
         recordLabel: item.name,
@@ -335,10 +362,7 @@ export type MaterialService = ReturnType<typeof createMaterialService>
 
 async function getInTx(db: DbHandle, id: string): Promise<Material> {
   const rows = await sql<Record<string, unknown>>`
-    SELECT id,code,material_type,name,spec,customer_part_no,is_customer_material,active,
-           inserted_at,updated_at,category_id,default_unit_id,customer_id,
-           category_code,category_name,unit_name,unit_symbol,customer_code,customer_name
-    ${SOURCE} WHERE id = ${id}::uuid
+    ${SELECT}${SOURCE} WHERE id = ${id}::uuid
   `.execute(db)
   if (rows.rows.length === 0) throw new ApiError('not_found', '物料不存在')
   return mapRow(rows.rows[0]!)

@@ -326,6 +326,7 @@ export function buildApp(deps: AppDeps) {
       '/base',
       inventoryMasterRoutes({
         auth: deps.auth,
+        authz: deps.authz,
         categories: deps.invCategories,
         materials: deps.invMaterials,
         materialUnits: deps.invMaterialUnits,

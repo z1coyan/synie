@@ -1,35 +1,21 @@
+/**
+ * 制造域共享工具：单号/数量/日期 wire、物料与单位折算、需求行投影调整。
+ *
+ * 鉴权不在本文件：路由挂 `guard(资源, 动作)`，服务收 Permit，
+ * 三个执行点（listAuthorized / loadAuthorized / assertCompanyWritable）由平台拥有。
+ * 「持 create 或 update 均可」的多码析取归 guard 的 `anyOf`（本地包装已删）。
+ */
 import { decimal, isDecimalString, roundBaseQty, toDecimalString } from '@synie/shared'
 import { sql } from 'kysely'
 import { toDateOnly } from '~/db/dates.ts'
 import type { DbHandle } from '~/db/tx.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
-import { hasPermission, requirePermission } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError, type PgWriteMapping } from '~/db/dberr.ts'
-
-export { requirePermission }
-
-/** 子行 create：持 create 或 update 均可（对齐 routes requireChildCreate） */
-export function requireCreateOrUpdate(
-  actor: Actor | null,
-  prefix: string,
-): asserts actor is Actor {
-  if (
-    !hasPermission(actor, `${prefix}:create`) &&
-    !hasPermission(actor, `${prefix}:update`)
-  ) {
-    requirePermission(actor, `${prefix}:update`)
-  }
-}
+import type { DemandItemStatus, ListQueryInput } from './types.ts'
 
 export { toDateOnly }
-import type {
-  DemandItemStatus,
-  FulfillmentMethod,
-  ListQueryInput,
-} from './types.ts'
 
-export const MFG_WRITE_MAPPINGS: readonly PgWriteMapping[] = [
+const MFG_WRITE_MAPPINGS: readonly PgWriteMapping[] = [
   { code: '23505', constraint: 'mfg_work_order_active_demand_item', message: '该需求行已有未作废生产工单' },
   { code: '23505', constraint: 'mfg_demand_unique_demand_no', message: '需求单号已存在' },
   { code: '23505', constraint: 'mfg_work_order_unique_work_order_no', message: '工单号已存在' },
@@ -76,18 +62,6 @@ export function parsePositiveQty(raw: string, field = 'qty'): string {
     throw ApiError.validation('数量参数不合法', { [field]: ['必须大于 0'] })
   }
   return toDecimalString(v)
-}
-
-export function validFulfillment(method: string): method is FulfillmentMethod {
-  return method === 'make' || method === 'buy' || method === 'outsource' || method === 'stock'
-}
-
-export function parseFulfillmentWire(raw: string): FulfillmentMethod {
-  const lower = raw.trim().toLowerCase()
-  if (!validFulfillment(lower)) {
-    throw ApiError.validation('需求行参数不合法', { fulfillmentMethod: ['履约方式不合法'] })
-  }
-  return lower
 }
 
 export interface ItemProjection {
@@ -260,21 +234,6 @@ export function normalizeList(query: ListQueryInput) {
     sort: query.sort,
     filter: query.filter as never,
     companyId: query.companyId,
-  }
-}
-
-export async function setDemandItemStatus(
-  db: DbHandle,
-  id: string,
-  status: DemandItemStatus,
-): Promise<void> {
-  const result = await db
-    .updateTable('mfg_demand_item')
-    .set({ status, updated_at: sql`(now() AT TIME ZONE 'utc')` })
-    .where('id', '=', id)
-    .executeTakeFirst()
-  if (Number(result.numUpdatedRows ?? 0) !== 1) {
-    throw new ApiError('not_found', '需求行不存在')
   }
 }
 

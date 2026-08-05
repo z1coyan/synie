@@ -185,6 +185,37 @@ describe('supportedScopes 投影', () => {
     }
   })
 
+  test('主数据（物料/分类/工序/工艺模板/BOM/模具）是 global，矩阵不得授出行级范围', () => {
+    for (const name of [
+      'invMaterialCategories',
+      'invMaterials',
+      'mfgOperations',
+      'mfgProcessTemplates',
+      'mfgBoms',
+      'mfgMoldDesigns',
+    ]) {
+      const binding = resolveAuthzBinding(metaOf(name))
+      expect([name, binding.kind]).toEqual([name, 'global'])
+      expect([name, supportedScopesOf(metaOf(name))]).toEqual([name, ['all']])
+    }
+    // 仓库是本批唯一公司域主数据（无 owner/dept 绑定，同样只出 all）
+    expect(resolveAuthzBinding(metaOf('invWarehouses')).company).toEqual({
+      column: 'company_id',
+      nullable: false,
+    })
+    expect(supportedScopesOf(metaOf('invWarehouses'))).toEqual(['all'])
+    // 单位转换与 BOM/模板子行随归宿（via），自身不拥有范围
+    for (const name of [
+      'invMaterialUnits',
+      'mfgProcessTemplateItems',
+      'mfgBomComponents',
+      'mfgBomRoutes',
+      'mfgBomByproducts',
+    ]) {
+      expect([name, supportedScopesOf(metaOf(name))]).toEqual([name, []])
+    }
+  })
+
   test('via 的挂接资源与文件同前缀，不新增权限码', () => {
     const codes = registry.allPermissionCodes().filter((c) => c.startsWith('sys.file:'))
     expect(codes).toEqual(['sys.file:create', 'sys.file:delete', 'sys.file:read'])
