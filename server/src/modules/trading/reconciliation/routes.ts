@@ -1,14 +1,25 @@
+/**
+ * 销售/采购对账 REST（双边同构，资源名由 spec 按 side 给出）。
+ *
+ * 逐端点挂 `guard(资源, 动作)`（requireAuth 之后、zValidator 之前），
+ * handler 用 `permitOf(c)` 取凭证。工作流动作逐个挂自己的码
+ * （confirm / unconfirm / audit=结单 / void）。
+ * 条目是 via 子资源：`guard(itemResource, 'create'|'update'|'delete')` 由平台解析到母资源动作码。
+ */
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
+import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
+import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
 import type { TradingSide } from '../common.ts'
 import { presentKey } from '../common.ts'
 import type { ReconciliationService } from './service.ts'
+import { reconciliationSpec } from './spec.ts'
 
 const idParam = z.object({ id: z.string().uuid() })
 
@@ -24,22 +35,26 @@ function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
 
 export function reconciliationHeadRoutes(deps: {
   auth: AuthService
+  authz: AuthzEnforcer
   reconciliations: ReconciliationService
   side: TradingSide
 }) {
-  const { auth, reconciliations, side } = deps
+  const { auth, authz, reconciliations, side } = deps
+  const headGuard = (action: string) => authz.guard(reconciliationSpec(side).headResource, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
       '/query',
+      headGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await reconciliations.listHeads(c.get('actor'), side, toList(c.req.valid('json')))
+        const r = await reconciliations.listHeads(permitOf(c), side, toList(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )
     .post(
       '/',
+      headGuard('create'),
       zValidator(
         'json',
         z
@@ -59,7 +74,7 @@ export function reconciliationHeadRoutes(deps: {
       async (c) => {
         const body = c.req.valid('json')
         return c.json(
-          await reconciliations.createHead(c.get('actor'), side, {
+          await reconciliations.createHead(permitOf(c), side, {
             companyId: body.companyId,
             no: body.reconciliationNo,
             kind: body.reconciliationType,
@@ -75,11 +90,13 @@ export function reconciliationHeadRoutes(deps: {
     )
     .get(
       '/:id',
+      headGuard('read'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(await reconciliations.getHead(c.get('actor'), side, c.req.valid('param').id)),
+      async (c) => c.json(await reconciliations.getHead(permitOf(c), side, c.req.valid('param').id)),
     )
     .patch(
       '/:id',
+      headGuard('update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -100,7 +117,7 @@ export function reconciliationHeadRoutes(deps: {
         const raw = (await c.req.json()) as Record<string, unknown>
         const body = c.req.valid('json')
         return c.json(
-          await reconciliations.updateHead(c.get('actor'), side, c.req.valid('param').id, {
+          await reconciliations.updateHead(permitOf(c), side, c.req.valid('param').id, {
             no: body.reconciliationNo,
             kind: body.reconciliationType,
             partyType: body.partyType,
@@ -115,25 +132,29 @@ export function reconciliationHeadRoutes(deps: {
     )
     .delete(
       '/:id',
+      headGuard('delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        await reconciliations.deleteHead(c.get('actor'), side, c.req.valid('param').id)
+        await reconciliations.deleteHead(permitOf(c), side, c.req.valid('param').id)
         return c.body(null, 204)
       },
     )
     .post(
       '/:id/confirm',
+      headGuard('confirm'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(await reconciliations.confirm(c.get('actor'), side, c.req.valid('param').id)),
+      async (c) => c.json(await reconciliations.confirm(permitOf(c), side, c.req.valid('param').id)),
     )
     .post(
       '/:id/unconfirm',
+      headGuard('unconfirm'),
       zValidator('param', idParam, validationHook),
       async (c) =>
-        c.json(await reconciliations.unconfirm(c.get('actor'), side, c.req.valid('param').id)),
+        c.json(await reconciliations.unconfirm(permitOf(c), side, c.req.valid('param').id)),
     )
     .post(
       '/:id/audit',
+      headGuard('audit'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         let postingDate: string | null | undefined
@@ -150,7 +171,7 @@ export function reconciliationHeadRoutes(deps: {
           }
         }
         return c.json(
-          await reconciliations.audit(c.get('actor'), side, c.req.valid('param').id, {
+          await reconciliations.audit(permitOf(c), side, c.req.valid('param').id, {
             postingDate,
           }),
         )
@@ -158,29 +179,34 @@ export function reconciliationHeadRoutes(deps: {
     )
     .post(
       '/:id/void',
+      headGuard('void'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(await reconciliations.void(c.get('actor'), side, c.req.valid('param').id)),
+      async (c) => c.json(await reconciliations.void(permitOf(c), side, c.req.valid('param').id)),
     )
 }
 
 export function reconciliationItemRoutes(deps: {
   auth: AuthService
+  authz: AuthzEnforcer
   reconciliations: ReconciliationService
   side: TradingSide
 }) {
-  const { auth, reconciliations, side } = deps
+  const { auth, authz, reconciliations, side } = deps
+  const itemGuard = (action: string) => authz.guard(reconciliationSpec(side).itemResource, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
       '/query',
+      itemGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await reconciliations.listItems(c.get('actor'), side, toList(c.req.valid('json')))
+        const r = await reconciliations.listItems(permitOf(c), side, toList(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )
     .post(
       '/',
+      itemGuard('create'),
       zValidator(
         'json',
         z
@@ -196,15 +222,17 @@ export function reconciliationItemRoutes(deps: {
           .strict(),
         validationHook,
       ),
-      async (c) => c.json(await reconciliations.createItem(c.get('actor'), side, c.req.valid('json')), 201),
+      async (c) => c.json(await reconciliations.createItem(permitOf(c), side, c.req.valid('json')), 201),
     )
     .get(
       '/:id',
+      itemGuard('read'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(await reconciliations.getItem(c.get('actor'), side, c.req.valid('param').id)),
+      async (c) => c.json(await reconciliations.getItem(permitOf(c), side, c.req.valid('param').id)),
     )
     .patch(
       '/:id',
+      itemGuard('update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -224,7 +252,7 @@ export function reconciliationItemRoutes(deps: {
         const raw = (await c.req.json()) as Record<string, unknown>
         const body = c.req.valid('json')
         return c.json(
-          await reconciliations.updateItem(c.get('actor'), side, c.req.valid('param').id, {
+          await reconciliations.updateItem(permitOf(c), side, c.req.valid('param').id, {
             idx: body.idx,
             qty: body.qty,
             deliveryItemId: body.deliveryItemId,
@@ -241,9 +269,10 @@ export function reconciliationItemRoutes(deps: {
     )
     .delete(
       '/:id',
+      itemGuard('delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        await reconciliations.deleteItem(c.get('actor'), side, c.req.valid('param').id)
+        await reconciliations.deleteItem(permitOf(c), side, c.req.valid('param').id)
         return c.body(null, 204)
       },
     )

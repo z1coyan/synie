@@ -4,11 +4,31 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
+import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
+import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { dateOnlySchema, decimalStringSchema, listQuerySchema, validationHook } from '~/platform/http/zod.ts'
 import { presentKey } from '../common.ts'
 import type { FulfillmentService } from './service.ts'
+import { fulfillmentSpec, PACK_BOX_RESOURCE, PACK_LINE_RESOURCE } from './spec.ts'
+
+export interface FulfillmentRouteDeps {
+  auth: AuthService
+  authz: AuthzEnforcer
+  fulfillment: FulfillmentService
+}
+
+/**
+ * 聚合草稿整单替换的码级门控：一次 PUT 可同时新增/修改/删除子树，
+ * 故要求 `update` ∧ `create` ∧ `delete`（附加码由 prefix 拼，不写字面量）。
+ */
+function aggregateReplaceGuard(authz: AuthzEnforcer, headResource: string) {
+  const { prefix } = authz.targetOf(headResource)
+  return authz.guard(headResource, 'update', {
+    allOf: [`${prefix}:create`, `${prefix}:delete`],
+  })
+}
 
 const idParam = z.object({ id: z.string().uuid() })
 
@@ -167,107 +187,138 @@ function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
   }
 }
 
-export function salesFulfillmentHeadRoutes(deps: {
-  auth: AuthService
-  fulfillment: FulfillmentService
-}) {
-  const { auth, fulfillment } = deps
+export function salesFulfillmentHeadRoutes(deps: FulfillmentRouteDeps) {
+  const { auth, authz, fulfillment } = deps
+  const RESOURCE = fulfillmentSpec('sales').headResource
+  const headGuard = (action: string) => authz.guard(RESOURCE, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const r = await fulfillment.listHeads(c.get('actor'), 'sales', toList(c.req.valid('json')))
-      return c.json({ count: r.count, results: r.results })
-    })
+    .post(
+      '/query',
+      headGuard('read'),
+      zValidator('json', listQuerySchema, validationHook),
+      async (c) => {
+        const r = await fulfillment.listHeads(permitOf(c), 'sales', toList(c.req.valid('json')))
+        return c.json({ count: r.count, results: r.results })
+      },
+    )
     .post(
       '/',
+      headGuard('create'),
       zValidator('json', salesDraftCreateSchema, draftValidationHook),
       async (c) =>
         c.json(
           await fulfillment.createSalesDraft(
-            c.get('actor'),
+            permitOf(c),
             toSalesDraftInput(c.req.valid('json')),
           ),
           201,
         ),
     )
     // 完整聚合草稿读取（无分页截断）；须在 /:id 之前注册更具体路径
-    .get('/:id/draft', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await fulfillment.getSalesDraft(c.get('actor'), c.req.valid('param').id)),
+    .get(
+      '/:id/draft',
+      headGuard('read'),
+      zValidator('param', idParam, validationHook),
+      async (c) => c.json(await fulfillment.getSalesDraft(permitOf(c), c.req.valid('param').id)),
     )
-    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await fulfillment.getHead(c.get('actor'), 'sales', c.req.valid('param').id)),
+    .get(
+      '/:id',
+      headGuard('read'),
+      zValidator('param', idParam, validationHook),
+      async (c) => c.json(await fulfillment.getHead(permitOf(c), 'sales', c.req.valid('param').id)),
     )
     .put(
       '/:id',
+      aggregateReplaceGuard(authz, RESOURCE),
       zValidator('param', idParam, validationHook),
       zValidator('json', salesDraftReplaceSchema, draftValidationHook),
       async (c) =>
         c.json(
           await fulfillment.replaceSalesDraft(
-            c.get('actor'),
+            permitOf(c),
             c.req.valid('param').id,
             toSalesDraftInput(c.req.valid('json')),
           ),
         ),
     )
-    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      await fulfillment.deleteHead(c.get('actor'), 'sales', c.req.valid('param').id)
-      return c.body(null, 204)
-    })
-    .post('/:id/audit', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await fulfillment.auditHead(c.get('actor'), 'sales', c.req.valid('param').id)),
+    .delete(
+      '/:id',
+      headGuard('delete'),
+      zValidator('param', idParam, validationHook),
+      async (c) => {
+        await fulfillment.deleteHead(permitOf(c), 'sales', c.req.valid('param').id)
+        return c.body(null, 204)
+      },
     )
-    .post('/:id/void', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await fulfillment.voidHead(c.get('actor'), 'sales', c.req.valid('param').id)),
+    .post(
+      '/:id/audit',
+      headGuard('audit'),
+      zValidator('param', idParam, validationHook),
+      async (c) => c.json(await fulfillment.auditHead(permitOf(c), 'sales', c.req.valid('param').id)),
+    )
+    .post(
+      '/:id/void',
+      headGuard('void'),
+      zValidator('param', idParam, validationHook),
+      async (c) => c.json(await fulfillment.voidHead(permitOf(c), 'sales', c.req.valid('param').id)),
     )
 }
 
-export function purchaseFulfillmentHeadRoutes(deps: {
-  auth: AuthService
-  fulfillment: FulfillmentService
-}) {
-  const { auth, fulfillment } = deps
+export function purchaseFulfillmentHeadRoutes(deps: FulfillmentRouteDeps) {
+  const { auth, authz, fulfillment } = deps
   const side = 'purchase'
+  const RESOURCE = fulfillmentSpec(side).headResource
+  const headGuard = (action: string) => authz.guard(RESOURCE, action)
   const numberKey = 'receiptNo'
   const dateKey = 'receiptDate'
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const r = await fulfillment.listHeads(c.get('actor'), side, toList(c.req.valid('json')))
-      return c.json({ count: r.count, results: r.results })
-    })
+    .post(
+      '/query',
+      headGuard('read'),
+      zValidator('json', listQuerySchema, validationHook),
+      async (c) => {
+        const r = await fulfillment.listHeads(permitOf(c), side, toList(c.req.valid('json')))
+        return c.json({ count: r.count, results: r.results })
+      },
+    )
     .post(
       '/',
+      headGuard('create'),
       zValidator('json', purchaseReceiptDraftCreateSchema, draftValidationHook),
       async (c) =>
         c.json(
           await fulfillment.createPurchaseReceiptDraft(
-            c.get('actor'),
+            permitOf(c),
             toPurchaseReceiptDraftInput(c.req.valid('json')),
           ),
           201,
         ),
     )
     // 完整聚合草稿读取（无分页截断）
-    .get('/:id/draft', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(
-        await fulfillment.getPurchaseReceiptDraft(
-          c.get('actor'),
-          c.req.valid('param').id,
-        ),
-      ),
+    .get(
+      '/:id/draft',
+      headGuard('read'),
+      zValidator('param', idParam, validationHook),
+      async (c) =>
+        c.json(await fulfillment.getPurchaseReceiptDraft(permitOf(c), c.req.valid('param').id)),
     )
-    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await fulfillment.getHead(c.get('actor'), side, c.req.valid('param').id)),
+    .get(
+      '/:id',
+      headGuard('read'),
+      zValidator('param', idParam, validationHook),
+      async (c) => c.json(await fulfillment.getHead(permitOf(c), side, c.req.valid('param').id)),
     )
     .put(
       '/:id',
+      aggregateReplaceGuard(authz, RESOURCE),
       zValidator('param', idParam, validationHook),
       zValidator('json', purchaseReceiptDraftReplaceSchema, draftValidationHook),
       async (c) =>
         c.json(
           await fulfillment.replacePurchaseReceiptDraft(
-            c.get('actor'),
+            permitOf(c),
             c.req.valid('param').id,
             toPurchaseReceiptDraftInput(c.req.valid('json')),
           ),
@@ -275,6 +326,7 @@ export function purchaseFulfillmentHeadRoutes(deps: {
     )
     .patch(
       '/:id',
+      headGuard('update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -297,7 +349,7 @@ export function purchaseFulfillmentHeadRoutes(deps: {
         const raw = (await c.req.json()) as Record<string, unknown>
         const body = c.req.valid('json') as Record<string, unknown>
         return c.json(
-          await fulfillment.updatePurchaseHead(c.get('actor'), c.req.valid('param').id, {
+          await fulfillment.updatePurchaseHead(permitOf(c), c.req.valid('param').id, {
             no: body[numberKey] as string | undefined,
             documentDate: body[dateKey] as string | undefined,
             postingDate: body.postingDate as string | null | undefined,
@@ -314,31 +366,47 @@ export function purchaseFulfillmentHeadRoutes(deps: {
         )
       },
     )
-    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      await fulfillment.deleteHead(c.get('actor'), side, c.req.valid('param').id)
-      return c.body(null, 204)
-    })
-    .post('/:id/audit', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await fulfillment.auditHead(c.get('actor'), side, c.req.valid('param').id)),
+    .delete(
+      '/:id',
+      headGuard('delete'),
+      zValidator('param', idParam, validationHook),
+      async (c) => {
+        await fulfillment.deleteHead(permitOf(c), side, c.req.valid('param').id)
+        return c.body(null, 204)
+      },
     )
-    .post('/:id/void', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await fulfillment.voidHead(c.get('actor'), side, c.req.valid('param').id)),
+    .post(
+      '/:id/audit',
+      headGuard('audit'),
+      zValidator('param', idParam, validationHook),
+      async (c) => c.json(await fulfillment.auditHead(permitOf(c), side, c.req.valid('param').id)),
+    )
+    .post(
+      '/:id/void',
+      headGuard('void'),
+      zValidator('param', idParam, validationHook),
+      async (c) => c.json(await fulfillment.voidHead(permitOf(c), side, c.req.valid('param').id)),
     )
 }
 
-export function purchaseFulfillmentItemRoutes(deps: {
-  auth: AuthService
-  fulfillment: FulfillmentService
-}) {
-  const { auth, fulfillment } = deps
+export function purchaseFulfillmentItemRoutes(deps: FulfillmentRouteDeps) {
+  const { auth, authz, fulfillment } = deps
+  // 条目是 via 子资源：guard 解析到母资源（purReceipts）的动作码
+  const itemGuard = (action: string) => authz.guard(fulfillmentSpec('purchase').itemResource, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const r = await fulfillment.listItems(c.get('actor'), 'purchase', toList(c.req.valid('json')))
-      return c.json({ count: r.count, results: r.results })
-    })
+    .post(
+      '/query',
+      itemGuard('read'),
+      zValidator('json', listQuerySchema, validationHook),
+      async (c) => {
+        const r = await fulfillment.listItems(permitOf(c), 'purchase', toList(c.req.valid('json')))
+        return c.json({ count: r.count, results: r.results })
+      },
+    )
     .post(
       '/',
+      itemGuard('create'),
       zValidator(
         'json',
         z
@@ -357,7 +425,7 @@ export function purchaseFulfillmentItemRoutes(deps: {
       async (c) => {
         const body = c.req.valid('json') as Record<string, unknown>
         return c.json(
-          await fulfillment.createPurchaseItem(c.get('actor'), {
+          await fulfillment.createPurchaseItem(permitOf(c), {
             receiptId: body.receiptId as string,
             idx: body.idx as number,
             qty: body.qty as string,
@@ -370,11 +438,16 @@ export function purchaseFulfillmentItemRoutes(deps: {
         )
       },
     )
-    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await fulfillment.getItem(c.get('actor'), 'purchase', c.req.valid('param').id)),
+    .get(
+      '/:id',
+      itemGuard('read'),
+      zValidator('param', idParam, validationHook),
+      async (c) =>
+        c.json(await fulfillment.getItem(permitOf(c), 'purchase', c.req.valid('param').id)),
     )
     .patch(
       '/:id',
+      itemGuard('update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -393,7 +466,7 @@ export function purchaseFulfillmentItemRoutes(deps: {
       async (c) => {
         const raw = (await c.req.json()) as Record<string, unknown>
         return c.json(
-          await fulfillment.updatePurchaseItem(c.get('actor'), c.req.valid('param').id, {
+          await fulfillment.updatePurchaseItem(permitOf(c), c.req.valid('param').id, {
             ...c.req.valid('json'),
             unitIdPresent: presentKey(raw, 'unitId'),
             warehouseIdPresent: presentKey(raw, 'warehouseId'),
@@ -402,50 +475,80 @@ export function purchaseFulfillmentItemRoutes(deps: {
         )
       },
     )
-    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      await fulfillment.deletePurchaseItem(c.get('actor'), c.req.valid('param').id)
-      return c.body(null, 204)
-    })
-}
-
-export function salesFulfillmentItemRoutes(deps: {
-  auth: AuthService
-  fulfillment: FulfillmentService
-}) {
-  const { auth, fulfillment } = deps
-  return new Hono<AppEnv>()
-    .use('*', requireAuth(auth))
-    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const r = await fulfillment.listItems(c.get('actor'), 'sales', toList(c.req.valid('json')))
-      return c.json({ count: r.count, results: r.results })
-    })
-    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await fulfillment.getItem(c.get('actor'), 'sales', c.req.valid('param').id)),
+    .delete(
+      '/:id',
+      itemGuard('delete'),
+      zValidator('param', idParam, validationHook),
+      async (c) => {
+        await fulfillment.deletePurchaseItem(permitOf(c), c.req.valid('param').id)
+        return c.body(null, 204)
+      },
     )
 }
 
-export function packBoxRoutes(deps: { auth: AuthService; fulfillment: FulfillmentService }) {
-  const { auth, fulfillment } = deps
+export function salesFulfillmentItemRoutes(deps: FulfillmentRouteDeps) {
+  const { auth, authz, fulfillment } = deps
+  // 聚合草稿的子资源只读：写由整单 PUT 承担
+  const itemGuard = (action: string) => authz.guard(fulfillmentSpec('sales').itemResource, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const r = await fulfillment.listPackBoxes(c.get('actor'), toList(c.req.valid('json')))
-      return c.json({ count: r.count, results: r.results })
-    })
-    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await fulfillment.getPackBox(c.get('actor'), c.req.valid('param').id)),
+    .post(
+      '/query',
+      itemGuard('read'),
+      zValidator('json', listQuerySchema, validationHook),
+      async (c) => {
+        const r = await fulfillment.listItems(permitOf(c), 'sales', toList(c.req.valid('json')))
+        return c.json({ count: r.count, results: r.results })
+      },
+    )
+    .get(
+      '/:id',
+      itemGuard('read'),
+      zValidator('param', idParam, validationHook),
+      async (c) => c.json(await fulfillment.getItem(permitOf(c), 'sales', c.req.valid('param').id)),
     )
 }
 
-export function packLineRoutes(deps: { auth: AuthService; fulfillment: FulfillmentService }) {
-  const { auth, fulfillment } = deps
+export function packBoxRoutes(deps: FulfillmentRouteDeps) {
+  const { auth, authz, fulfillment } = deps
+  const boxGuard = (action: string) => authz.guard(PACK_BOX_RESOURCE, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const r = await fulfillment.listPackLines(c.get('actor'), toList(c.req.valid('json')))
-      return c.json({ count: r.count, results: r.results })
-    })
-    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await fulfillment.getPackLine(c.get('actor'), c.req.valid('param').id)),
+    .post(
+      '/query',
+      boxGuard('read'),
+      zValidator('json', listQuerySchema, validationHook),
+      async (c) => {
+        const r = await fulfillment.listPackBoxes(permitOf(c), toList(c.req.valid('json')))
+        return c.json({ count: r.count, results: r.results })
+      },
+    )
+    .get(
+      '/:id',
+      boxGuard('read'),
+      zValidator('param', idParam, validationHook),
+      async (c) => c.json(await fulfillment.getPackBox(permitOf(c), c.req.valid('param').id)),
+    )
+}
+
+export function packLineRoutes(deps: FulfillmentRouteDeps) {
+  const { auth, authz, fulfillment } = deps
+  const lineGuard = (action: string) => authz.guard(PACK_LINE_RESOURCE, action)
+  return new Hono<AppEnv>()
+    .use('*', requireAuth(auth))
+    .post(
+      '/query',
+      lineGuard('read'),
+      zValidator('json', listQuerySchema, validationHook),
+      async (c) => {
+        const r = await fulfillment.listPackLines(permitOf(c), toList(c.req.valid('json')))
+        return c.json({ count: r.count, results: r.results })
+      },
+    )
+    .get(
+      '/:id',
+      lineGuard('read'),
+      zValidator('param', idParam, validationHook),
+      async (c) => c.json(await fulfillment.getPackLine(permitOf(c), c.req.valid('param').id)),
     )
 }

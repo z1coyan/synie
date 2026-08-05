@@ -9,6 +9,14 @@ import { createDb } from '~/db/index.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import { createInventoryEngine } from '~/engines/inventory/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
+import {
+  ORDER_BYPRODUCT_RESOURCE,
+  ORDER_MATERIAL_RESOURCE,
+} from './order/outsourced-config.ts'
+import { orderSpec } from './order/spec.ts'
+import { quotationSpec } from './quotation/spec.ts'
+import { fulfillmentSpec } from './fulfillment/spec.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createFulfillmentService } from './fulfillment/service.ts'
@@ -26,13 +34,22 @@ const run = url ? describe : describe.skip
 run('PG 集成（物料类型单据准入）', () => {
   const db = createDb(url!)
   const numbering = createNumberingService(db, buildNumberingCatalog(numberingRegistry), numberingRegistry)
-  const quotations = createQuotationService(db, numbering)
-  const outsourcedConfig = createOutsourcedConfigService(db)
-  const orders = createOrderService(db, numbering, quotations, outsourcedConfig.draft)
-  const fulfillment = createFulfillmentService(db, numbering, {
-    inventory: createInventoryEngine(),
-    gl: createGlEngine(),
-  })
+  const quotations = createQuotationService(db, numbering, numberingRegistry)
+  const outsourcedConfig = createOutsourcedConfigService(db, numberingRegistry)
+  const orders = createOrderService(
+    db,
+    numbering,
+    quotations,
+    numberingRegistry,
+    outsourcedConfig.draft,
+  )
+  const fulfillment = createFulfillmentService(
+    db,
+    numbering,
+    { inventory: createInventoryEngine(), gl: createGlEngine() },
+    numberingRegistry,
+  )
+  const authz = createAuthzEnforcer(numberingRegistry)
 
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `MT${suffix}`
@@ -67,6 +84,12 @@ run('PG 集成（物料类型单据准入）', () => {
     permissions: new Set(),
     companyIds: [],
   })
+  /** 服务级凭证现取：本文件只验物料类型准入，权限门控在 HTTP 集成测试 */
+  const permit = (resource: string, action: string) => {
+    const decision = authz.decideFor(actor, resource, action)
+    if (decision.outcome !== 'permit') throw new Error(`夹具应当 permit: ${resource}:${action}`)
+    return decision.permit
+  }
 
   function orderDraftInput(
     side: 'sales' | 'purchase',
@@ -219,7 +242,7 @@ run('PG 集成（物料类型单据准入）', () => {
   })
 
   test('销售报价/销售订单条目拦资产类物料，虚拟类可进', async () => {
-    const quotation = await quotations.createHead(actor, 'sales', {
+    const quotation = await quotations.createHead(permit(quotationSpec('sales').headResource, 'create'), 'sales', {
       companyId,
       quotationNo: `${prefix}-SQ`,
       quotationDate: '2026-07-20',
@@ -229,7 +252,7 @@ run('PG 集成（物料类型单据准入）', () => {
       currencyId,
     })
     await expectValidation(
-      quotations.createItem(actor, 'sales', {
+      quotations.createItem(permit(quotationSpec('sales').itemResource, 'create'), 'sales', {
         quotationId: quotation.id,
         idx: 1,
         materialId: assetMaterialId,
@@ -239,7 +262,7 @@ run('PG 集成（物料类型单据准入）', () => {
       }),
       '资产类物料不能进该单据',
     )
-    const virtualItem = await quotations.createItem(actor, 'sales', {
+    const virtualItem = await quotations.createItem(permit(quotationSpec('sales').itemResource, 'create'), 'sales', {
       quotationId: quotation.id,
       idx: 2,
       materialId: virtualMaterialId,
@@ -250,11 +273,11 @@ run('PG 集成（物料类型单据准入）', () => {
     expect(virtualItem.materialId).toBe(virtualMaterialId)
 
     await expectValidation(
-      orders.createDraft(actor, 'sales', orderDraftInput('sales', `${prefix}-SO-A`, assetMaterialId, false)),
+      orders.createDraft(permit(orderSpec('sales').headResource, 'create'), 'sales', orderDraftInput('sales', `${prefix}-SO-A`, assetMaterialId, false)),
       '资产类物料不能进该单据',
     )
     const virtualOrder = await orders.createDraft(
-      actor,
+      permit(orderSpec('sales').headResource, 'create'),
       'sales',
       orderDraftInput('sales', `${prefix}-SO-V`, virtualMaterialId, false),
     )
@@ -263,17 +286,17 @@ run('PG 集成（物料类型单据准入）', () => {
 
   test('委外采购订单条目与发料/副产物清单限库存类，普通采购订单放行资产类', async () => {
     await expectValidation(
-      orders.createDraft(actor, 'purchase', orderDraftInput('purchase', `${prefix}-PO-OS-V`, virtualMaterialId, true)),
+      orders.createDraft(permit(orderSpec('purchase').headResource, 'create'), 'purchase', orderDraftInput('purchase', `${prefix}-PO-OS-V`, virtualMaterialId, true)),
       '仅库存类物料可进该单据',
     )
     await expectValidation(
-      orders.createDraft(actor, 'purchase', orderDraftInput('purchase', `${prefix}-PO-OS-A`, assetMaterialId, true)),
+      orders.createDraft(permit(orderSpec('purchase').headResource, 'create'), 'purchase', orderDraftInput('purchase', `${prefix}-PO-OS-A`, assetMaterialId, true)),
       '仅库存类物料可进该单据',
     )
 
     // 普通采购订单条目三类皆可
     const regular = await orders.createDraft(
-      actor,
+      permit(orderSpec('purchase').headResource, 'create'),
       'purchase',
       orderDraftInput('purchase', `${prefix}-PO-REG-A`, assetMaterialId, false),
     )
@@ -281,13 +304,13 @@ run('PG 集成（物料类型单据准入）', () => {
 
     // 委外订单（库存类条目）挂虚拟/资产发料清单行被拦
     const outsourced = await orders.createDraft(
-      actor,
+      permit(orderSpec('purchase').headResource, 'create'),
       'purchase',
       orderDraftInput('purchase', `${prefix}-PO-OS-OK`, stockMaterialId, true),
     )
     const orderItemId = outsourced.items[0]!.id
     await expectValidation(
-      outsourcedConfig.createMaterial(actor, {
+      outsourcedConfig.createMaterial(permit(ORDER_MATERIAL_RESOURCE, 'create'), {
         orderItemId,
         materialId: virtualMaterialId,
         unitId,
@@ -296,7 +319,7 @@ run('PG 集成（物料类型单据准入）', () => {
       '仅库存类物料可进该单据',
     )
     await expectValidation(
-      outsourcedConfig.createByproduct(actor, {
+      outsourcedConfig.createByproduct(permit(ORDER_BYPRODUCT_RESOURCE, 'create'), {
         orderItemId,
         materialId: assetMaterialId,
         unitId,
@@ -304,7 +327,7 @@ run('PG 集成（物料类型单据准入）', () => {
       }),
       '仅库存类物料可进该单据',
     )
-    const issueLine = await outsourcedConfig.createMaterial(actor, {
+    const issueLine = await outsourcedConfig.createMaterial(permit(ORDER_MATERIAL_RESOURCE, 'create'), {
       orderItemId,
       materialId: stockMaterialId,
       unitId,
@@ -315,7 +338,7 @@ run('PG 集成（物料类型单据准入）', () => {
 
   test('销售发货行拦资产类；虚拟类行行仓可空、审核不落库存分录但已发数量照累加', async () => {
     await expectValidation(
-      fulfillment.createSalesDraft(actor, {
+      fulfillment.createSalesDraft(permit(fulfillmentSpec('sales').headResource, 'create'), {
         companyId,
         no: `${prefix}-SD-A`,
         documentDate: '2026-07-25',
@@ -330,7 +353,7 @@ run('PG 集成（物料类型单据准入）', () => {
       '资产类物料不能进该单据',
     )
 
-    const draft = await fulfillment.createSalesDraft(actor, {
+    const draft = await fulfillment.createSalesDraft(permit(fulfillmentSpec('sales').headResource, 'create'), {
       companyId,
       no: `${prefix}-SD-V`,
       documentDate: '2026-07-25',
@@ -344,7 +367,7 @@ run('PG 集成（物料类型单据准入）', () => {
     })
     expect(draft.items[0]?.warehouseId).toBeNull()
 
-    const audited = await fulfillment.auditHead(actor, 'sales', draft.id)
+    const audited = await fulfillment.auditHead(permit(fulfillmentSpec('sales').headResource, 'audit'), 'sales', draft.id)
     expect(audited.status).toBe('AUDITED')
     const entries = await sql<{ n: string }>`
       SELECT count(*)::text AS n FROM inv_stock_entry
@@ -357,7 +380,7 @@ run('PG 集成（物料类型单据准入）', () => {
     expect(projection.rows[0]?.qty).toBe('5')
 
     // 作废：无库存分录可回滚，投影回退
-    const voided = await fulfillment.voidHead(actor, 'sales', draft.id)
+    const voided = await fulfillment.voidHead(permit(fulfillmentSpec('sales').headResource, 'void'), 'sales', draft.id)
     expect(voided.status).toBe('VOIDED')
     const afterVoid = await sql<{ qty: string }>`
       SELECT shipped_qty::text AS qty FROM sal_order_item WHERE id=${salesVirtualItemId}::uuid
@@ -367,7 +390,9 @@ run('PG 集成（物料类型单据准入）', () => {
 
   test('采购入库库存类行仓必填；含资产类行审核后仅库存类落库存分录、已收数量照累加', async () => {
     await expectValidation(
-      fulfillment.createPurchaseReceiptDraft(actor, {
+      fulfillment.createPurchaseReceiptDraft(
+      permit(fulfillmentSpec('purchase').headResource, 'create'),
+      {
         companyId,
         no: `${prefix}-PR-NOWH`,
         documentDate: '2026-07-25',
@@ -381,7 +406,9 @@ run('PG 集成（物料类型单据准入）', () => {
       '库存类物料必须填写行仓',
     )
 
-    const draft = await fulfillment.createPurchaseReceiptDraft(actor, {
+    const draft = await fulfillment.createPurchaseReceiptDraft(
+      permit(fulfillmentSpec('purchase').headResource, 'create'),
+      {
       companyId,
       no: `${prefix}-PR-MIX`,
       documentDate: '2026-07-25',
@@ -397,7 +424,7 @@ run('PG 集成（物料类型单据准入）', () => {
     })
     expect(draft.items[1]?.warehouseId).toBeNull()
 
-    const audited = await fulfillment.auditHead(actor, 'purchase', draft.id)
+    const audited = await fulfillment.auditHead(permit(fulfillmentSpec('purchase').headResource, 'audit'), 'purchase', draft.id)
     expect(audited.status).toBe('AUDITED')
     const entries = await sql<{ material_id: string; quantity: string }>`
       SELECT material_id, quantity::text FROM inv_stock_entry
@@ -415,7 +442,7 @@ run('PG 集成（物料类型单据准入）', () => {
     expect(projections.rows[1]?.qty).toBe('3')
 
     // 作废：只回滚已写的库存分录，投影全量回退
-    const voided = await fulfillment.voidHead(actor, 'purchase', draft.id)
+    const voided = await fulfillment.voidHead(permit(fulfillmentSpec('purchase').headResource, 'void'), 'purchase', draft.id)
     expect(voided.status).toBe('VOIDED')
     const liveEntries = await sql<{ n: string }>`
       SELECT count(*)::text AS n FROM inv_stock_entry

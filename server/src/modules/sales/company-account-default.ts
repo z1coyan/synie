@@ -1,3 +1,11 @@
+/**
+ * 公司默认过账科目（一公司一行四槽）。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、单条 `loadAuthorized`（不命中一律 not_found）、
+ * 创建 `assertCompanyWritable`。动作码沿用共享前缀 `sales.setting` 的 read/update，
+ * 创建端点按现状由 update 门控（不新增权限码）。
+ */
 import type { ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
@@ -9,15 +17,15 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import {
-  canAccessCompany,
-  hasPermission,
-  type Actor,
-} from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import type { ResourceMeta } from '~/platform/meta/types.ts'
+import { compileRowFilter } from '~/db/authz-sql.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { ident } from '~/db/ident.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
 
 export interface CompanyAccountDefault {
   id: string
@@ -30,6 +38,15 @@ export interface CompanyAccountDefault {
   updatedAt: Date
 }
 
+export const DEFAULT_RESOURCE = 'salCompanyAccountDefaults'
+
+const TABLE = 'sal_company_account_default'
+
+/** 列表与单条共用同一份投影（alias 与 source 逐字一致） */
+const DEFAULT_SOURCE = sql` FROM sal_company_account_default`
+const DEFAULT_SELECT = sql`SELECT id,company_id,delivery_debit_account_id,delivery_credit_account_id,
+receipt_debit_account_id,receipt_credit_account_id,inserted_at,updated_at`
+
 const AUDIT = auditFieldsOf(companyAccountDefaultMeta())
 
 export function companyAccountDefaultMeta(): ResourceMeta {
@@ -37,7 +54,7 @@ export function companyAccountDefaultMeta(): ResourceMeta {
   const accountResource = 'basAccounts'
   const nameField = 'name'
   return {
-    name: 'salCompanyAccountDefaults',
+    name: DEFAULT_RESOURCE,
     classification: { presentation: 'none', interactive: false, note: '公司科目默认只读投影 / 嵌入设置' },
     permissionPrefix: 'sales.setting',
     permissionLabel: '供应链设置',
@@ -121,9 +138,12 @@ export function companyAccountDefaultMeta(): ResourceMeta {
         ref: { resource: accountResource, relation: 'receiptCreditAccount', labelField: nameField },
       },
     ],
-    // 旧资源 permission_actions 为空：权限目录复用 sales.setting，
-    // Grid 不暴露通用 CRUD capabilities，设置页用专用保存入口。
-    actions: [],
+    // 权限目录复用共享前缀 sales.setting（salSettings 已声明同两码）：此处声明只为
+    // 让 guard 有唯一动作事实源，不新增任何权限码；创建端点沿用 update 门控。
+    actions: [
+      { key: 'read', label: '查看', scope: 'both' },
+      { key: 'update', label: '编辑', scope: 'row' },
+    ],
     form: {
       exclude: ['id', 'insertedAt', 'updatedAt'],
       fields: { companyId: { required: true, edit: 'createOnly' } },
@@ -132,30 +152,29 @@ export function companyAccountDefaultMeta(): ResourceMeta {
   }
 }
 
-export function createCompanyAccountDefaultService(db: Kysely<Database>) {
-  async function get(actor: Actor, id: string): Promise<CompanyAccountDefault> {
-    requireRead(actor)
-    const row = await db
-      .selectFrom('sal_company_account_default')
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst()
-    if (!row || !canAccessCompany(actor, row.company_id)) {
-      throw new ApiError('not_found', '公司默认过账科目不存在')
-    }
-    return mapRow(row)
+export function createCompanyAccountDefaultService(db: Kysely<Database>, registry: Registry) {
+  const target = registry.authzTarget(DEFAULT_RESOURCE)
+
+  async function get(permit: Permit, id: string): Promise<CompanyAccountDefault> {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target,
+      table: TABLE,
+      id,
+      notFoundMessage: '公司默认过账科目不存在',
+    })
+    return mapRow(row as never)
   }
 
-  async function getByCompany(actor: Actor, companyId: string): Promise<CompanyAccountDefault> {
-    requireRead(actor)
-    if (!canAccessCompany(actor, companyId)) {
-      throw new ApiError('not_found', '公司默认过账科目不存在')
-    }
-    const row = await db
-      .selectFrom('sal_company_account_default')
-      .selectAll()
-      .where('company_id', '=', companyId)
-      .executeTakeFirst()
+  async function getByCompany(permit: Permit, companyId: string): Promise<CompanyAccountDefault> {
+    // 按公司取单行：行过滤即公司边界，未授权公司与「尚未配置」同样落到空壳（不泄露存在性）
+    const where = compileRowFilter(permit, target, TABLE)
+    const found = await sql<Record<string, unknown>>`
+      ${DEFAULT_SELECT}${DEFAULT_SOURCE}
+      WHERE ${ident(TABLE)}.company_id = ${companyId}::uuid AND ${where}
+    `.execute(db)
+    const row = found.rows[0]
     // 无配置时返回空壳（对齐 Go GetCompanyAccountDefaults：id 空、科目空、公司保留）
     if (!row) {
       return {
@@ -169,28 +188,26 @@ export function createCompanyAccountDefaultService(db: Kysely<Database>) {
         updatedAt: new Date(0),
       }
     }
-    return mapRow(row)
+    return mapRow(row as never)
   }
 
-  async function list(actor: Actor, query: Partial<ListQuery>) {
-    requireRead(actor)
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as CompanyAccountDefault[] }
-    return listFromSource({
+  async function list(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target,
+      alias: TABLE,
       resource: companyAccountDefaultMeta(),
-      source: sql` FROM sal_company_account_default`,
-      select: sql`SELECT id,company_id,delivery_debit_account_id,delivery_credit_account_id,
-receipt_debit_account_id,receipt_credit_account_id,inserted_at,updated_at`,
+      source: DEFAULT_SOURCE,
+      select: DEFAULT_SELECT,
       defaultOrder: sql`"company_id" ASC, "id" ASC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapRow(r as never),
     })
   }
 
   async function create(
-    actor: Actor,
+    permit: Permit,
     input: {
       companyId: string
       deliveryDebitAccountId?: string | null
@@ -199,13 +216,11 @@ receipt_debit_account_id,receipt_credit_account_id,inserted_at,updated_at`,
       receiptCreditAccountId?: string | null
     },
   ): Promise<CompanyAccountDefault> {
-    requireUpdate(actor)
+    // 入参校验（400）先于公司边界（404）
     if (!input.companyId) {
       throw ApiError.validation('公司默认过账科目参数不合法', { companyId: ['必填'] })
     }
-    if (!canAccessCompany(actor, input.companyId)) {
-      throw new ApiError('not_found', '公司默认过账科目不存在')
-    }
+    assertCompanyWritable(permit, input.companyId)
     return withTx(db, async (trx) => {
       await validateCompany(trx, input.companyId)
       const item: Omit<CompanyAccountDefault, 'id' | 'insertedAt' | 'updatedAt'> & {
@@ -231,7 +246,7 @@ receipt_debit_account_id,receipt_credit_account_id,inserted_at,updated_at`,
           .returningAll()
           .executeTakeFirstOrThrow()
         const created = mapRow(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'sal_company_account_default',
           recordId: created.id,
           recordLabel: created.companyId,
@@ -250,7 +265,7 @@ receipt_debit_account_id,receipt_credit_account_id,inserted_at,updated_at`,
   }
 
   async function update(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       deliveryDebitAccountId?: string | null
@@ -263,18 +278,18 @@ receipt_debit_account_id,receipt_credit_account_id,inserted_at,updated_at`,
       receiptCreditPresent?: boolean
     },
   ): Promise<CompanyAccountDefault> {
-    requireUpdate(actor)
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('sal_company_account_default')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked || !canAccessCompany(actor, locked.company_id)) {
-        throw new ApiError('not_found', '公司默认过账科目不存在')
-      }
-      const before = mapRow(locked)
+      // 锁行 + 公司闸折叠为一次授权取行
+      const locked = await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '公司默认过账科目不存在',
+      })
+      const before = mapRow(locked as never)
       const after: CompanyAccountDefault = {
         ...before,
         deliveryDebitAccountId: input.deliveryDebitPresent
@@ -307,7 +322,7 @@ receipt_debit_account_id,receipt_credit_account_id,inserted_at,updated_at`,
           .returningAll()
           .executeTakeFirstOrThrow()
         const updated = mapRow(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'sal_company_account_default',
           recordId: updated.id,
           recordLabel: updated.companyId,
@@ -329,18 +344,6 @@ receipt_debit_account_id,receipt_credit_account_id,inserted_at,updated_at`,
 }
 
 export type CompanyAccountDefaultService = ReturnType<typeof createCompanyAccountDefaultService>
-
-function requireRead(actor: Actor) {
-  if (!hasPermission(actor, 'sales.setting:read')) {
-    throw new ApiError('forbidden', '无权限维护公司默认过账科目')
-  }
-}
-
-function requireUpdate(actor: Actor) {
-  if (!hasPermission(actor, 'sales.setting:update')) {
-    throw new ApiError('forbidden', '无权限维护公司默认过账科目')
-  }
-}
 
 async function validateCompany(trx: DbHandle, companyId: string) {
   const row = await trx

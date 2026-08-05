@@ -1,6 +1,11 @@
 /**
  * 委外发料 / 委外入库：完整 CRUD、审核（库存+投影+总账）、作废回滚、比例带出材料/副产物。
  * 行为对齐 server-go/internal/domain/fulfillment/outsourced。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、单条投影 `loadAuthorizedFrom`、写前取行 `loadAuthorized`（不命中一律
+ * not_found）、create 走 `assertCompanyWritable`。子行/材料/副产物经 via 链递归到母单谓词
+ * （材料/副产物是两级 via）。状态前置条件（草稿才能改等）是领域不变量，留在本文件抛 conflict。
  */
 import type { ListQuery } from '@synie/shared'
 import { decimal } from '@synie/shared'
@@ -17,10 +22,12 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf, mergeAuditFields } from '~/platform/audit/spec.ts'
-import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { assertCompanyWritable, loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
 import { mapWriteError as mapWriteErrorBase } from '~/db/dberr.ts'
 
 function mapWriteError(err: unknown, label: string): never {
@@ -38,7 +45,6 @@ import {
   loadMaterialSnap,
   lowerParty,
   partyExists,
-  requirePerm,
   runeLen,
   toDateOnly,
   upperStatus,
@@ -76,6 +82,7 @@ export {
   outsourcedReceiptItemByproductMeta,
 } from './meta.ts'
 
+/** 单据编号资源键（numbering 与库存/总账凭证类型沿用同一串，非权限码） */
 const ISSUE_PREFIX = 'purchase.outsourced_issue'
 const RECEIPT_PREFIX = 'purchase.outsourced_receipt'
 const ISSUE_TABLE = 'pur_outsourced_issue'
@@ -84,6 +91,72 @@ const RECEIPT_TABLE = 'pur_outsourced_receipt'
 const RECEIPT_ITEM_TABLE = 'pur_outsourced_receipt_item'
 const MATERIAL_TABLE = 'pur_outsourced_receipt_item_material'
 const BYPRODUCT_TABLE = 'pur_outsourced_receipt_item_byproduct'
+
+/** 判定资源名（路由 guard 与服务共用一处常量，不写裸字面量） */
+export const ISSUE_RESOURCE = 'purOutsourcedIssues'
+export const ISSUE_ITEM_RESOURCE = 'purOutsourcedIssueItems'
+export const RECEIPT_RESOURCE = 'purOutsourcedReceipts'
+export const RECEIPT_ITEM_RESOURCE = 'purOutsourcedReceiptItems'
+export const RECEIPT_MATERIAL_RESOURCE = 'purOutsourcedReceiptItemMaterials'
+export const RECEIPT_BYPRODUCT_RESOURCE = 'purOutsourcedReceiptItemByproducts'
+
+const ISSUE_LABEL = '委外发料单'
+const ISSUE_ITEM_LABEL = '委外发料行'
+const RECEIPT_LABEL = '委外入库单'
+const RECEIPT_ITEM_LABEL = '委外入库成品行'
+const MATERIAL_LABEL = '委外入库材料行'
+const BYPRODUCT_LABEL = '委外入库副产物行'
+
+// —— 列表与单条共用同一份投影：alias 必须与子查询别名逐字一致（写错会静默算成空集） ——
+
+const ISSUE_ITEM_ALIAS = 'issue_items'
+const ISSUE_ITEM_SOURCE = sql` FROM (
+  SELECT i.id,i.idx,i.qty,i.base_qty,i.material_code,i.material_name,i.material_spec,
+    i.unit_name,i.order_no,i.remarks,i.inserted_at,i.updated_at,i.issue_id,i.company_id,
+    i.order_item_material_id,i.material_id,i.unit_id,i.from_warehouse_id,i.outsourced_warehouse_id,
+    h.issue_no,h.issue_date,h.status AS issue_status,h.party_type,h.party_id
+  FROM pur_outsourced_issue_item i
+  JOIN pur_outsourced_issue h ON h.id=i.issue_id
+) issue_items`
+
+const RECEIPT_ITEM_ALIAS = 'receipt_items'
+const RECEIPT_ITEM_SOURCE = sql` FROM (
+  SELECT i.id,i.idx,i.qty,i.base_qty,i.material_code,i.material_name,i.material_spec,
+    i.customer_part_no,i.unit_name,i.order_no,i.order_qty,i.order_base_qty,i.order_unit_name,
+    i.order_price,i.order_amount,i.order_base_price,i.order_base_amount,i.order_tax_rate,
+    i.order_currency_code,i.reconciled_qty,i.remarks,i.inserted_at,i.updated_at,
+    i.receipt_id,i.company_id,i.order_item_id,i.material_id,i.unit_id,i.warehouse_id,
+    h.receipt_no,h.receipt_date,h.status AS receipt_status,h.party_type,h.party_id,
+    (i.base_qty - i.reconciled_qty) AS remaining_reconcilable_qty
+  FROM pur_outsourced_receipt_item i
+  JOIN pur_outsourced_receipt h ON h.id=i.receipt_id
+) receipt_items`
+
+const MATERIAL_ALIAS = 'receipt_materials'
+const MATERIAL_SOURCE = sql` FROM (
+  SELECT c.id,c.idx,c.qty,c.base_qty,c.material_code,c.material_name,c.material_spec,
+    c.unit_name,c.order_no,c.remarks,c.inserted_at,c.updated_at,c.receipt_item_id,
+    c.company_id,c.order_item_material_id,c.material_id,c.unit_id,c.outsourced_warehouse_id,
+    h.receipt_no
+  FROM pur_outsourced_receipt_item_material c
+  JOIN pur_outsourced_receipt_item i ON i.id=c.receipt_item_id
+  JOIN pur_outsourced_receipt h ON h.id=i.receipt_id
+) receipt_materials`
+
+const BYPRODUCT_ALIAS = 'receipt_byproducts'
+const BYPRODUCT_SOURCE = sql` FROM (
+  SELECT c.id,c.idx,c.qty,c.base_qty,c.material_code,c.material_name,c.material_spec,
+    c.unit_name,c.order_no,c.remarks,c.inserted_at,c.updated_at,c.receipt_item_id,
+    c.company_id,c.order_item_byproduct_id,c.material_id,c.unit_id,c.warehouse_id,
+    h.receipt_no
+  FROM pur_outsourced_receipt_item_byproduct c
+  JOIN pur_outsourced_receipt_item i ON i.id=c.receipt_item_id
+  JOIN pur_outsourced_receipt h ON h.id=i.receipt_id
+) receipt_byproducts`
+
+const SELECT_ALL = sql`SELECT *`
+const CHILD_ORDER = sql`"idx" ASC, "id" ASC`
+const HEAD_ORDER = sql`"inserted_at" DESC, "id" DESC`
 
 const ISSUE_AUDIT = auditFieldsOf(outsourcedIssueMeta())
 
@@ -112,37 +185,124 @@ export function createOutsourcedService(
     inventory: Pick<InventoryEngine, 'post' | 'cancel'>
     gl: Pick<GlEngine, 'post' | 'cancel'>
   },
+  registry: Registry,
 ) {
   const { inventory, gl } = engines
+  const issueTarget = registry.authzTarget(ISSUE_RESOURCE)
+  const issueItemTarget = registry.authzTarget(ISSUE_ITEM_RESOURCE)
+  const receiptTarget = registry.authzTarget(RECEIPT_RESOURCE)
+  const receiptItemTarget = registry.authzTarget(RECEIPT_ITEM_RESOURCE)
+  const materialTarget = registry.authzTarget(RECEIPT_MATERIAL_RESOURCE)
+  const byproductTarget = registry.authzTarget(RECEIPT_BYPRODUCT_RESOURCE)
+
+  // ---------- 授权取行 / 锁 ----------
+
+  /** 按 Permit 取发料单头（可锁）；不命中一律 not_found */
+  async function loadIssueRow(handle: DbHandle, permit: Permit, id: string, forUpdate: boolean) {
+    return loadAuthorized({
+      db: handle,
+      permit,
+      target: issueTarget,
+      table: ISSUE_TABLE,
+      id,
+      forUpdate,
+      notFoundMessage: `${ISSUE_LABEL}不存在`,
+    })
+  }
+
+  /** 锁草稿发料单头：行编辑与工作流的公共前置（授权 → 状态守卫） */
+  async function lockDraftIssue(handle: DbHandle, permit: Permit, id: string) {
+    const row = await loadIssueRow(handle, permit, id, true)
+    if (String(row.status).toLowerCase() !== 'draft') {
+      throw new ApiError('conflict', `仅草稿${ISSUE_LABEL}可编辑`)
+    }
+    return row
+  }
+
+  /** 按 Permit 取入库单头（可锁）；不命中一律 not_found */
+  async function loadReceiptRow(handle: DbHandle, permit: Permit, id: string, forUpdate: boolean) {
+    return loadAuthorized({
+      db: handle,
+      permit,
+      target: receiptTarget,
+      table: RECEIPT_TABLE,
+      id,
+      forUpdate,
+      notFoundMessage: `${RECEIPT_LABEL}不存在`,
+    })
+  }
+
+  /** 锁草稿入库单头：行编辑与工作流的公共前置（授权 → 状态守卫） */
+  async function lockDraftReceipt(handle: DbHandle, permit: Permit, id: string) {
+    const row = await loadReceiptRow(handle, permit, id, true)
+    if (String(row.status).toLowerCase() !== 'draft') {
+      throw new ApiError('conflict', `仅草稿${RECEIPT_LABEL}可编辑`)
+    }
+    return row
+  }
+
+  /** 子行的母单外键（未加锁探针，仅用于定位母单）；行不存在即 not_found */
+  async function parentIdOf(
+    handle: DbHandle,
+    table: string,
+    fk: string,
+    id: string,
+    label: string,
+  ): Promise<string> {
+    const cur = await sql<{ parent_id: string }>`
+      SELECT ${sql.raw(fk)} AS parent_id FROM ${sql.raw(table)} WHERE id=${id}::uuid
+    `.execute(handle)
+    const row = cur.rows[0]
+    if (!row) throw new ApiError('not_found', `${label}不存在`)
+    return row.parent_id
+  }
+
+  /** 母单锁定之后再锁子行：加锁顺序母单先行 */
+  async function lockChildRow(handle: DbHandle, table: string, id: string, label: string) {
+    const row = await sql<{ id: string }>`
+      SELECT id FROM ${sql.raw(table)} WHERE id=${id}::uuid FOR UPDATE
+    `.execute(handle)
+    if (!row.rows[0]) throw new ApiError('not_found', `${label}不存在`)
+  }
+
+  /** 成品行的母单：先锁入库单（授权 + 草稿门），再锁成品行本身 */
+  async function lockReceiptForItem(handle: DbHandle, permit: Permit, itemId: string) {
+    const receiptId = await parentIdOf(
+      handle,
+      RECEIPT_ITEM_TABLE,
+      'receipt_id',
+      itemId,
+      RECEIPT_ITEM_LABEL,
+    )
+    const receipt = mapReceipt(await lockDraftReceipt(handle, permit, receiptId))
+    await lockChildRow(handle, RECEIPT_ITEM_TABLE, itemId, RECEIPT_ITEM_LABEL)
+    const item = mapReceiptItem((await loadReceiptItem(handle, itemId))!)
+    return { item, receipt }
+  }
+
   // ---------- Issue head ----------
 
-  async function listIssues(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, ISSUE_PREFIX, 'read', '无权限执行该委外操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
-    return listFromSource({
+  async function listIssues(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: issueTarget,
+      alias: ISSUE_TABLE,
       resource: outsourcedIssueMeta(),
       source: sql` FROM pur_outsourced_issue`,
-      select: sql`SELECT *`,
-      defaultOrder: sql`"inserted_at" DESC, "id" DESC`,
+      select: SELECT_ALL,
+      defaultOrder: HEAD_ORDER,
       query,
-      extraWhere: scope.where,
       mapRow: mapIssue,
     })
   }
 
-  async function getIssue(actor: Actor, id: string) {
-    requirePerm(actor, ISSUE_PREFIX, 'read', '无权限执行该委外操作')
-    const row = await loadIssue(db, id)
-    if (!row || !canAccessCompany(actor, String(row.company_id))) {
-      throw new ApiError('not_found', '委外发料单不存在')
-    }
-    return mapIssue(row)
+  async function getIssue(permit: Permit, id: string) {
+    return mapIssue(await loadIssueRow(db, permit, id, false))
   }
 
   async function createIssue(
-    actor: Actor,
+    permit: Permit,
     input: {
       companyId: string
       issueNo?: string | null
@@ -154,10 +314,9 @@ export function createOutsourcedService(
       outsourcedWarehouseId?: string | null
     },
   ) {
-    requirePerm(actor, ISSUE_PREFIX, 'create', '无权限执行该委外操作')
-    if (!canAccessCompany(actor, input.companyId)) {
-      throw new ApiError('forbidden', '无权在该公司创建委外发料单')
-    }
+    // 入参校验（400）先于公司边界（404）：companyId 为空须报「必填」而不是「公司不存在」
+    validateHeadParty(input.companyId, input.partyType, input.partyId, input.remarks ?? null)
+    assertCompanyWritable(permit, input.companyId, '公司不存在')
     return withTx(db, async (trx) => {
       const issueDate = input.issueDate ? toDateOnly(input.issueDate) : utcToday()
       let issueNo = (input.issueNo ?? '').trim()
@@ -188,13 +347,13 @@ export function createOutsourcedService(
             ${issueNo}, ${issueDate}::date, ${partyType}, ${input.partyId}::uuid,
             ${draft.remarks}, 'draft', ${input.companyId}::uuid,
             ${draft.fromWarehouseId}::uuid, ${draft.outsourcedWarehouseId}::uuid,
-            ${actor.userId || null}::uuid
+            ${permit.actor.userId || null}::uuid
           ) RETURNING id
         `.execute(trx)
         const id = ins.rows[0]!.id
         const row = await loadIssue(trx, id)
         const dto = mapIssue(row!)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: ISSUE_TABLE,
           recordId: id,
           recordLabel: issueNo,
@@ -211,7 +370,7 @@ export function createOutsourcedService(
   }
 
   async function updateIssue(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       issueNo?: string
@@ -226,9 +385,8 @@ export function createOutsourcedService(
       outsourcedWarehouseIdPresent?: boolean
     },
   ) {
-    requirePerm(actor, ISSUE_PREFIX, 'update', '无权限执行该委外操作')
     return withTx(db, async (trx) => {
-      const beforeRow = await lockDraftIssue(trx, actor, id)
+      const beforeRow = await lockDraftIssue(trx, permit, id)
       const before = mapIssue(beforeRow)
       const after = {
         issueNo: input.issueNo !== undefined ? input.issueNo.trim() : before.issueNo,
@@ -274,7 +432,7 @@ export function createOutsourcedService(
       const dto = mapIssue(row!)
       const changes = auditDiff(issueSnap(before), issueSnap(dto), ISSUE_AUDIT)
       if (Object.keys(changes).length > 0) {
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: ISSUE_TABLE,
           recordId: id,
           recordLabel: dto.issueNo,
@@ -288,12 +446,11 @@ export function createOutsourcedService(
     })
   }
 
-  async function deleteIssue(actor: Actor, id: string) {
-    requirePerm(actor, ISSUE_PREFIX, 'delete', '无权限执行该委外操作')
+  async function deleteIssue(permit: Permit, id: string) {
     await withTx(db, async (trx) => {
-      const row = await lockDraftIssue(trx, actor, id)
+      const row = await lockDraftIssue(trx, permit, id)
       const dto = mapIssue(row)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: ISSUE_TABLE,
         recordId: id,
         recordLabel: dto.issueNo,
@@ -310,15 +467,14 @@ export function createOutsourcedService(
     })
   }
 
-  async function auditIssue(actor: Actor, id: string) {
-    requirePerm(actor, ISSUE_PREFIX, 'audit', '无权限执行该委外操作')
+  async function auditIssue(permit: Permit, id: string) {
     return withTx(db, async (trx) => {
       // collect 的闭包产物：发料投影行（键为 orderItemMaterialId，非履约 PostingProjectionLine）
       let projection: Array<{ orderItemMaterialId: string; baseQty: string }> = []
-      return auditInventoryDocInTx(trx, actor, inventory, {
+      return auditInventoryDocInTx(trx, permit.actor, inventory, {
         voucherType: ISSUE_PREFIX,
         headTable: ISSUE_TABLE,
-        lockDraft: async (t) => mapIssue(await lockDraftIssue(t, actor, id)),
+        lockDraft: async (t) => mapIssue(await lockDraftIssue(t, permit, id)),
         collect: async (t, before) => {
           const items = await loadIssueActionItems(t, id)
           if (items.length === 0) {
@@ -373,14 +529,13 @@ export function createOutsourcedService(
     })
   }
 
-  async function voidIssue(actor: Actor, id: string) {
-    requirePerm(actor, ISSUE_PREFIX, 'void', '无权限执行该委外操作')
+  async function voidIssue(permit: Permit, id: string) {
     return withTx(db, async (trx) => {
-      return voidInventoryDocInTx(trx, actor, inventory, {
+      return voidInventoryDocInTx(trx, permit.actor, inventory, {
         voucherType: ISSUE_PREFIX,
         headTable: ISSUE_TABLE,
         lockAudited: async (t) => {
-          const before = mapIssue(await lockIssue(t, actor, id))
+          const before = mapIssue(await loadIssueRow(t, permit, id, true))
           if (before.status !== 'AUDITED') {
             throw new ApiError('conflict', '仅已审核委外发料单可作废')
           }
@@ -408,40 +563,38 @@ export function createOutsourcedService(
 
   // ---------- Issue items ----------
 
-  async function listIssueItems(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, ISSUE_PREFIX, 'read', '无权限执行该委外操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
-    return listFromSource({
+  async function listIssueItems(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: issueItemTarget,
+      alias: ISSUE_ITEM_ALIAS,
       resource: outsourcedIssueItemMeta(),
-      source: sql` FROM (
-        SELECT i.id,i.idx,i.qty,i.base_qty,i.material_code,i.material_name,i.material_spec,
-          i.unit_name,i.order_no,i.remarks,i.inserted_at,i.updated_at,i.issue_id,i.company_id,
-          i.order_item_material_id,i.material_id,i.unit_id,i.from_warehouse_id,i.outsourced_warehouse_id,
-          h.issue_no,h.issue_date,h.status AS issue_status,h.party_type,h.party_id
-        FROM pur_outsourced_issue_item i
-        JOIN pur_outsourced_issue h ON h.id=i.issue_id
-      ) issue_items`,
-      select: sql`SELECT *`,
-      defaultOrder: sql`"idx" ASC, "id" ASC`,
+      source: ISSUE_ITEM_SOURCE,
+      select: SELECT_ALL,
+      defaultOrder: CHILD_ORDER,
       query,
-      extraWhere: scope.where,
       mapRow: mapIssueItem,
     })
   }
 
-  async function getIssueItem(actor: Actor, id: string) {
-    requirePerm(actor, ISSUE_PREFIX, 'read', '无权限执行该委外操作')
-    const row = await loadIssueItem(db, id)
-    if (!row || !canAccessCompany(actor, String(row.company_id))) {
-      throw new ApiError('not_found', '委外发料行不存在')
-    }
-    return mapIssueItem(row)
+  /** 行的可达性经 via 链递归到母单自身的行谓词 */
+  async function getIssueItem(permit: Permit, id: string) {
+    return loadAuthorizedFrom({
+      db,
+      permit,
+      target: issueItemTarget,
+      alias: ISSUE_ITEM_ALIAS,
+      source: ISSUE_ITEM_SOURCE,
+      select: SELECT_ALL,
+      id,
+      mapRow: mapIssueItem,
+      notFoundMessage: `${ISSUE_ITEM_LABEL}不存在`,
+    })
   }
 
   async function createIssueItem(
-    actor: Actor,
+    permit: Permit,
     input: {
       issueId: string
       idx: number
@@ -452,9 +605,8 @@ export function createOutsourcedService(
       remarks?: string | null
     },
   ) {
-    requirePerm(actor, ISSUE_PREFIX, 'create', '无权限执行该委外操作')
     return withTx(db, async (trx) => {
-      const parent = mapIssue(await lockDraftIssue(trx, actor, input.issueId))
+      const parent = mapIssue(await lockDraftIssue(trx, permit, input.issueId))
       const fromWarehouseId = input.fromWarehouseId ?? parent.fromWarehouseId
       const outsourcedWarehouseId = input.outsourcedWarehouseId ?? parent.outsourcedWarehouseId
       const derived = await deriveIssueItem(trx, parent, {
@@ -481,7 +633,7 @@ export function createOutsourcedService(
         const id = ins.rows[0]!.id
         const row = await loadIssueItem(trx, id)
         const dto = mapIssueItem(row!)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: ISSUE_ITEM_TABLE,
           recordId: id,
           recordLabel: String(dto.idx),
@@ -498,7 +650,7 @@ export function createOutsourcedService(
   }
 
   async function updateIssueItem(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       idx?: number
@@ -510,13 +662,11 @@ export function createOutsourcedService(
       remarksPresent?: boolean
     },
   ) {
-    requirePerm(actor, ISSUE_PREFIX, 'update', '无权限执行该委外操作')
     return withTx(db, async (trx) => {
-      const cur = await sql<{ issue_id: string }>`
-        SELECT issue_id FROM pur_outsourced_issue_item WHERE id=${id}::uuid
-      `.execute(trx)
-      if (!cur.rows[0]) throw new ApiError('not_found', '委外发料行不存在')
-      const parent = mapIssue(await lockDraftIssue(trx, actor, cur.rows[0].issue_id))
+      // 母单先锁（授权 + 草稿门），再锁行：与并发路径的加锁顺序一致
+      const issueId = await parentIdOf(trx, ISSUE_ITEM_TABLE, 'issue_id', id, ISSUE_ITEM_LABEL)
+      const parent = mapIssue(await lockDraftIssue(trx, permit, issueId))
+      await lockChildRow(trx, ISSUE_ITEM_TABLE, id, ISSUE_ITEM_LABEL)
       const before = mapIssueItem((await loadIssueItem(trx, id))!)
       const derived = await deriveIssueItem(trx, parent, {
         orderItemMaterialId: input.orderItemMaterialId ?? before.orderItemMaterialId,
@@ -548,7 +698,7 @@ export function createOutsourcedService(
       const dto = mapIssueItem(row!)
       const changes = auditDiff(issueItemSnap(before), issueItemSnap(dto), ISSUE_ITEM_AUDIT)
       if (Object.keys(changes).length > 0) {
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: ISSUE_ITEM_TABLE,
           recordId: id,
           recordLabel: String(dto.idx),
@@ -562,16 +712,13 @@ export function createOutsourcedService(
     })
   }
 
-  async function deleteIssueItem(actor: Actor, id: string) {
-    requirePerm(actor, ISSUE_PREFIX, 'delete', '无权限执行该委外操作')
+  async function deleteIssueItem(permit: Permit, id: string) {
     await withTx(db, async (trx) => {
-      const cur = await sql<{ issue_id: string }>`
-        SELECT issue_id FROM pur_outsourced_issue_item WHERE id=${id}::uuid
-      `.execute(trx)
-      if (!cur.rows[0]) throw new ApiError('not_found', '委外发料行不存在')
-      await lockDraftIssue(trx, actor, cur.rows[0].issue_id)
+      const issueId = await parentIdOf(trx, ISSUE_ITEM_TABLE, 'issue_id', id, ISSUE_ITEM_LABEL)
+      await lockDraftIssue(trx, permit, issueId)
+      await lockChildRow(trx, ISSUE_ITEM_TABLE, id, ISSUE_ITEM_LABEL)
       const before = mapIssueItem((await loadIssueItem(trx, id))!)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: ISSUE_ITEM_TABLE,
         recordId: id,
         recordLabel: String(before.idx),
@@ -590,33 +737,27 @@ export function createOutsourcedService(
 
   // ---------- Receipt head ----------
 
-  async function listReceipts(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, RECEIPT_PREFIX, 'read', '无权限执行该委外操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
-    return listFromSource({
+  async function listReceipts(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: receiptTarget,
+      alias: RECEIPT_TABLE,
       resource: outsourcedReceiptMeta(),
       source: sql` FROM pur_outsourced_receipt`,
-      select: sql`SELECT *`,
-      defaultOrder: sql`"inserted_at" DESC, "id" DESC`,
+      select: SELECT_ALL,
+      defaultOrder: HEAD_ORDER,
       query,
-      extraWhere: scope.where,
       mapRow: mapReceipt,
     })
   }
 
-  async function getReceipt(actor: Actor, id: string) {
-    requirePerm(actor, RECEIPT_PREFIX, 'read', '无权限执行该委外操作')
-    const row = await loadReceipt(db, id)
-    if (!row || !canAccessCompany(actor, String(row.company_id))) {
-      throw new ApiError('not_found', '委外入库单不存在')
-    }
-    return mapReceipt(row)
+  async function getReceipt(permit: Permit, id: string) {
+    return mapReceipt(await loadReceiptRow(db, permit, id, false))
   }
 
   async function createReceipt(
-    actor: Actor,
+    permit: Permit,
     input: {
       companyId: string
       receiptNo?: string | null
@@ -631,10 +772,9 @@ export function createOutsourcedService(
       creditAccountId?: string | null
     },
   ) {
-    requirePerm(actor, RECEIPT_PREFIX, 'create', '无权限执行该委外操作')
-    if (!canAccessCompany(actor, input.companyId)) {
-      throw new ApiError('forbidden', '无权在该公司创建委外入库单')
-    }
+    // 入参校验（400）先于公司边界（404）：companyId 为空须报「必填」而不是「公司不存在」
+    validateHeadParty(input.companyId, input.partyType, input.partyId, input.remarks ?? null)
+    assertCompanyWritable(permit, input.companyId, '公司不存在')
     return withTx(db, async (trx) => {
       const receiptDate = input.receiptDate ? toDateOnly(input.receiptDate) : utcToday()
       let receiptNo = (input.receiptNo ?? '').trim()
@@ -675,13 +815,13 @@ export function createOutsourcedService(
             ${receiptNo}, ${receiptDate}::date, ${draft.postingDate}::date, ${partyType},
             ${input.partyId}::uuid, ${draft.remarks}, 'draft', ${input.companyId}::uuid,
             ${draft.warehouseId}::uuid, ${draft.outsourcedWarehouseId}::uuid,
-            ${debit}::uuid, ${credit}::uuid, ${actor.userId || null}::uuid
+            ${debit}::uuid, ${credit}::uuid, ${permit.actor.userId || null}::uuid
           ) RETURNING id
         `.execute(trx)
         const id = ins.rows[0]!.id
         const row = await loadReceipt(trx, id)
         const dto = mapReceipt(row!)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: RECEIPT_TABLE,
           recordId: id,
           recordLabel: receiptNo,
@@ -698,7 +838,7 @@ export function createOutsourcedService(
   }
 
   async function updateReceipt(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       receiptNo?: string
@@ -717,9 +857,8 @@ export function createOutsourcedService(
       creditAccountId?: string
     },
   ) {
-    requirePerm(actor, RECEIPT_PREFIX, 'update', '无权限执行该委外操作')
     return withTx(db, async (trx) => {
-      const beforeRow = await lockDraftReceipt(trx, actor, id)
+      const beforeRow = await lockDraftReceipt(trx, permit, id)
       const before = mapReceipt(beforeRow)
       const after = {
         receiptNo: input.receiptNo !== undefined ? input.receiptNo.trim() : before.receiptNo,
@@ -775,7 +914,7 @@ export function createOutsourcedService(
       const dto = mapReceipt(row!)
       const changes = auditDiff(receiptSnap(before), receiptSnap(dto), RECEIPT_AUDIT)
       if (Object.keys(changes).length > 0) {
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: RECEIPT_TABLE,
           recordId: id,
           recordLabel: dto.receiptNo,
@@ -789,12 +928,11 @@ export function createOutsourcedService(
     })
   }
 
-  async function deleteReceipt(actor: Actor, id: string) {
-    requirePerm(actor, RECEIPT_PREFIX, 'delete', '无权限执行该委外操作')
+  async function deleteReceipt(permit: Permit, id: string) {
     await withTx(db, async (trx) => {
-      const row = await lockDraftReceipt(trx, actor, id)
+      const row = await lockDraftReceipt(trx, permit, id)
       const dto = mapReceipt(row)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: RECEIPT_TABLE,
         recordId: id,
         recordLabel: dto.receiptNo,
@@ -811,15 +949,18 @@ export function createOutsourcedService(
     })
   }
 
-  async function auditReceipt(actor: Actor, id: string, input: { postingDate?: string | null } = {}) {
-    requirePerm(actor, RECEIPT_PREFIX, 'audit', '无权限执行该委外操作')
+  async function auditReceipt(
+    permit: Permit,
+    id: string,
+    input: { postingDate?: string | null } = {},
+  ) {
     return withTx(db, async (trx) => {
-      return auditFulfillmentInTx(trx, actor, { inventory, gl }, {
+      return auditFulfillmentInTx(trx, permit.actor, { inventory, gl }, {
         voucherType: RECEIPT_PREFIX,
         headTable: RECEIPT_TABLE,
         partySide: 'credit',
         postingDateOverride: input.postingDate,
-        lockDraft: async (t) => mapReceipt(await lockDraftReceipt(t, actor, id)),
+        lockDraft: async (t) => mapReceipt(await lockDraftReceipt(t, permit, id)),
         collect: async (t, before) => {
           const { items, materials, byproducts } = await loadReceiptActionLines(t, id)
           if (items.length === 0) {
@@ -915,14 +1056,13 @@ export function createOutsourcedService(
     })
   }
 
-  async function voidReceipt(actor: Actor, id: string) {
-    requirePerm(actor, RECEIPT_PREFIX, 'void', '无权限执行该委外操作')
+  async function voidReceipt(permit: Permit, id: string) {
     return withTx(db, async (trx) => {
-      return voidFulfillmentInTx(trx, actor, { inventory, gl }, {
+      return voidFulfillmentInTx(trx, permit.actor, { inventory, gl }, {
         voucherType: RECEIPT_PREFIX,
         headTable: RECEIPT_TABLE,
         lockAudited: async (t) => {
-          const before = mapReceipt(await lockReceipt(t, actor, id))
+          const before = mapReceipt(await loadReceiptRow(t, permit, id, true))
           if (before.status !== 'AUDITED') {
             throw new ApiError('conflict', '仅已审核委外入库单可作废')
           }
@@ -965,43 +1105,38 @@ export function createOutsourcedService(
 
   // ---------- Receipt items ----------
 
-  async function listReceiptItems(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, RECEIPT_PREFIX, 'read', '无权限执行该委外操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
-    return listFromSource({
+  async function listReceiptItems(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: receiptItemTarget,
+      alias: RECEIPT_ITEM_ALIAS,
       resource: outsourcedReceiptItemMeta(),
-      source: sql` FROM (
-        SELECT i.id,i.idx,i.qty,i.base_qty,i.material_code,i.material_name,i.material_spec,
-          i.customer_part_no,i.unit_name,i.order_no,i.order_qty,i.order_base_qty,i.order_unit_name,
-          i.order_price,i.order_amount,i.order_base_price,i.order_base_amount,i.order_tax_rate,
-          i.order_currency_code,i.reconciled_qty,i.remarks,i.inserted_at,i.updated_at,
-          i.receipt_id,i.company_id,i.order_item_id,i.material_id,i.unit_id,i.warehouse_id,
-          h.receipt_no,h.receipt_date,h.status AS receipt_status,h.party_type,h.party_id,
-          (i.base_qty - i.reconciled_qty) AS remaining_reconcilable_qty
-        FROM pur_outsourced_receipt_item i
-        JOIN pur_outsourced_receipt h ON h.id=i.receipt_id
-      ) receipt_items`,
-      select: sql`SELECT *`,
-      defaultOrder: sql`"idx" ASC, "id" ASC`,
+      source: RECEIPT_ITEM_SOURCE,
+      select: SELECT_ALL,
+      defaultOrder: CHILD_ORDER,
       query,
-      extraWhere: scope.where,
       mapRow: mapReceiptItem,
     })
   }
 
-  async function getReceiptItem(actor: Actor, id: string) {
-    requirePerm(actor, RECEIPT_PREFIX, 'read', '无权限执行该委外操作')
-    const row = await loadReceiptItem(db, id)
-    if (!row || !canAccessCompany(actor, String(row.company_id))) {
-      throw new ApiError('not_found', '委外入库成品行不存在')
-    }
-    return mapReceiptItem(row)
+  /** 行的可达性经 via 链递归到母单自身的行谓词 */
+  async function getReceiptItem(permit: Permit, id: string) {
+    return loadAuthorizedFrom({
+      db,
+      permit,
+      target: receiptItemTarget,
+      alias: RECEIPT_ITEM_ALIAS,
+      source: RECEIPT_ITEM_SOURCE,
+      select: SELECT_ALL,
+      id,
+      mapRow: mapReceiptItem,
+      notFoundMessage: `${RECEIPT_ITEM_LABEL}不存在`,
+    })
   }
 
   async function createReceiptItem(
-    actor: Actor,
+    permit: Permit,
     input: {
       receiptId: string
       idx: number
@@ -1012,16 +1147,15 @@ export function createOutsourcedService(
       remarks?: string | null
     },
   ) {
-    requirePerm(actor, RECEIPT_PREFIX, 'create', '无权限执行该委外操作')
     return withTx(db, async (trx) => {
-      const parent = mapReceipt(await lockDraftReceipt(trx, actor, input.receiptId))
-      return createReceiptItemInTx(trx, actor, parent, input, true)
+      const parent = mapReceipt(await lockDraftReceipt(trx, permit, input.receiptId))
+      return createReceiptItemInTx(trx, permit, parent, input, true)
     })
   }
 
   async function createReceiptItemInTx(
     trx: DbHandle,
-    actor: Actor,
+    permit: Permit,
     parent: ReturnType<typeof mapReceipt>,
     input: {
       receiptId: string
@@ -1070,7 +1204,7 @@ export function createOutsourcedService(
       const id = ins.rows[0]!.id
       const row = await loadReceiptItem(trx, id)
       const dto = mapReceiptItem(row!)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: RECEIPT_ITEM_TABLE,
         recordId: id,
         recordLabel: String(dto.idx),
@@ -1080,7 +1214,7 @@ export function createOutsourcedService(
         changes: auditCreated(receiptItemSnap(dto), RECEIPT_ITEM_AUDIT),
       })
       if (carry && decimal(dto.orderBaseQty).gt(0)) {
-        await carryReceiptChildren(trx, actor, parent, dto)
+        await carryReceiptChildren(trx, permit, parent, dto)
       }
       return dto
     } catch (err) {
@@ -1089,7 +1223,7 @@ export function createOutsourcedService(
   }
 
   async function updateReceiptItem(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       idx?: number
@@ -1102,13 +1236,17 @@ export function createOutsourcedService(
       remarksPresent?: boolean
     },
   ) {
-    requirePerm(actor, RECEIPT_PREFIX, 'update', '无权限执行该委外操作')
     return withTx(db, async (trx) => {
-      const cur = await sql<{ receipt_id: string }>`
-        SELECT receipt_id FROM pur_outsourced_receipt_item WHERE id=${id}::uuid
-      `.execute(trx)
-      if (!cur.rows[0]) throw new ApiError('not_found', '委外入库成品行不存在')
-      const parent = mapReceipt(await lockDraftReceipt(trx, actor, cur.rows[0].receipt_id))
+      // 母单先锁（授权 + 草稿门），再锁行：与并发路径的加锁顺序一致
+      const receiptId = await parentIdOf(
+        trx,
+        RECEIPT_ITEM_TABLE,
+        'receipt_id',
+        id,
+        RECEIPT_ITEM_LABEL,
+      )
+      const parent = mapReceipt(await lockDraftReceipt(trx, permit, receiptId))
+      await lockChildRow(trx, RECEIPT_ITEM_TABLE, id, RECEIPT_ITEM_LABEL)
       const before = mapReceiptItem((await loadReceiptItem(trx, id))!)
       const orderItemId = input.orderItemId ?? before.orderItemId
       if (orderItemId !== before.orderItemId) {
@@ -1167,7 +1305,7 @@ export function createOutsourcedService(
       const dto = mapReceiptItem(row!)
       const changes = auditDiff(receiptItemSnap(before), receiptItemSnap(dto), RECEIPT_ITEM_AUDIT)
       if (Object.keys(changes).length > 0) {
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: RECEIPT_ITEM_TABLE,
           recordId: id,
           recordLabel: String(dto.idx),
@@ -1181,16 +1319,19 @@ export function createOutsourcedService(
     })
   }
 
-  async function deleteReceiptItem(actor: Actor, id: string) {
-    requirePerm(actor, RECEIPT_PREFIX, 'delete', '无权限执行该委外操作')
+  async function deleteReceiptItem(permit: Permit, id: string) {
     await withTx(db, async (trx) => {
-      const cur = await sql<{ receipt_id: string }>`
-        SELECT receipt_id FROM pur_outsourced_receipt_item WHERE id=${id}::uuid
-      `.execute(trx)
-      if (!cur.rows[0]) throw new ApiError('not_found', '委外入库成品行不存在')
-      await lockDraftReceipt(trx, actor, cur.rows[0].receipt_id)
+      const receiptId = await parentIdOf(
+        trx,
+        RECEIPT_ITEM_TABLE,
+        'receipt_id',
+        id,
+        RECEIPT_ITEM_LABEL,
+      )
+      await lockDraftReceipt(trx, permit, receiptId)
+      await lockChildRow(trx, RECEIPT_ITEM_TABLE, id, RECEIPT_ITEM_LABEL)
       const before = mapReceiptItem((await loadReceiptItem(trx, id))!)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: RECEIPT_ITEM_TABLE,
         recordId: id,
         recordLabel: String(before.idx),
@@ -1209,41 +1350,38 @@ export function createOutsourcedService(
 
   // ---------- Receipt materials / byproducts ----------
 
-  async function listReceiptMaterials(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, RECEIPT_PREFIX, 'read', '无权限执行该委外操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
-    return listFromSource({
+  async function listReceiptMaterials(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: materialTarget,
+      alias: MATERIAL_ALIAS,
       resource: outsourcedReceiptItemMaterialMeta(),
-      source: sql` FROM (
-        SELECT c.id,c.idx,c.qty,c.base_qty,c.material_code,c.material_name,c.material_spec,
-          c.unit_name,c.order_no,c.remarks,c.inserted_at,c.updated_at,c.receipt_item_id,
-          c.company_id,c.order_item_material_id,c.material_id,c.unit_id,c.outsourced_warehouse_id,
-          h.receipt_no
-        FROM pur_outsourced_receipt_item_material c
-        JOIN pur_outsourced_receipt_item i ON i.id=c.receipt_item_id
-        JOIN pur_outsourced_receipt h ON h.id=i.receipt_id
-      ) receipt_materials`,
-      select: sql`SELECT *`,
-      defaultOrder: sql`"idx" ASC, "id" ASC`,
+      source: MATERIAL_SOURCE,
+      select: SELECT_ALL,
+      defaultOrder: CHILD_ORDER,
       query,
-      extraWhere: scope.where,
       mapRow: mapReceiptMaterial,
     })
   }
 
-  async function getReceiptMaterial(actor: Actor, id: string) {
-    requirePerm(actor, RECEIPT_PREFIX, 'read', '无权限执行该委外操作')
-    const row = await loadReceiptMaterial(db, id)
-    if (!row || !canAccessCompany(actor, String(row.company_id))) {
-      throw new ApiError('not_found', '委外入库材料行不存在')
-    }
-    return mapReceiptMaterial(row)
+  /** 材料行的可达性经两级 via（成品行 → 入库单）递归到母单自身的行谓词 */
+  async function getReceiptMaterial(permit: Permit, id: string) {
+    return loadAuthorizedFrom({
+      db,
+      permit,
+      target: materialTarget,
+      alias: MATERIAL_ALIAS,
+      source: MATERIAL_SOURCE,
+      select: SELECT_ALL,
+      id,
+      mapRow: mapReceiptMaterial,
+      notFoundMessage: `${MATERIAL_LABEL}不存在`,
+    })
   }
 
   async function createReceiptMaterial(
-    actor: Actor,
+    permit: Permit,
     input: {
       receiptItemId: string
       idx: number
@@ -1253,16 +1391,19 @@ export function createOutsourcedService(
       remarks?: string | null
     },
   ) {
-    requirePerm(actor, RECEIPT_PREFIX, 'create', '无权限执行该委外操作')
     return withTx(db, async (trx) => {
-      const { item: parentItem, receipt } = await lockReceiptForItem(trx, actor, input.receiptItemId)
-      return createReceiptMaterialInTx(trx, actor, receipt, parentItem, input)
+      const { item: parentItem, receipt } = await lockReceiptForItem(
+        trx,
+        permit,
+        input.receiptItemId,
+      )
+      return createReceiptMaterialInTx(trx, permit, receipt, parentItem, input)
     })
   }
 
   async function createReceiptMaterialInTx(
     trx: DbHandle,
-    actor: Actor,
+    permit: Permit,
     receipt: ReturnType<typeof mapReceipt>,
     parentItem: ReturnType<typeof mapReceiptItem>,
     input: {
@@ -1298,7 +1439,7 @@ export function createOutsourcedService(
       const id = ins.rows[0]!.id
       const row = await loadReceiptMaterial(trx, id)
       const dto = mapReceiptMaterial(row!)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: MATERIAL_TABLE,
         recordId: id,
         recordLabel: String(dto.idx),
@@ -1314,7 +1455,7 @@ export function createOutsourcedService(
   }
 
   async function updateReceiptMaterial(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       idx?: number
@@ -1326,17 +1467,17 @@ export function createOutsourcedService(
       remarksPresent?: boolean
     },
   ) {
-    requirePerm(actor, RECEIPT_PREFIX, 'update', '无权限执行该委外操作')
     return withTx(db, async (trx) => {
-      const cur = await sql<{ receipt_item_id: string }>`
-        SELECT receipt_item_id FROM pur_outsourced_receipt_item_material WHERE id=${id}::uuid
-      `.execute(trx)
-      if (!cur.rows[0]) throw new ApiError('not_found', '委外入库材料行不存在')
-      const { item: parentItem, receipt } = await lockReceiptForItem(
+      // 母单（入库单 → 成品行）先锁，再锁材料行：加锁顺序母单先行
+      const receiptItemId = await parentIdOf(
         trx,
-        actor,
-        cur.rows[0].receipt_item_id,
+        MATERIAL_TABLE,
+        'receipt_item_id',
+        id,
+        MATERIAL_LABEL,
       )
+      const { item: parentItem, receipt } = await lockReceiptForItem(trx, permit, receiptItemId)
+      await lockChildRow(trx, MATERIAL_TABLE, id, MATERIAL_LABEL)
       const before = mapReceiptMaterial((await loadReceiptMaterial(trx, id))!)
       const derived = await deriveReceiptMaterial(trx, receipt, parentItem, {
         qty: decimal(input.qty ?? before.qty),
@@ -1372,7 +1513,7 @@ export function createOutsourcedService(
         CHILD_AUDIT,
       )
       if (Object.keys(changes).length > 0) {
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: MATERIAL_TABLE,
           recordId: id,
           recordLabel: String(dto.idx),
@@ -1386,45 +1527,42 @@ export function createOutsourcedService(
     })
   }
 
-  async function deleteReceiptMaterial(actor: Actor, id: string) {
-    return deleteReceiptChild(actor, id, true)
+  async function deleteReceiptMaterial(permit: Permit, id: string) {
+    return deleteReceiptChild(permit, id, true)
   }
 
-  async function listReceiptByproducts(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, RECEIPT_PREFIX, 'read', '无权限执行该委外操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
-    return listFromSource({
+  async function listReceiptByproducts(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: byproductTarget,
+      alias: BYPRODUCT_ALIAS,
       resource: outsourcedReceiptItemByproductMeta(),
-      source: sql` FROM (
-        SELECT c.id,c.idx,c.qty,c.base_qty,c.material_code,c.material_name,c.material_spec,
-          c.unit_name,c.order_no,c.remarks,c.inserted_at,c.updated_at,c.receipt_item_id,
-          c.company_id,c.order_item_byproduct_id,c.material_id,c.unit_id,c.warehouse_id,
-          h.receipt_no
-        FROM pur_outsourced_receipt_item_byproduct c
-        JOIN pur_outsourced_receipt_item i ON i.id=c.receipt_item_id
-        JOIN pur_outsourced_receipt h ON h.id=i.receipt_id
-      ) receipt_byproducts`,
-      select: sql`SELECT *`,
-      defaultOrder: sql`"idx" ASC, "id" ASC`,
+      source: BYPRODUCT_SOURCE,
+      select: SELECT_ALL,
+      defaultOrder: CHILD_ORDER,
       query,
-      extraWhere: scope.where,
       mapRow: mapReceiptByproduct,
     })
   }
 
-  async function getReceiptByproduct(actor: Actor, id: string) {
-    requirePerm(actor, RECEIPT_PREFIX, 'read', '无权限执行该委外操作')
-    const row = await loadReceiptByproduct(db, id)
-    if (!row || !canAccessCompany(actor, String(row.company_id))) {
-      throw new ApiError('not_found', '委外入库副产物行不存在')
-    }
-    return mapReceiptByproduct(row)
+  /** 副产物行的可达性经两级 via（成品行 → 入库单）递归到母单自身的行谓词 */
+  async function getReceiptByproduct(permit: Permit, id: string) {
+    return loadAuthorizedFrom({
+      db,
+      permit,
+      target: byproductTarget,
+      alias: BYPRODUCT_ALIAS,
+      source: BYPRODUCT_SOURCE,
+      select: SELECT_ALL,
+      id,
+      mapRow: mapReceiptByproduct,
+      notFoundMessage: `${BYPRODUCT_LABEL}不存在`,
+    })
   }
 
   async function createReceiptByproduct(
-    actor: Actor,
+    permit: Permit,
     input: {
       receiptItemId: string
       idx: number
@@ -1434,16 +1572,19 @@ export function createOutsourcedService(
       remarks?: string | null
     },
   ) {
-    requirePerm(actor, RECEIPT_PREFIX, 'create', '无权限执行该委外操作')
     return withTx(db, async (trx) => {
-      const { item: parentItem, receipt } = await lockReceiptForItem(trx, actor, input.receiptItemId)
-      return createReceiptByproductInTx(trx, actor, receipt, parentItem, input)
+      const { item: parentItem, receipt } = await lockReceiptForItem(
+        trx,
+        permit,
+        input.receiptItemId,
+      )
+      return createReceiptByproductInTx(trx, permit, receipt, parentItem, input)
     })
   }
 
   async function createReceiptByproductInTx(
     trx: DbHandle,
-    actor: Actor,
+    permit: Permit,
     receipt: ReturnType<typeof mapReceipt>,
     parentItem: ReturnType<typeof mapReceiptItem>,
     input: {
@@ -1479,7 +1620,7 @@ export function createOutsourcedService(
       const id = ins.rows[0]!.id
       const row = await loadReceiptByproduct(trx, id)
       const dto = mapReceiptByproduct(row!)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: BYPRODUCT_TABLE,
         recordId: id,
         recordLabel: String(dto.idx),
@@ -1495,7 +1636,7 @@ export function createOutsourcedService(
   }
 
   async function updateReceiptByproduct(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       idx?: number
@@ -1507,17 +1648,17 @@ export function createOutsourcedService(
       remarksPresent?: boolean
     },
   ) {
-    requirePerm(actor, RECEIPT_PREFIX, 'update', '无权限执行该委外操作')
     return withTx(db, async (trx) => {
-      const cur = await sql<{ receipt_item_id: string }>`
-        SELECT receipt_item_id FROM pur_outsourced_receipt_item_byproduct WHERE id=${id}::uuid
-      `.execute(trx)
-      if (!cur.rows[0]) throw new ApiError('not_found', '委外入库副产物行不存在')
-      const { item: parentItem, receipt } = await lockReceiptForItem(
+      // 母单（入库单 → 成品行）先锁，再锁副产物行：加锁顺序母单先行
+      const receiptItemId = await parentIdOf(
         trx,
-        actor,
-        cur.rows[0].receipt_item_id,
+        BYPRODUCT_TABLE,
+        'receipt_item_id',
+        id,
+        BYPRODUCT_LABEL,
       )
+      const { item: parentItem, receipt } = await lockReceiptForItem(trx, permit, receiptItemId)
+      await lockChildRow(trx, BYPRODUCT_TABLE, id, BYPRODUCT_LABEL)
       const before = mapReceiptByproduct((await loadReceiptByproduct(trx, id))!)
       const derived = await deriveReceiptByproduct(trx, receipt, parentItem, {
         qty: decimal(input.qty ?? before.qty),
@@ -1553,7 +1694,7 @@ export function createOutsourcedService(
         CHILD_AUDIT,
       )
       if (Object.keys(changes).length > 0) {
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: BYPRODUCT_TABLE,
           recordId: id,
           recordLabel: String(dto.idx),
@@ -1567,22 +1708,20 @@ export function createOutsourcedService(
     })
   }
 
-  async function deleteReceiptByproduct(actor: Actor, id: string) {
-    return deleteReceiptChild(actor, id, false)
+  async function deleteReceiptByproduct(permit: Permit, id: string) {
+    return deleteReceiptChild(permit, id, false)
   }
 
-  async function deleteReceiptChild(actor: Actor, id: string, material: boolean) {
-    requirePerm(actor, RECEIPT_PREFIX, 'delete', '无权限执行该委外操作')
+  async function deleteReceiptChild(permit: Permit, id: string, material: boolean) {
     await withTx(db, async (trx) => {
       const table = material ? MATERIAL_TABLE : BYPRODUCT_TABLE
-      const cur = await sql<{ receipt_item_id: string }>`
-        SELECT receipt_item_id FROM ${sql.raw(table)} WHERE id=${id}::uuid
-      `.execute(trx)
-      if (!cur.rows[0]) throw new ApiError('not_found', '委外入库子行不存在')
-      await lockReceiptForItem(trx, actor, cur.rows[0].receipt_item_id)
+      const label = material ? MATERIAL_LABEL : BYPRODUCT_LABEL
+      const receiptItemId = await parentIdOf(trx, table, 'receipt_item_id', id, '委外入库子行')
+      await lockReceiptForItem(trx, permit, receiptItemId)
+      await lockChildRow(trx, table, id, label)
       if (material) {
         const before = mapReceiptMaterial((await loadReceiptMaterial(trx, id))!)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: MATERIAL_TABLE,
           recordId: id,
           recordLabel: String(before.idx),
@@ -1593,7 +1732,7 @@ export function createOutsourcedService(
         })
       } else {
         const before = mapReceiptByproduct((await loadReceiptByproduct(trx, id))!)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: BYPRODUCT_TABLE,
           recordId: id,
           recordLabel: String(before.idx),
@@ -1613,7 +1752,7 @@ export function createOutsourcedService(
 
   async function carryReceiptChildren(
     trx: DbHandle,
-    actor: Actor,
+    permit: Permit,
     receipt: ReturnType<typeof mapReceipt>,
     parent: ReturnType<typeof mapReceiptItem>,
   ) {
@@ -1630,7 +1769,7 @@ export function createOutsourcedService(
         const qty = decimal(source.quantity).mul(ratio).toDecimalPlaces(6)
         if (!qty.gt(0)) continue
         if (isMaterial) {
-          await createReceiptMaterialInTx(trx, actor, receipt, parent, {
+          await createReceiptMaterialInTx(trx, permit, receipt, parent, {
             receiptItemId: parent.id,
             idx,
             qty: wireRequiredDecimal(qty),
@@ -1638,7 +1777,7 @@ export function createOutsourcedService(
             outsourcedWarehouseId: receipt.outsourcedWarehouseId,
           })
         } else {
-          await createReceiptByproductInTx(trx, actor, receipt, parent, {
+          await createReceiptByproductInTx(trx, permit, receipt, parent, {
             receiptItemId: parent.id,
             idx,
             qty: wireRequiredDecimal(qty),
@@ -1769,6 +1908,38 @@ async function validateReceiptHead(
   await validateReceiptAccounts(db, item)
 }
 
+/**
+ * 公司 / 对手 / 备注的形态校验（create 的公司闸之前先跑）：
+ * 入参校验（400）必须先于公司边界（404），否则 `companyId: ''` 会先撞公司闸报「公司不存在」。
+ */
+function validateHeadParty(
+  companyId: string,
+  partyType: string,
+  partyId: string,
+  remarks: string | null,
+) {
+  const fields = partyFields(companyId, partyType, partyId, remarks)
+  if (Object.keys(fields).length > 0) {
+    throw ApiError.validation('委外履约单参数不合法', fields)
+  }
+}
+
+function partyFields(
+  companyId: string,
+  partyType: string,
+  partyId: string,
+  remarks: string | null,
+): Record<string, string[]> {
+  const fields: Record<string, string[]> = {}
+  const pt = lowerParty(partyType)
+  if (pt !== 'supplier' && pt !== 'company') fields.partyType = ['只允许供应商或内部公司']
+  if (!partyId) fields.partyId = ['必填']
+  if (!companyId) fields.companyId = ['必填']
+  if (pt === 'company' && partyId === companyId) fields.partyId = ['对手不能是本公司']
+  if (remarks && runeLen(remarks) > 512) fields.remarks = ['最多 512 个字符']
+  return fields
+}
+
 function validateCommonHead(
   companyId: string,
   no: string,
@@ -1780,12 +1951,7 @@ function validateCommonHead(
   const fields: Record<string, string[]> = {}
   if (!no.trim() || runeLen(no) > 32) fields.number = ['不能为空且最多 32 个字符']
   if (!documentDate) fields.documentDate = ['必填']
-  const pt = lowerParty(partyType)
-  if (pt !== 'supplier' && pt !== 'company') fields.partyType = ['只允许供应商或内部公司']
-  if (!partyId) fields.partyId = ['必填']
-  if (!companyId) fields.companyId = ['必填']
-  if (pt === 'company' && partyId === companyId) fields.partyId = ['对手不能是本公司']
-  if (remarks && runeLen(remarks) > 512) fields.remarks = ['最多 512 个字符']
+  Object.assign(fields, partyFields(companyId, partyType, partyId, remarks))
   if (Object.keys(fields).length > 0) {
     throw ApiError.validation('委外履约单参数不合法', fields)
   }
@@ -2330,54 +2496,6 @@ async function loadReceiptByproduct(db: DbHandle, id: string) {
     WHERE c.id=${id}::uuid
   `.execute(db)
   return rows.rows[0]
-}
-
-async function lockIssue(db: DbHandle, actor: Actor, id: string) {
-  const rows = await sql<Record<string, unknown>>`
-    SELECT * FROM pur_outsourced_issue WHERE id=${id}::uuid FOR UPDATE
-  `.execute(db)
-  const row = rows.rows[0]
-  if (!row || !canAccessCompany(actor, String(row.company_id))) {
-    throw new ApiError('not_found', '委外发料单不存在')
-  }
-  return row
-}
-
-async function lockDraftIssue(db: DbHandle, actor: Actor, id: string) {
-  const row = await lockIssue(db, actor, id)
-  if (String(row.status).toLowerCase() !== 'draft') {
-    throw new ApiError('conflict', '仅草稿委外发料单可编辑')
-  }
-  return row
-}
-
-async function lockReceipt(db: DbHandle, actor: Actor, id: string) {
-  const rows = await sql<Record<string, unknown>>`
-    SELECT * FROM pur_outsourced_receipt WHERE id=${id}::uuid FOR UPDATE
-  `.execute(db)
-  const row = rows.rows[0]
-  if (!row || !canAccessCompany(actor, String(row.company_id))) {
-    throw new ApiError('not_found', '委外入库单不存在')
-  }
-  return row
-}
-
-async function lockDraftReceipt(db: DbHandle, actor: Actor, id: string) {
-  const row = await lockReceipt(db, actor, id)
-  if (String(row.status).toLowerCase() !== 'draft') {
-    throw new ApiError('conflict', '仅草稿委外入库单可编辑')
-  }
-  return row
-}
-
-async function lockReceiptForItem(db: DbHandle, actor: Actor, itemId: string) {
-  const cur = await sql<{ receipt_id: string }>`
-    SELECT receipt_id FROM pur_outsourced_receipt_item WHERE id=${itemId}::uuid
-  `.execute(db)
-  if (!cur.rows[0]) throw new ApiError('not_found', '委外入库成品行不存在')
-  const receipt = mapReceipt(await lockDraftReceipt(db, actor, cur.rows[0].receipt_id))
-  const item = mapReceiptItem((await loadReceiptItem(db, itemId))!)
-  return { item, receipt }
 }
 
 async function loadIssueActionItems(db: DbHandle, issueId: string) {

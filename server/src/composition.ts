@@ -103,12 +103,12 @@ function assembleDomain(
     employees: party.employees,
     authz,
   })
-  const companyAccountDefaults = createCompanyAccountDefaultService(db)
+  const companyAccountDefaults = createCompanyAccountDefaultService(db, opts.registry)
   const inv = createInventoryServices(db, numbering, opts.registry)
   const accounting = createAccountingServices(db, numbering, {
     isJournalLinkedToBankRecon,
   })
-  const trading = createTradingServices(db, numbering)
+  const trading = createTradingServices(db, numbering, opts.registry)
   const finance = createFinanceServices(db, numbering, {
     reconciliations: trading.reconciliations,
     journals: accounting.journals,
@@ -120,7 +120,7 @@ function assembleDomain(
   // 启动期 fail-closed：meta.todoSource 声明与注册互为镜像，draftLink/party 表列必须存在
   assertTodoSourcesConsistent(opts.registry.list(), todoSources)
   const todos = createTodoService(db, todoSources)
-  const scm = createScmServices(db)
+  const scm = createScmServices(db, opts.registry)
   const manufacturing = createManufacturingServices(db, numbering, opts.registry)
   return {
     settings,

@@ -347,12 +347,12 @@ run('PG 集成（setup 向导）', () => {
         employees: party.employees,
         authz: setupAuthz,
       })
-      const companyAccountDefaults = createCompanyAccountDefaultService(db)
+      const companyAccountDefaults = createCompanyAccountDefaultService(db, registry)
       const inv = createInventoryServices(db, numbering, registry)
       const accounting = createAccountingServices(db, numbering, {
         isJournalLinkedToBankRecon,
       })
-      const trading = createTradingServices(db, numbering)
+      const trading = createTradingServices(db, numbering, registry)
       const finance = createFinanceServices(db, numbering, {
         reconciliations: trading.reconciliations,
         journals: accounting.journals,

@@ -1,15 +1,20 @@
+/**
+ * 订单收发货历史只读投影 REST（挂载于 /base/order-flow-items）。
+ *
+ * 该资源无独立权限点：read 的码级组合子由 meta 的 `authz.readAnyOf` 声明，
+ * guard 直接编译成 anyOf（四种来源单据任一 read 即可读），路由不再手写析取。
+ */
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
-import { hasPermission } from '~/platform/authz/actor.ts'
+import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
+import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
-import { ApiError } from '~/platform/http/errors.ts'
 import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
-import { ORDER_FLOW_SOURCE_READ_PERMISSIONS } from './meta.ts'
-import type { OrderFlowService } from './service.ts'
+import { FLOW_RESOURCE, type OrderFlowService } from './service.ts'
 
 const idParam = z.object({ id: z.string().min(1) })
 
@@ -23,34 +28,26 @@ function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
   }
 }
 
-/** 鉴权先于 body 解码：权限拒绝必须 403（对齐 Go permission-first） */
-function requireOrderFlowRead() {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    const actor = c.get('actor')
-    const ok = ORDER_FLOW_SOURCE_READ_PERMISSIONS.some((p) => hasPermission(actor, p))
-    if (!ok) throw new ApiError('forbidden', '无权限读取订单收发货历史')
-    await next()
-  }
-}
-
-export function orderFlowRoutes(deps: { auth: AuthService; orderFlow: OrderFlowService }) {
-  const { auth, orderFlow } = deps
+export function orderFlowRoutes(deps: {
+  auth: AuthService
+  authz: AuthzEnforcer
+  orderFlow: OrderFlowService
+}) {
+  const { auth, authz, orderFlow } = deps
+  const flowGuard = (action: string) => authz.guard(FLOW_RESOURCE, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requireOrderFlowRead(),
+      flowGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await orderFlow.list(c.get('actor'), toList(c.req.valid('json')))
+        const r = await orderFlow.list(permitOf(c), toList(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )
-    .get('/:id', requireOrderFlowRead(), zValidator('param', idParam, validationHook), async (c) => {
+    .get('/:id', flowGuard('read'), zValidator('param', idParam, validationHook), async (c) => {
       const id = decodeURIComponent(c.req.valid('param').id)
-      return c.json(await orderFlow.get(c.get('actor'), id))
+      return c.json(await orderFlow.get(permitOf(c), id))
     })
 }

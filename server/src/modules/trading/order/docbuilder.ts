@@ -1,6 +1,6 @@
 /**
  * sales.order 打印装配：头 + 条目，键名对齐打印字段目录。
- * 记录级数据权限按 actor 公司范围 fail-closed。
+ * 记录可达性按 Permit 的行过滤 fail-closed（`findAuthorized`，不可达即不产出该单）。
  * 业务知识（表查询 / 枚举标签）住在 trading/order，不进 platform。
  */
 import { sql } from 'kysely'

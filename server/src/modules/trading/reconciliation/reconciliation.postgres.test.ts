@@ -1,42 +1,73 @@
 /**
- * 对账 PG 集成：金额链、确认占量/撤回、赠送结单/作废、尾差与权限隔离。
+ * 对账 PG 集成：金额链、确认占量/撤回、赠送结单/作废、尾差。
+ * 授权四类回归：列表别名（销售/采购 × 头/条目）、跨公司单条 404、
+ * 缺码 403（HTTP 层）、状态守卫 409（领域不变量不进权限系统）。
  * 门控 SYNIE_TEST_DATABASE_URL。
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { decimal } from '@synie/shared'
+import { Hono } from 'hono'
 import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
 import { withTx } from '~/db/tx.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import { createInventoryEngine } from '~/engines/inventory/index.ts'
+import type { AuthService } from '~/platform/auth/service.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
-import { ApiError } from '~/platform/http/errors.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
+import { testActor } from '~/platform/authz/testing.ts'
+import type { AppEnv } from '~/platform/http/context.ts'
+import { ApiError, onError } from '~/platform/http/errors.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
+import type { TradingSide } from '../common.ts'
 import { createFulfillmentService } from '../fulfillment/service.ts'
 import { createOrderService } from '../order/service.ts'
 import { createQuotationService } from '../quotation/service.ts'
+import { reconciliationHeadRoutes, reconciliationItemRoutes } from './routes.ts'
 import { createReconciliationService } from './service.ts'
-import { testActor } from '~/platform/authz/testing.ts'
+import { reconciliationSpec } from './spec.ts'
 
-
-/** 编号服务需要 sealed registry（授权归宿解析） */
-const numberingRegistry = createSealedResourceRegistry()
+/** 编号服务与授权归宿解析共用同一份 sealed registry */
+const registry = createSealedResourceRegistry()
+const authz = createAuthzEnforcer(registry)
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
 
+/** 服务级凭证：actor 会中途改写，故每次现取 */
+function permitFor(who: Actor, resource: string, action: string): Permit {
+  const decision = authz.decideFor(who, resource, action)
+  if (decision.outcome !== 'permit') {
+    throw new Error(`测试凭证不足 ${resource}:${action}（缺 ${decision.missing.join(',')}）`)
+  }
+  return decision.permit
+}
+
+async function expectApiError(fn: () => Promise<unknown>, code: ApiError['code']) {
+  let err: unknown
+  try {
+    await fn()
+  } catch (e) {
+    err = e
+  }
+  expect(err).toBeInstanceOf(ApiError)
+  expect((err as ApiError).code).toBe(code)
+}
+
 run('PG 集成（销售/采购对账）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db, buildNumberingCatalog(numberingRegistry), numberingRegistry)
+  const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
   const gl = createGlEngine()
   const inventory = createInventoryEngine()
   const engines = { inventory, gl }
-  const quotations = createQuotationService(db, numbering)
-  const orders = createOrderService(db, numbering, quotations)
-  const fulfillment = createFulfillmentService(db, numbering, engines)
-  const svc = createReconciliationService(db, numbering, gl)
+  const quotations = createQuotationService(db, numbering, registry)
+  const orders = createOrderService(db, numbering, quotations, registry)
+  const fulfillment = createFulfillmentService(db, numbering, engines, registry)
+  const svc = createReconciliationService(db, numbering, gl, registry)
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `REC${suffix}`
+  void orders
 
   const currencyId = crypto.randomUUID()
   const companyId = crypto.randomUUID()
@@ -70,9 +101,10 @@ run('PG 集成（销售/采购对账）', () => {
     companyIds: [],
   })
 
-  const limited: Actor = testActor({
+  /** 公司域 actor：别名写错时 rowFilter 不再是 bypass，能测出 via 链断裂 */
+  const scoped: Actor = testActor({
     userId: '',
-    username: 'recon-limited',
+    username: 'recon-scoped',
     name: null,
     superAdmin: false,
     allCompanies: false,
@@ -80,14 +112,63 @@ run('PG 集成（销售/采购对账）', () => {
       'sales.reconciliation:read',
       'sales.reconciliation:create',
       'sales.reconciliation:confirm',
+      'purchase.reconciliation:read',
     ]),
     companyIds: [companyId],
   })
 
+  /** 同码不同公司：单条一律 not_found、列表一律不含 */
+  const foreign: Actor = testActor({ ...scoped, username: 'recon-foreign', companyIds: [otherCompanyId] })
+
+  /** 只有 read 码：写动作与工作流动作在 HTTP 层 403 */
+  const readOnly: Actor = testActor({
+    ...scoped,
+    username: 'recon-read-only',
+    permissions: new Set(['sales.reconciliation:read']),
+  })
+
+  const headRes = (side: TradingSide) => reconciliationSpec(side).headResource
+  const itemRes = (side: TradingSide) => reconciliationSpec(side).itemResource
+  const headPermit = (side: TradingSide, action: string, who: Actor = actor) =>
+    permitFor(who, headRes(side), action)
+  const itemPermit = (side: TradingSide, action: string, who: Actor = actor) =>
+    permitFor(who, itemRes(side), action)
+
+  const byToken = (token: string | null): Actor => {
+    if (token === 'scoped') return scoped
+    if (token === 'read-only') return readOnly
+    return actor
+  }
+  const auth = {
+    authenticate: async (token: string) => byToken(token),
+    authenticateRequest: async (headers: Headers) => {
+      const header = headers.get('authorization')
+      const token = header?.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : null
+      return byToken(token)
+    },
+  } as unknown as AuthService
+  const http = new Hono<AppEnv>()
+    .route(
+      '/api/v1/sales/reconciliations',
+      reconciliationHeadRoutes({ auth, authz, reconciliations: svc, side: 'sales' }),
+    )
+    .route(
+      '/api/v1/sales/reconciliation-items',
+      reconciliationItemRoutes({ auth, authz, reconciliations: svc, side: 'sales' }),
+    )
+  http.onError(onError)
+
+  const asToken = (token: string, path: string, body?: unknown) =>
+    http.request(path, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+
   beforeAll(async () => {
     await sql`
       INSERT INTO bas_currency(id,name,iso_code,symbol,active)
-      VALUES (${currencyId}::uuid, ${prefix + '币'}, ${'R' + suffix.slice(0, 2)}, '¤', true)
+      VALUES (${currencyId}::uuid, ${prefix + '币'}, ${'R' + suffix.slice(0, 6)}, '¤', true)
     `.execute(db)
     await sql`
       INSERT INTO bas_company(id,code,name,short_name,base_currency_id) VALUES
@@ -102,9 +183,10 @@ run('PG 集成（销售/采购对账）', () => {
       INSERT INTO pur_supplier(id,code,name,short_name)
       VALUES (${supplierId}::uuid, ${'SU' + suffix}, ${prefix + '供应商'}, 'SU')
     `.execute(db)
+    // symbol 全库唯一：并行套件共用测试库，故按 suffix 取唯一值
     await sql`
       INSERT INTO bas_unit(id,unit_type,is_base,name,symbol,ratio)
-      VALUES (${unitId}::uuid, ${'recon-' + suffix}, true, ${prefix + '件'}, 'u', 1)
+      VALUES (${unitId}::uuid, ${'recon-' + suffix}, true, ${prefix + '件'}, ${'u' + suffix.slice(0, 6)}, 1)
     `.execute(db)
     await sql`
       INSERT INTO inv_material_category(id,code,name,is_leaf,active)
@@ -159,7 +241,7 @@ run('PG 集成（销售/采购对账）', () => {
         delivery_id,company_id,order_item_id,material_id,unit_id,warehouse_id,reconciled_qty
       ) VALUES (
         ${salesDeliveryItemId}::uuid,1,10,20,${'M' + suffix},${prefix + '物料'},${prefix + '件'},${prefix + '-SO'},
-        10,20,${prefix + '件'},10,100,12,120,0.13,${'R' + suffix.slice(0, 2)},
+        10,20,${prefix + '件'},10,100,12,120,0.13,${'R' + suffix.slice(0, 6)},
         ${salesDeliveryId}::uuid,${companyId}::uuid,${salesOrderItemId}::uuid,
         ${materialId}::uuid,${unitId}::uuid,${warehouseId}::uuid,0
       )
@@ -189,7 +271,7 @@ run('PG 集成（销售/采购对账）', () => {
         receipt_id,company_id,order_item_id,material_id,unit_id,warehouse_id,reconciled_qty
       ) VALUES (
         ${purchaseReceiptItemId}::uuid,1,10,10,${'M' + suffix},${prefix + '物料'},${prefix + '件'},${prefix + '-PO'},
-        10,10,${prefix + '件'},8,80,9.6,96,0.13,${'R' + suffix.slice(0, 2)},
+        10,10,${prefix + '件'},8,80,9.6,96,0.13,${'R' + suffix.slice(0, 6)},
         ${purchaseReceiptId}::uuid,${companyId}::uuid,${purchaseOrderItemId}::uuid,
         ${materialId}::uuid,${unitId}::uuid,${warehouseId}::uuid,0
       )
@@ -220,27 +302,27 @@ run('PG 集成（销售/采购对账）', () => {
   })
 
   test('对账条目按来源日期排序和筛选', async () => {
-    const salesHead = await svc.createHead(actor, 'sales', {
+    const salesHead = await svc.createHead(headPermit('sales', 'create'), 'sales', {
       companyId,
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
       partyId: customerId,
       no: `${prefix}-SR-LIST`,
     })
-    const purchaseHead = await svc.createHead(actor, 'purchase', {
+    const purchaseHead = await svc.createHead(headPermit('purchase', 'create'), 'purchase', {
       companyId,
       kind: 'REGULAR',
       partyType: 'SUPPLIER',
       partyId: supplierId,
       no: `${prefix}-PR-LIST`,
     })
-    const salesItem = await svc.createItem(actor, 'sales', {
+    const salesItem = await svc.createItem(itemPermit('sales', 'create'), 'sales', {
       reconciliationId: salesHead.id,
       idx: 1,
       qty: '1',
       deliveryItemId: salesDeliveryItemId,
     })
-    const purchaseItem = await svc.createItem(actor, 'purchase', {
+    const purchaseItem = await svc.createItem(itemPermit('purchase', 'create'), 'purchase', {
       reconciliationId: purchaseHead.id,
       idx: 1,
       qty: '1',
@@ -248,7 +330,7 @@ run('PG 集成（销售/采购对账）', () => {
     })
 
     try {
-      const sales = await svc.listItems(actor, 'sales', {
+      const sales = await svc.listItems(itemPermit('sales', 'read'), 'sales', {
         limit: 20,
         offset: 0,
         sort: { column: 'deliveryDate', direction: 'descending' },
@@ -258,7 +340,7 @@ run('PG 集成（销售/采购对账）', () => {
       })
       expect(sales.results.some((item) => item.id === salesItem.id)).toBe(true)
 
-      const purchase = await svc.listItems(actor, 'purchase', {
+      const purchase = await svc.listItems(itemPermit('purchase', 'read'), 'purchase', {
         limit: 20,
         offset: 0,
         sort: { column: 'receiptDate', direction: 'descending' },
@@ -268,15 +350,15 @@ run('PG 集成（销售/采购对账）', () => {
       })
       expect(purchase.results.some((item) => item.id === purchaseItem.id)).toBe(true)
     } finally {
-      await svc.deleteItem(actor, 'sales', salesItem.id)
-      await svc.deleteItem(actor, 'purchase', purchaseItem.id)
-      await svc.deleteHead(actor, 'sales', salesHead.id)
-      await svc.deleteHead(actor, 'purchase', purchaseHead.id)
+      await svc.deleteItem(itemPermit('sales', 'delete'), 'sales', salesItem.id)
+      await svc.deleteItem(itemPermit('purchase', 'delete'), 'purchase', purchaseItem.id)
+      await svc.deleteHead(headPermit('sales', 'delete'), 'sales', salesHead.id)
+      await svc.deleteHead(headPermit('purchase', 'delete'), 'purchase', purchaseHead.id)
     }
   })
 
   test('默认科目代入 + 金额链 + 确认占量/撤回', async () => {
-    const head = await svc.createHead(actor, 'sales', {
+    const head = await svc.createHead(headPermit('sales', 'create'), 'sales', {
       companyId,
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
@@ -287,7 +369,7 @@ run('PG 集成（销售/采购对账）', () => {
     expect(head.creditAccountId).toBe(salesCreditId)
     expect(head.status).toBe('DRAFT')
 
-    const item = await svc.createItem(actor, 'sales', {
+    const item = await svc.createItem(itemPermit('sales', 'create'), 'sales', {
       reconciliationId: head.id,
       idx: 1,
       qty: '2.005',
@@ -298,7 +380,7 @@ run('PG 集成（销售/采购对账）', () => {
     expect(decimal(item.amount).equals(decimal('20.05'))).toBe(true)
     expect(decimal(item.baseAmount).equals(decimal('24.06'))).toBe(true)
 
-    const confirmed = await svc.confirm(actor, 'sales', head.id)
+    const confirmed = await svc.confirm(headPermit('sales', 'confirm'), 'sales', head.id)
     expect(confirmed.status).toBe('CONFIRMED')
     const recon = await sql<{ r: string }>`
       SELECT reconciled_qty::text AS r FROM sal_delivery_item WHERE id=${salesDeliveryItemId}::uuid
@@ -311,19 +393,19 @@ run('PG 集成（销售/采购对账）', () => {
     `.execute(db)
     expect(Number(todos.rows[0]!.c)).toBe(1)
 
-    const unconfirmed = await svc.unconfirm(actor, 'sales', head.id)
+    const unconfirmed = await svc.unconfirm(headPermit('sales', 'unconfirm'), 'sales', head.id)
     expect(unconfirmed.status).toBe('DRAFT')
     const recon2 = await sql<{ r: string }>`
       SELECT reconciled_qty::text AS r FROM sal_delivery_item WHERE id=${salesDeliveryItemId}::uuid
     `.execute(db)
     expect(decimal(recon2.rows[0]!.r).equals(decimal(0))).toBe(true)
 
-    await svc.deleteItem(actor, 'sales', item.id)
-    await svc.deleteHead(actor, 'sales', head.id)
+    await svc.deleteItem(itemPermit('sales', 'delete'), 'sales', item.id)
+    await svc.deleteHead(headPermit('sales', 'delete'), 'sales', head.id)
   })
 
   test('分次对账尾差不配平 + 超剩余冲突', async () => {
-    const head = await svc.createHead(actor, 'sales', {
+    const head = await svc.createHead(headPermit('sales', 'create'), 'sales', {
       companyId,
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
@@ -333,19 +415,19 @@ run('PG 集成（销售/采购对账）', () => {
       creditAccountId: salesCreditId,
     })
     // 先对 9 行单位 (=18 base)，剩余 1 行单位 (=2 base)
-    const item = await svc.createItem(actor, 'sales', {
+    const item = await svc.createItem(itemPermit('sales', 'create'), 'sales', {
       reconciliationId: head.id,
       idx: 1,
       qty: '9',
       deliveryItemId: salesDeliveryItemId,
     })
-    await svc.confirm(actor, 'sales', head.id)
+    await svc.confirm(headPermit('sales', 'confirm'), 'sales', head.id)
     const recon = await sql<{ r: string; b: string }>`
       SELECT reconciled_qty::text AS r, base_qty::text AS b FROM sal_delivery_item WHERE id=${salesDeliveryItemId}::uuid
     `.execute(db)
     expect(decimal(recon.rows[0]!.r).equals(decimal('18'))).toBe(true)
 
-    const head2 = await svc.createHead(actor, 'sales', {
+    const head2 = await svc.createHead(headPermit('sales', 'create'), 'sales', {
       companyId,
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
@@ -354,22 +436,19 @@ run('PG 集成（销售/采购对账）', () => {
       debitAccountId: salesDebitId,
       creditAccountId: salesCreditId,
     })
-    let overErr: unknown
-    try {
-      await svc.createItem(actor, 'sales', {
-        reconciliationId: head2.id,
-        idx: 1,
-        qty: '2', // 需要 4 base，仅剩 2
-        deliveryItemId: salesDeliveryItemId,
-      })
-    } catch (e) {
-      overErr = e
-    }
-    expect(overErr).toBeInstanceOf(ApiError)
-    expect((overErr as ApiError).code).toBe('conflict')
+    await expectApiError(
+      () =>
+        svc.createItem(itemPermit('sales', 'create'), 'sales', {
+          reconciliationId: head2.id,
+          idx: 1,
+          qty: '2', // 需要 4 base，仅剩 2
+          deliveryItemId: salesDeliveryItemId,
+        }),
+      'conflict',
+    )
 
     // 尾差 1 行单位可对
-    const tail = await svc.createItem(actor, 'sales', {
+    const tail = await svc.createItem(itemPermit('sales', 'create'), 'sales', {
       reconciliationId: head2.id,
       idx: 1,
       qty: '1',
@@ -377,15 +456,15 @@ run('PG 集成（销售/采购对账）', () => {
     })
     expect(decimal(tail.baseQty).equals(decimal('2'))).toBe(true)
 
-    await svc.unconfirm(actor, 'sales', head.id)
-    await svc.deleteItem(actor, 'sales', item.id)
-    await svc.deleteItem(actor, 'sales', tail.id)
-    await svc.deleteHead(actor, 'sales', head.id)
-    await svc.deleteHead(actor, 'sales', head2.id)
+    await svc.unconfirm(headPermit('sales', 'unconfirm'), 'sales', head.id)
+    await svc.deleteItem(itemPermit('sales', 'delete'), 'sales', item.id)
+    await svc.deleteItem(itemPermit('sales', 'delete'), 'sales', tail.id)
+    await svc.deleteHead(headPermit('sales', 'delete'), 'sales', head.id)
+    await svc.deleteHead(headPermit('sales', 'delete'), 'sales', head2.id)
   })
 
   test('赠送/样品结单过账与作废回滚', async () => {
-    const head = await svc.createHead(actor, 'sales', {
+    const head = await svc.createHead(headPermit('sales', 'create'), 'sales', {
       companyId,
       kind: 'GIFT_SAMPLE',
       partyType: 'CUSTOMER',
@@ -394,13 +473,15 @@ run('PG 集成（销售/采购对账）', () => {
       debitAccountId: salesDebitId,
       creditAccountId: salesCreditId,
     })
-    await svc.createItem(actor, 'sales', {
+    await svc.createItem(itemPermit('sales', 'create'), 'sales', {
       reconciliationId: head.id,
       idx: 1,
       qty: '1',
       deliveryItemId: salesDeliveryItemId,
     })
-    const closed = await svc.audit(actor, 'sales', head.id, { postingDate: '2026-07-26' })
+    const closed = await svc.audit(headPermit('sales', 'audit'), 'sales', head.id, {
+      postingDate: '2026-07-26',
+    })
     expect(closed.status).toBe('CLOSED')
     expect(closed.postingDate).toBe('2026-07-26')
 
@@ -415,7 +496,7 @@ run('PG 集成（销售/采购对账）', () => {
     `.execute(db)
     expect(decimal(recon.rows[0]!.r).gt(0)).toBe(true)
 
-    const voided = await svc.void(actor, 'sales', head.id)
+    const voided = await svc.void(headPermit('sales', 'void'), 'sales', head.id)
     expect(voided.status).toBe('VOIDED')
     const recon2 = await sql<{ r: string }>`
       SELECT reconciled_qty::text AS r FROM sal_delivery_item WHERE id=${salesDeliveryItemId}::uuid
@@ -429,7 +510,7 @@ run('PG 集成（销售/采购对账）', () => {
   })
 
   test('采购镜像确认/撤回', async () => {
-    const head = await svc.createHead(actor, 'purchase', {
+    const head = await svc.createHead(headPermit('purchase', 'create'), 'purchase', {
       companyId,
       kind: 'REGULAR',
       partyType: 'SUPPLIER',
@@ -438,7 +519,7 @@ run('PG 集成（销售/采购对账）', () => {
       debitAccountId: purchaseDebitId,
       creditAccountId: purchaseCreditId,
     })
-    const item = await svc.createItem(actor, 'purchase', {
+    const item = await svc.createItem(itemPermit('purchase', 'create'), 'purchase', {
       reconciliationId: head.id,
       idx: 1,
       qty: '3',
@@ -447,18 +528,120 @@ run('PG 集成（销售/采购对账）', () => {
     expect(decimal(item.amount).equals(decimal('24'))).toBe(true) // 3*8
     expect(decimal(item.baseAmount).equals(decimal('28.8'))).toBe(true) // 24*1.2
 
-    await svc.confirm(actor, 'purchase', head.id)
+    await svc.confirm(headPermit('purchase', 'confirm'), 'purchase', head.id)
     const recon = await sql<{ r: string }>`
       SELECT reconciled_qty::text AS r FROM pur_receipt_item WHERE id=${purchaseReceiptItemId}::uuid
     `.execute(db)
     expect(decimal(recon.rows[0]!.r).equals(decimal('3'))).toBe(true)
-    await svc.unconfirm(actor, 'purchase', head.id)
-    await svc.deleteItem(actor, 'purchase', item.id)
-    await svc.deleteHead(actor, 'purchase', head.id)
+    await svc.unconfirm(headPermit('purchase', 'unconfirm'), 'purchase', head.id)
+    await svc.deleteItem(itemPermit('purchase', 'delete'), 'purchase', item.id)
+    await svc.deleteHead(headPermit('purchase', 'delete'), 'purchase', head.id)
   })
 
-  test('公司隔离：无权公司 not_found', async () => {
-    const head = await svc.createHead(actor, 'sales', {
+  test('列表别名回归：公司域 actor 能看到本公司的头与条目（销售/采购）', async () => {
+    const salesHead = await svc.createHead(headPermit('sales', 'create'), 'sales', {
+      companyId,
+      kind: 'REGULAR',
+      partyType: 'CUSTOMER',
+      partyId: customerId,
+      no: `${prefix}-SR-ALIAS`,
+      debitAccountId: salesDebitId,
+      creditAccountId: salesCreditId,
+    })
+    const purchaseHead = await svc.createHead(headPermit('purchase', 'create'), 'purchase', {
+      companyId,
+      kind: 'REGULAR',
+      partyType: 'SUPPLIER',
+      partyId: supplierId,
+      no: `${prefix}-PR-ALIAS`,
+      debitAccountId: purchaseDebitId,
+      creditAccountId: purchaseCreditId,
+    })
+    const salesItem = await svc.createItem(itemPermit('sales', 'create'), 'sales', {
+      reconciliationId: salesHead.id,
+      idx: 1,
+      qty: '1',
+      deliveryItemId: salesDeliveryItemId,
+    })
+    const purchaseItem = await svc.createItem(itemPermit('purchase', 'create'), 'purchase', {
+      reconciliationId: purchaseHead.id,
+      idx: 1,
+      qty: '1',
+      receiptItemId: purchaseReceiptItemId,
+    })
+    const page = { limit: 200, offset: 0 }
+    try {
+      // 头：company 形态，别名须与 headListSource 的子查询别名一致
+      const salesHeads = await svc.listHeads(headPermit('sales', 'read', scoped), 'sales', page)
+      expect(salesHeads.results.some((r) => r.id === salesHead.id)).toBe(true)
+      const purchaseHeads = await svc.listHeads(
+        headPermit('purchase', 'read', scoped),
+        'purchase',
+        page,
+      )
+      expect(purchaseHeads.results.some((r) => r.id === purchaseHead.id)).toBe(true)
+
+      // 条目：via 链落在子查询别名上，别名写错则 EXISTS 收不到宿主行
+      const salesItems = await svc.listItems(itemPermit('sales', 'read', scoped), 'sales', page)
+      expect(salesItems.results.some((r) => r.id === salesItem.id)).toBe(true)
+      const purchaseItems = await svc.listItems(
+        itemPermit('purchase', 'read', scoped),
+        'purchase',
+        page,
+      )
+      expect(purchaseItems.results.some((r) => r.id === purchaseItem.id)).toBe(true)
+
+      // 对照：他司 actor 的列表不含本公司行（对空集不永真，因为上面已断言可见）
+      const foreignHeads = await svc.listHeads(headPermit('sales', 'read', foreign), 'sales', page)
+      expect(foreignHeads.results.some((r) => r.id === salesHead.id)).toBe(false)
+      const foreignItems = await svc.listItems(itemPermit('sales', 'read', foreign), 'sales', page)
+      expect(foreignItems.results.some((r) => r.id === salesItem.id)).toBe(false)
+    } finally {
+      await svc.deleteItem(itemPermit('sales', 'delete'), 'sales', salesItem.id)
+      await svc.deleteItem(itemPermit('purchase', 'delete'), 'purchase', purchaseItem.id)
+      await svc.deleteHead(headPermit('sales', 'delete'), 'sales', salesHead.id)
+      await svc.deleteHead(headPermit('purchase', 'delete'), 'purchase', purchaseHead.id)
+    }
+  })
+
+  test('条目改量：母单先行加锁，金额链重算并写审计 diff', async () => {
+    const head = await svc.createHead(headPermit('sales', 'create'), 'sales', {
+      companyId,
+      kind: 'REGULAR',
+      partyType: 'CUSTOMER',
+      partyId: customerId,
+      no: `${prefix}-SR-EDIT`,
+      debitAccountId: salesDebitId,
+      creditAccountId: salesCreditId,
+    })
+    const item = await svc.createItem(itemPermit('sales', 'create'), 'sales', {
+      reconciliationId: head.id,
+      idx: 1,
+      qty: '1',
+      deliveryItemId: salesDeliveryItemId,
+    })
+    try {
+      const updated = await svc.updateItem(itemPermit('sales', 'update'), 'sales', item.id, {
+        qty: '2',
+      })
+      expect(decimal(updated.qty).equals(decimal('2'))).toBe(true)
+      expect(decimal(updated.baseQty).equals(decimal('4'))).toBe(true)
+      expect(decimal(updated.amount).equals(decimal('20'))).toBe(true)
+      expect(decimal(updated.baseAmount).equals(decimal('24'))).toBe(true)
+      const audits = await sql<{ c: string }>`
+        SELECT count(*)::text AS c FROM sys_audit_log
+        WHERE resource='sal_reconciliation_item' AND record_id=${item.id}::uuid
+          AND action_name='update'
+      `.execute(db)
+      expect(Number(audits.rows[0]!.c)).toBe(1)
+    } finally {
+      await svc.deleteItem(itemPermit('sales', 'delete'), 'sales', item.id)
+      await svc.deleteHead(headPermit('sales', 'delete'), 'sales', head.id)
+    }
+  })
+
+  test('跨公司单条：头/条目读与写一律 not_found', async () => {
+    const head = await svc.createHead(headPermit('sales', 'create'), 'sales', {
       companyId,
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
@@ -467,31 +650,143 @@ run('PG 集成（销售/采购对账）', () => {
       debitAccountId: salesDebitId,
       creditAccountId: salesCreditId,
     })
-    let err: unknown
-    try {
-      await svc.getHead(limited, 'sales', head.id)
-    } catch (e) {
-      // limited can access companyId — should succeed
-    }
-    const ok = await svc.getHead(limited, 'sales', head.id)
-    expect(ok.id).toBe(head.id)
-
-    const outsider: Actor = testActor({
-      ...limited,
-      companyIds: [otherCompanyId],
+    const item = await svc.createItem(itemPermit('sales', 'create'), 'sales', {
+      reconciliationId: head.id,
+      idx: 1,
+      qty: '1',
+      deliveryItemId: salesDeliveryItemId,
     })
     try {
-      await svc.getHead(outsider, 'sales', head.id)
-    } catch (e) {
-      err = e
+      // 有公司的 actor 读得到
+      const ok = await svc.getHead(headPermit('sales', 'read', scoped), 'sales', head.id)
+      expect(ok.id).toBe(head.id)
+      const okItem = await svc.getItem(itemPermit('sales', 'read', scoped), 'sales', item.id)
+      expect(okItem.id).toBe(item.id)
+
+      // 他司 actor：存在但不可达 → not_found（不再是 forbidden）
+      await expectApiError(
+        () => svc.getHead(headPermit('sales', 'read', foreign), 'sales', head.id),
+        'not_found',
+      )
+      await expectApiError(
+        () => svc.getItem(itemPermit('sales', 'read', foreign), 'sales', item.id),
+        'not_found',
+      )
+      await expectApiError(
+        () => svc.confirm(headPermit('sales', 'confirm', foreign), 'sales', head.id),
+        'not_found',
+      )
+      // create：目标公司未授权 → not_found（公司不存在）
+      await expectApiError(
+        () =>
+          svc.createHead(headPermit('sales', 'create', foreign), 'sales', {
+            companyId,
+            kind: 'REGULAR',
+            partyType: 'CUSTOMER',
+            partyId: customerId,
+            no: `${prefix}-SR-DENY`,
+          }),
+        'not_found',
+      )
+    } finally {
+      await svc.deleteItem(itemPermit('sales', 'delete'), 'sales', item.id)
+      await svc.deleteHead(headPermit('sales', 'delete'), 'sales', head.id)
     }
-    expect(err).toBeInstanceOf(ApiError)
-    expect((err as ApiError).code).toBe('not_found')
-    await svc.deleteHead(actor, 'sales', head.id)
+  })
+
+  test('状态守卫 409：非草稿不可改、重复确认冲突', async () => {
+    const head = await svc.createHead(headPermit('sales', 'create'), 'sales', {
+      companyId,
+      kind: 'REGULAR',
+      partyType: 'CUSTOMER',
+      partyId: customerId,
+      no: `${prefix}-SR-STATE`,
+      debitAccountId: salesDebitId,
+      creditAccountId: salesCreditId,
+    })
+    const item = await svc.createItem(itemPermit('sales', 'create'), 'sales', {
+      reconciliationId: head.id,
+      idx: 1,
+      qty: '1',
+      deliveryItemId: salesDeliveryItemId,
+    })
+    await svc.confirm(headPermit('sales', 'confirm'), 'sales', head.id)
+    try {
+      await expectApiError(
+        () =>
+          svc.updateHead(headPermit('sales', 'update'), 'sales', head.id, {
+            remarks: '改不动',
+            remarksPresent: true,
+          }),
+        'conflict',
+      )
+      await expectApiError(
+        () => svc.confirm(headPermit('sales', 'confirm'), 'sales', head.id),
+        'conflict',
+      )
+      await expectApiError(
+        () =>
+          svc.updateItem(itemPermit('sales', 'update'), 'sales', item.id, {
+            qty: '2',
+          }),
+        'conflict',
+      )
+    } finally {
+      await svc.unconfirm(headPermit('sales', 'unconfirm'), 'sales', head.id)
+      await svc.deleteItem(itemPermit('sales', 'delete'), 'sales', item.id)
+      await svc.deleteHead(headPermit('sales', 'delete'), 'sales', head.id)
+    }
+  })
+
+  test('HTTP 缺码 403：工作流动作与条目写各自持码', async () => {
+    const head = await svc.createHead(headPermit('sales', 'create'), 'sales', {
+      companyId,
+      kind: 'REGULAR',
+      partyType: 'CUSTOMER',
+      partyId: customerId,
+      no: `${prefix}-SR-HTTP`,
+      debitAccountId: salesDebitId,
+      creditAccountId: salesCreditId,
+    })
+    const item = await svc.createItem(itemPermit('sales', 'create'), 'sales', {
+      reconciliationId: head.id,
+      idx: 1,
+      qty: '1',
+      deliveryItemId: salesDeliveryItemId,
+    })
+    try {
+      // 只有 read 码：confirm / 条目 create（via → 母资源 create 码）均 403
+      const denyConfirm = await asToken('read-only', `/api/v1/sales/reconciliations/${head.id}/confirm`)
+      expect(denyConfirm.status).toBe(403)
+      const denyItem = await asToken('read-only', '/api/v1/sales/reconciliation-items', {
+        reconciliationId: head.id,
+        idx: 2,
+        qty: '1',
+        deliveryItemId: salesDeliveryItemId,
+      })
+      expect(denyItem.status).toBe(403)
+      // read 码可读列表
+      const okQuery = await asToken('read-only', '/api/v1/sales/reconciliations/query', {
+        limit: 20,
+        offset: 0,
+      })
+      expect(okQuery.status).toBe(200)
+
+      // 持 confirm 码放行；再次 confirm 是领域冲突 409（不是权限问题）
+      const okConfirm = await asToken('scoped', `/api/v1/sales/reconciliations/${head.id}/confirm`)
+      expect(okConfirm.status).toBe(200)
+      expect(((await okConfirm.json()) as { status: string }).status).toBe('CONFIRMED')
+      const again = await asToken('scoped', `/api/v1/sales/reconciliations/${head.id}/confirm`)
+      expect(again.status).toBe(409)
+    } finally {
+      await svc.unconfirm(headPermit('sales', 'unconfirm'), 'sales', head.id)
+      await svc.deleteItem(itemPermit('sales', 'delete'), 'sales', item.id)
+      await svc.deleteHead(headPermit('sales', 'delete'), 'sales', head.id)
+    }
   })
 
   test('有已对账数量时发货不可作废（履约侧约束）', async () => {
-    const head = await svc.createHead(actor, 'sales', {
+    const head = await svc.createHead(headPermit('sales', 'create'), 'sales', {
       companyId,
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
@@ -500,13 +795,13 @@ run('PG 集成（销售/采购对账）', () => {
       debitAccountId: salesDebitId,
       creditAccountId: salesCreditId,
     })
-    await svc.createItem(actor, 'sales', {
+    await svc.createItem(itemPermit('sales', 'create'), 'sales', {
       reconciliationId: head.id,
       idx: 1,
       qty: '1',
       deliveryItemId: salesDeliveryItemId,
     })
-    await svc.confirm(actor, 'sales', head.id)
+    await svc.confirm(headPermit('sales', 'confirm'), 'sales', head.id)
     const recon = await sql<{ r: string }>`
       SELECT reconciled_qty::text AS r FROM sal_delivery_item WHERE id=${salesDeliveryItemId}::uuid
     `.execute(db)
@@ -514,7 +809,7 @@ run('PG 集成（销售/采购对账）', () => {
 
     let voidErr: unknown
     try {
-      await fulfillment.voidHead(actor, 'sales', salesDeliveryId)
+      await fulfillment.voidHead(permitFor(actor, 'salDeliveries', 'void'), 'sales', salesDeliveryId)
     } catch (e) {
       voidErr = e
     }
@@ -522,12 +817,12 @@ run('PG 集成（销售/采购对账）', () => {
     expect((voidErr as ApiError).code).toBe('conflict')
     expect((voidErr as ApiError).message).toContain('已对账')
 
-    await svc.unconfirm(actor, 'sales', head.id)
-    await svc.deleteHead(actor, 'sales', head.id)
+    await svc.unconfirm(headPermit('sales', 'unconfirm'), 'sales', head.id)
+    await svc.deleteHead(headPermit('sales', 'delete'), 'sales', head.id)
   })
 
   test('发票结单/重开接缝：状态与待办关闭/复活', async () => {
-    const head = await svc.createHead(actor, 'sales', {
+    const head = await svc.createHead(headPermit('sales', 'create'), 'sales', {
       companyId,
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
@@ -536,14 +831,15 @@ run('PG 集成（销售/采购对账）', () => {
       debitAccountId: salesDebitId,
       creditAccountId: salesCreditId,
     })
-    await svc.createItem(actor, 'sales', {
+    await svc.createItem(itemPermit('sales', 'create'), 'sales', {
       reconciliationId: head.id,
       idx: 1,
       qty: '1',
       deliveryItemId: salesDeliveryItemId,
     })
-    await svc.confirm(actor, 'sales', head.id)
+    await svc.confirm(headPermit('sales', 'confirm'), 'sales', head.id)
 
+    // 发票联动接缝仍收 Actor（finance 内部事务，不做公司判定）
     const closed = await withTx(db, async (trx) =>
       svc.closeFromInvoice(trx, actor, 'sales', head.id),
     )
@@ -570,7 +866,7 @@ run('PG 集成（销售/采购对账）', () => {
     `.execute(db)
     expect(decimal(recon.rows[0]!.r).gt(0)).toBe(true)
 
-    await svc.unconfirm(actor, 'sales', head.id)
-    await svc.deleteHead(actor, 'sales', head.id)
+    await svc.unconfirm(headPermit('sales', 'unconfirm'), 'sales', head.id)
+    await svc.deleteHead(headPermit('sales', 'delete'), 'sales', head.id)
   })
 })

@@ -11,6 +11,11 @@ import type { OrderService } from './order/service.ts'
 import { quotationHeadRoutes } from './quotation/routes.ts'
 import type { QuotationService } from './quotation/service.ts'
 import { testActor } from '~/platform/authz/testing.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+
+/** guard 需要 sealed registry：superAdmin 夹具恒 permit，本文件只验 wire schema */
+const authz = createAuthzEnforcer(createSealedResourceRegistry())
 
 const actor: Actor = testActor({
   userId: '',
@@ -34,7 +39,7 @@ const calls = {
 }
 
 const orders = {
-  createDraft: async (_actor: Actor, _side: string, input: unknown) => {
+  createDraft: async (_permit: unknown, _side: string, input: unknown) => {
     calls.orderCreate.push(input)
     return {}
   },
@@ -42,7 +47,7 @@ const orders = {
 } as unknown as OrderService
 
 const quotations = {
-  createDraft: async (_actor: Actor, _side: string, input: unknown) => {
+  createDraft: async (_permit: unknown, _side: string, input: unknown) => {
     calls.quotationCreate.push(input)
     return {}
   },
@@ -52,7 +57,7 @@ const quotations = {
 const fulfillment = {
   createSalesDraft: async () => ({}),
   replaceSalesDraft: async () => ({}),
-  createPurchaseReceiptDraft: async (_actor: Actor, input: unknown) => {
+  createPurchaseReceiptDraft: async (_permit: unknown, input: unknown) => {
     calls.purchaseReceiptCreate.push(input)
     return {}
   },
@@ -60,10 +65,10 @@ const fulfillment = {
 } as unknown as FulfillmentService
 
 const app = new Hono<AppEnv>()
-  .route('/orders', orderHeadRoutes({ auth, orders, side: 'purchase' }))
-  .route('/quotations', quotationHeadRoutes({ auth, quotations, side: 'purchase' }))
-  .route('/deliveries', salesFulfillmentHeadRoutes({ auth, fulfillment }))
-  .route('/receipts', purchaseFulfillmentHeadRoutes({ auth, fulfillment }))
+  .route('/orders', orderHeadRoutes({ auth, authz, orders, side: 'purchase' }))
+  .route('/quotations', quotationHeadRoutes({ auth, authz, quotations, side: 'purchase' }))
+  .route('/deliveries', salesFulfillmentHeadRoutes({ auth, authz, fulfillment }))
+  .route('/receipts', purchaseFulfillmentHeadRoutes({ auth, authz, fulfillment }))
 app.onError(onError)
 
 const companyId = crypto.randomUUID()

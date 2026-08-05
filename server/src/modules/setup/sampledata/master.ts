@@ -105,15 +105,21 @@ async function ensureCompanyAccountDefault(
   companyId: string,
   accs: Accounts,
 ): Promise<void> {
-  const existing = await deps.companyAccountDefaults.getByCompany(actor, companyId)
+  const existing = await deps.companyAccountDefaults.getByCompany(
+    permitFor(deps, actor, 'salCompanyAccountDefaults', 'read'),
+    companyId,
+  )
   if (existing.id) return
-  await deps.companyAccountDefaults.create(actor, {
+  await deps.companyAccountDefaults.create(
+    permitFor(deps, actor, 'salCompanyAccountDefaults', 'update'),
+    {
     companyId,
     deliveryDebitAccountId: accs.unbilledAR,
     deliveryCreditAccountId: accs.revenue,
     receiptDebitAccountId: accs.inventory,
     receiptCreditAccountId: accs.unbilledAP,
-  })
+  },
+  )
 }
 
 async function ensureFinishedWarehouse(

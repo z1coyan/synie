@@ -8,20 +8,29 @@ import {
   type OrderFlowService,
 } from './orderflow/index.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
+import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 
 export function registerScmResources(registry: Registry): void {
   registry.register(orderFlowItemMeta())
 }
 
-export function createScmServices(db: Kysely<Database>) {
-  return { orderFlow: createOrderFlowService(db) }
+export function createScmServices(db: Kysely<Database>, registry: Registry) {
+  return { orderFlow: createOrderFlowService(db, registry) }
 }
 
 export type ScmServices = ReturnType<typeof createScmServices>
 
-export function scmRouteMounts(deps: { auth: AuthService; scm: ScmServices }) {
+export function scmRouteMounts(deps: {
+  auth: AuthService
+  authz: AuthzEnforcer
+  scm: ScmServices
+}) {
   return {
-    orderFlowItems: orderFlowRoutes({ auth: deps.auth, orderFlow: deps.scm.orderFlow }),
+    orderFlowItems: orderFlowRoutes({
+      auth: deps.auth,
+      authz: deps.authz,
+      orderFlow: deps.scm.orderFlow,
+    }),
   }
 }
 

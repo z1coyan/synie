@@ -36,7 +36,7 @@ run('PG 集成（财务运营 12）', () => {
   const db = createDb(url!)
   const numbering = createNumberingService(db, buildNumberingCatalog(numberingRegistry), numberingRegistry)
   const gl = createGlEngine()
-  const reconciliations = createReconciliationService(db, numbering, gl)
+  const reconciliations = createReconciliationService(db, numbering, gl, numberingRegistry)
   const banking = createBankingService(db, numbering, {
     journals: createJournalService(db, numbering, gl),
   })

@@ -318,6 +318,7 @@ export function buildApp(deps: AppDeps) {
       '/sales/company-account-defaults',
       companyAccountDefaultRoutes({
         auth: deps.auth,
+        authz: deps.authz,
         defaults: deps.companyAccountDefaults,
       }),
     )
@@ -409,8 +410,8 @@ export function buildApp(deps: AppDeps) {
       }),
     )
 
-  const t = tradingRouteMounts({ auth: deps.auth, trading: deps.trading })
-  const s = scmRouteMounts({ auth: deps.auth, scm: deps.scm })
+  const t = tradingRouteMounts({ auth: deps.auth, authz: deps.authz, trading: deps.trading })
+  const s = scmRouteMounts({ auth: deps.auth, authz: deps.authz, scm: deps.scm })
   const app2 = app
     .route('/sales/quotations', t.salesQuotations)
     .route('/sales/quotation-items', t.salesQuotationItems)

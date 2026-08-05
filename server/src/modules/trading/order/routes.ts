@@ -1,16 +1,29 @@
+/**
+ * 销售/采购订单 REST：逐端点挂 `guard(资源, 动作)`（requireAuth 之后），
+ * handler 用 `permitOf(c)` 取凭证。资源名按 side 从 spec 取（`orderSpec(side).headResource`），
+ * 动作码唯一事实源是 meta 的 actions——不再由 `orderSpec(side).prefix` 动态拼码。
+ * 聚合 PUT（整单替换）声明式要求 update ∧ create ∧ delete：替换语义天然含子树增删。
+ */
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
+import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
+import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { dateOnlySchema, decimalStringSchema, listQuerySchema, validationHook } from '~/platform/http/zod.ts'
 import type { TradingSide } from '../common.ts'
 import { presentKey } from '../common.ts'
-import type { OutsourcedConfigService } from './outsourced-config.ts'
+import {
+  ORDER_BYPRODUCT_RESOURCE,
+  ORDER_MATERIAL_RESOURCE,
+  type OutsourcedConfigService,
+} from './outsourced-config.ts'
 import type { OrderService } from './service.ts'
+import { orderSpec } from './spec.ts'
 
 const idParam = z.object({ id: z.string().uuid() })
 
@@ -116,35 +129,44 @@ function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
 
 export function orderHeadRoutes(deps: {
   auth: AuthService
+  authz: AuthzEnforcer
   orders: OrderService
   side: TradingSide
 }) {
-  const { auth, orders, side } = deps
+  const { auth, authz, orders, side } = deps
+  const resource = orderSpec(side).headResource
+  const guard = (action: string) => authz.guard(resource, action)
+  /** 附加码从判定归宿的 prefix 拼，不写字面量 */
+  const codeOf = (action: string) => `${authz.targetOf(resource).prefix}:${action}`
+  const aggregateReplaceGuard = () =>
+    authz.guard(resource, 'update', { allOf: [codeOf('create'), codeOf('delete')] })
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const r = await orders.listHeads(c.get('actor'), side, toList(c.req.valid('json')))
+    .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
+      const r = await orders.listHeads(permitOf(c), side, toList(c.req.valid('json')))
       return c.json({ count: r.count, results: r.results })
     })
     .post(
       '/',
+      guard('create'),
       zValidator('json', orderDraftCreateSchema, orderDraftValidationHook),
-      async (c) => c.json(await orders.createDraft(c.get('actor'), side, c.req.valid('json')), 201),
+      async (c) => c.json(await orders.createDraft(permitOf(c), side, c.req.valid('json')), 201),
     )
-    .get('/:id/draft', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await orders.getDraft(c.get('actor'), side, c.req.valid('param').id)),
+    .get('/:id/draft', guard('read'), zValidator('param', idParam, validationHook), async (c) =>
+      c.json(await orders.getDraft(permitOf(c), side, c.req.valid('param').id)),
     )
-    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await orders.getHead(c.get('actor'), side, c.req.valid('param').id)),
+    .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) =>
+      c.json(await orders.getHead(permitOf(c), side, c.req.valid('param').id)),
     )
     .put(
       '/:id',
+      aggregateReplaceGuard(),
       zValidator('param', idParam, validationHook),
       zValidator('json', orderDraftReplaceSchema, orderDraftValidationHook),
       async (c) =>
         c.json(
           await orders.replaceDraft(
-            c.get('actor'),
+            permitOf(c),
             side,
             c.req.valid('param').id,
             c.req.valid('json'),
@@ -153,6 +175,7 @@ export function orderHeadRoutes(deps: {
     )
     .patch(
       '/:id',
+      guard('update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -176,7 +199,7 @@ export function orderHeadRoutes(deps: {
         const raw = (await c.req.json()) as Record<string, unknown>
         const body = c.req.valid('json')
         return c.json(
-          await orders.updateHead(c.get('actor'), side, c.req.valid('param').id, {
+          await orders.updateHead(permitOf(c), side, c.req.valid('param').id, {
             ...body,
             termsPresent: presentKey(raw, 'terms'),
             remarksPresent: presentKey(raw, 'remarks'),
@@ -184,38 +207,42 @@ export function orderHeadRoutes(deps: {
         )
       },
     )
-    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      await orders.deleteHead(c.get('actor'), side, c.req.valid('param').id)
+    .delete('/:id', guard('delete'), zValidator('param', idParam, validationHook), async (c) => {
+      await orders.deleteHead(permitOf(c), side, c.req.valid('param').id)
       return c.body(null, 204)
     })
-    .post('/:id/audit', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await orders.audit(c.get('actor'), side, c.req.valid('param').id)),
+    .post('/:id/audit', guard('audit'), zValidator('param', idParam, validationHook), async (c) =>
+      c.json(await orders.audit(permitOf(c), side, c.req.valid('param').id)),
     )
-    .post('/:id/close', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await orders.close(c.get('actor'), side, c.req.valid('param').id)),
+    .post('/:id/close', guard('close'), zValidator('param', idParam, validationHook), async (c) =>
+      c.json(await orders.close(permitOf(c), side, c.req.valid('param').id)),
     )
-    .post('/:id/void', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await orders.void(c.get('actor'), side, c.req.valid('param').id)),
+    .post('/:id/void', guard('void'), zValidator('param', idParam, validationHook), async (c) =>
+      c.json(await orders.void(permitOf(c), side, c.req.valid('param').id)),
     )
-    .get('/:id/history', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await orders.history(c.get('actor'), side, c.req.valid('param').id)),
+    .get('/:id/history', guard('read'), zValidator('param', idParam, validationHook), async (c) =>
+      c.json(await orders.history(permitOf(c), side, c.req.valid('param').id)),
     )
 }
 
 export function orderItemRoutes(deps: {
   auth: AuthService
+  authz: AuthzEnforcer
   orders: OrderService
   side: TradingSide
 }) {
-  const { auth, orders, side } = deps
+  const { auth, authz, orders, side } = deps
+  // 条目是 via(母单) 子资源：动作码解析到订单头（子资源无独立权限点）
+  const guard = (action: string) => authz.guard(orderSpec(side).itemResource, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const r = await orders.listItems(c.get('actor'), side, toList(c.req.valid('json')))
+    .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
+      const r = await orders.listItems(permitOf(c), side, toList(c.req.valid('json')))
       return c.json({ count: r.count, results: r.results })
     })
     .post(
       '/',
+      guard('create'),
       zValidator(
         'json',
         z
@@ -236,13 +263,14 @@ export function orderItemRoutes(deps: {
           .strict(),
         validationHook,
       ),
-      async (c) => c.json(await orders.createItem(c.get('actor'), side, c.req.valid('json')), 201),
+      async (c) => c.json(await orders.createItem(permitOf(c), side, c.req.valid('json')), 201),
     )
-    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await orders.getItem(c.get('actor'), side, c.req.valid('param').id)),
+    .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) =>
+      c.json(await orders.getItem(permitOf(c), side, c.req.valid('param').id)),
     )
     .patch(
       '/:id',
+      guard('update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -267,7 +295,7 @@ export function orderItemRoutes(deps: {
         const raw = (await c.req.json()) as Record<string, unknown>
         const body = c.req.valid('json')
         return c.json(
-          await orders.updateItem(c.get('actor'), side, c.req.valid('param').id, {
+          await orders.updateItem(permitOf(c), side, c.req.valid('param').id, {
             ...body,
             remarksPresent: presentKey(raw, 'remarks'),
             quotationItemIdPresent: presentKey(raw, 'quotationItemId'),
@@ -278,25 +306,32 @@ export function orderItemRoutes(deps: {
         )
       },
     )
-    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      await orders.deleteItem(c.get('actor'), side, c.req.valid('param').id)
+    .delete('/:id', guard('delete'), zValidator('param', idParam, validationHook), async (c) => {
+      await orders.deleteItem(permitOf(c), side, c.req.valid('param').id)
       return c.body(null, 204)
     })
 }
 
 export function purchaseOrderExtraRoutes(deps: {
   auth: AuthService
+  authz: AuthzEnforcer
   outsourcedConfig: OutsourcedConfigService
 }) {
-  const { auth, outsourcedConfig: cfg } = deps
+  const { auth, authz, outsourcedConfig: cfg } = deps
+  // 发料/副产物清单是 via(purOrderItems → purOrders) 子资源；
+  // 需求池与 BOM 展开是采购订单录入的读侧辅助，沿用订单头 read（不新增权限码）
+  const materialGuard = (action: string) => authz.guard(ORDER_MATERIAL_RESOURCE, action)
+  const byproductGuard = (action: string) => authz.guard(ORDER_BYPRODUCT_RESOURCE, action)
+  const orderReadGuard = () => authz.guard(orderSpec('purchase').headResource, 'read')
   const material = new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const r = await cfg.listMaterials(c.get('actor'), toList(c.req.valid('json')))
+    .post('/query', materialGuard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
+      const r = await cfg.listMaterials(permitOf(c), toList(c.req.valid('json')))
       return c.json({ count: r.count, results: r.results })
     })
     .post(
       '/',
+      materialGuard('create'),
       zValidator(
         'json',
         z
@@ -310,13 +345,14 @@ export function purchaseOrderExtraRoutes(deps: {
           .strict(),
         validationHook,
       ),
-      async (c) => c.json(await cfg.createMaterial(c.get('actor'), c.req.valid('json')), 201),
+      async (c) => c.json(await cfg.createMaterial(permitOf(c), c.req.valid('json')), 201),
     )
-    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await cfg.getMaterial(c.get('actor'), c.req.valid('param').id)),
+    .get('/:id', materialGuard('read'), zValidator('param', idParam, validationHook), async (c) =>
+      c.json(await cfg.getMaterial(permitOf(c), c.req.valid('param').id)),
     )
     .patch(
       '/:id',
+      materialGuard('update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -333,26 +369,27 @@ export function purchaseOrderExtraRoutes(deps: {
       async (c) => {
         const raw = (await c.req.json()) as Record<string, unknown>
         return c.json(
-          await cfg.updateMaterial(c.get('actor'), c.req.valid('param').id, {
+          await cfg.updateMaterial(permitOf(c), c.req.valid('param').id, {
             ...c.req.valid('json'),
             remarksPresent: presentKey(raw, 'remarks'),
           }),
         )
       },
     )
-    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      await cfg.deleteMaterial(c.get('actor'), c.req.valid('param').id)
+    .delete('/:id', materialGuard('delete'), zValidator('param', idParam, validationHook), async (c) => {
+      await cfg.deleteMaterial(permitOf(c), c.req.valid('param').id)
       return c.body(null, 204)
     })
 
   const byproduct = new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const r = await cfg.listByproducts(c.get('actor'), toList(c.req.valid('json')))
+    .post('/query', byproductGuard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
+      const r = await cfg.listByproducts(permitOf(c), toList(c.req.valid('json')))
       return c.json({ count: r.count, results: r.results })
     })
     .post(
       '/',
+      byproductGuard('create'),
       zValidator(
         'json',
         z
@@ -366,13 +403,14 @@ export function purchaseOrderExtraRoutes(deps: {
           .strict(),
         validationHook,
       ),
-      async (c) => c.json(await cfg.createByproduct(c.get('actor'), c.req.valid('json')), 201),
+      async (c) => c.json(await cfg.createByproduct(permitOf(c), c.req.valid('json')), 201),
     )
-    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await cfg.getByproduct(c.get('actor'), c.req.valid('param').id)),
+    .get('/:id', byproductGuard('read'), zValidator('param', idParam, validationHook), async (c) =>
+      c.json(await cfg.getByproduct(permitOf(c), c.req.valid('param').id)),
     )
     .patch(
       '/:id',
+      byproductGuard('update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -389,15 +427,15 @@ export function purchaseOrderExtraRoutes(deps: {
       async (c) => {
         const raw = (await c.req.json()) as Record<string, unknown>
         return c.json(
-          await cfg.updateByproduct(c.get('actor'), c.req.valid('param').id, {
+          await cfg.updateByproduct(permitOf(c), c.req.valid('param').id, {
             ...c.req.valid('json'),
             remarksPresent: presentKey(raw, 'remarks'),
           }),
         )
       },
     )
-    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      await cfg.deleteByproduct(c.get('actor'), c.req.valid('param').id)
+    .delete('/:id', byproductGuard('delete'), zValidator('param', idParam, validationHook), async (c) => {
+      await cfg.deleteByproduct(permitOf(c), c.req.valid('param').id)
       return c.body(null, 204)
     })
 
@@ -405,6 +443,7 @@ export function purchaseOrderExtraRoutes(deps: {
     .use('*', requireAuth(auth))
     .post(
       '/query',
+      orderReadGuard(),
       zValidator(
         'json',
         z
@@ -416,13 +455,14 @@ export function purchaseOrderExtraRoutes(deps: {
           .strict(),
         validationHook,
       ),
-      async (c) => c.json(await cfg.queryDemandPool(c.get('actor'), c.req.valid('json'))),
+      async (c) => c.json(await cfg.queryDemandPool(permitOf(c), c.req.valid('json'))),
     )
 
   const bom = new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
       '/expand',
+      orderReadGuard(),
       zValidator(
         'json',
         z
@@ -441,7 +481,7 @@ export function purchaseOrderExtraRoutes(deps: {
           const { ApiError } = await import('~/platform/http/errors.ts')
           throw ApiError.validation('BOM 展开参数不合法', { quantity: ['必填'] })
         }
-        return c.json(await cfg.expandBom(c.get('actor'), { bomId: body.bomId, quantity }))
+        return c.json(await cfg.expandBom(permitOf(c), { bomId: body.bomId, quantity }))
       },
     )
 

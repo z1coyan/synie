@@ -1,12 +1,17 @@
 /**
  * 工单 02：公司默认过账科目（一公司一行四槽；角色校验；partial upsert）。
+ * 工单 10：授权改为 guard + Permit——403 只由 HTTP guard 产生，行不可达一律 not_found / 空结果。
  */
 import { testActor } from '~/platform/authz/testing.ts'
 import { afterAll, describe, expect, test } from 'bun:test'
+import { Hono } from 'hono'
 import { createDb } from '~/db/index.ts'
+import type { AuthService } from '~/platform/auth/service.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
+import type { AppEnv } from '~/platform/http/context.ts'
+import { onError } from '~/platform/http/errors.ts'
 import { createRegistry } from '~/platform/meta/registry.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { createAccountService } from '../base/account-service.ts'
@@ -14,7 +19,9 @@ import { createCompanyService } from '../base/company-service.ts'
 import { createCurrencyService } from '../base/currency-service.ts'
 import {
   companyAccountDefaultMeta,
+  companyAccountDefaultRoutes,
   createCompanyAccountDefaultService,
+  DEFAULT_RESOURCE,
   registerSalesCompanyAccountDefault,
 } from './index.ts'
 
@@ -62,7 +69,7 @@ run('PG 集成（公司默认过账科目）', () => {
   const currencies = createCurrencyService(db, sealed)
   const companies = createCompanyService(db, sealed)
   const accounts = createAccountService(db, sealed)
-  const defaults = createCompanyAccountDefaultService(db)
+  const defaults = createCompanyAccountDefaultService(db, sealed)
   const actor = superActor()
   /** base 夹具的凭证（superAdmin → rowFilter 全集） */
   function basePermit(resource: string, action: string): Permit {
@@ -70,7 +77,32 @@ run('PG 集成（公司默认过账科目）', () => {
     if (decision.outcome !== 'permit') throw new Error(`夹具应当 permit：${resource}:${action}`)
     return decision.permit
   }
+  /** 本资源凭证：actor 可变，凭证每次现取 */
+  function permitFor(who: Actor, action: string): Permit {
+    const decision = baseAuthz.decideFor(who, DEFAULT_RESOURCE, action)
+    if (decision.outcome !== 'permit') {
+      throw new Error(`应当 permit：${DEFAULT_RESOURCE}:${action}`)
+    }
+    return decision.permit
+  }
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10)
+
+  /** HTTP seam：403 必须由 guard（码级判定）产生，不由服务层 */
+  let httpActor: Actor = actor
+  const auth = {
+    authenticate: async () => httpActor,
+    authenticateRequest: async () => httpActor,
+  } as unknown as AuthService
+  const http = new Hono<AppEnv>().route(
+    '/api/v1/sales/company-account-defaults',
+    companyAccountDefaultRoutes({ auth, authz: baseAuthz, defaults }),
+  )
+  http.onError(onError)
+  const call = (path: string, init?: RequestInit) =>
+    http.request(`/api/v1/sales/company-account-defaults${path}`, {
+      ...init,
+      headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
+    })
 
   let currencyId = ''
   let companyId = ''
@@ -81,15 +113,16 @@ run('PG 集成（公司默认过账科目）', () => {
   let receiptCreditId = ''
   let wrongRoleId = ''
   let defaultId = ''
+  let otherDefaultId = ''
 
   afterAll(async () => {
-    if (defaultId) {
+    for (const id of [defaultId, otherDefaultId].filter(Boolean)) {
       await db
         .deleteFrom('sys_audit_log')
         .where('resource', '=', 'sal_company_account_default')
-        .where('record_id', '=', defaultId)
+        .where('record_id', '=', id)
         .execute()
-      await db.deleteFrom('sal_company_account_default').where('id', '=', defaultId).execute()
+      await db.deleteFrom('sal_company_account_default').where('id', '=', id).execute()
     }
     for (const id of [
       deliveryDebitId,
@@ -136,7 +169,12 @@ run('PG 集成（公司默认过账科目）', () => {
     const meta = registry.get('salCompanyAccountDefaults')
     expect(meta?.permissionPrefix).toBe('sales.setting')
     expect(meta?.table).toBe('sal_company_account_default')
-    expect(companyAccountDefaultMeta().actions).toEqual([])
+    // 动作事实源归 meta：read/update 与共享前缀 salSettings 同码，不新增权限点
+    expect(companyAccountDefaultMeta().actions.map((a) => a.key)).toEqual(['read', 'update'])
+    expect(sealed.permissionCatalog().find((g) => g.prefix === 'sales.setting')?.actions).toEqual([
+      'read',
+      'update',
+    ])
   })
 
   test('空壳 getByCompany + 创建四槽 + 角色校验 + partial upsert', async () => {
@@ -164,7 +202,7 @@ run('PG 集成（公司默认过账科目）', () => {
     })
     otherCompanyId = other.id
 
-    const empty = await defaults.getByCompany(actor, companyId)
+    const empty = await defaults.getByCompany(permitFor(actor, 'read'), companyId)
     expect(empty.id).toBe('')
     expect(empty.companyId).toBe(companyId)
     expect(empty.deliveryDebitAccountId).toBeNull()
@@ -194,7 +232,7 @@ run('PG 集成（公司默认过账科目）', () => {
 
     // 发货借必须 unbilled_receivable
     await expect(
-      defaults.create(actor, {
+      defaults.create(permitFor(actor, 'update'), {
         companyId,
         deliveryDebitAccountId: wrongRoleId,
       }),
@@ -203,7 +241,7 @@ run('PG 集成（公司默认过账科目）', () => {
     // 他司科目拒绝
     const foreignAcc = await leafAccount('他司科', null, otherCompanyId)
     await expect(
-      defaults.create(actor, {
+      defaults.create(permitFor(actor, 'update'), {
         companyId,
         deliveryCreditAccountId: foreignAcc,
       }),
@@ -215,7 +253,7 @@ run('PG 集成（公司默认过账科目）', () => {
       .execute()
     await db.deleteFrom('bas_account').where('id', '=', foreignAcc).execute()
 
-    const created = await defaults.create(actor, {
+    const created = await defaults.create(permitFor(actor, 'update'), {
       companyId,
       deliveryDebitAccountId: deliveryDebitId,
       deliveryCreditAccountId: deliveryCreditId,
@@ -228,14 +266,14 @@ run('PG 集成（公司默认过账科目）', () => {
 
     // 重复创建 conflict
     await expect(
-      defaults.create(actor, {
+      defaults.create(permitFor(actor, 'update'), {
         companyId,
         deliveryDebitAccountId: deliveryDebitId,
       }),
     ).rejects.toMatchObject({ code: 'conflict' })
 
     // 销售 Tab partial：只改发货两槽，不覆盖入库两槽
-    const afterSales = await defaults.update(actor, created.id, {
+    const afterSales = await defaults.update(permitFor(actor, 'update'), created.id, {
       deliveryDebitPresent: true,
       deliveryDebitAccountId: null,
       deliveryCreditPresent: true,
@@ -249,7 +287,7 @@ run('PG 集成（公司默认过账科目）', () => {
     expect(afterSales.receiptCreditAccountId).toBe(receiptCreditId)
 
     // 采购 Tab partial：只改入库两槽
-    const afterPurchase = await defaults.update(actor, created.id, {
+    const afterPurchase = await defaults.update(permitFor(actor, 'update'), created.id, {
       deliveryDebitPresent: false,
       deliveryCreditPresent: false,
       receiptDebitPresent: true,
@@ -260,17 +298,79 @@ run('PG 集成（公司默认过账科目）', () => {
     expect(afterPurchase.deliveryDebitAccountId).toBeNull()
     expect(afterPurchase.receiptCreditAccountId).toBe(receiptCreditId)
 
-    const byCompany = await defaults.getByCompany(actor, companyId)
+    const byCompany = await defaults.getByCompany(permitFor(actor, 'read'), companyId)
     expect(byCompany.id).toBe(created.id)
 
-    // 权限 fail-closed
-    const noPerm = limitedActor([companyId], [])
-    await expect(defaults.getByCompany(noPerm, companyId)).rejects.toMatchObject({
-      code: 'forbidden',
+    // 他司也建一行：跨公司可见性的对照组
+    const otherCreated = await defaults.create(permitFor(actor, 'update'), {
+      companyId: otherCompanyId,
     })
-    const readOnly = limitedActor([companyId], ['sales.setting:read'])
+    otherDefaultId = otherCreated.id
+  })
+
+  test('公司域 actor：别名回归（本司行可见）+ 跨公司单条 404 + 他司空结果', async () => {
+    const scoped = limitedActor([companyId], ['sales.setting:read'])
+    const read = () => permitFor(scoped, 'read')
+
+    // 别名回归：本公司的行必须在结果里（别名写错会静默算成空集）
+    const listed = await defaults.list(read(), { limit: 50, offset: 0 })
+    expect(listed.results.map((r) => r.id)).toContain(defaultId)
+    expect(listed.results.map((r) => r.companyId)).not.toContain(otherCompanyId)
+
+    // 单条：本司命中、他司 404（不泄露存在性）
+    expect((await defaults.get(read(), defaultId)).id).toBe(defaultId)
+    await expect(defaults.get(read(), otherDefaultId)).rejects.toMatchObject({
+      code: 'not_found',
+    })
+
+    // 单公司读端点：他司落空壳（空结果，不是 forbidden）
+    const foreign = await defaults.getByCompany(read(), otherCompanyId)
+    expect(foreign.id).toBe('')
+    expect(foreign.companyId).toBe(otherCompanyId)
+
+    // 写侧：码满足但他司行不可达 → 404
+    const writer = limitedActor([companyId], ['sales.setting:read', 'sales.setting:update'])
+    const write = () => permitFor(writer, 'update')
     await expect(
-      defaults.create(readOnly, { companyId, deliveryCreditAccountId: deliveryCreditId }),
-    ).rejects.toMatchObject({ code: 'forbidden' })
+      defaults.update(write(), otherDefaultId, {
+        receiptDebitPresent: true,
+        receiptDebitAccountId: null,
+      }),
+    ).rejects.toMatchObject({ code: 'not_found' })
+    await expect(
+      defaults.create(write(), { companyId: otherCompanyId }),
+    ).rejects.toMatchObject({ code: 'not_found' })
+  })
+
+  test('HTTP guard：缺码 403；只读码不能写；创建沿用 update 码', async () => {
+    httpActor = limitedActor([companyId], [])
+    const denied = await call(`/by-company/${companyId}`)
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toMatchObject({ error: { code: 'forbidden' } })
+
+    const deniedList = await call('/query', {
+      method: 'POST',
+      body: JSON.stringify({ limit: 20, offset: 0 }),
+    })
+    expect(deniedList.status).toBe(403)
+
+    httpActor = limitedActor([companyId], ['sales.setting:read'])
+    const readOk = await call(`/${defaultId}`)
+    expect(readOk.status).toBe(200)
+    // 集合根无尾斜杠（尾斜杠会落全局 notFound 假 404）
+    const writeDenied = await call('', {
+      method: 'POST',
+      body: JSON.stringify({ companyId: otherCompanyId }),
+    })
+    expect(writeDenied.status).toBe(403)
+
+    // 有 update 码但公司不在边界内：404（码满足，行不可达）
+    httpActor = limitedActor([companyId], ['sales.setting:read', 'sales.setting:update'])
+    const foreignCreate = await call('', {
+      method: 'POST',
+      body: JSON.stringify({ companyId: otherCompanyId }),
+    })
+    expect(foreignCreate.status).toBe(404)
+    httpActor = actor
   })
 })

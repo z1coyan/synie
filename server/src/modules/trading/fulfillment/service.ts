@@ -1,10 +1,16 @@
 /**
  * 标准履约：销售发货 / 采购入库 + 装箱清单。
  * 审核单事务：库存引擎 + 订单投影 + 金额>0 时 GL 引擎（零金额跳总账）。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、写前取行 `loadAuthorized`（不命中一律 not_found）、
+ * create 走 `assertCompanyWritable`。模块内零鉴权代码。
+ * 状态前置条件（仅草稿可编辑等）是领域不变量，留在本文件抛 conflict。
+ * 装箱行的可达性经两级 via（pack_line → pack_box → sal_delivery）递归到发货单谓词。
  */
 import type { ListQuery } from '@synie/shared'
 import { decimal } from '@synie/shared'
-import { sql } from 'kysely'
+import { sql, type RawBuilder } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withReadSnapshot, withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
@@ -17,10 +23,13 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf, mergeAuditFields } from '~/platform/audit/spec.ts'
-import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
+import type { AuthzTarget } from '~/platform/meta/resource-authz.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { assertCompanyWritable, loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import {
   asDate,
@@ -32,7 +41,6 @@ import {
   loadMaterialSnap,
   lowerParty,
   partyExists,
-  requirePerm,
   runeLen,
   syncDrawingAttachments,
   toDateOnly,
@@ -53,6 +61,8 @@ import {
   fulfillmentSpec,
   packBoxMeta,
   packLineMeta,
+  PACK_BOX_RESOURCE,
+  PACK_LINE_RESOURCE,
   type FulfillmentSideSpec,
 } from './spec.ts'
 
@@ -77,6 +87,41 @@ const ITEM_AUDIT = mergeAuditFields(
 const PACK_BOX_AUDIT = auditFieldsOf(packBoxMeta())
 
 const PACK_LINE_AUDIT = auditFieldsOf(packLineMeta())
+
+const PACK_BOX_TABLE = packBoxMeta().table
+const PACK_LINE_TABLE = packLineMeta().table
+
+/**
+ * 履约条目投影：列表 / 单条 / 写后重载共用同一份 source/select。
+ * `ITEM_ALIAS` 必须与子查询收尾的 `) fulfillment_items` 逐字一致——
+ * 写错不报错也不 typecheck，via 链的 EXISTS 会静默把行集算成空。
+ */
+const ITEM_ALIAS = 'fulfillment_items'
+const ITEM_SELECT = sql`SELECT *`
+
+function buildItemSource(side: TradingSide): RawBuilder<unknown> {
+  const spec = fulfillmentSpec(side)
+  // 列名必须与 ResourceMeta.dbColumn 一致（listFromSource / filterbuild 按 apiName→dbColumn 排序筛选）
+  const statusCol = side === 'sales' ? 'delivery_status' : 'receipt_status'
+  const orderTypeSql =
+    side === 'sales'
+      ? `(SELECT o.order_type FROM sal_order_item oi
+          JOIN sal_order o ON o.id=oi.order_id WHERE oi.id=i.order_item_id) AS order_type`
+      : `NULL::text AS order_type`
+  return sql` FROM (
+    SELECT i.*, h.${sql.raw(spec.numberCol)}, h.${sql.raw(spec.dateCol)},
+      h.status AS ${sql.raw(statusCol)}, h.party_type, h.party_id,
+      (i.base_qty - i.reconciled_qty) AS remaining_reconcilable_qty,
+      ${sql.raw(orderTypeSql)}
+    FROM ${ident(spec.itemTable)} i
+    JOIN ${ident(spec.headTable)} h ON h.id=i.${sql.raw(spec.parentCol)}
+  ) ${sql.raw(ITEM_ALIAS)}`
+}
+
+const ITEM_SOURCE: Record<TradingSide, RawBuilder<unknown>> = {
+  sales: buildItemSource('sales'),
+  purchase: buildItemSource('purchase'),
+}
 
 export interface FulfillmentHead {
   id: string
@@ -238,51 +283,95 @@ export function createFulfillmentService(
     inventory: Pick<InventoryEngine, 'post' | 'cancel'>
     gl: Pick<GlEngine, 'post' | 'cancel'>
   },
+  registry: Registry,
 ) {
   const { inventory, gl } = engines
-  async function listHeads(actor: Actor, side: TradingSide, query: Partial<ListQuery>) {
+  // 判定归宿在闭包顶部解析一次（Registry 内已记忆化）
+  const headTargets: Record<TradingSide, AuthzTarget> = {
+    sales: registry.authzTarget(fulfillmentSpec('sales').headResource),
+    purchase: registry.authzTarget(fulfillmentSpec('purchase').headResource),
+  }
+  const itemTargets: Record<TradingSide, AuthzTarget> = {
+    sales: registry.authzTarget(fulfillmentSpec('sales').itemResource),
+    purchase: registry.authzTarget(fulfillmentSpec('purchase').itemResource),
+  }
+  const packBoxTarget = registry.authzTarget(PACK_BOX_RESOURCE)
+  const packLineTarget = registry.authzTarget(PACK_LINE_RESOURCE)
+
+  /** 按 Permit 取单头（可锁）；不命中一律 not_found */
+  async function loadAuthorizedHead(
+    handle: DbHandle,
+    permit: Permit,
+    spec: FulfillmentSideSpec,
+    id: string,
+    forUpdate = false,
+  ): Promise<Record<string, unknown>> {
+    return loadAuthorized({
+      db: handle,
+      permit,
+      target: headTargets[spec.side],
+      table: spec.headTable,
+      id,
+      forUpdate,
+      notFoundMessage: `${spec.label}不存在`,
+    })
+  }
+
+  /** 锁单头：授权 + 行锁（工作流命令的公共前置） */
+  async function lockHead(handle: DbHandle, permit: Permit, spec: FulfillmentSideSpec, id: string) {
+    return loadAuthorizedHead(handle, permit, spec, id, true)
+  }
+
+  /** 锁草稿单头：授权 + 行锁 + 状态守卫（子行/装箱写路径的公共前置，母单先行） */
+  async function lockDraftHead(
+    handle: DbHandle,
+    permit: Permit,
+    spec: FulfillmentSideSpec,
+    id: string,
+  ) {
+    const row = await lockHead(handle, permit, spec, id)
+    if (String(row.status).toLowerCase() !== 'draft') {
+      throw new ApiError('conflict', `仅草稿${spec.label}可编辑`)
+    }
+    return row
+  }
+
+  async function listHeads(permit: Permit, side: TradingSide, query: Partial<ListQuery>) {
     const spec = fulfillmentSpec(side)
-    requirePerm(actor, spec.prefix, 'read', '无权限执行该履约操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
-    return listFromSource({
+    return listAuthorized({
       db,
+      permit,
+      target: headTargets[side],
+      alias: spec.headTable,
       resource: fulfillmentHeadMeta(side),
       source: sql` FROM ${ident(spec.headTable)}`,
       select: sql`SELECT *`,
       defaultOrder: sql`"${sql.raw(spec.dateCol)}" DESC, "id" ASC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapHeadDto(side, r),
     })
   }
 
-  async function getHead(actor: Actor, side: TradingSide, id: string) {
+  async function getHead(permit: Permit, side: TradingSide, id: string) {
     const spec = fulfillmentSpec(side)
-    requirePerm(actor, spec.prefix, 'read', '无权限执行该履约操作')
-    const row = await loadHead(db, spec, id)
-    if (!row || !canAccessCompany(actor, String(row.company_id))) {
-      throw new ApiError('not_found', `${spec.label}不存在`)
-    }
-    return mapHeadDto(side, row)
+    return mapHeadDto(side, await loadAuthorizedHead(db, permit, spec, id))
   }
 
   async function createHead(
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     input: FulfillmentHeadDraftInput,
   ) {
     const spec = fulfillmentSpec(side)
-    requirePerm(actor, spec.prefix, 'create', '无权限执行该履约操作')
-    if (!canAccessCompany(actor, input.companyId)) {
-      throw new ApiError('forbidden', '无权在该公司创建履约单')
-    }
-    return withTx(db, (trx) => createHeadInTx(trx, actor, side, input))
+    // 入参校验（400）先于公司边界（404）：错误语义唯一规则只管后者
+    assertCompanyPresent(spec, input.companyId)
+    assertCompanyWritable(permit, input.companyId, '公司不存在')
+    return withTx(db, (trx) => createHeadInTx(trx, permit, side, input))
   }
 
   async function createHeadInTx(
     trx: TrxHandle,
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     input: FulfillmentHeadDraftInput,
   ) {
@@ -312,7 +401,7 @@ export function createFulfillmentService(
       warehouseId: input.warehouseId ?? null,
       debitAccountId: input.debitAccountId,
       creditAccountId: input.creditAccountId,
-      createdById: actor.userId || null,
+      createdById: permit.actor.userId || null,
       auditedById: null,
     }
     validateHeadShape(spec, head)
@@ -331,7 +420,7 @@ export function createFulfillmentService(
       const id = ins.rows[0]!.id
       const row = await loadHead(trx, spec, id)
       const dto = mapHeadDto(side, row!)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: spec.headTable,
         recordId: id,
         recordLabel: no,
@@ -349,25 +438,23 @@ export function createFulfillmentService(
   }
 
   async function updateHead(
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     id: string,
     input: FulfillmentHeadUpdateInput,
   ) {
-    const spec = fulfillmentSpec(side)
-    requirePerm(actor, spec.prefix, 'update', '无权限执行该履约操作')
-    return withTx(db, (trx) => updateHeadInTx(trx, actor, side, id, input))
+    return withTx(db, (trx) => updateHeadInTx(trx, permit, side, id, input))
   }
 
   async function updateHeadInTx(
     trx: TrxHandle,
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     id: string,
     input: FulfillmentHeadUpdateInput,
   ) {
     const spec = fulfillmentSpec(side)
-    const beforeRow = await lockDraftHead(trx, actor, spec, id)
+    const beforeRow = await lockDraftHead(trx, permit, spec, id)
     const before = mapHead(beforeRow)
     const after: FulfillmentHead = {
       ...before,
@@ -419,7 +506,7 @@ export function createFulfillmentService(
         WHERE id=${id}::uuid
       `.execute(trx)
       const row = await loadHead(trx, spec, id)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: spec.headTable,
         recordId: id,
         recordLabel: after.no,
@@ -436,20 +523,19 @@ export function createFulfillmentService(
     }
   }
 
-  async function deleteHead(actor: Actor, side: TradingSide, id: string) {
+  async function deleteHead(permit: Permit, side: TradingSide, id: string) {
     const spec = fulfillmentSpec(side)
-    requirePerm(actor, spec.prefix, 'delete', '无权限执行该履约操作')
     await withTx(db, async (trx) => {
-      const item = mapHead(await lockDraftHead(trx, actor, spec, id))
+      const item = mapHead(await lockDraftHead(trx, permit, spec, id))
       await sql`
         DELETE FROM sys_attachment WHERE owner_type=${spec.itemOwnerType}
           AND owner_id IN (SELECT id FROM ${ident(spec.itemTable)} WHERE ${sql.raw(spec.parentCol)}=${id}::uuid)
       `.execute(trx)
       if (side === 'sales') {
-        await sql`DELETE FROM sal_delivery_pack_line WHERE delivery_id=${id}::uuid`.execute(trx)
+        await sql`DELETE FROM ${ident(PACK_LINE_TABLE)} WHERE delivery_id=${id}::uuid`.execute(trx)
       }
       await sql`DELETE FROM ${ident(spec.headTable)} WHERE id=${id}::uuid`.execute(trx)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: spec.headTable,
         recordId: id,
         recordLabel: item.no,
@@ -461,17 +547,16 @@ export function createFulfillmentService(
     })
   }
 
-  async function auditHead(actor: Actor, side: TradingSide, id: string, postingDateOverride?: string | null) {
+  async function auditHead(permit: Permit, side: TradingSide, id: string, postingDateOverride?: string | null) {
     const spec = fulfillmentSpec(side)
-    requirePerm(actor, spec.prefix, 'audit', '无权限执行该履约操作')
     return withTx(db, async (trx) => {
-      await auditFulfillmentInTx(trx, actor, { inventory, gl }, {
+      await auditFulfillmentInTx(trx, permit.actor, { inventory, gl }, {
         voucherType: spec.voucherType,
         headTable: spec.headTable,
         partySide: side === 'sales' ? 'debit' : 'credit',
         postingDateOverride,
         lockDraft: async (t) => {
-          const before = mapHead(await lockHead(t, actor, spec, id))
+          const before = mapHead(await lockHead(t, permit, spec, id))
           if (before.status !== 'DRAFT') throw new ApiError('conflict', `仅草稿${spec.label}可审核`)
           validateHeadShape(spec, before)
           await validateHeadRefs(t, spec, before)
@@ -531,15 +616,14 @@ export function createFulfillmentService(
     })
   }
 
-  async function voidHead(actor: Actor, side: TradingSide, id: string) {
+  async function voidHead(permit: Permit, side: TradingSide, id: string) {
     const spec = fulfillmentSpec(side)
-    requirePerm(actor, spec.prefix, 'void', '无权限执行该履约操作')
     return withTx(db, async (trx) => {
-      await voidFulfillmentInTx(trx, actor, { inventory, gl }, {
+      await voidFulfillmentInTx(trx, permit.actor, { inventory, gl }, {
         voucherType: spec.voucherType,
         headTable: spec.headTable,
         lockAudited: async (t) => {
-          const before = mapHead(await lockHead(t, actor, spec, id))
+          const before = mapHead(await lockHead(t, permit, spec, id))
           if (before.status !== 'AUDITED') throw new ApiError('conflict', `仅已审核${spec.label}可作废`)
           return before
         },
@@ -569,65 +653,53 @@ export function createFulfillmentService(
     })
   }
 
-  async function listItems(actor: Actor, side: TradingSide, query: Partial<ListQuery>) {
-    const spec = fulfillmentSpec(side)
-    requirePerm(actor, spec.prefix, 'read', '无权限执行该履约操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
-    // 列名必须与 ResourceMeta.dbColumn 一致（listFromSource / filterbuild 按 apiName→dbColumn 排序筛选）
-    const statusCol = side === 'sales' ? 'delivery_status' : 'receipt_status'
-    const orderTypeSql =
-      side === 'sales'
-        ? `(SELECT o.order_type FROM sal_order_item oi
-            JOIN sal_order o ON o.id=oi.order_id WHERE oi.id=i.order_item_id) AS order_type`
-        : `NULL::text AS order_type`
-    return listFromSource({
+  async function listItems(permit: Permit, side: TradingSide, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: itemTargets[side],
+      alias: ITEM_ALIAS,
       resource: fulfillmentItemListMeta(side),
-      source: sql` FROM (
-        SELECT i.*, h.${sql.raw(spec.numberCol)}, h.${sql.raw(spec.dateCol)},
-          h.status AS ${sql.raw(statusCol)}, h.party_type, h.party_id,
-          (i.base_qty - i.reconciled_qty) AS remaining_reconcilable_qty,
-          ${sql.raw(orderTypeSql)}
-        FROM ${ident(spec.itemTable)} i
-        JOIN ${ident(spec.headTable)} h ON h.id=i.${sql.raw(spec.parentCol)}
-      ) fulfillment_items`,
-      select: sql`SELECT *`,
+      source: ITEM_SOURCE[side],
+      select: ITEM_SELECT,
       defaultOrder: sql`"idx" ASC, "id" ASC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapItemDto(side, r),
     })
   }
 
-  async function getItem(actor: Actor, side: TradingSide, id: string) {
+  /** 条目可达性经 via 链递归到母单自身的行谓词；与列表共用同一份投影 */
+  async function getItem(permit: Permit, side: TradingSide, id: string) {
     const spec = fulfillmentSpec(side)
-    requirePerm(actor, spec.prefix, 'read', '无权限执行该履约操作')
-    const row = await loadItem(db, spec, id)
-    if (!row || !canAccessCompany(actor, String(row.company_id))) {
-      throw new ApiError('not_found', `${spec.itemLabel}不存在`)
-    }
-    return mapItemDto(side, row)
+    return loadAuthorizedFrom({
+      db,
+      permit,
+      target: itemTargets[side],
+      alias: ITEM_ALIAS,
+      source: ITEM_SOURCE[side],
+      select: ITEM_SELECT,
+      id,
+      mapRow: (r) => mapItemDto(side, r),
+      notFoundMessage: `${spec.itemLabel}不存在`,
+    })
   }
 
   async function createItem(
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     input: SalesDraftItemInput & { headId: string },
   ) {
-    const spec = fulfillmentSpec(side)
-    requirePerm(actor, spec.prefix, 'create', '无权限执行该履约操作')
-    return withTx(db, (trx) => createItemInTx(trx, actor, side, input))
+    return withTx(db, (trx) => createItemInTx(trx, permit, side, input))
   }
 
   async function createItemInTx(
     trx: TrxHandle,
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     input: SalesDraftItemInput & { headId: string },
   ) {
     const spec = fulfillmentSpec(side)
-    const parent = mapHead(await lockDraftHead(trx, actor, spec, input.headId))
+    const parent = mapHead(await lockDraftHead(trx, permit, spec, input.headId))
     const derived = await deriveItem(trx, spec, parent, {
       idx: input.idx,
       qty: decimal(input.qty),
@@ -656,9 +728,9 @@ export function createFulfillmentService(
     `.execute(trx)
     const id = ins.rows[0]!.id
     await syncDrawingAttachments(trx, spec.itemOwnerType, id, derived.materialId, parent.companyId)
-    const row = await loadItem(trx, spec, id)
+    const row = await loadItemRow(trx, side, id)
     const dto = mapItemDto(side, row!)
-    await writeAudit(trx, actor, {
+    await writeAudit(trx, permit.actor, {
       resource: spec.itemTable,
       recordId: id,
       recordLabel: String(derived.idx),
@@ -674,30 +746,26 @@ export function createFulfillmentService(
   }
 
   async function updateItem(
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     id: string,
     input: FulfillmentItemUpdateInput,
   ) {
-    const spec = fulfillmentSpec(side)
-    requirePerm(actor, spec.prefix, 'update', '无权限执行该履约操作')
-    return withTx(db, (trx) => updateItemInTx(trx, actor, side, id, input))
+    return withTx(db, (trx) => updateItemInTx(trx, permit, side, id, input))
   }
 
   async function updateItemInTx(
     trx: TrxHandle,
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     id: string,
     input: FulfillmentItemUpdateInput,
   ) {
     const spec = fulfillmentSpec(side)
-    const cur = await sql<Record<string, unknown>>`
-      SELECT ${sql.raw(spec.parentCol)} AS head_id FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid
-    `.execute(trx)
-    if (!cur.rows[0]) throw new ApiError('not_found', `${spec.itemLabel}不存在`)
-    const parent = mapHead(await lockDraftHead(trx, actor, spec, String(cur.rows[0].head_id)))
-    const beforeRow = await loadItem(trx, spec, id)
+    // 母单先行（授权 + 草稿门），再 FOR UPDATE 锁子行：与并发路径加锁顺序一致
+    const parent = mapHead(await lockDraftHead(trx, permit, spec, await itemParentId(trx, spec, id)))
+    await lockItemRow(trx, spec, id)
+    const beforeRow = await loadItemRow(trx, side, id)
     if (!beforeRow) throw new ApiError('not_found', `${spec.itemLabel}不存在`)
     const beforeDto = mapItemDto(side, beforeRow)
     const derived = await deriveItem(trx, spec, parent, {
@@ -729,20 +797,15 @@ export function createFulfillmentService(
       WHERE id=${id}::uuid
     `.execute(trx)
     await syncDrawingAttachments(trx, spec.itemOwnerType, id, derived.materialId, parent.companyId)
-    const row = await loadItem(trx, spec, id)
+    const row = await loadItemRow(trx, side, id)
     return mapItemDto(side, row!)
   }
 
-  async function deleteItem(actor: Actor, side: TradingSide, id: string) {
+  async function deleteItem(permit: Permit, side: TradingSide, id: string) {
     const spec = fulfillmentSpec(side)
-    requirePerm(actor, spec.prefix, 'delete', '无权限执行该履约操作')
     await withTx(db, async (trx) => {
-      const cur = await sql<Record<string, unknown>>`
-        SELECT ${sql.raw(spec.parentCol)} AS head_id, company_id, idx
-        FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid
-      `.execute(trx)
-      if (!cur.rows[0]) throw new ApiError('not_found', `${spec.itemLabel}不存在`)
-      await lockDraftHead(trx, actor, spec, String(cur.rows[0].head_id))
+      await lockDraftHead(trx, permit, spec, await itemParentId(trx, spec, id))
+      await lockItemRow(trx, spec, id)
       await sql`
         DELETE FROM sys_attachment WHERE owner_type=${spec.itemOwnerType} AND owner_id=${id}::uuid
       `.execute(trx)
@@ -751,56 +814,61 @@ export function createFulfillmentService(
   }
 
   // ---- pack boxes (sales only) ----
-  async function listPackBoxes(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, 'sales.delivery', 'read', '无权限执行该履约操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
-    return listFromSource({
+  async function listPackBoxes(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: packBoxTarget,
+      alias: PACK_BOX_TABLE,
       resource: packBoxMeta(),
-      source: sql` FROM sal_delivery_pack_box`,
+      source: sql` FROM ${ident(PACK_BOX_TABLE)}`,
       select: sql`SELECT *`,
       defaultOrder: sql`"box_no" ASC, "id" ASC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapPackBoxDto(r),
     })
   }
 
-  async function readPackBox(handle: DbHandle, actor: Actor, id: string) {
+  /** 已在母单授权路径内的箱读取（写事务复用；不重复判权） */
+  async function readPackBox(handle: DbHandle, id: string) {
     const rows = await sql<Record<string, unknown>>`
-      SELECT * FROM sal_delivery_pack_box WHERE id=${id}::uuid
+      SELECT * FROM ${ident(PACK_BOX_TABLE)} WHERE id=${id}::uuid
     `.execute(handle)
-    if (!rows.rows[0] || !canAccessCompany(actor, String(rows.rows[0].company_id))) {
-      throw new ApiError('not_found', '装箱箱不存在')
-    }
+    if (!rows.rows[0]) throw new ApiError('not_found', '装箱箱不存在')
     return mapPackBoxDto(rows.rows[0])
   }
 
-  async function getPackBox(actor: Actor, id: string) {
-    requirePerm(actor, 'sales.delivery', 'read', '无权限执行该履约操作')
-    return readPackBox(db, actor, id)
+  async function getPackBox(permit: Permit, id: string) {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target: packBoxTarget,
+      table: PACK_BOX_TABLE,
+      id,
+      notFoundMessage: '装箱箱不存在',
+    })
+    return mapPackBoxDto(row)
   }
 
   async function createPackBoxInTx(
     trx: TrxHandle,
-    actor: Actor,
+    permit: Permit,
     deliveryId: string,
   ) {
-    const parent = mapHead(await lockDraftHead(trx, actor, fulfillmentSpec('sales'), deliveryId))
+    const parent = mapHead(await lockDraftHead(trx, permit, fulfillmentSpec('sales'), deliveryId))
     // 头行已 FOR UPDATE，单内取号串行化；UNIQUE(delivery_id, box_no) 兜底
     const next = await sql<{ n: string }>`
       SELECT (COALESCE(MAX(box_no), 0) + 1)::text AS n
-      FROM sal_delivery_pack_box WHERE delivery_id=${deliveryId}::uuid
+      FROM ${ident(PACK_BOX_TABLE)} WHERE delivery_id=${deliveryId}::uuid
     `.execute(trx)
     const ins = await sql<{ id: string }>`
-      INSERT INTO sal_delivery_pack_box (box_no, delivery_id, company_id)
+      INSERT INTO ${ident(PACK_BOX_TABLE)} (box_no, delivery_id, company_id)
       VALUES (${next.rows[0]!.n}::bigint, ${deliveryId}::uuid, ${parent.companyId}::uuid)
       RETURNING id
     `.execute(trx)
-    const dto = await readPackBox(trx, actor, ins.rows[0]!.id)
-    await writeAudit(trx, actor, {
-      resource: 'sal_delivery_pack_box',
+    const dto = await readPackBox(trx, ins.rows[0]!.id)
+    await writeAudit(trx, permit.actor, {
+      resource: PACK_BOX_TABLE,
       recordId: dto.id,
       recordLabel: dto.boxNo,
       companyId: dto.companyId,
@@ -812,43 +880,49 @@ export function createFulfillmentService(
   }
 
   // ---- pack lines (sales only) ----
-  async function listPackLines(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, 'sales.delivery', 'read', '无权限执行该履约操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
-    return listFromSource({
+  async function listPackLines(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: packLineTarget,
+      alias: PACK_LINE_TABLE,
       resource: packLineMeta(),
-      source: sql` FROM sal_delivery_pack_line`,
+      source: sql` FROM ${ident(PACK_LINE_TABLE)}`,
       select: sql`SELECT *`,
       defaultOrder: sql`"idx" ASC, "id" ASC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapPackDto(r),
     })
   }
 
-  async function readPackLine(handle: DbHandle, actor: Actor, id: string) {
+  /** 已在母单授权路径内的装箱行读取（写事务复用；不重复判权） */
+  async function readPackLine(handle: DbHandle, id: string) {
     const rows = await sql<Record<string, unknown>>`
-      SELECT * FROM sal_delivery_pack_line WHERE id=${id}::uuid
+      SELECT * FROM ${ident(PACK_LINE_TABLE)} WHERE id=${id}::uuid
     `.execute(handle)
-    if (!rows.rows[0] || !canAccessCompany(actor, String(rows.rows[0].company_id))) {
-      throw new ApiError('not_found', '装箱行不存在')
-    }
+    if (!rows.rows[0]) throw new ApiError('not_found', '装箱行不存在')
     return mapPackDto(rows.rows[0])
   }
 
-  async function getPackLine(actor: Actor, id: string) {
-    requirePerm(actor, 'sales.delivery', 'read', '无权限执行该履约操作')
-    return readPackLine(db, actor, id)
+  /** 两级 via（pack_line → pack_box → sal_delivery），平台按链递归 EXISTS */
+  async function getPackLine(permit: Permit, id: string) {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target: packLineTarget,
+      table: PACK_LINE_TABLE,
+      id,
+      notFoundMessage: '装箱行不存在',
+    })
+    return mapPackDto(row)
   }
 
   async function createPackLineInTx(
     trx: TrxHandle,
-    actor: Actor,
+    permit: Permit,
     input: SalesDraftPackLineInput & { deliveryId: string; packBoxId: string },
   ) {
-    const parent = mapHead(await lockDraftHead(trx, actor, fulfillmentSpec('sales'), input.deliveryId))
+    const parent = mapHead(await lockDraftHead(trx, permit, fulfillmentSpec('sales'), input.deliveryId))
     await requireOwnBox(trx, input.deliveryId, input.packBoxId)
     // 装箱行不依赖本单发货条目（可先装箱后补条目,见销售发货产品文档）;
     // 装箱与发货的物料一致性由审核「全有或全无」校验兜底,草稿不卡
@@ -868,7 +942,7 @@ export function createFulfillmentService(
     if (!qty.gt(0)) throw ApiError.validation('装箱行参数不合法', { qty: ['必须大于 0'] })
     const baseQty = convertToBaseQty(qty, resolvedUnit, snap)
     const ins = await sql<{ id: string }>`
-      INSERT INTO sal_delivery_pack_line (
+      INSERT INTO ${ident(PACK_LINE_TABLE)} (
         idx,pack_box_id,qty,base_qty,material_code,material_name,material_spec,customer_part_no,unit_name,
         remarks,delivery_id,company_id,material_id,unit_id
       ) VALUES (
@@ -878,9 +952,9 @@ export function createFulfillmentService(
         ${input.materialId}::uuid,${resolvedUnit}::uuid
       ) RETURNING id
     `.execute(trx)
-    const dto = await readPackLine(trx, actor, ins.rows[0]!.id)
-    await writeAudit(trx, actor, {
-      resource: 'sal_delivery_pack_line',
+    const dto = await readPackLine(trx, ins.rows[0]!.id)
+    await writeAudit(trx, permit.actor, {
+      resource: PACK_LINE_TABLE,
       recordId: dto.id,
       recordLabel: String(dto.idx),
       companyId: dto.companyId,
@@ -893,17 +967,19 @@ export function createFulfillmentService(
 
   async function updatePackLineInTx(
     trx: TrxHandle,
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: SalesDraftPackLineUpdateInput,
   ) {
     const cur = await sql<{ delivery_id: string }>`
-      SELECT delivery_id FROM sal_delivery_pack_line WHERE id=${id}::uuid
+      SELECT delivery_id FROM ${ident(PACK_LINE_TABLE)} WHERE id=${id}::uuid
     `.execute(trx)
     if (!cur.rows[0]) throw new ApiError('not_found', '装箱行不存在')
     const deliveryId = cur.rows[0].delivery_id
-    await lockDraftHead(trx, actor, fulfillmentSpec('sales'), deliveryId)
-    const before = await readPackLine(trx, actor, id)
+    // 母单先行（授权 + 草稿门），再 FOR UPDATE 锁装箱行
+    await lockDraftHead(trx, permit, fulfillmentSpec('sales'), deliveryId)
+    await lockPackLineRow(trx, id)
+    const before = await readPackLine(trx, id)
     if (input.packBoxId !== undefined) await requireOwnBox(trx, deliveryId, input.packBoxId)
     const materialId = input.materialId ?? before.materialId
     let unitId = input.unitIdPresent ? (input.unitId ?? null) : before.unitId
@@ -921,7 +997,7 @@ export function createFulfillmentService(
     if (!qty.gt(0)) throw ApiError.validation('装箱行参数不合法', { qty: ['必须大于 0'] })
     const baseQty = convertToBaseQty(qty, unitId, snap)
     await sql`
-      UPDATE sal_delivery_pack_line SET
+      UPDATE ${ident(PACK_LINE_TABLE)} SET
         idx=${input.idx ?? before.idx},
         pack_box_id=${input.packBoxId ?? before.packBoxId}::uuid,
         qty=${wireRequiredDecimal(qty)}, base_qty=${wireRequiredDecimal(baseQty)},
@@ -932,11 +1008,11 @@ export function createFulfillmentService(
         updated_at=(now() AT TIME ZONE 'utc')
       WHERE id=${id}::uuid
     `.execute(trx)
-    const after = await readPackLine(trx, actor, id)
+    const after = await readPackLine(trx, id)
     const changes = auditDiff(packLineSnap(before), packLineSnap(after), PACK_LINE_AUDIT)
     if (Object.keys(changes).length > 0) {
-      await writeAudit(trx, actor, {
-        resource: 'sal_delivery_pack_line',
+      await writeAudit(trx, permit.actor, {
+        resource: PACK_LINE_TABLE,
         recordId: id,
         recordLabel: String(after.idx),
         companyId: after.companyId,
@@ -948,15 +1024,13 @@ export function createFulfillmentService(
     return after
   }
 
+  /** 母单已授权（loadAuthorizedHead / lockDraftHead）后的子树装载 */
   async function loadSalesDraft(
     handle: DbHandle,
-    actor: Actor,
     id: string,
   ): Promise<SalesDraftDto> {
     const headRow = await loadHead(handle, fulfillmentSpec('sales'), id)
-    if (!headRow || !canAccessCompany(actor, String(headRow.company_id))) {
-      throw new ApiError('not_found', '销售发货单不存在')
-    }
+    if (!headRow) throw new ApiError('not_found', '销售发货单不存在')
     const itemRows = await sql<Record<string, unknown>>`
       SELECT i.*, h.delivery_no, h.delivery_date, h.status AS delivery_status,
         h.party_type, h.party_id,
@@ -967,12 +1041,12 @@ export function createFulfillmentService(
       ORDER BY i.idx, i.id
     `.execute(handle)
     const boxRows = await sql<Record<string, unknown>>`
-      SELECT * FROM sal_delivery_pack_box
+      SELECT * FROM ${ident(PACK_BOX_TABLE)}
       WHERE delivery_id=${id}::uuid
       ORDER BY box_no, id
     `.execute(handle)
     const lineRows = await sql<Record<string, unknown>>`
-      SELECT * FROM sal_delivery_pack_line
+      SELECT * FROM ${ident(PACK_LINE_TABLE)}
       WHERE delivery_id=${id}::uuid
       ORDER BY idx, id
     `.execute(handle)
@@ -1000,16 +1074,15 @@ export function createFulfillmentService(
    * 领域专用完整草稿读取：表头 + 全部发货条目 + 全部装箱箱/行。
    * 无分页截断；供 AggregateDraftAdapter.loadDraft 与 create/replace 权威快照共用。
    */
-  async function getSalesDraft(actor: Actor, id: string): Promise<SalesDraftDto> {
-    requirePerm(actor, 'sales.delivery', 'read', '无权限执行该履约操作')
-    return withReadSnapshot(db, (snapshot) => loadSalesDraft(snapshot, actor, id))
+  async function getSalesDraft(permit: Permit, id: string): Promise<SalesDraftDto> {
+    const spec = fulfillmentSpec('sales')
+    return withReadSnapshot(db, async (snapshot) => {
+      await loadAuthorizedHead(snapshot, permit, spec, id)
+      return loadSalesDraft(snapshot, id)
+    })
   }
 
-  async function createSalesDraft(actor: Actor, input: SalesDraftInput) {
-    requirePerm(actor, 'sales.delivery', 'create', '无权限执行该履约操作')
-    if (!canAccessCompany(actor, input.companyId)) {
-      throw new ApiError('forbidden', '无权在该公司创建履约单')
-    }
+  async function createSalesDraft(permit: Permit, input: SalesDraftInput) {
     const identityFields: Record<string, string[]> = {}
     input.items.forEach((item, itemIndex) => {
       if (item.id !== undefined) identityFields[`items[${itemIndex}].id`] = ['新记录不能包含 id']
@@ -1025,27 +1098,30 @@ export function createFulfillmentService(
     if (Object.keys(identityFields).length > 0) {
       throw ApiError.validation('销售发货草稿参数不合法', identityFields)
     }
+    // 入参校验（400）先于公司边界（404）
+    assertCompanyPresent(fulfillmentSpec('sales'), input.companyId, 'header.companyId')
+    assertCompanyWritable(permit, input.companyId, '公司不存在')
 
     return withTx(db, async (trx) => {
       const head = await withIndexedFields(
         'header',
-        () => createHeadInTx(trx, actor, 'sales', input),
+        () => createHeadInTx(trx, permit, 'sales', input),
         { number: 'deliveryNo', documentDate: 'deliveryDate' },
       )
       const deliveryId = String(head.id)
       for (let itemIndex = 0; itemIndex < input.items.length; itemIndex++) {
         const item = input.items[itemIndex]!
         await withIndexedFields(`items[${itemIndex}]`, () =>
-          createItemInTx(trx, actor, 'sales', { ...item, headId: deliveryId }),
+          createItemInTx(trx, permit, 'sales', { ...item, headId: deliveryId }),
         )
       }
       for (let boxIndex = 0; boxIndex < input.packBoxes.length; boxIndex++) {
         const inputBox = input.packBoxes[boxIndex]!
-        const box = await createPackBoxInTx(trx, actor, deliveryId)
+        const box = await createPackBoxInTx(trx, permit, deliveryId)
         for (let lineIndex = 0; lineIndex < inputBox.lines.length; lineIndex++) {
           const line = inputBox.lines[lineIndex]!
           await withIndexedFields(`packBoxes[${boxIndex}].lines[${lineIndex}]`, () =>
-            createPackLineInTx(trx, actor, {
+            createPackLineInTx(trx, permit, {
               ...line,
               deliveryId,
               packBoxId: String(box.id),
@@ -1053,14 +1129,17 @@ export function createFulfillmentService(
           )
         }
       }
-      return loadSalesDraft(trx, actor, deliveryId)
+      return loadSalesDraft(trx, deliveryId)
     })
   }
 
-  async function replaceSalesDraft(actor: Actor, id: string, input: SalesDraftInput) {
-    requirePerm(actor, 'sales.delivery', 'update', '无权限执行该履约操作')
+  /**
+   * 整单替换：子项增删的码级门控由路由声明（`update` ∧ create ∧ delete），
+   * 服务层不再按 diff 动态判权（403 只由 guard 产生）。
+   */
+  async function replaceSalesDraft(permit: Permit, id: string, input: SalesDraftInput) {
     return withTx(db, async (trx) => {
-      const before = mapHead(await lockDraftHead(trx, actor, fulfillmentSpec('sales'), id))
+      const before = mapHead(await lockDraftHead(trx, permit, fulfillmentSpec('sales'), id))
       if (input.companyId !== before.companyId) {
         throw ApiError.validation('销售发货草稿参数不合法', {
           'header.companyId': ['创建后不可修改公司'],
@@ -1111,7 +1190,7 @@ export function createFulfillmentService(
       await withIndexedFields(
         'header',
         () =>
-          updateHeadInTx(trx, actor, 'sales', id, {
+          updateHeadInTx(trx, permit, 'sales', id, {
             no: input.no ?? before.no,
             documentDate: input.documentDate ?? before.documentDate,
             postingDate: input.postingDate ?? null,
@@ -1132,11 +1211,11 @@ export function createFulfillmentService(
         const item = input.items[itemIndex]!
         if (item.id === undefined) {
           await withIndexedFields(`items[${itemIndex}]`, () =>
-            createItemInTx(trx, actor, 'sales', { ...item, headId: id }),
+            createItemInTx(trx, permit, 'sales', { ...item, headId: id }),
           )
         } else {
           await withIndexedFields(`items[${itemIndex}]`, () =>
-            updateItemInTx(trx, actor, 'sales', item.id!, {
+            updateItemInTx(trx, permit, 'sales', item.id!, {
               idx: item.idx,
               qty: item.qty,
               orderItemId: item.orderItemId,
@@ -1154,19 +1233,19 @@ export function createFulfillmentService(
       for (let boxIndex = 0; boxIndex < input.packBoxes.length; boxIndex++) {
         const inputBox = input.packBoxes[boxIndex]!
         const box = inputBox.id === undefined
-          ? await createPackBoxInTx(trx, actor, id)
-          : await readPackBox(trx, actor, inputBox.id)
+          ? await createPackBoxInTx(trx, permit, id)
+          : await readPackBox(trx, inputBox.id)
         const boxId = String(box.id)
         for (let lineIndex = 0; lineIndex < inputBox.lines.length; lineIndex++) {
           const line = inputBox.lines[lineIndex]!
           const prefix = `packBoxes[${boxIndex}].lines[${lineIndex}]`
           if (line.id === undefined) {
             await withIndexedFields(prefix, () =>
-              createPackLineInTx(trx, actor, { ...line, deliveryId: id, packBoxId: boxId }),
+              createPackLineInTx(trx, permit, { ...line, deliveryId: id, packBoxId: boxId }),
             )
           } else {
             await withIndexedFields(prefix, () =>
-              updatePackLineInTx(trx, actor, line.id!, {
+              updatePackLineInTx(trx, permit, line.id!, {
                 idx: line.idx,
                 packBoxId: boxId,
                 qty: line.qty,
@@ -1182,9 +1261,9 @@ export function createFulfillmentService(
       }
       for (const oldId of existingLineIds) {
         if (!requestedLines.has(oldId)) {
-          const line = await readPackLine(trx, actor, oldId)
-          await writeAudit(trx, actor, {
-            resource: 'sal_delivery_pack_line',
+          const line = await readPackLine(trx, oldId)
+          await writeAudit(trx, permit.actor, {
+            resource: PACK_LINE_TABLE,
             recordId: oldId,
             recordLabel: String(line.idx),
             companyId: line.companyId,
@@ -1197,9 +1276,9 @@ export function createFulfillmentService(
       }
       for (const oldId of existingBoxIds) {
         if (!requestedBoxes.has(oldId)) {
-          const box = await readPackBox(trx, actor, oldId)
-          await writeAudit(trx, actor, {
-            resource: 'sal_delivery_pack_box',
+          const box = await readPackBox(trx, oldId)
+          await writeAudit(trx, permit.actor, {
+            resource: PACK_BOX_TABLE,
             recordId: oldId,
             recordLabel: box.boxNo,
             companyId: box.companyId,
@@ -1210,20 +1289,18 @@ export function createFulfillmentService(
           await trx.deleteFrom('sal_delivery_pack_box').where('id', '=', oldId).execute()
         }
       }
-      return loadSalesDraft(trx, actor, id)
+      return loadSalesDraft(trx, id)
     })
   }
 
+  /** 母单已授权（loadAuthorizedHead / lockDraftHead）后的子树装载 */
   async function loadPurchaseReceiptDraft(
     handle: DbHandle,
-    actor: Actor,
     id: string,
   ): Promise<PurchaseReceiptDraftDto> {
     const spec = fulfillmentSpec('purchase')
     const headRow = await loadHead(handle, spec, id)
-    if (!headRow || !canAccessCompany(actor, String(headRow.company_id))) {
-      throw new ApiError('not_found', '采购入库单不存在')
-    }
+    if (!headRow) throw new ApiError('not_found', '采购入库单不存在')
     const itemRows = await sql<Record<string, unknown>>`
       SELECT i.*, h.receipt_no, h.receipt_date, h.status AS receipt_status,
         h.party_type, h.party_id,
@@ -1244,21 +1321,20 @@ export function createFulfillmentService(
 
   /** 领域专用完整草稿读取；不经过分页子资源 query。 */
   async function getPurchaseReceiptDraft(
-    actor: Actor,
+    permit: Permit,
     id: string,
   ): Promise<PurchaseReceiptDraftDto> {
-    requirePerm(actor, 'purchase.receipt', 'read', '无权限执行该履约操作')
-    return withReadSnapshot(db, (snapshot) => loadPurchaseReceiptDraft(snapshot, actor, id))
+    const spec = fulfillmentSpec('purchase')
+    return withReadSnapshot(db, async (snapshot) => {
+      await loadAuthorizedHead(snapshot, permit, spec, id)
+      return loadPurchaseReceiptDraft(snapshot, id)
+    })
   }
 
   async function createPurchaseReceiptDraft(
-    actor: Actor,
+    permit: Permit,
     input: PurchaseReceiptDraftInput,
   ): Promise<PurchaseReceiptDraftDto> {
-    requirePerm(actor, 'purchase.receipt', 'create', '无权限执行该履约操作')
-    if (!canAccessCompany(actor, input.companyId)) {
-      throw new ApiError('forbidden', '无权在该公司创建履约单')
-    }
     const identityFields: Record<string, string[]> = {}
     input.items.forEach((item, itemIndex) => {
       if (item.id !== undefined) {
@@ -1268,33 +1344,39 @@ export function createFulfillmentService(
     if (Object.keys(identityFields).length > 0) {
       throw ApiError.validation('采购入库草稿参数不合法', identityFields)
     }
+    // 入参校验（400）先于公司边界（404）
+    assertCompanyPresent(fulfillmentSpec('purchase'), input.companyId, 'header.companyId')
+    assertCompanyWritable(permit, input.companyId, '公司不存在')
 
     return withTx(db, async (trx) => {
       const head = await withIndexedFields(
         'header',
-        () => createHeadInTx(trx, actor, 'purchase', input),
+        () => createHeadInTx(trx, permit, 'purchase', input),
         { number: 'receiptNo', documentDate: 'receiptDate' },
       )
       const receiptId = String(head.id)
       for (let itemIndex = 0; itemIndex < input.items.length; itemIndex++) {
         const item = input.items[itemIndex]!
         await withIndexedFields(`items[${itemIndex}]`, () =>
-          createItemInTx(trx, actor, 'purchase', { ...item, headId: receiptId }),
+          createItemInTx(trx, permit, 'purchase', { ...item, headId: receiptId }),
         )
       }
-      return loadPurchaseReceiptDraft(trx, actor, receiptId)
+      return loadPurchaseReceiptDraft(trx, receiptId)
     })
   }
 
+  /**
+   * 整单替换：子项增删的码级门控由路由声明（`update` ∧ create ∧ delete），
+   * 服务层不再按 diff 动态判权（403 只由 guard 产生）。
+   */
   async function replacePurchaseReceiptDraft(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: PurchaseReceiptDraftInput,
   ): Promise<PurchaseReceiptDraftDto> {
-    requirePerm(actor, 'purchase.receipt', 'update', '无权限执行该履约操作')
     return withTx(db, async (trx) => {
       const spec = fulfillmentSpec('purchase')
-      const before = mapHead(await lockDraftHead(trx, actor, spec, id))
+      const before = mapHead(await lockDraftHead(trx, permit, spec, id))
       if (input.companyId !== before.companyId) {
         throw ApiError.validation('采购入库草稿参数不合法', {
           'header.companyId': ['创建后不可修改公司'],
@@ -1309,16 +1391,10 @@ export function createFulfillmentService(
       const existingItemIds = new Set(existingItems.map((item) => item.id))
       validatePurchaseReceiptDraftIdentities(input, existingItemIds)
 
-      const effects = purchaseReceiptDraftChildEffects(input, existingItemIds)
-      if (effects.creates) {
-        requirePerm(actor, spec.prefix, 'create', '无权限执行该履约操作')
-      }
-      if (effects.deletes) {
-        requirePerm(actor, spec.prefix, 'delete', '无权限执行该履约操作')
-      }
+      const requestedItems = new Set(input.items.flatMap((item) => item.id ?? []))
 
       for (const oldId of existingItemIds) {
-        if (effects.requestedItems.has(oldId)) continue
+        if (requestedItems.has(oldId)) continue
         await sql`
           DELETE FROM sys_attachment
           WHERE owner_type=${spec.itemOwnerType} AND owner_id=${oldId}::uuid
@@ -1329,7 +1405,7 @@ export function createFulfillmentService(
       await withIndexedFields(
         'header',
         () =>
-          updateHeadInTx(trx, actor, 'purchase', id, {
+          updateHeadInTx(trx, permit, 'purchase', id, {
             no: input.no ?? before.no,
             documentDate: input.documentDate ?? before.documentDate,
             postingDate: input.postingDate ?? null,
@@ -1350,11 +1426,11 @@ export function createFulfillmentService(
         const item = input.items[itemIndex]!
         if (item.id === undefined) {
           await withIndexedFields(`items[${itemIndex}]`, () =>
-            createItemInTx(trx, actor, 'purchase', { ...item, headId: id }),
+            createItemInTx(trx, permit, 'purchase', { ...item, headId: id }),
           )
         } else {
           await withIndexedFields(`items[${itemIndex}]`, () =>
-            updateItemInTx(trx, actor, 'purchase', item.id!, {
+            updateItemInTx(trx, permit, 'purchase', item.id!, {
               idx: item.idx,
               qty: item.qty,
               orderItemId: item.orderItemId,
@@ -1368,39 +1444,39 @@ export function createFulfillmentService(
           )
         }
       }
-      return loadPurchaseReceiptDraft(trx, actor, id)
+      return loadPurchaseReceiptDraft(trx, id)
     })
   }
 
   async function createPurchaseItem(
-    actor: Actor,
+    permit: Permit,
     input: SalesDraftItemInput & { receiptId: string },
   ) {
-    return createItem(actor, 'purchase', { ...input, headId: input.receiptId })
+    return createItem(permit, 'purchase', { ...input, headId: input.receiptId })
   }
 
   async function updatePurchaseItem(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: FulfillmentItemUpdateInput,
   ) {
-    return updateItem(actor, 'purchase', id, input)
+    return updateItem(permit, 'purchase', id, input)
   }
 
-  async function deletePurchaseItem(actor: Actor, id: string) {
-    return deleteItem(actor, 'purchase', id)
+  async function deletePurchaseItem(permit: Permit, id: string) {
+    return deleteItem(permit, 'purchase', id)
   }
 
-  async function createPurchaseHead(actor: Actor, input: FulfillmentHeadDraftInput) {
-    return createHead(actor, 'purchase', input)
+  async function createPurchaseHead(permit: Permit, input: FulfillmentHeadDraftInput) {
+    return createHead(permit, 'purchase', input)
   }
 
   async function updatePurchaseHead(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: FulfillmentHeadUpdateInput,
   ) {
-    return updateHead(actor, 'purchase', id, input)
+    return updateHead(permit, 'purchase', id, input)
   }
 
   return {
@@ -1493,18 +1569,15 @@ function validatePurchaseReceiptDraftIdentities(
   }
 }
 
-function purchaseReceiptDraftChildEffects(
-  input: PurchaseReceiptDraftInput,
-  existingItems: ReadonlySet<string>,
-) {
-  const requestedItems = new Set<string>()
-  let creates = false
-  for (const item of input.items) {
-    if (item.id === undefined) creates = true
-    else requestedItems.add(item.id)
+/** create 的入参校验（400）必须先于公司边界（404）：空公司报「必填」而非「公司不存在」 */
+function assertCompanyPresent(
+  spec: FulfillmentSideSpec,
+  companyId: string,
+  field = 'companyId',
+): void {
+  if (!companyId) {
+    throw ApiError.validation(`${spec.label}参数不合法`, { [field]: ['必填'] })
   }
-  const deletes = [...existingItems].some((itemId) => !requestedItems.has(itemId))
-  return { creates, deletes, requestedItems }
 }
 
 function validateHeadShape(spec: FulfillmentSideSpec, item: FulfillmentHead) {
@@ -1566,25 +1639,7 @@ async function validateWarehouse(db: DbHandle, companyId: string, warehouseId: s
   }
 }
 
-async function lockHead(db: DbHandle, actor: Actor, spec: FulfillmentSideSpec, id: string) {
-  const rows = await sql<Record<string, unknown>>`
-    SELECT * FROM ${ident(spec.headTable)} WHERE id=${id}::uuid FOR UPDATE
-  `.execute(db)
-  const row = rows.rows[0]
-  if (!row || !canAccessCompany(actor, String(row.company_id))) {
-    throw new ApiError('not_found', `${spec.label}不存在`)
-  }
-  return row
-}
-
-async function lockDraftHead(db: DbHandle, actor: Actor, spec: FulfillmentSideSpec, id: string) {
-  const row = await lockHead(db, actor, spec, id)
-  if (String(row.status).toLowerCase() !== 'draft') {
-    throw new ApiError('conflict', `仅草稿${spec.label}可编辑`)
-  }
-  return row
-}
-
+/** 已授权路径内的单头读取（授权/锁由 loadAuthorized 承担） */
 async function loadHead(db: DbHandle, spec: FulfillmentSideSpec, id: string) {
   const rows = await sql<Record<string, unknown>>`
     SELECT * FROM ${ident(spec.headTable)} WHERE id=${id}::uuid
@@ -1592,15 +1647,39 @@ async function loadHead(db: DbHandle, spec: FulfillmentSideSpec, id: string) {
   return rows.rows[0]
 }
 
-async function loadItem(db: DbHandle, spec: FulfillmentSideSpec, id: string) {
-  const statusCol = spec.side === 'sales' ? 'delivery_status' : 'receipt_status'
+/** 子行的母单 id：行不存在与母单不可达同为 not_found（后者由 lockDraftHead 落地） */
+async function itemParentId(
+  db: DbHandle,
+  spec: FulfillmentSideSpec,
+  id: string,
+): Promise<string> {
   const rows = await sql<Record<string, unknown>>`
-    SELECT i.*, h.${sql.raw(spec.numberCol)}, h.${sql.raw(spec.dateCol)},
-      h.status AS ${sql.raw(statusCol)}, h.party_type, h.party_id,
-      (i.base_qty - i.reconciled_qty) AS remaining_reconcilable_qty
-    FROM ${ident(spec.itemTable)} i
-    JOIN ${ident(spec.headTable)} h ON h.id=i.${sql.raw(spec.parentCol)}
-    WHERE i.id=${id}::uuid
+    SELECT ${sql.raw(spec.parentCol)} AS head_id FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid
+  `.execute(db)
+  const row = rows.rows[0]
+  if (!row) throw new ApiError('not_found', `${spec.itemLabel}不存在`)
+  return String(row.head_id)
+}
+
+/** 母单锁定之后再锁子行（加锁顺序母单先行） */
+async function lockItemRow(db: DbHandle, spec: FulfillmentSideSpec, id: string): Promise<void> {
+  const rows = await sql<{ id: string }>`
+    SELECT id FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid FOR UPDATE
+  `.execute(db)
+  if (!rows.rows[0]) throw new ApiError('not_found', `${spec.itemLabel}不存在`)
+}
+
+async function lockPackLineRow(db: DbHandle, id: string): Promise<void> {
+  const rows = await sql<{ id: string }>`
+    SELECT id FROM ${ident(PACK_LINE_TABLE)} WHERE id=${id}::uuid FOR UPDATE
+  `.execute(db)
+  if (!rows.rows[0]) throw new ApiError('not_found', '装箱行不存在')
+}
+
+/** 条目投影读取（与列表/单条共用 ITEM_SOURCE，别名只此一处） */
+async function loadItemRow(db: DbHandle, side: TradingSide, id: string) {
+  const rows = await sql<Record<string, unknown>>`
+    ${ITEM_SELECT}${ITEM_SOURCE[side]} WHERE ${ident(ITEM_ALIAS)}.id=${id}::uuid
   `.execute(db)
   return rows.rows[0]
 }

@@ -4,6 +4,7 @@ import { companyAccountDefaultMeta } from './company-account-default.ts'
 export {
   createCompanyAccountDefaultService,
   companyAccountDefaultMeta,
+  DEFAULT_RESOURCE,
   type CompanyAccountDefaultService,
 } from './company-account-default.ts'
 export { companyAccountDefaultRoutes } from './routes.ts'

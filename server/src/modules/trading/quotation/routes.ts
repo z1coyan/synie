@@ -1,14 +1,24 @@
+/**
+ * 销售/采购报价 REST：头/条目/价格档三组路由（双边由 side 装配）。
+ *
+ * 逐端点挂 `guard(资源, 动作)`（requireAuth 之后、zValidator 之前），handler 用 `permitOf(c)` 取凭证。
+ * 资源名从 spec 取（不写字面量），动作码唯一事实源是 meta 的 actions——
+ * 条目/价格档是 via 子资源，其 create/update/delete 由 guard 解析到母资源（报价头）的动作码。
+ */
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
+import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
+import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { dateOnlySchema, decimalStringSchema, listQuerySchema, validationHook } from '~/platform/http/zod.ts'
 import type { TradingSide } from '../common.ts'
 import { presentKey } from '../common.ts'
+import { quotationSpec } from './spec.ts'
 import type { QuotationService } from './service.ts'
 
 const idParam = z.object({ id: z.string().uuid() })
@@ -105,49 +115,65 @@ function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
 
 export function quotationHeadRoutes(deps: {
   auth: AuthService
+  authz: AuthzEnforcer
   quotations: QuotationService
   side: TradingSide
 }) {
-  const { auth, quotations, side } = deps
+  const { auth, authz, quotations, side } = deps
+  const resource = quotationSpec(side).headResource
+  const headGuard = (action: string) => authz.guard(resource, action)
+  const prefix = authz.targetOf(resource).prefix
+  /**
+   * 整单 PUT 是聚合写：子树差异可能新增/删除条目与档位，
+   * 故在 update 之外叠加同前缀的 create/delete（旧实现按差异在服务层动态判定并抛 403）。
+   */
+  const replaceGuard = authz.guard(resource, 'update', {
+    allOf: [`${prefix}:create`, `${prefix}:delete`],
+  })
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
       '/query',
+      headGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await quotations.listHeads(c.get('actor'), side, toList(c.req.valid('json')))
+        const result = await quotations.listHeads(permitOf(c), side, toList(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results })
       },
     )
     .post(
       '/',
+      headGuard('create'),
       zValidator('json', quotationDraftCreateSchema, quotationDraftValidationHook),
       async (c) => {
-        const item = await quotations.createDraft(c.get('actor'), side, c.req.valid('json'))
+        const item = await quotations.createDraft(permitOf(c), side, c.req.valid('json'))
         return c.json(item, 201)
       },
     )
     .get(
       '/:id/draft',
+      headGuard('read'),
       zValidator('param', idParam, validationHook),
       async (c) =>
         c.json(
-          await quotations.getDraft(c.get('actor'), side, c.req.valid('param').id),
+          await quotations.getDraft(permitOf(c), side, c.req.valid('param').id),
         ),
     )
     .get(
       '/:id',
+      headGuard('read'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(await quotations.getHead(c.get('actor'), side, c.req.valid('param').id)),
+      async (c) => c.json(await quotations.getHead(permitOf(c), side, c.req.valid('param').id)),
     )
     .put(
       '/:id',
+      replaceGuard,
       zValidator('param', idParam, validationHook),
       zValidator('json', quotationDraftReplaceSchema, quotationDraftValidationHook),
       async (c) =>
         c.json(
           await quotations.replaceDraft(
-            c.get('actor'),
+            permitOf(c),
             side,
             c.req.valid('param').id,
             c.req.valid('json'),
@@ -156,6 +182,7 @@ export function quotationHeadRoutes(deps: {
     )
     .patch(
       '/:id',
+      headGuard('update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -176,7 +203,7 @@ export function quotationHeadRoutes(deps: {
       async (c) => {
         const raw = (await c.req.json()) as Record<string, unknown>
         const body = c.req.valid('json')
-        const item = await quotations.updateHead(c.get('actor'), side, c.req.valid('param').id, {
+        const item = await quotations.updateHead(permitOf(c), side, c.req.valid('param').id, {
           ...body,
           termsPresent: presentKey(raw, 'terms'),
           remarksPresent: presentKey(raw, 'remarks'),
@@ -186,42 +213,49 @@ export function quotationHeadRoutes(deps: {
     )
     .delete(
       '/:id',
+      headGuard('delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        await quotations.deleteHead(c.get('actor'), side, c.req.valid('param').id)
+        await quotations.deleteHead(permitOf(c), side, c.req.valid('param').id)
         return c.body(null, 204)
       },
     )
     .post(
       '/:id/audit',
+      headGuard('audit'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(await quotations.auditHead(c.get('actor'), side, c.req.valid('param').id)),
+      async (c) => c.json(await quotations.auditHead(permitOf(c), side, c.req.valid('param').id)),
     )
     .post(
       '/:id/void',
+      headGuard('void'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(await quotations.voidHead(c.get('actor'), side, c.req.valid('param').id)),
+      async (c) => c.json(await quotations.voidHead(permitOf(c), side, c.req.valid('param').id)),
     )
 }
 
 export function quotationItemRoutes(deps: {
   auth: AuthService
+  authz: AuthzEnforcer
   quotations: QuotationService
   side: TradingSide
 }) {
-  const { auth, quotations, side } = deps
+  const { auth, authz, quotations, side } = deps
+  const itemGuard = (action: string) => authz.guard(quotationSpec(side).itemResource, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
       '/query',
+      itemGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await quotations.listItems(c.get('actor'), side, toList(c.req.valid('json')))
+        const result = await quotations.listItems(permitOf(c), side, toList(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results })
       },
     )
     .post(
       '/',
+      itemGuard('create'),
       zValidator(
         'json',
         z
@@ -239,17 +273,19 @@ export function quotationItemRoutes(deps: {
         validationHook,
       ),
       async (c) => {
-        const item = await quotations.createItem(c.get('actor'), side, c.req.valid('json'))
+        const item = await quotations.createItem(permitOf(c), side, c.req.valid('json'))
         return c.json(item, 201)
       },
     )
     .get(
       '/:id',
+      itemGuard('read'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(await quotations.getItem(c.get('actor'), side, c.req.valid('param').id)),
+      async (c) => c.json(await quotations.getItem(permitOf(c), side, c.req.valid('param').id)),
     )
     .patch(
       '/:id',
+      itemGuard('update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -269,7 +305,7 @@ export function quotationItemRoutes(deps: {
       async (c) => {
         const raw = (await c.req.json()) as Record<string, unknown>
         const body = c.req.valid('json')
-        const item = await quotations.updateItem(c.get('actor'), side, c.req.valid('param').id, {
+        const item = await quotations.updateItem(permitOf(c), side, c.req.valid('param').id, {
           ...body,
           pricePresent: presentKey(raw, 'price'),
           remarksPresent: presentKey(raw, 'remarks'),
@@ -279,9 +315,10 @@ export function quotationItemRoutes(deps: {
     )
     .delete(
       '/:id',
+      itemGuard('delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        await quotations.deleteItem(c.get('actor'), side, c.req.valid('param').id)
+        await quotations.deleteItem(permitOf(c), side, c.req.valid('param').id)
         return c.body(null, 204)
       },
     )
@@ -289,22 +326,26 @@ export function quotationItemRoutes(deps: {
 
 export function quotationTierRoutes(deps: {
   auth: AuthService
+  authz: AuthzEnforcer
   quotations: QuotationService
   side: TradingSide
 }) {
-  const { auth, quotations, side } = deps
+  const { auth, authz, quotations, side } = deps
+  const tierGuard = (action: string) => authz.guard(quotationSpec(side).tierResource, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
       '/query',
+      tierGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await quotations.listTiers(c.get('actor'), side, toList(c.req.valid('json')))
+        const result = await quotations.listTiers(permitOf(c), side, toList(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results })
       },
     )
     .post(
       '/',
+      tierGuard('create'),
       zValidator(
         'json',
         z
@@ -317,17 +358,19 @@ export function quotationTierRoutes(deps: {
         validationHook,
       ),
       async (c) => {
-        const item = await quotations.createTier(c.get('actor'), side, c.req.valid('json'))
+        const item = await quotations.createTier(permitOf(c), side, c.req.valid('json'))
         return c.json(item, 201)
       },
     )
     .get(
       '/:id',
+      tierGuard('read'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(await quotations.getTier(c.get('actor'), side, c.req.valid('param').id)),
+      async (c) => c.json(await quotations.getTier(permitOf(c), side, c.req.valid('param').id)),
     )
     .patch(
       '/:id',
+      tierGuard('update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -341,7 +384,7 @@ export function quotationTierRoutes(deps: {
       ),
       async (c) => {
         const item = await quotations.updateTier(
-          c.get('actor'),
+          permitOf(c),
           side,
           c.req.valid('param').id,
           c.req.valid('json'),
@@ -351,9 +394,10 @@ export function quotationTierRoutes(deps: {
     )
     .delete(
       '/:id',
+      tierGuard('delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        await quotations.deleteTier(c.get('actor'), side, c.req.valid('param').id)
+        await quotations.deleteTier(permitOf(c), side, c.req.valid('param').id)
         return c.body(null, 204)
       },
     )
