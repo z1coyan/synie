@@ -4,10 +4,12 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '../auth/middleware.ts'
 import type { AuthService } from '../auth/service.ts'
+import { permitOf, type AuthzEnforcer } from '../authz/enforce.ts'
 import type { AppEnv } from '../http/context.ts'
 import { ApiError } from '../http/errors.ts'
 import { listQuerySchema, validationHook } from '../http/zod.ts'
 import { attachmentDto, storageDto, storedFileDto } from './dto.ts'
+import { ATTACHMENT_RESOURCE_NAME, FILE_RESOURCE_NAME, STORAGE_RESOURCE_NAME } from './meta.ts'
 import type { FileService } from './service.ts'
 import type { StorageService } from './storage-service.ts'
 import type { StorageUpdateInput } from './types.ts'
@@ -67,26 +69,36 @@ const MAX_MULTIPART_BYTES = 51 << 20
 
 export interface FileRoutesDeps {
   auth: AuthService
+  authz: AuthzEnforcer
   files: FileService
 }
 
-/** 挂载于 /files：query / upload / download / metadata / attachments */
+/**
+ * 挂载于 /files：query / upload / download / metadata / attachments。
+ * 每个端点挂 `guard(资源, 动作)`（requireAuth 之后）；挂接端点的资源是 sysAttachments
+ * （via sysFiles，故码仍是 sys.file:*），handler 用 permitOf(c) 取凭证。
+ */
 export function fileRoutes(deps: FileRoutesDeps) {
-  const { auth, files } = deps
+  const { auth, authz, files } = deps
+  const guard = (action: string) => authz.guard(FILE_RESOURCE_NAME, action)
+  const guardAttachment = (action: string) => authz.guard(ATTACHMENT_RESOURCE_NAME, action)
+  /** 挂接要求「能读 + 能挂」：附加码取归宿前缀（动作码事实源仍是 meta，不写字面量） */
+  const guardAttach = () =>
+    authz.guard(ATTACHMENT_RESOURCE_NAME, 'create', {
+      allOf: [`${authz.targetOf(ATTACHMENT_RESOURCE_NAME).prefix}:read`],
+    })
 
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
+    .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
       const body = c.req.valid('json')
-      const result = await files.list(c.get('actor'), toListQuery(body))
+      const result = await files.list(permitOf(c), toListQuery(body))
       return c.json({
         count: result.count,
         results: result.results.map(storedFileDto),
       })
     })
-    .post('/', async (c) => {
-      const actor = c.get('actor')
-
+    .post('/', guard('create'), async (c) => {
       let body: Record<string, string | File>
       try {
         body = (await c.req.parseBody({ all: true })) as Record<string, string | File>
@@ -115,7 +127,7 @@ export function fileRoutes(deps: FileRoutesDeps) {
       }
       const category = formString(body, 'category')
 
-      const result = await files.upload(actor, {
+      const result = await files.upload(permitOf(c), {
         data,
         filename: fileField.name || 'upload.bin',
         contentType: fileField.type || '',
@@ -132,35 +144,46 @@ export function fileRoutes(deps: FileRoutesDeps) {
         201,
       )
     })
-    .post('/attachments/query', zValidator('json', attachmentQuerySchema, validationHook), async (c) => {
-      const body = c.req.valid('json')
-      const result = await files.listAttachments(c.get('actor'), body)
-      return c.json({
-        count: result.count,
-        results: result.results.map(attachmentDto),
-      })
-    })
-    .delete('/attachments/:id', zValidator('param', idParam, validationHook), async (c) => {
-      await files.deleteAttachment(c.get('actor'), c.req.valid('param').id)
-      return c.body(null, 204)
-    })
-    .get('/:id/metadata', zValidator('param', idParam, validationHook), async (c) => {
-      const value = await files.get(c.get('actor'), c.req.valid('param').id)
+    .post(
+      '/attachments/query',
+      guardAttachment('read'),
+      zValidator('json', attachmentQuerySchema, validationHook),
+      async (c) => {
+        const body = c.req.valid('json')
+        const result = await files.listAttachments(permitOf(c), body)
+        return c.json({
+          count: result.count,
+          results: result.results.map(attachmentDto),
+        })
+      },
+    )
+    .delete(
+      '/attachments/:id',
+      guardAttachment('delete'),
+      zValidator('param', idParam, validationHook),
+      async (c) => {
+        await files.deleteAttachment(permitOf(c), c.req.valid('param').id)
+        return c.body(null, 204)
+      },
+    )
+    .get('/:id/metadata', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
+      const value = await files.get(permitOf(c), c.req.valid('param').id)
       return c.json(storedFileDto(value))
     })
     .post(
       '/:id/attachments',
+      guardAttach(),
       zValidator('param', idParam, validationHook),
       zValidator('json', attachmentCreateSchema, validationHook),
       async (c) => {
         const { id } = c.req.valid('param')
         const body = c.req.valid('json')
-        const value = await files.attach(c.get('actor'), id, body)
+        const value = await files.attach(permitOf(c), id, body)
         return c.json({ attachment: attachmentDto(value) }, 201)
       },
     )
-    .get('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      const result = await files.download(c.get('actor'), c.req.valid('param').id)
+    .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
+      const result = await files.download(permitOf(c), c.req.valid('param').id)
       if (result.redirectUrl) {
         return c.redirect(result.redirectUrl, 302)
       }
@@ -176,41 +199,44 @@ export function fileRoutes(deps: FileRoutesDeps) {
         },
       })
     })
-    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      await files.deleteFile(c.get('actor'), c.req.valid('param').id)
+    .delete('/:id', guard('delete'), zValidator('param', idParam, validationHook), async (c) => {
+      await files.deleteFile(permitOf(c), c.req.valid('param').id)
       return c.body(null, 204)
     })
 }
 
 export interface StorageRoutesDeps {
   auth: AuthService
+  authz: AuthzEnforcer
   storages: StorageService
 }
 
 /** 挂载于 /system/storages */
 export function storageRoutes(deps: StorageRoutesDeps) {
-  const { auth, storages } = deps
+  const { auth, authz, storages } = deps
+  const guard = (action: string) => authz.guard(STORAGE_RESOURCE_NAME, action)
 
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const result = await storages.list(c.get('actor'), toListQuery(c.req.valid('json')))
+    .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
+      const result = await storages.list(permitOf(c), toListQuery(c.req.valid('json')))
       return c.json({
         count: result.count,
         results: result.results.map(storageDto),
       })
     })
-    .post('/', zValidator('json', storageCreateSchema, validationHook), async (c) => {
+    .post('/', guard('create'), zValidator('json', storageCreateSchema, validationHook), async (c) => {
       const body = c.req.valid('json')
-      const value = await storages.create(c.get('actor'), body)
+      const value = await storages.create(permitOf(c), body)
       return c.json(storageDto(value), 201)
     })
-    .get('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      const value = await storages.get(c.get('actor'), c.req.valid('param').id)
+    .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
+      const value = await storages.get(permitOf(c), c.req.valid('param').id)
       return c.json(storageDto(value))
     })
     .patch(
       '/:id',
+      guard('update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', storageUpdateSchema, validationHook),
       async (c) => {
@@ -229,19 +255,19 @@ export function storageRoutes(deps: StorageRoutesDeps) {
           accessKeyId: Object.prototype.hasOwnProperty.call(raw, 'accessKeyId'),
           secretAccessKey: Object.prototype.hasOwnProperty.call(raw, 'secretAccessKey'),
         }
-        const value = await storages.update(c.get('actor'), c.req.valid('param').id, {
+        const value = await storages.update(permitOf(c), c.req.valid('param').id, {
           ...body,
           present,
         })
         return c.json(storageDto(value))
       },
     )
-    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      await storages.delete(c.get('actor'), c.req.valid('param').id)
+    .delete('/:id', guard('delete'), zValidator('param', idParam, validationHook), async (c) => {
+      await storages.delete(permitOf(c), c.req.valid('param').id)
       return c.body(null, 204)
     })
-    .post('/:id/set-default', zValidator('param', idParam, validationHook), async (c) => {
-      await storages.setDefault(c.get('actor'), c.req.valid('param').id)
+    .post('/:id/set-default', guard('update'), zValidator('param', idParam, validationHook), async (c) => {
+      await storages.setDefault(permitOf(c), c.req.valid('param').id)
       return c.body(null, 204)
     })
 }

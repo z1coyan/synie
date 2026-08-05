@@ -40,6 +40,7 @@ import {
   createFileService,
   createStorageService,
 } from './platform/files/index.ts'
+import { createAuthzEnforcer } from './platform/authz/enforce.ts'
 import type { Registry } from './platform/meta/registry.ts'
 import { buildNumberingCatalog, createNumberingService } from './platform/numbering/index.ts'
 import {
@@ -78,8 +79,10 @@ function assembleDomain(
   const numbering = createNumberingService(db, buildNumberingCatalog(opts.registry))
   // 附件宿主从 Meta Registry 派生（meta.attachments 即声明即注册，启动期 fail-closed）
   const owners = buildOwnerRegistryFromMeta(opts.registry.list())
-  const files = createFileService({ db, owners })
-  const storages = createStorageService({ db })
+  // 判定入口（无状态，归宿解析的记忆化在 Registry 内）：平台服务与路由共用同一份声明
+  const authz = createAuthzEnforcer(opts.registry)
+  const files = createFileService({ db, owners, authz })
+  const storages = createStorageService({ db, authz })
   const audit = createAuditService(db)
   const printing = createPrintingService({
     db,

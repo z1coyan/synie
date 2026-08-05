@@ -363,7 +363,7 @@ export function createBillService(
   numbering: NumberingService,
   deps: {
     gl: GlEngine
-    files?: Pick<FileService, 'readStoredFile'> | null
+    files?: Pick<FileService, 'readReachableFile'> | null
     ocr?: OcrDeps
   },
 ) {
@@ -1005,8 +1005,8 @@ export function createBillService(
     if (!files) {
       throw ApiError.validation('OCR 未配置', { fileId: ['文件服务未配置'] })
     }
-    await requireAccessibleFile(db, actor, fileId)
-    const { file, content } = await files.readStoredFile(fileId)
+    // 文件可达性归平台判定（码 forbidden / 行级 not_found），本域不再自造闸
+    const { file, content } = await files.readReachableFile(actor, fileId)
     return recognizeBankAcceptance(db, file, content, deps.ocr)
   }
 
@@ -1017,28 +1017,3 @@ export function createBillService(
   }
 }
 
-async function requireAccessibleFile(
-  db: DbHandle,
-  actor: Actor,
-  fileId: string,
-): Promise<void> {
-  const scope = companyFilter(actor)
-  if (scope.bypass) {
-    const exists = await sql<{ e: boolean }>`
-      SELECT EXISTS(SELECT 1 FROM sys_file WHERE id=${fileId}::uuid) AS e
-    `.execute(db)
-    if (!exists.rows[0]?.e) throw new ApiError('not_found', '文件不存在')
-    return
-  }
-  const accessible = await sql<{ e: boolean }>`
-    SELECT EXISTS(
-      SELECT 1 FROM sys_file f WHERE f.id=${fileId}::uuid AND (
-        f.uploaded_by_id=${actor.userId}::uuid OR EXISTS(
-          SELECT 1 FROM sys_attachment a WHERE a.file_id=f.id
-            AND a.company_id=ANY(${[...scope.ids]}::uuid[])
-        )
-      )
-    ) AS e
-  `.execute(db)
-  if (!accessible.rows[0]?.e) throw new ApiError('not_found', '文件不存在')
-}

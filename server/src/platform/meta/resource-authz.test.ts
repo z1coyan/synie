@@ -31,7 +31,7 @@ describe('authz 声明覆盖', () => {
   test('形态分布快照（防止归类漂移；新增资源需有意识更新本断言）', () => {
     const counts = { company: 0, global: 0, via: 0 }
     for (const meta of all) counts[meta.authz!.kind] += 1
-    expect(counts).toEqual({ company: 34, global: 35, via: 35 })
+    expect(counts).toEqual({ company: 34, global: 35, via: 36 })
     expect(counts.company + counts.global + counts.via).toBe(all.length)
   })
 
@@ -145,12 +145,17 @@ describe('supportedScopes 投影', () => {
     ).toEqual(['all', 'deptTree', 'dept', 'self'])
   })
 
-  test('权限目录携带 supportedScopes；第一期全部仅 all', () => {
+  test('权限目录携带 supportedScopes；仅 sys.file 声明了 owner（上传者）故开放 self', () => {
     const groups = registry.permissionCatalog()
     expect(groups.length).toBeGreaterThan(0)
     for (const group of groups) {
-      expect(group.supportedScopes).toEqual(['all'])
+      expect(group.supportedScopes).toEqual(group.prefix === 'sys.file' ? ['all', 'self'] : ['all'])
     }
+  })
+
+  test('via 的挂接资源与文件同前缀，不新增权限码', () => {
+    const codes = registry.allPermissionCodes().filter((c) => c.startsWith('sys.file:'))
+    expect(codes).toEqual(['sys.file:create', 'sys.file:delete', 'sys.file:read'])
   })
 
   test('声明 readAnyOf 的资源不进权限目录（无独立权限点）', () => {

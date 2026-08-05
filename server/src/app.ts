@@ -214,8 +214,11 @@ export function buildApp(deps: AppDeps) {
     .route('/meta', metaRoutes(deps.registry, deps.auth))
     .route('/settings', settingsRoutes({ auth: deps.auth, settings: deps.settings }))
     .route('/system/numbering', numberingRoutes({ auth: deps.auth, numbering: deps.numbering }))
-    .route('/files', fileRoutes({ auth: deps.auth, files: deps.files }))
-    .route('/system/storages', storageRoutes({ auth: deps.auth, storages: deps.storages }))
+    .route('/files', fileRoutes({ auth: deps.auth, authz: deps.authz, files: deps.files }))
+    .route(
+      '/system/storages',
+      storageRoutes({ auth: deps.auth, authz: deps.authz, storages: deps.storages }),
+    )
     .route('/system/audit-logs', auditRoutes({ auth: deps.auth, audit: deps.audit }))
     .route(
       '/system/printing',

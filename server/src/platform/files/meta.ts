@@ -2,6 +2,7 @@ import type { ResourceMeta } from '../meta/types.ts'
 import { SYS_STORAGE } from './permissions.ts'
 
 export const FILE_RESOURCE_NAME = 'sysFiles'
+export const ATTACHMENT_RESOURCE_NAME = 'sysAttachments'
 export const STORAGE_RESOURCE_NAME = 'sysStorages'
 
 export function fileResourceMeta(): ResourceMeta {
@@ -11,8 +12,11 @@ export function fileResourceMeta(): ResourceMeta {
     permissionPrefix: 'sys.file',
     permissionLabel: '附件',
     table: 'sys_file',
-    authz: { kind: 'global' },
+    // 无公司列；owner 绑定上传者列 → 开放 self 范围（授 scope=self 即「只看/只下本人上传」）
+    authz: { kind: 'global', owner: { column: 'uploaded_by_id' } },
     print: true,
+    // 与挂接资源同前缀（sys.file）：文件是打印字段目录的头资源
+    printHead: true,
     audit: { enabled: true },
     fields: [
       { name: 'id', apiName: 'id', dbColumn: 'id', type: 'uuid', label: 'id', readonly: true, sortable: true },
@@ -104,6 +108,96 @@ export function fileResourceMeta(): ResourceMeta {
     ],
     form: { exclude: ['id', 'storage', 'key', 'insertedAt'] },
 
+  }
+}
+
+/**
+ * 文件挂接（sys_attachment）。
+ *
+ * 判定归宿声明为 `via(sysFiles, file_id)`：码级判定复用 `sys.file:*`（挂接不设独立权限点），
+ * 行级基线判定递归到文件自己的 decide()。业务宿主（owner_type/owner_id）是**多态**的，
+ * 静态 via 表达不了，故宿主可达性在 files/reachability.ts 动态解析（见其文件头）。
+ */
+export function attachmentResourceMeta(): ResourceMeta {
+  return {
+    name: ATTACHMENT_RESOURCE_NAME,
+    classification: {
+      presentation: 'none',
+      interactive: false,
+      note: '文件挂接关联行：无独立列表/表单，随宿主资源的附件面板呈现',
+    },
+    permissionPrefix: 'sys.file',
+    permissionLabel: '附件',
+    table: 'sys_attachment',
+    authz: { kind: 'via', parent: FILE_RESOURCE_NAME, fk: 'file_id' },
+    audit: { enabled: true },
+    lookup: { labelField: 'category' },
+    fields: [
+      { name: 'id', apiName: 'id', dbColumn: 'id', type: 'uuid', label: 'id', readonly: true, sortable: true },
+      {
+        name: 'file_id',
+        apiName: 'fileId',
+        dbColumn: 'file_id',
+        type: 'uuid',
+        label: '文件',
+        readonly: true,
+        filterable: true,
+      },
+      {
+        name: 'owner_type',
+        apiName: 'ownerType',
+        dbColumn: 'owner_type',
+        type: 'string',
+        label: '宿主类型',
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'owner_id',
+        apiName: 'ownerId',
+        dbColumn: 'owner_id',
+        type: 'uuid',
+        label: '宿主记录',
+        readonly: true,
+        filterable: true,
+      },
+      {
+        name: 'category',
+        apiName: 'category',
+        dbColumn: 'category',
+        type: 'string',
+        label: '分类',
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      },
+      {
+        // 挂接时按宿主固化（宿主为全局资源时为 NULL）；仅作展示/筛选，判定走宿主自身声明
+        name: 'company_id',
+        apiName: 'companyId',
+        dbColumn: 'company_id',
+        type: 'uuid',
+        label: '公司',
+        readonly: true,
+        filterable: true,
+      },
+      {
+        name: 'inserted_at',
+        apiName: 'insertedAt',
+        dbColumn: 'inserted_at',
+        type: 'datetime',
+        label: '挂接时间',
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      },
+    ],
+    actions: [
+      { key: 'read', label: '查看', scope: 'both' },
+      { key: 'create', label: '挂接', scope: 'both' },
+      { key: 'delete', label: '移除', scope: 'row', isDanger: true },
+    ],
   }
 }
 

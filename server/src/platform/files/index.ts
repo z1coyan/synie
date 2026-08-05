@@ -1,7 +1,14 @@
 import type { Registry } from '../meta/registry.ts'
-import { fileResourceMeta, storageResourceMeta } from './meta.ts'
+import { attachmentResourceMeta, fileResourceMeta, storageResourceMeta } from './meta.ts'
 
-export { fileResourceMeta, storageResourceMeta, FILE_RESOURCE_NAME, STORAGE_RESOURCE_NAME } from './meta.ts'
+export {
+  attachmentResourceMeta,
+  fileResourceMeta,
+  storageResourceMeta,
+  ATTACHMENT_RESOURCE_NAME,
+  FILE_RESOURCE_NAME,
+  STORAGE_RESOURCE_NAME,
+} from './meta.ts'
 export { SYS_STORAGE, type SysStoragePermission } from './permissions.ts'
 export {
   buildOwnerRegistryFromMeta,
@@ -14,8 +21,9 @@ export { fileRoutes, storageRoutes } from './routes.ts'
 export { createLocalStorage, createS3Storage, safeExtension, localPath } from './object-storage.ts'
 export type * from './types.ts'
 
-/** 将 files / storages Meta 注册进 Registry（启动期调用） */
+/** 将 files / attachments / storages Meta 注册进 Registry（启动期调用） */
 export function registerFileResources(registry: Registry): void {
   registry.register(fileResourceMeta())
+  registry.register(attachmentResourceMeta())
   registry.register(storageResourceMeta())
 }

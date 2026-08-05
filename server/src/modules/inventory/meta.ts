@@ -124,7 +124,7 @@ export function materialResourceMeta(): ResourceMeta {
     name: 'invMaterials',
     classification: { presentation: 'extension', interactive: true, note: '单位转换 tab + 客户料 effects + 图纸附件' },
     /** 图纸等附件宿主：物料全局共享，不固化公司 */
-    attachments: { companyScoped: false },
+    attachments: {},
     numbering: true,
     permissionPrefix: 'base.material',
     permissionLabel: '物料',

@@ -1,16 +1,14 @@
-import type { ListQuery } from '@synie/shared'
-import { sql, type Expression, type Kysely, type SqlBool } from 'kysely'
-import { buildListQuery } from '~/db/filterbuild.ts'
-import { toReadSpec } from '~/platform/meta/read-spec.ts'
+import { sql, type Kysely } from 'kysely'
+import { listAuthorized } from '~/db/list.ts'
+import { loadAuthorized } from '~/db/load.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import { auditCreated, auditDestroyed, auditDiff, writeAudit } from '../audit/write.ts'
 import { auditSpecOf } from '../audit/spec.ts'
-import type { Actor } from '../authz/actor.ts'
-import { requirePermission } from '../authz/actor.ts'
-import { SYS_STORAGE } from './permissions.ts'
+import type { Permit } from '../authz/core/index.ts'
+import type { AuthzEnforcer } from '../authz/enforce.ts'
 import { ApiError } from '../http/errors.ts'
-import { storageResourceMeta } from './meta.ts'
+import { STORAGE_RESOURCE_NAME, storageResourceMeta } from './meta.ts'
 import type {
   FileListQuery,
   StorageCreateInput,
@@ -21,57 +19,49 @@ import type {
 } from './types.ts'
 
 const STORAGE_NAME_RE = /^[a-z0-9][a-z0-9_-]*$/
-const STORAGE_AUDIT_SPEC = auditSpecOf(storageResourceMeta())
+const STORAGE_META = storageResourceMeta()
+const STORAGE_AUDIT_SPEC = auditSpecOf(STORAGE_META)
 const STORAGE_AUDIT_FIELDS = STORAGE_AUDIT_SPEC.fields
 
 export interface StorageServiceDeps {
   db: Kysely<Database>
+  authz: Pick<AuthzEnforcer, 'targetOf'>
 }
 
 export function createStorageService(deps: StorageServiceDeps) {
   const { db } = deps
+  const target = deps.authz.targetOf(STORAGE_RESOURCE_NAME)
 
-  async function get(actor: Actor, id: string): Promise<StorageEndpoint> {
-    requirePermission(actor, SYS_STORAGE.read)
-    const row = await db.selectFrom('sys_storage').selectAll().where('id', '=', id).executeTakeFirst()
-    if (!row) throw new ApiError('not_found', '存储接入不存在')
-    return mapStorage(row)
+  async function get(permit: Permit, id: string): Promise<StorageEndpoint> {
+    return mapStorage(
+      (await loadAuthorized({
+        db,
+        permit,
+        target,
+        table: STORAGE_META.table,
+        id,
+        notFoundMessage: '存储接入不存在',
+      })) as unknown as StorageRow,
+    )
   }
 
-  async function list(actor: Actor, query: FileListQuery): Promise<StorageList> {
-    requirePermission(actor, SYS_STORAGE.read)
-    const limit = query.limit === undefined || query.limit === 0 ? 20 : query.limit
-    const offset = query.offset ?? 0
-    if (limit < 1 || limit > 200 || offset < 0) {
-      throw ApiError.validation('分页参数不合法', { limit: ['必须在 1 到 200 之间'] })
-    }
-    const listQuery: ListQuery = {
-      limit,
-      offset,
-      search: query.search,
-      sort: query.sort,
-      filter: query.filter,
-    }
-    const built = buildListQuery(toReadSpec(storageResourceMeta()), listQuery)
-
-    let countQ = db.selectFrom('sys_storage').select(db.fn.countAll<string>().as('count'))
-    if (built.where) countQ = countQ.where(built.where as Expression<SqlBool>)
-    const count = Number((await countQ.executeTakeFirstOrThrow()).count)
-
-    let rowsQ = db.selectFrom('sys_storage').selectAll()
-    if (built.where) rowsQ = rowsQ.where(built.where as Expression<SqlBool>)
-    if (built.orderBy) {
-      rowsQ = rowsQ.orderBy(built.orderBy as never).orderBy('id')
-    } else {
-      rowsQ = rowsQ.orderBy('is_default', 'desc').orderBy('label').orderBy('id')
-    }
-    const rows = await rowsQ.limit(limit).offset(offset).execute()
-
-    return { count, results: rows.map(mapStorage) }
+  async function list(permit: Permit, query: FileListQuery): Promise<StorageList> {
+    return listAuthorized<StorageEndpoint>({
+      db,
+      permit,
+      target,
+      alias: STORAGE_META.table,
+      resource: STORAGE_META,
+      source: sql`FROM sys_storage`,
+      select: sql`SELECT sys_storage.*`,
+      defaultOrder: sql`"is_default" DESC, "label" ASC, "id" ASC`,
+      query,
+      mapRow: (row) => mapStorage(row as unknown as StorageRow),
+    })
   }
 
-  async function create(actor: Actor, input: StorageCreateInput): Promise<StorageEndpoint> {
-    requirePermission(actor, SYS_STORAGE.create)
+  async function create(permit: Permit, input: StorageCreateInput): Promise<StorageEndpoint> {
+    const actor = permit.actor
     const normalized = validateStorageInput(input, '')
     return withTx(db, async (trx) => {
       let id: string
@@ -110,10 +100,10 @@ export function createStorageService(deps: StorageServiceDeps) {
     })
   }
 
-  async function update(actor: Actor, id: string, input: StorageUpdateInput): Promise<StorageEndpoint> {
-    requirePermission(actor, SYS_STORAGE.update)
+  async function update(permit: Permit, id: string, input: StorageUpdateInput): Promise<StorageEndpoint> {
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await lockStorage(trx, id)
+      const before = storageDetail(await lockStorageRow(trx, permit, id))
       const merged: StorageCreateInput = {
         name: before.name,
         label: before.label,
@@ -177,11 +167,11 @@ export function createStorageService(deps: StorageServiceDeps) {
     })
   }
 
-  async function setDefault(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, SYS_STORAGE.update)
+  async function setDefault(permit: Permit, id: string): Promise<void> {
+    const actor = permit.actor
     await withTx(db, async (trx) => {
       await sql`SELECT pg_advisory_xact_lock(hashtext('sys_storage_default'))`.execute(trx)
-      const target = await getStorageTx(trx, id)
+      const current = mapStorage(await lockStorageRow(trx, permit, id))
       const previous = await trx
         .selectFrom('sys_storage')
         .selectAll()
@@ -218,24 +208,24 @@ export function createStorageService(deps: StorageServiceDeps) {
           changes: auditDiff(storageSnapshot(value), storageSnapshot(after), STORAGE_AUDIT_FIELDS),
         })
       }
-      if (!target.isDefault) {
-        const after = { ...target, isDefault: true }
+      if (!current.isDefault) {
+        const after = { ...current, isDefault: true }
         await writeAudit(trx, actor, {
           resource: 'sys_storage',
           recordId: id,
-          recordLabel: target.label,
+          recordLabel: current.label,
           actionType: 'update',
           actionName: 'set_default',
-          changes: auditDiff(storageSnapshot(target), storageSnapshot(after), STORAGE_AUDIT_FIELDS),
+          changes: auditDiff(storageSnapshot(current), storageSnapshot(after), STORAGE_AUDIT_FIELDS),
         })
       }
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, SYS_STORAGE.delete)
+  async function remove(permit: Permit, id: string): Promise<void> {
+    const actor = permit.actor
     await withTx(db, async (trx) => {
-      const value = await getStorageTx(trx, id)
+      const value = mapStorage(await lockStorageRow(trx, permit, id))
       if (value.builtin) throw new ApiError('conflict', '内置存储接入不可删除')
       if (value.isDefault) {
         throw new ApiError('conflict', '默认存储接入不可删除，请先将其他接入点设为默认')
@@ -262,6 +252,24 @@ export function createStorageService(deps: StorageServiceDeps) {
         changes: auditDestroyed(storageSnapshot(value), STORAGE_AUDIT_FIELDS),
       })
     })
+  }
+
+  /** 授权闸 + 行锁；不命中一律 not_found（不区分不存在与不可达） */
+  async function lockStorageRow(
+    handle: DbHandle,
+    permit: Permit,
+    id: string,
+  ): Promise<StorageRow> {
+    const row = await loadAuthorized({
+      db: handle,
+      permit,
+      target,
+      table: STORAGE_META.table,
+      id,
+      forUpdate: true,
+      notFoundMessage: '存储接入不存在',
+    })
+    return row as unknown as StorageRow
   }
 
   return { get, list, create, update, setDefault, delete: remove }
@@ -346,17 +354,20 @@ function validateStorageInput(
   }
 }
 
-async function lockStorage(
-  db: DbHandle,
-  id: string,
-): Promise<{ endpointView: StorageEndpoint; secret: string; name: string; label: string; kind: string; root: string | null; endpoint: string | null; region: string | null; bucket: string | null; prefix: string | null; accessKeyId: string | null }> {
-  const row = await db
-    .selectFrom('sys_storage')
-    .selectAll()
-    .where('id', '=', id)
-    .forUpdate()
-    .executeTakeFirst()
-  if (!row) throw new ApiError('not_found', '存储接入不存在')
+/** 更新用的可写视图（含密钥原值，不进 wire） */
+function storageDetail(row: StorageRow): {
+  endpointView: StorageEndpoint
+  secret: string
+  name: string
+  label: string
+  kind: string
+  root: string | null
+  endpoint: string | null
+  region: string | null
+  bucket: string | null
+  prefix: string | null
+  accessKeyId: string | null
+} {
   const endpointView = mapStorage(row)
   return {
     endpointView,
@@ -379,7 +390,7 @@ async function getStorageTx(db: DbHandle, id: string): Promise<StorageEndpoint> 
   return mapStorage(row)
 }
 
-function mapStorage(row: {
+interface StorageRow {
   id: string
   name: string
   label: string
@@ -395,7 +406,9 @@ function mapStorage(row: {
   is_default: boolean
   inserted_at: Date | string
   updated_at: Date | string
-}): StorageEndpoint {
+}
+
+function mapStorage(row: StorageRow): StorageEndpoint {
   return {
     id: row.id,
     name: row.name,

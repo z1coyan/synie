@@ -574,7 +574,7 @@ export function workOrderResourceMeta(): ResourceMeta {
     name: 'mfgWorkOrders',
     classification: { presentation: 'extension', interactive: true },
     /** 工单图纸只读展示宿主：附件固化 company_id */
-    attachments: { companyScoped: true },
+    attachments: {},
     numbering: true,
     permissionPrefix: 'mfg.work_order',
     permissionLabel: '生产工单',

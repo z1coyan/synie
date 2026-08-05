@@ -18,6 +18,7 @@ import { createTradingServices } from '~/modules/trading/index.ts'
 import { buildTestApp, createPlatformRegistry, testDatabaseUrl, TEST_AUTH_SECRET } from '../../../test/helpers.ts'
 import { createTokenManager } from '../auth/token.ts'
 import type { Actor } from '../authz/actor.ts'
+import { createAuthzEnforcer } from '../authz/enforce.ts'
 import { createOwnerRegistry, createFileService } from '../files/index.ts'
 import { ApiError } from '../http/errors.ts'
 import { buildNumberingCatalog } from '../numbering/catalog.ts'
@@ -335,11 +336,12 @@ run('PG 集成（setup 向导）', () => {
     '完整路径：公司+科目+示例数据 + C01 幂等 + 登录冒烟',
     async () => {
       await prepareEmptySetup()
-      const numbering = createNumberingService(db, buildNumberingCatalog(createPlatformRegistry()))
+      const registry = createPlatformRegistry()
+      const numbering = createNumberingService(db, buildNumberingCatalog(registry))
       const base = createBaseServices(db)
       const party = createPartyServices(db, numbering)
       const owners = createOwnerRegistry()
-      const files = createFileService({ db, owners })
+      const files = createFileService({ db, owners, authz: createAuthzEnforcer(registry) })
       const hr = createHrServices(db, files, {
         employees: party.employees,
       })

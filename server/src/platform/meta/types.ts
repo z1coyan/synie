@@ -84,13 +84,12 @@ export interface ResourceClassification {
 
 /**
  * 附件宿主声明：composition 由此派生 files OwnerRegistry（声明与注册互为镜像）。
- * ownerType 缺省取 table；companyScoped=true 时宿主表必须有 company_id 字段。
+ * 宿主的公司域**不在此重复声明**——由宿主自己的 `authz` 推导（company 形态即固化
+ * company_id 并受公司边界约束，global 形态无公司约束）。
  */
 export interface AttachmentsMeta {
   /** sys_attachment.owner_type 取值；缺省取 table（员工历史取 hr_employee 单数） */
   ownerType?: string
-  /** 附件挂接固化 company_id 并按公司范围鉴权；缺省 false（全局宿主） */
-  companyScoped?: boolean
 }
 
 /**

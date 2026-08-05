@@ -94,7 +94,7 @@ export function createFinanceServices(
       'closeFromInvoice' | 'reopenFromInvoice' | 'existsForInvoice' | 'loadForInvoiceAudit'
     >
     journals: Pick<JournalService, 'createAndAuditJournal'>
-    files?: Pick<FileService, 'readStoredFile'> | null
+    files?: Pick<FileService, 'readStoredFile' | 'readReachableFile'> | null
   },
 ) {
   const gl = createGlEngine()
