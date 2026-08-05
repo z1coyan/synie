@@ -575,7 +575,7 @@ export function createOutsourcedConfigService(db: Kysely<Database>, registry: Re
       JOIN inv_material mat ON mat.id=m.material_id
       JOIN bas_unit u ON u.id=m.unit_id
       WHERE oi.order_id=${orderId}::uuid
-      ORDER BY oi.idx,m.id
+      ORDER BY oi.idx,m.inserted_at,m.id
     `.execute(handle)
     const byproductRows = await sql<Record<string, unknown>>`
       SELECT b.id,b.quantity,b.remarks,b.inserted_at,b.updated_at,b.order_item_id,b.company_id,
@@ -586,7 +586,7 @@ export function createOutsourcedConfigService(db: Kysely<Database>, registry: Re
       JOIN inv_material mat ON mat.id=b.material_id
       JOIN bas_unit u ON u.id=b.unit_id
       WHERE oi.order_id=${orderId}::uuid
-      ORDER BY oi.idx,b.id
+      ORDER BY oi.idx,b.inserted_at,b.id
     `.execute(handle)
     return {
       issueLines: issueRows.rows.map(mapMaterial),
