@@ -356,7 +356,7 @@ run('PG 集成（setup 向导）', () => {
         journals: accounting.journals,
         files,
       })
-      const manufacturing = createManufacturingServices(db, numbering)
+      const manufacturing = createManufacturingServices(db, numbering, registry)
 
       const sample = {
         db,

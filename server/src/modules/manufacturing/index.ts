@@ -38,12 +38,13 @@ export function registerManufacturingResources(registry: Registry): void {
 export function createManufacturingServices(
   db: Kysely<Database>,
   numbering: NumberingService,
+  registry: Registry,
 ) {
   const inventory = createInventoryEngine()
   const master = createMasterService(db, numbering)
-  const demands = createDemandService(db, numbering)
-  const workOrders = createWorkOrderService(db, numbering)
-  const outputs = createOutputService(db, numbering, inventory)
+  const demands = createDemandService(db, numbering, registry)
+  const workOrders = createWorkOrderService(db, numbering, registry)
+  const outputs = createOutputService(db, numbering, inventory, registry)
   const moldDesigns = createMoldDesignService(db, numbering)
   return { master, demands, workOrders, outputs, moldDesigns }
 }

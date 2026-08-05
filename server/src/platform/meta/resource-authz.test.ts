@@ -2,6 +2,7 @@
  * 授权声明的内省断言（工单 03）：
  * 全资源有声明、形态自洽、global 无公司列、via 闭包、supportedScopes 投影。
  */
+import type { DataScope } from '@synie/shared'
 import { describe, expect, test } from 'bun:test'
 import {
   DEFAULT_OWNER_COLUMN,
@@ -145,12 +146,31 @@ describe('supportedScopes 投影', () => {
     ).toEqual(['all', 'deptTree', 'dept', 'self'])
   })
 
-  test('权限目录携带 supportedScopes；仅 sys.file 声明了 owner（上传者）故开放 self', () => {
+  test('权限目录携带 supportedScopes；声明了 owner/dept 的前缀才多出 self / dept 维度', () => {
+    // sys.file 绑 owner=上传者；mfg.demand 指派部门、mfg.work_order 归属部门（工单 07 试点）
+    const expected: Record<string, DataScope[]> = {
+      'sys.file': ['all', 'self'],
+      'mfg.demand': ['all', 'deptTree', 'dept'],
+      'mfg.work_order': ['all', 'deptTree', 'dept'],
+    }
     const groups = registry.permissionCatalog()
     expect(groups.length).toBeGreaterThan(0)
     for (const group of groups) {
-      expect(group.supportedScopes).toEqual(group.prefix === 'sys.file' ? ['all', 'self'] : ['all'])
+      expect(group.supportedScopes).toEqual(expected[group.prefix] ?? ['all'])
     }
+  })
+
+  test('assigned/stamped 两形态都开放 dept 维度，绑定列各归各的声明', () => {
+    expect(resolveAuthzBinding(metaOf('mfgDemands')).dept).toEqual({
+      column: 'assigned_dept_id',
+      mode: 'assigned',
+    })
+    expect(resolveAuthzBinding(metaOf('mfgWorkOrders')).dept).toEqual({
+      column: DEFAULT_STAMPED_DEPT_COLUMN,
+      mode: 'stamped',
+    })
+    // 子行按 via 递归宿主，自身不拥有范围（否则同前缀交集会把 dept 交没）
+    expect(supportedScopesOf(metaOf('mfgDemandItems'))).toEqual([])
   })
 
   test('via 的挂接资源与文件同前缀，不新增权限码', () => {

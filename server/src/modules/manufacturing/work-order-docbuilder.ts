@@ -44,6 +44,8 @@ interface HeadRow {
   company_name: string
   company_short: string | null
   demand_no: string | null
+  owner_dept_code: string | null
+  owner_dept_name: string | null
   bom_code: string | null
   bom_plan_name: string | null
   creator_name: string | null
@@ -136,6 +138,8 @@ SELECT
   c.name AS company_name,
   c.short_name AS company_short,
   d.demand_no,
+  owner_dept.code AS owner_dept_code,
+  owner_dept.name AS owner_dept_name,
   b.code AS bom_code,
   b.plan_name AS bom_plan_name,
   creator.name AS creator_name,
@@ -144,6 +148,7 @@ SELECT
 FROM mfg_work_order w
 JOIN bas_company c ON c.id = w.company_id
 LEFT JOIN mfg_demand d ON d.id = w.demand_id
+LEFT JOIN sys_department owner_dept ON owner_dept.id = w.owner_dept_id
 LEFT JOIN mfg_bom b ON b.id = w.bom_id
 LEFT JOIN sys_user creator ON creator.id = w.created_by_id
 WHERE w.id = ${id}::uuid
@@ -231,6 +236,8 @@ function toDoc(
       'company.name': head.company_name,
       'company.short_name': formatText(head.company_short),
       'demand.demand_no': formatText(head.demand_no),
+      'owner_dept.code': formatText(head.owner_dept_code),
+      'owner_dept.name': formatText(head.owner_dept_name),
       'bom.code': formatText(head.bom_code),
       'bom.plan_name': formatText(head.bom_plan_name),
       'created_by.name': formatText(head.creator_name),

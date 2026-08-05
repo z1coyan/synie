@@ -14,8 +14,9 @@ const run = url ? describe : describe.skip
 
 run('PG 集成（模具设计）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
-  const mfg = createManufacturingServices(db, numbering)
+  const registry = createSealedResourceRegistry()
+  const numbering = createNumberingService(db, buildNumberingCatalog(registry))
+  const mfg = createManufacturingServices(db, numbering, registry)
   const actor: Actor = testActor({
     userId: '',
     username: 'mold-test',

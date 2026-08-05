@@ -123,3 +123,15 @@ export function ownershipStamp(
   if (binding.dept?.mode === 'stamped') stamp[binding.dept.column] = permit.actor.deptId
   return stamp
 }
+
+/**
+ * 把盖章列并入 insert values：模块侧不写盖章列名（列名归 meta 声明）。
+ * 返回类型不变，故 kysely 的 InsertObject 类型检查照旧生效。
+ */
+export function withOwnershipStamp<T extends object>(
+  values: T,
+  permit: Permit,
+  target: AuthzTarget,
+): T {
+  return { ...values, ...ownershipStamp(permit, target) } as T
+}

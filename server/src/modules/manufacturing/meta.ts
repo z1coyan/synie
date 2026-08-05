@@ -410,7 +410,8 @@ export function demandResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.demand',
     permissionLabel: '履约需求单',
     table: 'mfg_demand',
-    authz: { kind: 'company' },
+    // 指派部门形态：下发车间是业务字段，谁能改由 dispatch 动作码管，填写不受操作者部门约束
+    authz: { kind: 'company', dept: { column: 'assigned_dept_id', mode: 'assigned' } },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('demand_no', 'demandNo', 'string', '需求单号', { filterable: true, sortable: true }),
@@ -433,6 +434,14 @@ export function demandResourceMeta(): ResourceMeta {
       }),
       fk('company_id', 'companyId', '公司', 'basCompanies', 'company', 'name'),
       fk('created_by_id', 'createdById', '录入人', 'sysUsers', 'createdBy', 'name'),
+      fk(
+        'assigned_dept_id',
+        'assignedDeptId',
+        '下发车间',
+        'sysDepartments',
+        'assignedDept',
+        'name',
+      ),
     ],
     actions: [
       ...headCrud,
@@ -445,6 +454,8 @@ export function demandResourceMeta(): ResourceMeta {
       },
       { key: 'close', label: '关闭', scope: 'row' },
       { key: 'void', label: '作废', scope: 'row', isDanger: true },
+      // 下发/改派：草稿态在表单里填，已确认后只能走本动作（独立权限码，不并入 update）
+      { key: 'dispatch', label: '下发车间', scope: 'row' },
     ],
     printHead: true,
     printLoops: [{ name: 'items', resource: 'mfgDemandItems' }],
@@ -579,7 +590,8 @@ export function workOrderResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.work_order',
     permissionLabel: '生产工单',
     table: 'mfg_work_order',
-    authz: { kind: 'company' },
+    // 归属部门形态（盖章）：创建时按创建人部门写入 owner_dept_id，车间自建自见
+    authz: { kind: 'company', dept: { mode: 'stamped' } },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('work_order_no', 'workOrderNo', 'string', '工单号', {
@@ -634,6 +646,9 @@ export function workOrderResourceMeta(): ResourceMeta {
       fk('unit_id', 'unitId', '单位', 'basUnits', 'unit', 'name'),
       fk('bom_id', 'bomId', 'BOM(来源留痕)', 'mfgBoms', 'bom', 'code'),
       fk('created_by_id', 'createdById', '生成人', 'sysUsers', 'createdBy', 'name'),
+      fk('owner_dept_id', 'ownerDeptId', '归属部门', 'sysDepartments', 'ownerDept', 'name', {
+        readonly: true,
+      }),
       field('remaining_base_qty', 'remainingBaseQty', 'decimal', '未完成数量(默认单位)', {
         calculated: true,
         filterable: true,

@@ -45,13 +45,6 @@ export function mfgWriteError(fallback: string, err: unknown, extra: readonly Pg
   return mapWriteError(err, fallback, [...extra, ...MFG_WRITE_MAPPINGS])
 }
 
-/** 空串/非法 UUID 写 null，避免 created_by_id FK 与 UUID 语法错误 */
-export function actorUserId(actor: Actor | null | undefined): string | null {
-  const id = actor?.userId?.trim()
-  if (!id) return null
-  return id
-}
-
 export function trimOptional(value: string | null | undefined): string | null {
   if (value == null) return null
   const t = value.trim()

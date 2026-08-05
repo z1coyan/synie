@@ -119,7 +119,7 @@ function assembleDomain(
   assertTodoSourcesConsistent(opts.registry.list(), todoSources)
   const todos = createTodoService(db, todoSources)
   const scm = createScmServices(db)
-  const manufacturing = createManufacturingServices(db, numbering)
+  const manufacturing = createManufacturingServices(db, numbering, opts.registry)
   return {
     settings,
     numbering,

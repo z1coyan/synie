@@ -840,6 +840,10 @@ export interface MfgBomRoute {
 }
 
 export interface MfgDemand {
+  /**
+   * 下发车间（指派部门形态）：业务字段，须与需求单同公司；填写不受操作者部门约束，已确认后改派走 dispatch 动作
+   */
+  assigned_dept_id: string | null;
   company_id: string;
   created_by_id: string | null;
   demand_date: Generated<Timestamp>;
@@ -985,6 +989,10 @@ export interface MfgWorkOrder {
   material_name: Generated<string>;
   material_spec: string | null;
   need_date: Timestamp | null;
+  /**
+   * 归属部门（盖章形态）：创建时按创建人部门自动写入，不可手填；人调部门不追溯存量行
+   */
+  owner_dept_id: string | null;
   qty: Generated<Numeric>;
   received_base_qty: Generated<Numeric>;
   status: Generated<string>;

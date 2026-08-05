@@ -1,6 +1,10 @@
 /**
- * 生产入库：草稿行维护 + 库存过账骨架 + 工单/需求完工回写
- * 引擎复用 engines/inventory，禁止直写分录表
+ * 生产入库：草稿行维护 + 库存过账骨架 + 工单/需求完工回写。
+ * 引擎复用 engines/inventory，禁止直写分录表。
+ *
+ * 授权全由平台承担（工单 07）：服务只收 Permit，行谓词由 loadAuthorized/listAuthorized 编译。
+ * 入库行引用生产工单，故行的写路由额外要求 `mfg.work_order:read`（guard allOf）——
+ * 只能拿自己看得见的工单入库。审核/作废的工单投影是同事务内的系统写，走受信任读。
  */
 import { decimal, toDecimalString } from '@synie/shared'
 import { sql } from 'kysely'
@@ -15,18 +19,19 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { requireCompanyAccess, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { AuthzTarget } from '~/platform/meta/resource-authz.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
 import { utcToday } from '~/db/dates.ts'
 import {
   auditInventoryDocInTx,
   voidInventoryDocInTx,
 } from '~/platform/posting/skeleton.ts'
 import {
-  requirePermission,
-  actorUserId,
   asDate,
   asInt,
   deriveItemProjection,
@@ -39,7 +44,11 @@ import {
   validateWarehouse,
 } from './helpers.ts'
 import { outputItemResourceMeta, outputResourceMeta } from './meta.ts'
-import { loadWorkOrder } from './work-order-service.ts'
+import {
+  WORK_ORDER_RESOURCE,
+  loadWorkOrderAuthorized,
+  loadWorkOrderForProjection,
+} from './work-order-service.ts'
 import type {
   ListQueryInput,
   Output,
@@ -49,6 +58,11 @@ import type {
   WorkOrderStatus,
 } from './types.ts'
 
+export const OUTPUT_RESOURCE = 'mfgOutputs'
+export const OUTPUT_ITEM_RESOURCE = 'mfgOutputItems'
+
+const OUTPUT_TABLE = 'mfg_output'
+const OUTPUT_ITEM_TABLE = 'mfg_output_item'
 const OUT_AUDIT = auditFieldsOf(outputResourceMeta())
 
 const ITEM_AUDIT = auditFieldsOf(outputItemResourceMeta())
@@ -57,9 +71,28 @@ export function createOutputService(
   db: Kysely<Database>,
   numbering: NumberingService,
   inventory: InventoryEngine,
+  registry: Registry,
 ) {
+  const target = registry.authzTarget(OUTPUT_RESOURCE)
+  const itemTarget = registry.authzTarget(OUTPUT_ITEM_RESOURCE)
+  const workOrderTarget = registry.authzTarget(WORK_ORDER_RESOURCE)
+
+  const lockOutput = (trx: DbHandle, permit: Permit, id: string) =>
+    loadOutputAuthorized(trx, permit, target, id, true)
+
+  /** 入库行的母单（授权按母单自身的行谓词判定） */
+  async function parentOf(trx: DbHandle, permit: Permit, itemId: string): Promise<Output> {
+    const row = await trx
+      .selectFrom('mfg_output_item')
+      .select('output_id')
+      .where('id', '=', itemId)
+      .executeTakeFirst()
+    if (!row) throw new ApiError('not_found', '生产入库行不存在')
+    return loadOutputAuthorized(trx, permit, target, row.output_id, true)
+  }
+
   async function createOutput(
-    actor: Actor,
+    permit: Permit,
     input: {
       companyId: string
       outputNo?: string | null
@@ -68,11 +101,10 @@ export function createOutputService(
       remarks?: string | null
     },
   ): Promise<Output> {
-    requirePermission(actor, 'mfg.output:create')
     if (!input.companyId) {
       throw ApiError.validation('生产入库单参数不合法', { companyId: ['必填'] })
     }
-    requireCompanyAccess(actor, input.companyId)
+    assertCompanyWritable(permit, input.companyId, '公司不存在')
     validateRemarks(input.remarks)
     return withTx(db, async (trx) => {
       await validateWarehouse(trx, input.warehouseId, input.companyId)
@@ -95,12 +127,12 @@ export function createOutputService(
             status: 'draft',
             company_id: input.companyId,
             warehouse_id: input.warehouseId ?? null,
-            created_by_id: actorUserId(actor),
+            created_by_id: permit.actor.userId || null,
           })
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapOutput(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_output',
           recordId: item.id,
           recordLabel: item.outputNo,
@@ -116,35 +148,29 @@ export function createOutputService(
     })
   }
 
-  async function getOutput(actor: Actor, id: string): Promise<Output> {
-    requirePermission(actor, 'mfg.output:read')
-    const item = await loadOutput(db, id, false)
-    requireCompanyAccess(actor, item.companyId)
-    return item
+  async function getOutput(permit: Permit, id: string): Promise<Output> {
+    return loadOutputAuthorized(db, permit, target, id, false)
   }
 
-  async function listOutputs(actor: Actor, query: ListQueryInput) {
-    requirePermission(actor, 'mfg.output:read')
+  async function listOutputs(permit: Permit, query: ListQueryInput) {
     const q = normalizeList(query)
-    if (q.companyId) requireCompanyAccess(actor, q.companyId)
-    const scope = q.companyId
-      ? { empty: false as const, where: sql`company_id = ${q.companyId}` }
-      : companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Output[] }
-    return listFromSource({
+    return listAuthorized({
       db,
+      permit,
+      target,
+      alias: OUTPUT_TABLE,
       resource: outputResourceMeta(),
       source: sql` FROM mfg_output`,
       select: sql`SELECT *`,
       defaultOrder: sql`"inserted_at" DESC, "id" DESC`,
       query: q,
-      extraWhere: scope.where,
-      mapRow: mapOutputRow,
+      extraWhere: q.companyId ? sql`company_id = ${q.companyId}` : null,
+      mapRow: mapOutputRecord,
     })
   }
 
   async function updateOutput(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       outputNo?: string
@@ -155,10 +181,8 @@ export function createOutputService(
       remarksPresent?: boolean
     },
   ): Promise<Output> {
-    requirePermission(actor, 'mfg.output:update')
     return withTx(db, async (trx) => {
-      const before = await loadOutput(trx, id, true)
-      requireCompanyAccess(actor, before.companyId)
+      const before = await lockOutput(trx, permit, id)
       if (before.status !== 'draft') {
         throw new ApiError('conflict', '仅草稿生产入库单可修改或删除')
       }
@@ -187,7 +211,7 @@ export function createOutputService(
         } catch (err) {
           throw mfgWriteError('更新生产入库单失败', err)
         }
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_output',
           recordId: id,
           recordLabel: after.outputNo,
@@ -201,11 +225,9 @@ export function createOutputService(
     })
   }
 
-  async function deleteOutput(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'mfg.output:delete')
+  async function deleteOutput(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const item = await loadOutput(trx, id, true)
-      requireCompanyAccess(actor, item.companyId)
+      const item = await lockOutput(trx, permit, id)
       if (item.status !== 'draft') {
         throw new ApiError('conflict', '仅草稿生产入库单可修改或删除')
       }
@@ -214,7 +236,7 @@ export function createOutputService(
       } catch (err) {
         throw mfgWriteError('删除生产入库单失败', err)
       }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'mfg_output',
         recordId: id,
         recordLabel: item.outputNo,
@@ -227,7 +249,7 @@ export function createOutputService(
   }
 
   async function createOutputItem(
-    actor: Actor,
+    permit: Permit,
     input: {
       outputId: string
       idx: number
@@ -238,15 +260,19 @@ export function createOutputService(
       remarks?: string | null
     },
   ): Promise<OutputItem> {
-    requirePermission(actor, 'mfg.output:create')
     validateRemarks(input.remarks)
     return withTx(db, async (trx) => {
-      const parent = await loadOutput(trx, input.outputId, true)
-      requireCompanyAccess(actor, parent.companyId)
+      const parent = await lockOutput(trx, permit, input.outputId)
       if (parent.status !== 'draft') {
         throw new ApiError('conflict', '仅草稿生产入库单可编辑单据行')
       }
-      const workOrder = await loadWorkOrder(trx, input.workOrderId, false)
+      const workOrder = await loadWorkOrderAuthorized(
+        trx,
+        permit,
+        workOrderTarget,
+        input.workOrderId,
+        false,
+      )
       if (workOrder.status === 'voided') {
         throw new ApiError('conflict', '生产工单已作废')
       }
@@ -282,7 +308,7 @@ export function createOutputService(
           .returningAll()
           .executeTakeFirstOrThrow()
         const result = mapOutputItem(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_output_item',
           recordId: result.id,
           recordLabel: String(result.idx),
@@ -298,28 +324,22 @@ export function createOutputService(
     })
   }
 
-  async function getOutputItem(actor: Actor, id: string): Promise<OutputItem> {
-    requirePermission(actor, 'mfg.output:read')
-    const item = await loadOutputItem(db, id, false)
-    requireCompanyAccess(actor, item.companyId)
-    return item
+  async function getOutputItem(permit: Permit, id: string): Promise<OutputItem> {
+    return loadOutputItemAuthorized(db, permit, itemTarget, id, false)
   }
 
-  async function listOutputItems(actor: Actor, query: ListQueryInput & { outputId?: string }) {
-    requirePermission(actor, 'mfg.output:read')
+  async function listOutputItems(permit: Permit, query: ListQueryInput & { outputId?: string }) {
     const q = normalizeList(query)
-    if (q.companyId) requireCompanyAccess(actor, q.companyId)
-    const scope = q.companyId
-      ? { empty: false as const, where: sql`company_id = ${q.companyId}` }
-      : companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as OutputItem[] }
     const parts = [
-      scope.where,
+      q.companyId ? sql`company_id = ${q.companyId}` : null,
       query.outputId ? sql`output_id = ${query.outputId}` : null,
     ].filter(Boolean)
     // 列名须与 ResourceMeta.dbColumn 一致（filterbuild 按 apiName→dbColumn 排序筛选）
-    return listFromSource({
+    return listAuthorized({
       db,
+      permit,
+      target: itemTarget,
+      alias: 'mfg_output_items',
       resource: outputItemResourceMeta(),
       source: sql` FROM (
         SELECT i.*, h.output_no, h.output_date, h.status AS output_status
@@ -330,12 +350,12 @@ export function createOutputService(
       defaultOrder: sql`"idx" ASC, "id" ASC`,
       query: q,
       extraWhere: parts.length ? sql`${sql.join(parts as never, sql` AND `)}` : null,
-      mapRow: mapOutputItemRow,
+      mapRow: mapOutputItemRecord,
     })
   }
 
   async function updateOutputItem(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       idx?: number
@@ -347,20 +367,12 @@ export function createOutputService(
       remarksPresent?: boolean
     },
   ): Promise<OutputItem> {
-    requirePermission(actor, 'mfg.output:update')
     return withTx(db, async (trx) => {
-      const parentId = await trx
-        .selectFrom('mfg_output_item')
-        .select('output_id')
-        .where('id', '=', id)
-        .executeTakeFirst()
-      if (!parentId) throw new ApiError('not_found', '生产入库行不存在')
-      const parent = await loadOutput(trx, parentId.output_id, true)
-      requireCompanyAccess(actor, parent.companyId)
+      const parent = await parentOf(trx, permit, id)
       if (parent.status !== 'draft') {
         throw new ApiError('conflict', '仅草稿生产入库单可编辑单据行')
       }
-      const before = await loadOutputItem(trx, id, true)
+      const before = await loadOutputItemAuthorized(trx, permit, itemTarget, id, true)
       const after = { ...before }
       if (input.idx !== undefined) after.idx = input.idx
       if (input.workOrderId !== undefined) after.workOrderId = input.workOrderId
@@ -369,7 +381,13 @@ export function createOutputService(
       if (input.warehouseId !== undefined) after.warehouseId = input.warehouseId
       if (input.remarksPresent) after.remarks = input.remarks ?? null
       validateRemarks(after.remarks)
-      const workOrder = await loadWorkOrder(trx, after.workOrderId, false)
+      const workOrder = await loadWorkOrderAuthorized(
+        trx,
+        permit,
+        workOrderTarget,
+        after.workOrderId,
+        false,
+      )
       if (workOrder.status === 'voided') {
         throw new ApiError('conflict', '生产工单已作废')
       }
@@ -415,7 +433,7 @@ export function createOutputService(
         } catch (err) {
           throw mfgWriteError('更新生产入库行失败', err)
         }
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_output_item',
           recordId: id,
           recordLabel: String(after.idx),
@@ -425,27 +443,19 @@ export function createOutputService(
           changes,
         })
       }
-      return loadOutputItem(trx, id, false)
+      return loadOutputItemAuthorized(trx, permit, itemTarget, id, false)
     })
   }
 
-  async function deleteOutputItem(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'mfg.output:update')
+  async function deleteOutputItem(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const parentId = await trx
-        .selectFrom('mfg_output_item')
-        .select('output_id')
-        .where('id', '=', id)
-        .executeTakeFirst()
-      if (!parentId) throw new ApiError('not_found', '生产入库行不存在')
-      const parent = await loadOutput(trx, parentId.output_id, true)
-      requireCompanyAccess(actor, parent.companyId)
+      const parent = await parentOf(trx, permit, id)
       if (parent.status !== 'draft') {
         throw new ApiError('conflict', '仅草稿生产入库单可编辑单据行')
       }
-      const item = await loadOutputItem(trx, id, true)
+      const item = await loadOutputItemAuthorized(trx, permit, itemTarget, id, true)
       await trx.deleteFrom('mfg_output_item').where('id', '=', id).execute()
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'mfg_output_item',
         recordId: id,
         recordLabel: String(item.idx),
@@ -457,18 +467,16 @@ export function createOutputService(
     })
   }
 
-  async function auditOutput(actor: Actor, id: string): Promise<Output> {
-    requirePermission(actor, 'mfg.output:audit')
+  async function auditOutput(permit: Permit, id: string): Promise<Output> {
     return withTx(db, async (trx) => {
       // 投影用工单锁：collect 内装载，postProjection 闭包复用
       let lockedOrders: Map<string, LockedWorkOrder> | null = null
-      return auditInventoryDocInTx(trx, actor, inventory, {
+      return auditInventoryDocInTx(trx, permit.actor, inventory, {
         voucherType: 'mfg.output',
         headTable: 'mfg_output',
         setPostingDate: false,
         lockDraft: async (t) => {
-          const before = await loadOutput(t, id, true)
-          requireCompanyAccess(actor, before.companyId)
+          const before = await lockOutput(t, permit, id)
           if (before.status !== 'draft') {
             throw new ApiError('conflict', '仅草稿生产入库单可审核')
           }
@@ -501,23 +509,22 @@ export function createOutputService(
           await updateWorkOrderProjection(t, lockedOrders, 1)
         },
         voucherOf: (h) => ({ id: h.id, no: h.outputNo, companyId: h.companyId }),
-        reload: async (t, headId) => loadOutput(t, headId, false),
+        reload: async (t, headId) =>
+          loadOutputAuthorized(t, permit, target, headId, false),
         snapshot: outSnap,
         auditFields: OUT_AUDIT,
       })
     })
   }
 
-  async function voidOutput(actor: Actor, id: string): Promise<Output> {
-    requirePermission(actor, 'mfg.output:void')
+  async function voidOutput(permit: Permit, id: string): Promise<Output> {
     return withTx(db, async (trx) => {
       let lockedOrders: Map<string, LockedWorkOrder> | null = null
-      return voidInventoryDocInTx(trx, actor, inventory, {
+      return voidInventoryDocInTx(trx, permit.actor, inventory, {
         voucherType: 'mfg.output',
         headTable: 'mfg_output',
         lockAudited: async (t) => {
-          const before = await loadOutput(t, id, true)
-          requireCompanyAccess(actor, before.companyId)
+          const before = await lockOutput(t, permit, id)
           if (before.status !== 'audited') {
             throw new ApiError('conflict', '仅已审核生产入库单可作废')
           }
@@ -530,7 +537,8 @@ export function createOutputService(
           await updateWorkOrderProjection(t, lockedOrders, -1)
         },
         voucherOf: (h) => ({ id: h.id, no: h.outputNo, companyId: h.companyId }),
-        reload: async (t, headId) => loadOutput(t, headId, false),
+        reload: async (t, headId) =>
+          loadOutputAuthorized(t, permit, target, headId, false),
         snapshot: outSnap,
         auditFields: OUT_AUDIT,
       })
@@ -555,20 +563,44 @@ export function createOutputService(
 
 export type OutputService = ReturnType<typeof createOutputService>
 
-async function loadOutput(db: DbHandle, id: string, lock: boolean): Promise<Output> {
-  let q = db.selectFrom('mfg_output').selectAll().where('id', '=', id)
-  if (lock) q = q.forUpdate()
-  const row = await q.executeTakeFirst()
-  if (!row) throw new ApiError('not_found', '生产入库单不存在')
-  return mapOutput(row)
+/** 按 Permit 取入库单行（可锁）；不命中一律 not_found */
+async function loadOutputAuthorized(
+  db: DbHandle,
+  permit: Permit,
+  target: AuthzTarget,
+  id: string,
+  forUpdate: boolean,
+): Promise<Output> {
+  const row = await loadAuthorized({
+    db,
+    permit,
+    target,
+    table: OUTPUT_TABLE,
+    id,
+    forUpdate,
+    notFoundMessage: '生产入库单不存在',
+  })
+  return mapOutputRecord(row)
 }
 
-async function loadOutputItem(db: DbHandle, id: string, lock: boolean): Promise<OutputItem> {
-  let q = db.selectFrom('mfg_output_item').selectAll().where('id', '=', id)
-  if (lock) q = q.forUpdate()
-  const row = await q.executeTakeFirst()
-  if (!row) throw new ApiError('not_found', '生产入库行不存在')
-  return mapOutputItem(row)
+/** 按 Permit 取入库行（可锁）；via 链把判定递归到母单自身的行谓词 */
+async function loadOutputItemAuthorized(
+  db: DbHandle,
+  permit: Permit,
+  target: AuthzTarget,
+  id: string,
+  forUpdate: boolean,
+): Promise<OutputItem> {
+  const row = await loadAuthorized({
+    db,
+    permit,
+    target,
+    table: OUTPUT_ITEM_TABLE,
+    id,
+    forUpdate,
+    notFoundMessage: '生产入库行不存在',
+  })
+  return mapOutputItemRecord(row)
 }
 
 async function loadOutputItemsForUpdate(db: DbHandle, outputId: string): Promise<OutputItem[]> {
@@ -603,7 +635,7 @@ async function lockOutputWorkOrders(
   const sorted = [...quantities.keys()].sort()
   for (const id of sorted) {
     try {
-      const item = await loadWorkOrder(db, id, true)
+      const item = await loadWorkOrderForProjection(db, id)
       result.set(id, { item, add: quantities.get(id)! })
     } catch (err) {
       if (err instanceof ApiError && err.code === 'not_found') {
@@ -733,7 +765,7 @@ function mapOutput(row: {
   }
 }
 
-function mapOutputRow(r: Record<string, unknown>): Output {
+function mapOutputRecord(r: Record<string, unknown>): Output {
   return mapOutput({
     id: String(r.id),
     output_no: String(r.output_no),
@@ -799,7 +831,7 @@ function mapOutputItem(row: {
   }
 }
 
-function mapOutputItemRow(r: Record<string, unknown>): OutputItem {
+function mapOutputItemRecord(r: Record<string, unknown>): OutputItem {
   return mapOutputItem({
     id: String(r.id),
     output_id: String(r.output_id),

@@ -47,6 +47,15 @@ export async function voidDemand(id: string) {
   )
 }
 
+/** 下发/改派车间：仅已确认未关闭的需求单可用；草稿态改车间走表单 */
+export async function dispatchDemand(id: string, assignedDeptId: string) {
+  return apiData(
+    api.manufacturing.demands[':id'].dispatch.$post({
+      param: { id },
+      json: { assignedDeptId }}),
+  )
+}
+
 export async function completeDemandItem(id: string) {
   return apiData(
     api.manufacturing['demand-items'][':id'].complete.$post({

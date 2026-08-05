@@ -4,6 +4,8 @@
  * 生产入库的 document preview 与 Drawer 共置；需求、工单与生产入库的审核
  * 配置继续由各自业务 drawer module 导出。
  */
+import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
+import type { FieldInputProps } from '~/components/synie-record-drawer/fields'
 import type { ResourceBinding } from '../catalog/types'
 import {
   AUDIT_TRAIL_EXCLUDE,
@@ -28,6 +30,33 @@ export const MANUFACTURING_DOCUMENT_RESOURCES = [
 
 export type ManufacturingDocumentResource =
   (typeof MANUFACTURING_DOCUMENT_RESOURCES)[number]
+
+/**
+ * 下发车间输入：候选按**本表单已选公司**收窄且只取启用中的部门，与后端同公司硬校验同口径。
+ * 指派列不受操作者部门约束（计划员可下发任意车间），故不按 me.deptId 过滤。
+ */
+function AssignedDeptInput({ value, onChange, isDisabled, values }: FieldInputProps) {
+  const companyId = values.companyId == null || values.companyId === '' ? null : String(values.companyId)
+  return (
+    <RemoteSelect
+      resource="sysDepartments"
+      label="下发车间"
+      labelField="name"
+      placeholder={companyId ? '选择本公司车间…' : '先选公司'}
+      value={value == null || value === '' ? null : String(value)}
+      onChange={(id) => onChange(id)}
+      isDisabled={isDisabled || companyId == null}
+      filterState={
+        companyId
+          ? {
+              companyId: { kind: 'fk', op: 'in', values: [companyId], labels: [] },
+              enabled: { kind: 'bool', eq: true },
+            }
+          : undefined
+      }
+    />
+  )
+}
 
 const DEFINITIONS = {
   mfgProcessTemplates: {
@@ -104,14 +133,23 @@ const DEFINITIONS = {
         placeholder: '留空自动编号',
       },
       demandDate: { order: 1, cols: 6, required: true },
-      remarks: { order: 2 },
+      // 草稿态可填可改；确认后改派走行动作 dispatch（本表单确认后整体不可编辑）
+      assignedDeptId: {
+        order: 2,
+        cols: 6,
+        label: '下发车间',
+        input: (p) => <AssignedDeptInput {...p} />,
+      },
+      remarks: { order: 3 },
     },
   },
   mfgWorkOrders: {
     label: '生产工单',
+    // ownerDeptId 与 createdById 同类：创建时盖章的归属字段不进单据表单，列表列展示
     exclude: [
       'status',
       'createdById',
+      'ownerDeptId',
       'insertedAt',
       'updatedAt',
       'baseQty',

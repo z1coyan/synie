@@ -42,6 +42,7 @@ const GRID_COLUMNS = [
   'remainingBaseQty',
   'needDate',
   'status',
+  'ownerDeptId',
   'bomId',
   'demandId',
 ]
@@ -71,6 +72,8 @@ const GRID_OVERRIDES = {
     render: (_v: unknown, row: Row) => <WorkOrderProgressCell row={row} />,
   },
   needDate: { mobileRole: 'summary' },
+  // 归属部门:创建时按创建人部门盖章,车间按此列自建自见
+  ownerDeptId: { label: '归属部门', mobileRole: 'hide' },
 } satisfies Record<string, ColumnOverride>
 
 function bomGridFilter(materialId: string) {
