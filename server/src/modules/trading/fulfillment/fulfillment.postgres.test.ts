@@ -31,12 +31,15 @@ import {
 import { fulfillmentItemMeta, packBoxMeta, packLineMeta } from './spec.ts'
 import { testActor } from '~/platform/authz/testing.ts'
 
+
+/** 编号服务需要 sealed registry（授权归宿解析） */
+const numberingRegistry = createSealedResourceRegistry()
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
 
 run('PG 集成（履约聚合草稿）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
+  const numbering = createNumberingService(db, buildNumberingCatalog(numberingRegistry), numberingRegistry)
   const fulfillment = createFulfillmentService(db, numbering, {
     inventory: createInventoryEngine(),
     gl: createGlEngine(),

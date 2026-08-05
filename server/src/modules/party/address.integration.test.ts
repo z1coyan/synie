@@ -1,6 +1,9 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { createDb } from '~/db/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { createPartyAddressService } from './address-service.ts'
 import { createCustomerService } from './party-service.ts'
 import { testActor } from '~/platform/authz/testing.ts'
@@ -10,8 +13,10 @@ const run = url ? describe : describe.skip
 
 run('PG 集成（对手地址）', () => {
   const db = createDb(url!)
-  const addresses = createPartyAddressService(db)
-  const customers = createCustomerService(db)
+  const registry = createSealedResourceRegistry()
+  const authz = createAuthzEnforcer(registry)
+  const addresses = createPartyAddressService(db, registry)
+  const customers = createCustomerService(db, registry)
   const actor: Actor = testActor({
     userId: crypto.randomUUID(),
     username: 'address-test',
@@ -21,6 +26,12 @@ run('PG 集成（对手地址）', () => {
     permissions: new Set(),
     companyIds: [],
   })
+  /** superAdmin 凭证：地址与客户均为 global，rowFilter 恒全集 */
+  function permit(resource: string, action: string): Permit {
+    const decision = authz.decideFor(actor, resource, action)
+    if (decision.outcome !== 'permit') throw new Error(`夹具应当 permit：${resource}:${action}`)
+    return decision.permit
+  }
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
   const customerIds: string[] = []
   const addressIds: string[] = []
@@ -47,13 +58,13 @@ run('PG 集成（对手地址）', () => {
   })
 
   test('CRUD + 默认地址顶替 + 主体校验 + 级联删', async () => {
-    const customer = await customers.create(actor, {
+    const customer = await customers.create(permit('salCustomers', 'create'), {
       code: `CA${suffix}`,
       name: `地址客户-${suffix}`,
     })
     customerIds.push(customer.id)
 
-    const a1 = await addresses.create(actor, {
+    const a1 = await addresses.create(permit('basPartyAddresses', 'create'), {
       partyType: 'CUSTOMER',
       partyId: customer.id,
       name: '默认收货',
@@ -72,7 +83,7 @@ run('PG 集成（对手地址）', () => {
     expect(a1.province).toBe('上海市')
     expect(a1.district).toBe('浦东新区')
 
-    const a2 = await addresses.create(actor, {
+    const a2 = await addresses.create(permit('basPartyAddresses', 'create'), {
       partyType: 'CUSTOMER',
       partyId: customer.id,
       name: '新默认收货',
@@ -86,10 +97,10 @@ run('PG 集成（对手地址）', () => {
     addressIds.push(a2.id)
     expect(a2.isDefault).toBe(true)
 
-    const reloaded1 = await addresses.get(actor, a1.id)
+    const reloaded1 = await addresses.get(permit('basPartyAddresses', 'read'), a1.id)
     expect(reloaded1.isDefault).toBe(false)
 
-    const office = await addresses.create(actor, {
+    const office = await addresses.create(permit('basPartyAddresses', 'create'), {
       partyType: 'CUSTOMER',
       partyId: customer.id,
       name: '总部办公',
@@ -102,11 +113,11 @@ run('PG 集成（对手地址）', () => {
     })
     addressIds.push(office.id)
     // 不同用途互不影响
-    const stillDefault = await addresses.get(actor, a2.id)
+    const stillDefault = await addresses.get(permit('basPartyAddresses', 'read'), a2.id)
     expect(stillDefault.isDefault).toBe(true)
 
     await expect(
-      addresses.create(actor, {
+      addresses.create(permit('basPartyAddresses', 'create'), {
         partyType: 'CUSTOMER',
         partyId: crypto.randomUUID(),
         name: '幽灵',
@@ -118,7 +129,7 @@ run('PG 集成（对手地址）', () => {
       }),
     ).rejects.toMatchObject({ code: 'validation' })
 
-    const listed = await addresses.list(actor, {
+    const listed = await addresses.list(permit('basPartyAddresses', 'read'), {
       limit: 50,
       offset: 0,
       filter: {
@@ -128,7 +139,7 @@ run('PG 集成（对手地址）', () => {
     })
     expect(listed.count).toBe(3)
 
-    await customers.remove(actor, customer.id)
+    await customers.remove(permit('salCustomers', 'delete'), customer.id)
     customerIds.splice(customerIds.indexOf(customer.id), 1)
     addressIds.length = 0
 

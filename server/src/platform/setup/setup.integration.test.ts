@@ -337,13 +337,15 @@ run('PG 集成（setup 向导）', () => {
     async () => {
       await prepareEmptySetup()
       const registry = createPlatformRegistry()
-      const numbering = createNumberingService(db, buildNumberingCatalog(registry))
-      const base = createBaseServices(db)
-      const party = createPartyServices(db, numbering)
+      const setupAuthz = createAuthzEnforcer(registry)
+      const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
+      const base = createBaseServices(db, registry)
+      const party = createPartyServices(db, numbering, registry)
       const owners = createOwnerRegistry()
       const files = createFileService({ db, owners, authz: createAuthzEnforcer(registry) })
       const hr = createHrServices(db, files, {
         employees: party.employees,
+        authz: setupAuthz,
       })
       const companyAccountDefaults = createCompanyAccountDefaultService(db)
       const inv = createInventoryServices(db, numbering, registry)
@@ -407,13 +409,18 @@ run('PG 集成（setup 向导）', () => {
         permissions: new Set(),
         companyIds: [],
       })
-      const company = await base.companies.create(actor, {
+      const basePermit = (resource: string, action: string) => {
+        const decision = setupAuthz.decideFor(actor, resource, action)
+        if (decision.outcome !== 'permit') throw new Error(`夹具应当 permit：${resource}:${action}`)
+        return decision.permit
+      }
+      const company = await base.companies.create(basePermit('basCompanies', 'create'), {
         code: 'JT',
         name: '台州京泰电气有限公司',
         shortName: '台州京泰',
         baseCurrencyId: cny.rows[0]!.id,
       })
-      await base.accounts.initializeTemplate(actor, company.id, 'small')
+      await base.accounts.initializeTemplate(basePermit('basAccounts', 'create'), company.id, 'small')
       await setup.complete(actor, 'zh-CN', true)
 
       const c01 = await sql<{ c: string }>`

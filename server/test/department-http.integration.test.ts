@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
 import { createIamService } from '~/modules/iam/index.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { testActor } from '~/platform/authz/testing.ts'
 import { createPlatformRegistry, buildTestApp, testDatabaseUrl } from './helpers.ts'
 
@@ -17,8 +18,15 @@ const run = url ? describe : describe.skip
 run('PG 集成（部门端点 guard）', () => {
   const db = createDb(url!)
   const registry = createPlatformRegistry()
+  const authz = createAuthzEnforcer(registry)
   const iam = createIamService(db, registry)
   const admin = testActor({ superAdmin: true, allCompanies: true })
+  /** 建用户走 IamService：superAdmin 现取一张 sysUsers:create 凭证 */
+  const adminUserPermit = () => {
+    const decision = authz.decideFor(admin, 'sysUsers', 'create')
+    if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+    return decision.permit
+  }
 
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
   const currencyId = crypto.randomUUID()
@@ -67,7 +75,7 @@ run('PG 集成（部门端点 guard）', () => {
       .insertInto('sys_role')
       .values({ id: roleId, code: `dept-http-${suffix}`, name: `部门端点角色-${suffix}` })
       .execute()
-    const created = await iam.createUser(admin, {
+    const created = await iam.createUser(adminUserPermit(), {
       username: `dept-http-${suffix}`,
       name: '部门端点用户',
       roleIds: [roleId],

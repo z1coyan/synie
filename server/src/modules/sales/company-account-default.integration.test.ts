@@ -5,7 +5,10 @@ import { testActor } from '~/platform/authz/testing.ts'
 import { afterAll, describe, expect, test } from 'bun:test'
 import { createDb } from '~/db/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { createRegistry } from '~/platform/meta/registry.ts'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { createAccountService } from '../base/account-service.ts'
 import { createCompanyService } from '../base/company-service.ts'
 import { createCurrencyService } from '../base/currency-service.ts'
@@ -54,11 +57,19 @@ function lettersFrom(seed: string, n: number): string {
 
 run('PG 集成（公司默认过账科目）', () => {
   const db = createDb(url!)
-  const currencies = createCurrencyService(db)
-  const companies = createCompanyService(db)
-  const accounts = createAccountService(db)
+  const sealed = createSealedResourceRegistry()
+  const baseAuthz = createAuthzEnforcer(sealed)
+  const currencies = createCurrencyService(db, sealed)
+  const companies = createCompanyService(db, sealed)
+  const accounts = createAccountService(db, sealed)
   const defaults = createCompanyAccountDefaultService(db)
   const actor = superActor()
+  /** base 夹具的凭证（superAdmin → rowFilter 全集） */
+  function basePermit(resource: string, action: string): Permit {
+    const decision = baseAuthz.decideFor(actor, resource, action)
+    if (decision.outcome !== 'permit') throw new Error(`夹具应当 permit：${resource}:${action}`)
+    return decision.permit
+  }
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10)
 
   let currencyId = ''
@@ -130,14 +141,14 @@ run('PG 集成（公司默认过账科目）', () => {
 
   test('空壳 getByCompany + 创建四槽 + 角色校验 + partial upsert', async () => {
     const iso = lettersFrom(`c${suffix}`, 3)
-    const cur = await currencies.create(actor, {
+    const cur = await currencies.create(basePermit('basCurrencies', 'create'), {
       name: `默认过账币-${suffix}`,
       isoCode: iso,
       symbol: '¤',
     })
     currencyId = cur.id
 
-    const company = await companies.create(actor, {
+    const company = await companies.create(basePermit('basCompanies', 'create'), {
       code: lettersFrom(`a${suffix}`, 2),
       name: `默认过账公司-${suffix}`,
       shortName: `短-${suffix.slice(0, 4)}`,
@@ -145,7 +156,7 @@ run('PG 集成（公司默认过账科目）', () => {
     })
     companyId = company.id
 
-    const other = await companies.create(actor, {
+    const other = await companies.create(basePermit('basCompanies', 'create'), {
       code: lettersFrom(`b${suffix}`, 2),
       name: `他司-${suffix}`,
       shortName: `他-${suffix.slice(0, 4)}`,
@@ -163,7 +174,7 @@ run('PG 集成（公司默认过账科目）', () => {
       role: string | null,
       company = companyId,
     ): Promise<string> {
-      const acc = await accounts.create(actor, {
+      const acc = await accounts.create(basePermit('basAccounts', 'create'), {
         companyId: company,
         code: `${lettersFrom(name + suffix, 4)}${Math.floor(Math.random() * 90 + 10)}`,
         name: `${name}-${suffix}`,

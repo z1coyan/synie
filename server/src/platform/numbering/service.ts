@@ -1,3 +1,11 @@
+/**
+ * 编号规则 / 计数器。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
+ * 计数器与规则共用 `sys.numbering_rule` 权限前缀（计数器 meta 无独立 actions），
+ * 故路由一律按规则资源取凭证——与迁移前的门控码逐字一致。
+ * `next/nextInTx` 是跨域取号基础设施，不经权限（调用方业务码覆盖）。
+ */
 import type { ListQuery } from '@synie/shared'
 import { sql, type Expression, type Kysely, type SqlBool } from 'kysely'
 import { buildListQuery } from '~/db/filterbuild.ts'
@@ -6,14 +14,17 @@ import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database, Json } from '~/db/types.ts'
 import { auditCreated, auditDestroyed, auditDiff, writeAudit } from '../audit/write.ts'
 import { auditFieldsOf } from '../audit/spec.ts'
-import type { Actor } from '../authz/actor.ts'
-import { requirePermission } from '../authz/actor.ts'
+import { loadAuthorized } from '~/db/load.ts'
+import type { Permit } from '../authz/core/index.ts'
 import { ApiError } from '../http/errors.ts'
+import type { Registry } from '../meta/registry.ts'
 import type { NumberingCatalog } from './catalog.ts'
-import { counterResourceMeta, ruleResourceMeta } from './meta.ts'
-
-/** 编号规则/计数器管理权限前缀；next/nextInTx 为跨域取号基础设施，不检此码 */
-const PERM = 'sys.numbering_rule'
+import {
+  COUNTER_RESOURCE_NAME,
+  RULE_RESOURCE_NAME,
+  counterResourceMeta,
+  ruleResourceMeta,
+} from './meta.ts'
 
 /** 对齐 server-go numberingWriteError：同一资源只能有一条启用规则 */
 const ENABLED_PER_RESOURCE_MSG = '该资源已有启用的编号规则,同一资源只能启用一条'
@@ -75,24 +86,36 @@ const RULE_AUDIT = auditFieldsOf(ruleResourceMeta())
 const COUNTER_AUDIT = auditFieldsOf(counterResourceMeta())
 const DATE_FORMAT_RE = /^(?:YYYY|YY|MM|DD)+$/
 
-export function createNumberingService(db: Kysely<Database>, catalog: NumberingCatalog) {
-  async function numberableResources(actor: Actor) {
-    requirePermission(actor, `${PERM}:read`)
+export function createNumberingService(
+  db: Kysely<Database>,
+  catalog: NumberingCatalog,
+  registry: Registry,
+) {
+  const ruleTarget = registry.authzTarget(RULE_RESOURCE_NAME)
+  const counterTarget = registry.authzTarget(COUNTER_RESOURCE_NAME)
+
+  async function numberableResources(permit: Permit) {
+    void permit
     return catalog.publicResources()
   }
 
-  async function getRule(actor: Actor, id: string): Promise<Rule> {
-    requirePermission(actor, `${PERM}:read`)
-    const row = await db.selectFrom('sys_numbering_rule').selectAll().where('id', '=', id).executeTakeFirst()
-    if (!row) throw new ApiError('not_found', '编号规则不存在')
-    return mapRule(row)
+  async function getRule(permit: Permit, id: string): Promise<Rule> {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target: ruleTarget,
+      table: 'sys_numbering_rule',
+      id,
+      notFoundMessage: '编号规则不存在',
+    })
+    return mapRule(row as never)
   }
 
   async function listRules(
-    actor: Actor,
+    permit: Permit,
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: Rule[] }> {
-    requirePermission(actor, `${PERM}:read`)
+    void permit
     const limit = query.limit === undefined || query.limit === 0 ? 20 : query.limit
     const offset = query.offset ?? 0
     if (limit < 1 || limit > 200 || offset < 0) {
@@ -117,8 +140,7 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
     return { count, results: rows.map(mapRule) }
   }
 
-  async function create(actor: Actor, input: CreateRuleInput): Promise<Rule> {
-    requirePermission(actor, `${PERM}:create`)
+  async function create(permit: Permit, input: CreateRuleInput): Promise<Rule> {
     validateCreate(input, catalog)
     const perCompany = input.perCompany ?? true
     const enabled = input.enabled ?? true
@@ -131,7 +153,7 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
           perCompany,
           enabled,
         })
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'sys_numbering_rule',
           recordId: inserted.id,
           recordLabel: inserted.name,
@@ -146,18 +168,19 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
     }
   }
 
-  async function updateRule(actor: Actor, id: string, input: UpdateRuleInput): Promise<Rule> {
-    requirePermission(actor, `${PERM}:update`)
+  async function updateRule(permit: Permit, id: string, input: UpdateRuleInput): Promise<Rule> {
     try {
       return await withTx(db, async (trx) => {
-        const row = await trx
-          .selectFrom('sys_numbering_rule')
-          .selectAll()
-          .where('id', '=', id)
-          .forUpdate()
-          .executeTakeFirst()
-        if (!row) throw new ApiError('not_found', '编号规则不存在')
-        const before = mapRule(row)
+        const row = await loadAuthorized({
+          db: trx,
+          permit,
+          target: ruleTarget,
+          table: 'sys_numbering_rule',
+          id,
+          forUpdate: true,
+          notFoundMessage: '编号规则不存在',
+        })
+        const before = mapRule(row as never)
         const after: Rule = {
           ...before,
           name: input.name !== undefined ? input.name : before.name,
@@ -178,7 +201,7 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
         const changes = auditDiff(ruleSnap(before), ruleSnap(after), RULE_AUDIT)
         if (Object.keys(changes).length === 0) return before
         const updated = await updateRuleRow(trx, id, after)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'sys_numbering_rule',
           recordId: id,
           recordLabel: updated.name,
@@ -193,19 +216,20 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
     }
   }
 
-  async function deleteRule(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, `${PERM}:delete`)
+  async function deleteRule(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const row = await trx
-        .selectFrom('sys_numbering_rule')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!row) throw new ApiError('not_found', '编号规则不存在')
-      const rule = mapRule(row)
+      const row = await loadAuthorized({
+        db: trx,
+        permit,
+        target: ruleTarget,
+        table: 'sys_numbering_rule',
+        id,
+        forUpdate: true,
+        notFoundMessage: '编号规则不存在',
+      })
+      const rule = mapRule(row as never)
       await trx.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'sys_numbering_rule',
         recordId: id,
         recordLabel: rule.name,
@@ -216,18 +240,23 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
     })
   }
 
-  async function getCounter(actor: Actor, id: string): Promise<Counter> {
-    requirePermission(actor, `${PERM}:read`)
-    const row = await db.selectFrom('sys_numbering_counter').selectAll().where('id', '=', id).executeTakeFirst()
-    if (!row) throw new ApiError('not_found', '编号计数器不存在')
-    return mapCounter(row)
+  async function getCounter(permit: Permit, id: string): Promise<Counter> {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target: counterTarget,
+      table: 'sys_numbering_counter',
+      id,
+      notFoundMessage: '编号计数器不存在',
+    })
+    return mapCounter(row as never)
   }
 
   async function listCounters(
-    actor: Actor,
+    permit: Permit,
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: Counter[] }> {
-    requirePermission(actor, `${PERM}:read`)
+    void permit
     const limit = query.limit === undefined || query.limit === 0 ? 20 : query.limit
     const offset = query.offset ?? 0
     if (limit < 1 || limit > 200 || offset < 0) {
@@ -252,20 +281,21 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
     return { count, results: rows.map(mapCounter) }
   }
 
-  async function updateCounter(actor: Actor, id: string, value: number): Promise<Counter> {
-    requirePermission(actor, `${PERM}:update`)
+  async function updateCounter(permit: Permit, id: string, value: number): Promise<Counter> {
     if (value < 0) {
       throw ApiError.validation('计数器参数不合法', { value: ['不能小于 0'] })
     }
     return withTx(db, async (trx) => {
-      const row = await trx
-        .selectFrom('sys_numbering_counter')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!row) throw new ApiError('not_found', '编号计数器不存在')
-      const before = mapCounter(row)
+      const row = await loadAuthorized({
+        db: trx,
+        permit,
+        target: counterTarget,
+        table: 'sys_numbering_counter',
+        id,
+        forUpdate: true,
+        notFoundMessage: '编号计数器不存在',
+      })
+      const before = mapCounter(row as never)
       const updated = await trx
         .updateTable('sys_numbering_counter')
         .set({ value, updated_at: sql`(now() AT TIME ZONE 'utc')` })
@@ -275,7 +305,7 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
       const after = mapCounter(updated)
       const changes = auditDiff(counterSnap(before), counterSnap(after), COUNTER_AUDIT)
       if (Object.keys(changes).length > 0) {
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'sys_numbering_counter',
           recordId: id,
           recordLabel: after.scopeKey,

@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
 import { createIamService } from '~/modules/iam/index.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { testActor } from '~/platform/authz/testing.ts'
 import { buildTestApp, createPlatformRegistry, testDatabaseUrl } from './helpers.ts'
 
@@ -45,8 +46,15 @@ const SHOP_CODES = [
 run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
   const db = createDb(url!)
   const registry = createPlatformRegistry()
+  const authz = createAuthzEnforcer(registry)
   const iam = createIamService(db, registry)
   const admin = testActor({ superAdmin: true, allCompanies: true })
+  /** 建用户走 IamService：superAdmin 现取一张 sysUsers:create 凭证 */
+  const adminUserPermit = () => {
+    const decision = authz.decideFor(admin, 'sysUsers', 'create')
+    if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+    return decision.permit
+  }
 
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
   const currencyId = crypto.randomUUID()
@@ -239,14 +247,14 @@ run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
       ])
       .execute()
 
-    const planner = await iam.createUser(admin, {
+    const planner = await iam.createUser(adminUserPermit(), {
       username: `planner-${suffix}`,
       name: '计划员',
       roleIds: [plannerRoleId],
       companyIds: [companyId],
     })
     plannerId = planner.user.id
-    const shop = await iam.createUser(admin, {
+    const shop = await iam.createUser(adminUserPermit(), {
       username: `shop-${suffix}`,
       name: '冲压车间经理',
       departmentId: stampDeptId,

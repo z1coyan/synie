@@ -21,12 +21,15 @@ import {
   type QuotationSavedDraft,
 } from './service.ts'
 
+
+/** 编号服务需要 sealed registry（授权归宿解析） */
+const numberingRegistry = createSealedResourceRegistry()
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
 
 run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
   const db = createDb(url!)
-  const quotations = createQuotationService(db, createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry())))
+  const quotations = createQuotationService(db, createNumberingService(db, buildNumberingCatalog(numberingRegistry), numberingRegistry))
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `QD${suffix}`
 

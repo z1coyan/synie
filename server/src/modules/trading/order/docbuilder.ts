@@ -6,7 +6,8 @@
 import { sql } from 'kysely'
 import { decimal } from '@synie/shared'
 import type { DbHandle } from '~/db/tx.ts'
-import { canAccessCompany } from '~/platform/authz/actor.ts'
+import { findAuthorized } from '~/db/load.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { DocBuilder } from '~/platform/printing/docbuilder.ts'
 import {
@@ -136,17 +137,17 @@ interface ItemRow {
   qi_remarks: string | null
 }
 
-export function createSalesOrderDocBuilder(db: DbHandle): DocBuilder {
+export function createSalesOrderDocBuilder(db: DbHandle, registry: Registry): DocBuilder {
+  const target = registry.authzTarget('salOrders')
   return {
     label: () => '销售订单',
-    async buildDocs(actor, ids) {
+    async buildDocs(permit, ids) {
       const result: BuiltDoc[] = []
       for (const id of ids) {
-        const head = await loadHead(db, id)
+        // 行可达性一次编译到 WHERE；不命中与不存在同为 not_found
+        const reachable = await findAuthorized({ db, permit, target, table: 'sal_order', id })
+        const head = reachable ? await loadHead(db, id) : undefined
         if (!head) {
-          throw new ApiError('not_found', '部分单据不存在或无权查看')
-        }
-        if (!canAccessCompany(actor, head.company_id)) {
           throw new ApiError('not_found', '部分单据不存在或无权查看')
         }
         const items = await loadItems(db, id)
@@ -161,8 +162,9 @@ export function createSalesOrderDocBuilder(db: DbHandle): DocBuilder {
 export function registerSalesOrderDocBuilder(
   printing: { registerDocBuilder: (resource: string, builder: DocBuilder) => void },
   db: DbHandle,
+  registry: Registry,
 ): void {
-  printing.registerDocBuilder('sales.order', createSalesOrderDocBuilder(db))
+  printing.registerDocBuilder('sales.order', createSalesOrderDocBuilder(db, registry))
 }
 
 async function loadHead(db: DbHandle, id: string): Promise<HeadRow | undefined> {

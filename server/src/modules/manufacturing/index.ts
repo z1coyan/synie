@@ -26,6 +26,7 @@ export {
   type ManufacturingSettingService,
   type ManufacturingSetting,
   type ManufacturingUpdate,
+  MFG_RESOURCE_NAME,
 } from './settings.ts'
 
 export function registerManufacturingResources(registry: Registry): void {

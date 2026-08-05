@@ -9,7 +9,7 @@ import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
 import type { DepartmentService } from './department-service.ts'
-import { DEPARTMENT_RESOURCE } from './meta.ts'
+import { DEPARTMENT_RESOURCE, ROLE_MENU_RESOURCE, ROLE_RESOURCE, USER_RESOURCE } from './meta.ts'
 import type { IamService } from './service.ts'
 
 const idParam = z.object({ id: z.string().uuid() })
@@ -74,17 +74,22 @@ const permissionsSchema = z.object({ permissions: z.array(z.string()) }).strict(
 
 const menusSchema = z.object({ menuCodes: z.array(z.string()) }).strict()
 
-export function iamUserRoutes(deps: { auth: AuthService; iam: IamService }) {
-  const { auth, iam } = deps
+/**
+ * 用户路由：逐端点挂 `guard(资源, 动作)`（requireAuth 之后），handler 用 `permitOf(c)` 取凭证。
+ * 重置密码与查看授权未声明独立动作，沿用最接近的已声明动作（update / read）。
+ */
+export function iamUserRoutes(deps: { auth: AuthService; authz: AuthzEnforcer; iam: IamService }) {
+  const { auth, authz, iam } = deps
+  const guard = (action: string) => authz.guard(USER_RESOURCE, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const result = await iam.listUsers(c.get('actor'), toList(c.req.valid('json')))
+    .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
+      const result = await iam.listUsers(permitOf(c), toList(c.req.valid('json')))
       return c.json({ count: result.count, results: result.results.map(userDto) })
     })
-    .post('/', zValidator('json', userCreateSchema, validationHook), async (c) => {
+    .post('/', guard('create'), zValidator('json', userCreateSchema, validationHook), async (c) => {
       const body = c.req.valid('json')
-      const created = await iam.createUser(c.get('actor'), {
+      const created = await iam.createUser(permitOf(c), {
         username: body.username,
         name: body.name,
         email: body.email,
@@ -95,25 +100,31 @@ export function iamUserRoutes(deps: { auth: AuthService; iam: IamService }) {
       c.header('Cache-Control', 'no-store')
       return c.json({ user: userDto(created.user), password: created.password }, 201)
     })
-    .get('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      return c.json(userDto(await iam.getUser(c.get('actor'), c.req.valid('param').id)))
+    .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
+      return c.json(userDto(await iam.getUser(permitOf(c), c.req.valid('param').id)))
     })
-    .get('/:id/access', zValidator('param', idParam, validationHook), async (c) => {
-      return c.json(await iam.userAccess(c.get('actor'), c.req.valid('param').id))
+    .get('/:id/access', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
+      return c.json(await iam.userAccess(permitOf(c), c.req.valid('param').id))
     })
-    .post('/:id/reset-password', zValidator('param', idParam, validationHook), async (c) => {
-      const password = await iam.resetPassword(c.get('actor'), c.req.valid('param').id)
+    .post(
+      '/:id/reset-password',
+      guard('update'),
+      zValidator('param', idParam, validationHook),
+      async (c) => {
+      const password = await iam.resetPassword(permitOf(c), c.req.valid('param').id)
       c.header('Cache-Control', 'no-store')
       return c.json({ password })
-    })
+      },
+    )
     .patch(
       '/:id',
+      guard('update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', userUpdateSchema, validationHook),
       async (c) => {
         const raw = (await c.req.json()) as Record<string, unknown>
         const body = c.req.valid('json')
-        const item = await iam.updateUser(c.get('actor'), c.req.valid('param').id, {
+        const item = await iam.updateUser(permitOf(c), c.req.valid('param').id, {
           name: body.name,
           namePresent: Object.prototype.hasOwnProperty.call(raw, 'name'),
           email: body.email,
@@ -128,56 +139,69 @@ export function iamUserRoutes(deps: { auth: AuthService; iam: IamService }) {
         return c.json(userDto(item))
       },
     )
-    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      await iam.deleteUser(c.get('actor'), c.req.valid('param').id)
+    .delete('/:id', guard('delete'), zValidator('param', idParam, validationHook), async (c) => {
+      await iam.deleteUser(permitOf(c), c.req.valid('param').id)
       return c.body(null, 204)
     })
 }
 
-export function iamRoleRoutes(deps: { auth: AuthService; iam: IamService }) {
-  const { auth, iam } = deps
+/**
+ * 角色路由：角色本体走 sys.role:*；菜单授权走 sys.role_menu:*（与迁移前门控一致）。
+ * 角色权限 sync 沿用 sys.role:update（sys.role_permission:* 是矩阵目录用码，不改门控）。
+ */
+export function iamRoleRoutes(deps: { auth: AuthService; authz: AuthzEnforcer; iam: IamService }) {
+  const { auth, authz, iam } = deps
+  const guard = (action: string) => authz.guard(ROLE_RESOURCE, action)
+  const menuGuard = (action: string) => authz.guard(ROLE_MENU_RESOURCE, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const result = await iam.listRoles(c.get('actor'), toList(c.req.valid('json')))
+    .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
+      const result = await iam.listRoles(permitOf(c), toList(c.req.valid('json')))
       return c.json({ count: result.count, results: result.results.map(roleDto) })
     })
-    .post('/', zValidator('json', roleCreateSchema, validationHook), async (c) => {
+    .post('/', guard('create'), zValidator('json', roleCreateSchema, validationHook), async (c) => {
       const body = c.req.valid('json')
-      const item = await iam.createRole(c.get('actor'), body)
+      const item = await iam.createRole(permitOf(c), body)
       return c.json(roleDto(item), 201)
     })
-    .get('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      return c.json(roleDto(await iam.getRole(c.get('actor'), c.req.valid('param').id)))
+    .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
+      return c.json(roleDto(await iam.getRole(permitOf(c), c.req.valid('param').id)))
     })
-    .get('/:id/permissions', zValidator('param', idParam, validationHook), async (c) => {
-      const rows = await iam.rolePermissions(c.get('actor'), c.req.valid('param').id)
+    .get(
+      '/:id/permissions',
+      guard('read'),
+      zValidator('param', idParam, validationHook),
+      async (c) => {
+      const rows = await iam.rolePermissions(permitOf(c), c.req.valid('param').id)
       return c.json({ rows })
-    })
+      },
+    )
     .put(
       '/:id/permissions',
+      guard('update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', permissionsSchema, validationHook),
       async (c) => {
         const permissions = await iam.syncRolePermissions(
-          c.get('actor'),
+          permitOf(c),
           c.req.valid('param').id,
           c.req.valid('json').permissions,
         )
         return c.json({ permissions })
       },
     )
-    .get('/:id/menus', zValidator('param', idParam, validationHook), async (c) => {
-      const menuCodes = await iam.roleMenus(c.get('actor'), c.req.valid('param').id)
+    .get('/:id/menus', menuGuard('read'), zValidator('param', idParam, validationHook), async (c) => {
+      const menuCodes = await iam.roleMenus(permitOf(c), c.req.valid('param').id)
       return c.json({ menuCodes })
     })
     .put(
       '/:id/menus',
+      menuGuard('update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', menusSchema, validationHook),
       async (c) => {
         const menuCodes = await iam.syncRoleMenus(
-          c.get('actor'),
+          permitOf(c),
           c.req.valid('param').id,
           c.req.valid('json').menuCodes,
         )
@@ -186,15 +210,16 @@ export function iamRoleRoutes(deps: { auth: AuthService; iam: IamService }) {
     )
     .patch(
       '/:id',
+      guard('update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', roleUpdateSchema, validationHook),
       async (c) => {
-        const item = await iam.updateRole(c.get('actor'), c.req.valid('param').id, c.req.valid('json'))
+        const item = await iam.updateRole(permitOf(c), c.req.valid('param').id, c.req.valid('json'))
         return c.json(roleDto(item))
       },
     )
-    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      await iam.deleteRole(c.get('actor'), c.req.valid('param').id)
+    .delete('/:id', guard('delete'), zValidator('param', idParam, validationHook), async (c) => {
+      await iam.deleteRole(permitOf(c), c.req.valid('param').id)
       return c.body(null, 204)
     })
 }

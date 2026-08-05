@@ -14,7 +14,7 @@ import { ApiError } from '~/platform/http/errors.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { createDepartmentService } from './department-service.ts'
 import { createIamService } from './service.ts'
-import { DEPARTMENT_RESOURCE } from './meta.ts'
+import { DEPARTMENT_RESOURCE, USER_RESOURCE } from './meta.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -36,6 +36,13 @@ run('PG 集成（部门）', () => {
   /** 取一张真凭证（走 decide，与路由 guard 同一路径） */
   function permit(action: string, actorInput: Parameters<typeof testActor>[0]): Permit {
     const decision = authz.decideFor(testActor(actorInput), DEPARTMENT_RESOURCE, action)
+    if (decision.outcome !== 'permit') throw new Error(`夹具应当 permit: ${action}`)
+    return decision.permit
+  }
+
+  /** 用户资源（global）的 superAdmin 凭证：部门挂接经 IamService 写侧校验 */
+  function userPermit(action: string): Permit {
+    const decision = authz.decideFor(testActor({ superAdmin: true }), USER_RESOURCE, action)
     if (decision.outcome !== 'permit') throw new Error(`夹具应当 permit: ${action}`)
     return decision.permit
   }
@@ -264,19 +271,18 @@ run('PG 集成（部门）', () => {
         name: '待停用部',
         companyId: companyA,
       })
-      const actor = testActor({ superAdmin: true })
-      await iam.updateUser(actor, userId, { departmentId: dept.id, departmentIdPresent: true })
+      await iam.updateUser(userPermit('update'), userId, { departmentId: dept.id, departmentIdPresent: true })
 
       await departments.update(inA('update'), dept.id, { enabled: false })
 
       // 存量挂接保留：改别的字段不受停用影响
-      const kept = await iam.updateUser(actor, userId, { name: '部门测试员2', namePresent: true })
+      const kept = await iam.updateUser(userPermit('update'), userId, { name: '部门测试员2', namePresent: true })
       expect(kept.departmentId).toBe(dept.id)
 
       // 换到停用部门 → 校验失败
-      await iam.updateUser(actor, userId, { departmentId: null, departmentIdPresent: true })
+      await iam.updateUser(userPermit('update'), userId, { departmentId: null, departmentIdPresent: true })
       const err = await iam
-        .updateUser(actor, userId, { departmentId: dept.id, departmentIdPresent: true })
+        .updateUser(userPermit('update'), userId, { departmentId: dept.id, departmentIdPresent: true })
         .catch((e: unknown) => e)
       expect((err as ApiError).code).toBe('validation')
       expect(JSON.stringify((err as ApiError).fields)).toContain('停用')
@@ -288,25 +294,24 @@ run('PG 集成（部门）', () => {
         name: '有名字的部',
         companyId: companyA,
       })
-      const actor = testActor({ superAdmin: true })
-      const updated = await iam.updateUser(actor, userId, {
+      const updated = await iam.updateUser(userPermit('update'), userId, {
         departmentId: dept.id,
         departmentIdPresent: true,
       })
       expect(updated.department).toEqual({ id: dept.id, name: '有名字的部' })
-      expect((await iam.getUser(actor, userId)).department).toEqual({
+      expect((await iam.getUser(userPermit('read'), userId)).department).toEqual({
         id: dept.id,
         name: '有名字的部',
       })
-      const listed = await iam.listUsers(actor, {
+      const listed = await iam.listUsers(userPermit('read'), {
         limit: 200,
         offset: 0,
         filter: { username: { kind: 'text', op: 'eq', value: `dept-${suffix}` } },
       })
       expect(listed.results[0]?.department).toEqual({ id: dept.id, name: '有名字的部' })
 
-      await iam.updateUser(actor, userId, { departmentId: null, departmentIdPresent: true })
-      expect((await iam.getUser(actor, userId)).department).toBeNull()
+      await iam.updateUser(userPermit('update'), userId, { departmentId: null, departmentIdPresent: true })
+      expect((await iam.getUser(userPermit('read'), userId)).department).toBeNull()
     })
 
     test('部门所在公司不在用户公司授权集内 → 校验失败并提示先授权', async () => {
@@ -316,7 +321,7 @@ run('PG 集成（部门）', () => {
         companyId: companyB,
       })
       const err = await iam
-        .updateUser(testActor({ superAdmin: true }), userId, {
+        .updateUser(userPermit('update'), userId, {
           departmentId: foreign.id,
           departmentIdPresent: true,
         })
@@ -345,11 +350,10 @@ run('PG 集成（部门）', () => {
         name: '有人部',
         companyId: companyA,
       })
-      const actor = testActor({ superAdmin: true })
-      await iam.updateUser(actor, userId, { departmentId: dept.id, departmentIdPresent: true })
+      await iam.updateUser(userPermit('update'), userId, { departmentId: dept.id, departmentIdPresent: true })
       const err = await departments.remove(inA('delete'), dept.id).catch((e: unknown) => e)
       expect((err as ApiError).code).toBe('conflict')
-      await iam.updateUser(actor, userId, { departmentId: null, departmentIdPresent: true })
+      await iam.updateUser(userPermit('update'), userId, { departmentId: null, departmentIdPresent: true })
     })
 
     test('叶子且无人挂接可删；跨公司删除 → not_found', async () => {

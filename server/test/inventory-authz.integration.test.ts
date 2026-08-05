@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
 import { createIamService } from '~/modules/iam/index.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { testActor } from '~/platform/authz/testing.ts'
 import { buildTestApp, createPlatformRegistry, testDatabaseUrl } from './helpers.ts'
 
@@ -50,8 +51,15 @@ const READ_ONLY_CODES = [
 run('PG 集成（库存三单据：公司域授权与语义统一）', () => {
   const db = createDb(url!)
   const registry = createPlatformRegistry()
+  const authz = createAuthzEnforcer(registry)
   const iam = createIamService(db, registry)
   const admin = testActor({ superAdmin: true, allCompanies: true })
+  /** 建用户走 IamService：superAdmin 现取一张 sysUsers:create 凭证 */
+  const adminUserPermit = () => {
+    const decision = authz.decideFor(admin, 'sysUsers', 'create')
+    if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+    return decision.permit
+  }
 
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
   const currencyId = crypto.randomUUID()
@@ -246,21 +254,21 @@ run('PG 集成（库存三单据：公司域授权与语义统一）', () => {
       ])
       .execute()
 
-    const keeper = await iam.createUser(admin, {
+    const keeper = await iam.createUser(adminUserPermit(), {
       username: `keeper-${suffix}`,
       name: '甲库管',
       roleIds: [keeperRoleId],
       companyIds: [companyA],
     })
     keeperId = keeper.user.id
-    const viewer = await iam.createUser(admin, {
+    const viewer = await iam.createUser(adminUserPermit(), {
       username: `viewer-${suffix}`,
       name: '甲只读',
       roleIds: [viewerRoleId],
       companyIds: [companyA],
     })
     viewerId = viewer.user.id
-    const globalUser = await iam.createUser(admin, {
+    const globalUser = await iam.createUser(adminUserPermit(), {
       username: `global-${suffix}`,
       name: '双公司库管',
       roleIds: [globalRoleId],

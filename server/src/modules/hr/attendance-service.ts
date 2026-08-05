@@ -13,9 +13,12 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { hasPermission, requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import type { FileService } from '~/platform/files/service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import { EMPLOYEE_RESOURCE_NAME } from '~/modules/party/meta.ts'
 import type { EmployeeService } from '~/modules/party/party-service.ts'
 import { HR_ATTENDANCE_DAY } from './permissions.ts'
 import { listFromSource } from '~/db/list.ts'
@@ -80,10 +83,12 @@ export interface AttendanceServiceDeps {
   files: FileService
   /** 员工写路径接缝：考勤导入自动建档经 party EmployeeService */
   employeeSeam: Pick<EmployeeService, 'autoCreateForAttendance'>
+  /** 分支内二次授权：自动建档需 hr.employee:create（spec §7） */
+  authz: AuthzEnforcer
 }
 
 export function createAttendanceService(deps: AttendanceServiceDeps) {
-  const { db, files, employeeSeam } = deps
+  const { db, files, employeeSeam, authz } = deps
 
   // ── punches ────────────────────────────────────────────────────────────
 
@@ -269,15 +274,20 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
       const missing = missingAttendanceNos(parsed.rows, employees)
       let autoCreated = 0
       if (input.autoCreateEmployees && missing.length > 0) {
-        if (!hasPermission(actor, 'hr.employee:create')) {
+        // 分支内二次取凭证（导入自动建档需 hr.employee:create），缺码即 403
+        let employeePermit: Permit
+        const decision = authz.decideFor(actor, EMPLOYEE_RESOURCE_NAME, 'create')
+        if (decision.outcome !== 'permit') {
           throw new ApiError(
             'forbidden',
             '无权自动创建员工(需要「员工-新增」权限),可去掉勾选仅导入已匹配的行',
           )
+        } else {
+          employeePermit = decision.permit
         }
         for (const no of missing) {
           try {
-            const emp = await employeeSeam.autoCreateForAttendance(trx, actor, no)
+            const emp = await employeeSeam.autoCreateForAttendance(trx, employeePermit, no)
             employees.set(no, emp.id)
             autoCreated++
           } catch (err) {

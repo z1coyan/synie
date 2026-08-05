@@ -1,4 +1,5 @@
 import type { Kysely } from 'kysely'
+import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import type { DB as Database } from '~/db/types.ts'
 import type { FileService } from '~/platform/files/service.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
@@ -57,6 +58,8 @@ export function createHrServices(
   files: FileService,
   deps: {
     employees: Pick<EmployeeService, 'autoCreateForAttendance'>
+    /** 考勤导入自动建档的分支内二次授权 */
+    authz: AuthzEnforcer
   },
 ) {
   return {
@@ -64,6 +67,7 @@ export function createHrServices(
       db,
       files,
       employeeSeam: deps.employees,
+      authz: deps.authz,
     }),
     payroll: createPayrollService({ db }),
   }

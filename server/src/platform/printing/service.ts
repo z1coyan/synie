@@ -1,9 +1,15 @@
 /**
  * 打印模板主数据 + 渲染门面。
  * 对齐 server-go platform/printing/service.go + render.go。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
+ * 打印的「请求形态派生动作码」（S9：mode + arity → print/batch_print/export）
+ * 在**路由**里派生：先经字段目录把客户端 prefix 解析成 sealed registry 资源，
+ * 再取凭证；本服务不再见到权限码，也不再从客户端 prefix 拼码。
  */
 import { sql, type Kysely } from 'kysely'
-import { listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { loadAuthorized } from '~/db/load.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
@@ -14,8 +20,10 @@ import {
   writeAudit,
 } from '../audit/write.ts'
 import { auditFieldsOf } from '../audit/spec.ts'
-import { hasPermission, requirePermission, type Actor } from '../authz/actor.ts'
+import type { Permit } from '../authz/core/index.ts'
+import type { Actor } from '../authz/actor.ts'
 import { ApiError } from '../http/errors.ts'
+import type { Registry } from '../meta/registry.ts'
 import type { FieldCatalog } from './catalog.ts'
 import type { DocBuilder } from './docbuilder.ts'
 import {
@@ -26,7 +34,7 @@ import {
   type PDFConverter,
 } from './pdf.ts'
 import { ERR_EMPTY_DOCS, renderPages, renderSheets } from './renderer.ts'
-import { printTemplateResourceMeta, PERMISSION_PREFIX } from './meta.ts'
+import { printTemplateResourceMeta, RESOURCE_NAME } from './meta.ts'
 import {
   MAX_RENDER_BATCH,
   PDF_CONTENT_TYPE,
@@ -50,12 +58,15 @@ export interface PrintingServiceDeps {
   db: Kysely<Database>
   files: StoredFileReader
   catalog: FieldCatalog
+  registry: Registry
   /** PDF 转换器由组合根注入；未注入时仅支持 xlsx 导出 */
   converter?: PDFConverter
 }
 
 export function createPrintingService(deps: PrintingServiceDeps) {
   const { db, files, catalog } = deps
+  const templateTarget = deps.registry.authzTarget(RESOURCE_NAME)
+  const TEMPLATE_TABLE = printTemplateResourceMeta().table
   /** DocBuilder 由业务域经 registerDocBuilder 装配，platform 不内置业务表查询 */
   const builders = new Map<string, DocBuilder>()
   let converter: PDFConverter | undefined = deps.converter
@@ -72,11 +83,19 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     return catalog
   }
 
-  async function get(actor: Actor, id: string): Promise<Template> {
-    requirePermission(actor, `${PERMISSION_PREFIX}:read`)
-    return loadTemplate(id)
+  async function get(permit: Permit, id: string): Promise<Template> {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target: templateTarget,
+      table: TEMPLATE_TABLE,
+      id,
+      notFoundMessage: '打印模板不存在',
+    })
+    return mapTemplate(row as never)
   }
 
+  /** 渲染链路取模板：门控已由路由的打印凭证承担，此处只做存在性查找 */
   async function loadTemplate(id: string): Promise<Template> {
     const row = await db
       .selectFrom('sys_print_template')
@@ -87,10 +106,12 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     return mapTemplate(row)
   }
 
-  async function list(actor: Actor, query: TemplateListQuery): Promise<TemplateList> {
-    requirePermission(actor, `${PERMISSION_PREFIX}:read`)
-    return listFromSource({
+  async function list(permit: Permit, query: TemplateListQuery): Promise<TemplateList> {
+    return listAuthorized({
       db,
+      permit,
+      target: templateTarget,
+      alias: TEMPLATE_TABLE,
       resource: printTemplateResourceMeta(),
       source: sql`FROM sys_print_template`,
       select: sql`
@@ -112,14 +133,13 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     })
   }
 
-  async function listUsable(actor: Actor, resource: string): Promise<Template[]> {
+  /** 可用模板：门控（sys.print_template:read 或该资源的 print/export/batch_print）在路由 anyOf */
+  async function listUsable(permit: Permit, resource: string): Promise<Template[]> {
+    void permit
     if (!catalog.get(resource)) {
       throw ApiError.validation(`不支持的资源类型 ${resource}`, {
         resource: ['不在打印字段目录中'],
       })
-    }
-    if (!canUseTemplates(actor, resource)) {
-      throw new ApiError('forbidden', '无权使用该资源的打印模板')
     }
     const rows = await db
       .selectFrom('sys_print_template')
@@ -132,8 +152,7 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     return rows.map(mapTemplate)
   }
 
-  async function create(actor: Actor, input: CreateInput): Promise<Template> {
-    requirePermission(actor, `${PERMISSION_PREFIX}:create`)
+  async function create(permit: Permit, input: CreateInput): Promise<Template> {
     const name = input.name.trim()
     await validateTemplateFile(name, input.resource, input.fileId)
     try {
@@ -152,7 +171,7 @@ export function createPrintingService(deps: PrintingServiceDeps) {
         await syncAttachment(tx, value.id, value.fileId)
         await writeTemplateAudit(
           tx,
-          actor,
+          permit.actor,
           value,
           'create',
           'create',
@@ -165,10 +184,9 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     }
   }
 
-  async function update(actor: Actor, id: string, input: UpdateInput): Promise<Template> {
-    requirePermission(actor, `${PERMISSION_PREFIX}:update`)
+  async function update(permit: Permit, id: string, input: UpdateInput): Promise<Template> {
     return withTx(db, async (tx) => {
-      const before = await lockTemplate(tx, id)
+      const before = await lockTemplate(tx, permit, id)
       const after = { ...before }
       if (input.name !== undefined) after.name = input.name.trim()
       if (input.fileId !== undefined) after.fileId = input.fileId
@@ -198,7 +216,7 @@ export function createPrintingService(deps: PrintingServiceDeps) {
         if (before.fileId !== value.fileId) {
           await syncAttachment(tx, value.id, value.fileId)
         }
-        await writeTemplateAudit(tx, actor, value, 'update', 'update', changes)
+        await writeTemplateAudit(tx, permit.actor, value, 'update', 'update', changes)
         return value
       } catch (err) {
         throw templateWriteError('更新打印模板失败', err)
@@ -206,11 +224,10 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     })
   }
 
-  async function setDefault(actor: Actor, id: string): Promise<Template> {
-    requirePermission(actor, `${PERMISSION_PREFIX}:update`)
+  async function setDefault(permit: Permit, id: string): Promise<Template> {
     return withTx(db, async (tx) => {
       await sql`SELECT pg_advisory_xact_lock(hashtext('sys_print_template_default'))`.execute(tx)
-      const target = await lockTemplate(tx, id)
+      const target = await lockTemplate(tx, permit, id)
       const previous = await tx
         .selectFrom('sys_print_template')
         .selectAll()
@@ -232,7 +249,7 @@ export function createPrintingService(deps: PrintingServiceDeps) {
         const after = { ...value, isDefault: false }
         await writeTemplateAudit(
           tx,
-          actor,
+          permit.actor,
           after,
           'update',
           'unset_default',
@@ -254,7 +271,7 @@ export function createPrintingService(deps: PrintingServiceDeps) {
           const value = mapTemplate(row)
           await writeTemplateAudit(
             tx,
-            actor,
+            permit.actor,
             value,
             'update',
             'set_default',
@@ -269,11 +286,10 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     })
   }
 
-  async function unsetDefault(actor: Actor, id: string): Promise<Template> {
-    requirePermission(actor, `${PERMISSION_PREFIX}:update`)
+  async function unsetDefault(permit: Permit, id: string): Promise<Template> {
     return withTx(db, async (tx) => {
       await sql`SELECT pg_advisory_xact_lock(hashtext('sys_print_template_default'))`.execute(tx)
-      const before = await lockTemplate(tx, id)
+      const before = await lockTemplate(tx, permit, id)
       if (!before.isDefault) return before
       try {
         const row = await tx
@@ -288,7 +304,7 @@ export function createPrintingService(deps: PrintingServiceDeps) {
         const after = mapTemplate(row)
         await writeTemplateAudit(
           tx,
-          actor,
+          permit.actor,
           after,
           'update',
           'unset_default',
@@ -301,10 +317,9 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, `${PERMISSION_PREFIX}:delete`)
+  async function remove(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (tx) => {
-      const value = await lockTemplate(tx, id)
+      const value = await lockTemplate(tx, permit, id)
       await tx
         .deleteFrom('sys_attachment')
         .where('owner_type', '=', 'sys_print_template')
@@ -317,7 +332,7 @@ export function createPrintingService(deps: PrintingServiceDeps) {
       }
       await writeTemplateAudit(
         tx,
-        actor,
+        permit.actor,
         value,
         'destroy',
         'destroy',
@@ -326,7 +341,11 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     })
   }
 
-  async function render(actor: Actor, input: RenderInput): Promise<RenderOutput> {
+  /**
+   * 渲染：`permit` 由路由按派生出的打印动作签发（S9），既是门控结果也是数据行过滤器——
+   * 「能打印的行」= 该次授权触达的行集，装配器不再自判公司。
+   */
+  async function render(permit: Permit, input: RenderInput): Promise<RenderOutput> {
     if (input.mode !== RENDER_MODE_PRINT && input.mode !== RENDER_MODE_EXPORT) {
       throw ApiError.validation('mode 须为 print 或 export', {
         mode: ['须为 print 或 export'],
@@ -342,13 +361,6 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     }
     if (input.ids.length > MAX_RENDER_BATCH) {
       throw ApiError.validation('单次最多处理 100 条', { ids: ['单次最多处理 100 条'] })
-    }
-    let action = 'export'
-    if (input.mode === RENDER_MODE_PRINT) {
-      action = input.ids.length > 1 ? 'batch_print' : 'print'
-    }
-    if (!hasPermission(actor, `${input.resource}:${action}`)) {
-      throw new ApiError('forbidden', '无权限执行该操作')
     }
     const builder = builders.get(input.resource)
     if (!builder) {
@@ -374,16 +386,16 @@ export function createPrintingService(deps: PrintingServiceDeps) {
         templateId: ['无法读取模板文件'],
       })
     }
-    return renderWithTemplate(actor, builder, raw, input)
+    return renderWithTemplate(permit, builder, raw, input)
   }
 
   async function renderWithTemplate(
-    actor: Actor,
+    permit: Permit,
     builder: DocBuilder,
     templateRaw: Uint8Array,
     input: RenderInput,
   ): Promise<RenderOutput> {
-    const docs = await builder.buildDocs(actor, input.ids)
+    const docs = await builder.buildDocs(permit, input.ids)
     const filename = renderFilename(builder.label(), docs, input.mode, input.ids.length)
     try {
       if (input.mode === RENDER_MODE_EXPORT) {
@@ -455,6 +467,20 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     catalog.validatePlaceholders(resource, placeholders)
   }
 
+  /** 授权闸 + 行锁：与 loadAuthorized 同一路径，不命中一律 not_found */
+  async function lockTemplate(tx: DbHandle, permit: Permit, id: string): Promise<Template> {
+    const row = await loadAuthorized({
+      db: tx,
+      permit,
+      target: templateTarget,
+      table: TEMPLATE_TABLE,
+      id,
+      forUpdate: true,
+      notFoundMessage: '打印模板不存在',
+    })
+    return mapTemplate(row as never)
+  }
+
   return {
     getCatalog,
     get,
@@ -472,15 +498,6 @@ export function createPrintingService(deps: PrintingServiceDeps) {
 }
 
 export type PrintingService = ReturnType<typeof createPrintingService>
-
-export function canUseTemplates(actor: Actor | null, resource: string): boolean {
-  if (!actor) return false
-  if (hasPermission(actor, `${PERMISSION_PREFIX}:read`)) return true
-  for (const action of ['print', 'export', 'batch_print'] as const) {
-    if (hasPermission(actor, `${resource}:${action}`)) return true
-  }
-  return false
-}
 
 function mapTemplate(row: {
   id: string
@@ -504,16 +521,7 @@ function mapTemplate(row: {
   }
 }
 
-async function lockTemplate(tx: DbHandle, id: string): Promise<Template> {
-  const row = await tx
-    .selectFrom('sys_print_template')
-    .selectAll()
-    .where('id', '=', id)
-    .forUpdate()
-    .executeTakeFirst()
-  if (!row) throw new ApiError('not_found', '打印模板不存在')
-  return mapTemplate(row)
-}
+
 
 async function syncAttachment(tx: DbHandle, templateId: string, fileId: string): Promise<void> {
   await tx

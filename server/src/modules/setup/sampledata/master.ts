@@ -1,5 +1,6 @@
 import { sql } from 'kysely'
 import type { Actor } from '~/platform/authz/actor.ts'
+import { permitFor } from './permit.ts'
 import {
   accountByCode,
   leafCategory,
@@ -87,7 +88,7 @@ async function ensureAccount(
   `.execute(deps.db)
   if (existing.rows[0]) return existing.rows[0].id
   const rootId = await accountByCode(deps.db, companyId, rootCode)
-  const created = await deps.accounts.create(actor, {
+  const created = await deps.accounts.create(permitFor(deps, actor, 'basAccounts', 'create'), {
     code,
     name,
     direction,
@@ -150,7 +151,7 @@ export async function seedMaster(
     { code: 'C05', name: '苏州凯迪电子科技有限公司', short: '凯迪电子' },
     { code: 'C06', name: '广州南控电气有限公司', short: '南控电气' },
   ] as const) {
-    const created = await deps.customers.create(actor, {
+    const created = await deps.customers.create(permitFor(deps, actor, 'salCustomers', 'create'), {
       code: row.code,
       name: row.name,
       shortName: row.short,
@@ -167,7 +168,7 @@ export async function seedMaster(
     { code: 'S05', name: '余姚创新塑业有限公司', short: '创新塑业' },
     { code: 'S06', name: '温州顺达包装有限公司', short: '顺达包装' },
   ] as const) {
-    const created = await deps.suppliers.create(actor, {
+    const created = await deps.suppliers.create(permitFor(deps, actor, 'purSuppliers', 'create'), {
       code: row.code,
       name: row.name,
       shortName: row.short,
@@ -205,7 +206,7 @@ export async function seedMaster(
     { name: '王建军', phone: '13857610003', wage: '240', allowance: '500' },
     { name: '陈晓梅', phone: '13857610004', wage: '200', allowance: '200' },
   ] as const) {
-    const created = await deps.employees.create(actor, {
+    const created = await deps.employees.create(permitFor(deps, actor, 'hrEmployees', 'create'), {
       name: row.name,
       phone: row.phone,
       dailyWage: row.wage,

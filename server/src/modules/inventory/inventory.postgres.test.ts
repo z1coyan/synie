@@ -46,9 +46,9 @@ async function allocCompanyCode(
 run('PG 集成（库存单据状态机与引擎）', () => {
   const db = createDb(url!)
   const registry = createSealedResourceRegistry()
-  const numbering = createNumberingService(db, buildNumberingCatalog(registry))
+  const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
   const authz = createAuthzEnforcer(registry)
-  const companies = createCompanyService(db)
+  const companies = createCompanyService(db, registry)
   const inv = createInventoryServices(db, numbering, registry)
   let actor: Actor = testActor({
     userId: crypto.randomUUID(),
@@ -66,6 +66,18 @@ run('PG 集成（库存单据状态机与引擎）', () => {
    */
   const permit = () => {
     const decision = authz.decideFor(actor, 'invStockDocs', 'read')
+    if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+    return decision.permit
+  }
+  /** 公司是 global 资源；夹具建公司现取凭证（actor.userId 会被 ensureBaseline 改写） */
+  /** 编号规则（global）：夹具建规则现取凭证 */
+  const numberingPermit = () => {
+    const decision = authz.decideFor(actor, 'sysNumberingRules', 'create')
+    if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+    return decision.permit
+  }
+  const companyPermit = () => {
+    const decision = authz.decideFor(actor, 'basCompanies', 'create')
     if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
     return decision.permit
   }
@@ -221,7 +233,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
 
   test('出入库审核/作废 + 调拨发货收货 + 盘点 + 余额', async () => {
     const { currencyId, unitId } = await ensureBaseline()
-    const company = await companies.create(actor, {
+    const company = await companies.create(companyPermit(), {
       code: lettersFrom(suffix, 2),
       name: `库存测公司${suffix}`,
       shortName: `测${suffix.slice(0, 2)}`,
@@ -237,7 +249,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
       .where('enabled', '=', true)
       .executeTakeFirst()
     if (!existingMaterialRule) {
-      const rule = await numbering.create(actor, {
+      const rule = await numbering.create(numberingPermit(), {
         resource: 'base.material',
         name: `T${suffix}物料`,
         segments: [
@@ -370,7 +382,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
   test('状态机：方向锁死/停用仓拦新/已发货不可改删/实收容差/快照兜底', async () => {
     const { currencyId, unitId } = await ensureBaseline()
     const edgeSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
-    const company = await companies.create(actor, {
+    const company = await companies.create(companyPermit(), {
       code: lettersFrom(edgeSuffix, 2),
       name: `边界测公司${edgeSuffix}`,
       shortName: `边${edgeSuffix.slice(0, 2)}`,
@@ -386,7 +398,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
       .where('enabled', '=', true)
       .executeTakeFirst()
     if (!existingRule) {
-      const rule = await numbering.create(actor, {
+      const rule = await numbering.create(numberingPermit(), {
         resource: 'base.material',
         name: `B${edgeSuffix}物料`,
         segments: [
@@ -558,7 +570,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
   test('物料类型准入：非库存类物料不可进手工出入库/调拨/盘点行', async () => {
     const { currencyId, unitId } = await ensureBaseline()
     const typeSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()
-    const company = await companies.create(actor, {
+    const company = await companies.create(companyPermit(), {
       code: await allocCompanyCode(db, `T${typeSuffix}`),
       name: `类型测公司${typeSuffix}`,
       shortName: `类${typeSuffix.slice(0, 2)}`,
@@ -688,7 +700,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
   test('物料类型：默认库存、枚举校验、有库存分录后锁定', async () => {
     const { currencyId, unitId } = await ensureBaseline()
     const lockSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()
-    const company = await companies.create(actor, {
+    const company = await companies.create(companyPermit(), {
       code: await allocCompanyCode(db, `L${lockSuffix}`),
       name: `类型锁公司${lockSuffix}`,
       shortName: `锁${lockSuffix.slice(0, 2)}`,
@@ -757,13 +769,13 @@ run('PG 集成（库存单据状态机与引擎）', () => {
   test('仓库 seedDefaults 幂等 + listOutsourced 按协作方过滤', async () => {
     const { currencyId } = await ensureBaseline()
     const seedSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()
-    const company = await companies.create(actor, {
+    const company = await companies.create(companyPermit(), {
       code: await allocCompanyCode(db, `W${seedSuffix}`),
       name: `仓种子${seedSuffix}`,
       shortName: `仓${seedSuffix.slice(0, 2)}`,
       baseCurrencyId: currencyId,
     })
-    const partner = await companies.create(actor, {
+    const partner = await companies.create(companyPermit(), {
       code: await allocCompanyCode(db, `P${seedSuffix}`),
       name: `协作方${seedSuffix}`,
       shortName: `协${seedSuffix.slice(0, 2)}`,

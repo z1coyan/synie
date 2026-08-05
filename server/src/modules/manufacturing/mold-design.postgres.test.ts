@@ -4,10 +4,19 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { createDb } from '~/db/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createManufacturingServices } from './index.ts'
 import { testActor } from '~/platform/authz/testing.ts'
+
+/** 编号规则（global）：夹具建规则现取凭证（superAdmin → rowFilter 全集） */
+function numberingPermit(actor: Parameters<typeof numberingAuthz.decideFor>[0]) {
+  const decision = numberingAuthz.decideFor(actor, 'sysNumberingRules', 'create')
+  if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+  return decision.permit
+}
+const numberingAuthz = createAuthzEnforcer(createSealedResourceRegistry())
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -15,7 +24,7 @@ const run = url ? describe : describe.skip
 run('PG 集成（模具设计）', () => {
   const db = createDb(url!)
   const registry = createSealedResourceRegistry()
-  const numbering = createNumberingService(db, buildNumberingCatalog(registry))
+  const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
   const mfg = createManufacturingServices(db, numbering, registry)
   const actor: Actor = testActor({
     userId: '',
@@ -94,7 +103,7 @@ run('PG 集成（模具设计）', () => {
       .where('resource', '=', 'base.material')
       .where('enabled', '=', true)
       .execute()
-    const rule = await numbering.create(actor, {
+    const rule = await numbering.create(numberingPermit(actor), {
       resource: 'base.material',
       name: `模具测试物料号-${suffix}`,
       segments: [

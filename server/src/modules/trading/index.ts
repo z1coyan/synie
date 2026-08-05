@@ -82,6 +82,7 @@ export {
   type SalesSettingService,
   type SalesSetting,
   type SalesUpdate,
+  SALES_RESOURCE_NAME,
 } from './settings.ts'
 
 export function registerTradingResources(registry: Registry): void {

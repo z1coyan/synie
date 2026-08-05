@@ -2,6 +2,9 @@
  * 系统设置（sys_setting）+ SettingsService 组合门面。
  * sal/mfg/acc 业务设置声明在各业务域，经 createSettingsService 注入；
  * platform 不 import modules（仅结构类型接收）。
+ *
+ * 授权由平台承担：路由挂 `guard(资源, 动作)`，本门面只收 Permit；
+ * 调度/行情拉取链路的受信任读写走 `systemPermit`（spec §4，杀 null-actor 分支）。
  */
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
@@ -9,8 +12,9 @@ import { withTx } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import { auditDiff, writeAudit } from '../audit/write.ts'
 import { auditFieldsOf, pickAuditFields } from '../audit/spec.ts'
-import { systemResourceMeta } from './meta.ts'
-import type { Actor } from '../authz/actor.ts'
+import { SYS_RESOURCE_NAME, systemResourceMeta } from './meta.ts'
+import type { Permit } from '../authz/core/index.ts'
+import { systemPermit } from '../authz/core/index.ts'
 import { ApiError } from '../http/errors.ts'
 import { createSingleRowSetting } from './single-row.ts'
 
@@ -87,16 +91,16 @@ const SYS_AUDIT = SYS_AUDIT_ALL.filter((name) => !SYS_RUN_AUDIT.includes(name))
 /** 业务域设置服务结构（组合根注入；platform 不 import 具体模块） */
 export interface SettingsDomainDeps {
   sales: {
-    getSales(actor: Actor): Promise<SalesSetting>
-    updateSales(actor: Actor, input: SalesUpdate): Promise<SalesSetting>
+    getSales(permit: Permit): Promise<SalesSetting>
+    updateSales(permit: Permit, input: SalesUpdate): Promise<SalesSetting>
   }
   manufacturing: {
-    getManufacturing(actor: Actor): Promise<ManufacturingSetting>
-    updateManufacturing(actor: Actor, input: ManufacturingUpdate): Promise<ManufacturingSetting>
+    getManufacturing(permit: Permit): Promise<ManufacturingSetting>
+    updateManufacturing(permit: Permit, input: ManufacturingUpdate): Promise<ManufacturingSetting>
   }
   accounting: {
-    getAccounting(actor: Actor): Promise<AccountingSetting>
-    updateAccounting(actor: Actor, input: AccountingUpdate): Promise<AccountingSetting>
+    getAccounting(permit: Permit): Promise<AccountingSetting>
+    updateAccounting(permit: Permit, input: AccountingUpdate): Promise<AccountingSetting>
     ocrConfigured(): Promise<boolean>
   }
 }
@@ -106,7 +110,6 @@ export function createSystemSettingService(db: Kysely<Database>) {
     table: 'sys_setting',
     resource: 'sys_setting',
     notFoundMessage: '系统设置不存在',
-    permissionPrefix: 'sys.setting',
     mapRow: mapSys,
     auditFields: SYS_AUDIT,
     merge(before, input) {
@@ -137,9 +140,9 @@ export function createSystemSettingService(db: Kysely<Database>) {
     },
   })
 
-  /** 写入上次行情拉取摘要（手动/定时共用） */
+  /** 写入上次行情拉取摘要（手动/定时共用；定时侧传 systemPermit） */
   async function recordMarketFetch(
-    actor: Actor | null,
+    permit: Permit,
     summary: string,
   ): Promise<SystemSetting | null> {
     const runes = [...summary]
@@ -161,7 +164,7 @@ export function createSystemSettingService(db: Kysely<Database>) {
       const after = mapSys(updated as unknown as Record<string, unknown>)
       const changes = auditDiff(sysRunSnap(before), sysRunSnap(after), SYS_RUN_AUDIT)
       if (Object.keys(changes).length > 0) {
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'sys_setting',
           recordId: after.id,
           actionType: 'update',
@@ -174,10 +177,10 @@ export function createSystemSettingService(db: Kysely<Database>) {
   }
 
   return {
-    getSystem: (actor: Actor) => inner.get(actor),
-    /** 调度/行情拉取等受信任配置读，不检 sys.setting */
-    loadSystemConfig: () => inner.load(),
-    updateSystem: (actor: Actor, input: SystemUpdate) => inner.update(actor, input),
+    getSystem: (permit: Permit) => inner.get(permit),
+    /** 调度/行情拉取的受信任配置读：主体显式为 system（不再是裸函数约定） */
+    loadSystemConfig: () => inner.load(systemPermit(SYS_RESOURCE_NAME, 'read')),
+    updateSystem: (permit: Permit, input: SystemUpdate) => inner.update(permit, input),
     recordMarketFetch,
   }
 }
@@ -188,21 +191,21 @@ export function createSystemSettingService(db: Kysely<Database>) {
 export function createSettingsService(db: Kysely<Database>, domain: SettingsDomainDeps) {
   const system = createSystemSettingService(db)
   return {
-    getSales: (actor: Actor) => domain.sales.getSales(actor),
-    updateSales: (actor: Actor, input: SalesUpdate) => domain.sales.updateSales(actor, input),
-    getManufacturing: (actor: Actor) => domain.manufacturing.getManufacturing(actor),
-    updateManufacturing: (actor: Actor, input: ManufacturingUpdate) =>
-      domain.manufacturing.updateManufacturing(actor, input),
-    getAccounting: (actor: Actor) => domain.accounting.getAccounting(actor),
-    updateAccounting: (actor: Actor, input: AccountingUpdate) =>
-      domain.accounting.updateAccounting(actor, input),
+    getSales: (permit: Permit) => domain.sales.getSales(permit),
+    updateSales: (permit: Permit, input: SalesUpdate) => domain.sales.updateSales(permit, input),
+    getManufacturing: (permit: Permit) => domain.manufacturing.getManufacturing(permit),
+    updateManufacturing: (permit: Permit, input: ManufacturingUpdate) =>
+      domain.manufacturing.updateManufacturing(permit, input),
+    getAccounting: (permit: Permit) => domain.accounting.getAccounting(permit),
+    updateAccounting: (permit: Permit, input: AccountingUpdate) =>
+      domain.accounting.updateAccounting(permit, input),
     ocrConfigured: () => domain.accounting.ocrConfigured(),
-    getSystem: (actor: Actor) => system.getSystem(actor),
-    /** 调度/行情拉取等受信任配置读，不检 sys.setting */
+    getSystem: (permit: Permit) => system.getSystem(permit),
+    /** 调度/行情拉取的受信任配置读：主体显式为 system */
     loadSystemConfig: () => system.loadSystemConfig(),
-    updateSystem: (actor: Actor, input: SystemUpdate) => system.updateSystem(actor, input),
-    recordMarketFetch: (actor: Actor | null, summary: string) =>
-      system.recordMarketFetch(actor, summary),
+    updateSystem: (permit: Permit, input: SystemUpdate) => system.updateSystem(permit, input),
+    recordMarketFetch: (permit: Permit, summary: string) =>
+      system.recordMarketFetch(permit, summary),
   }
 }
 

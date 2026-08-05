@@ -1,3 +1,10 @@
+/**
+ * 公司（记账主体本身，无公司列 → global 形态）。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、单条 `loadAuthorizedFrom`（与列表共用投影）、写前 `loadAuthorized`。
+ * 公司层级成环/本币启用是领域不变量，留在本文件。
+ */
 import type { ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
@@ -10,11 +17,13 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { listFromSource } from '~/db/list.ts'
-import { companyResourceMeta } from './meta.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
+import { COMPANY_RESOURCE_NAME, companyResourceMeta } from './meta.ts'
 import { seedCompanyDefaultWarehouses } from './warehouse-seed.ts'
 
 export interface Reference {
@@ -51,7 +60,9 @@ export interface UpdateCompanyInput {
   baseCurrencyId?: string
 }
 
-const AUDIT = auditFieldsOf(companyResourceMeta())
+const META = companyResourceMeta()
+const AUDIT = auditFieldsOf(META)
+const TABLE = META.table
 const CODE_RE = /^[A-Za-z]{2}$/
 
 const COMPANY_SOURCE = sql`
@@ -62,40 +73,47 @@ FROM bas_company AS c
 LEFT JOIN bas_company AS p ON p.id = c.parent_id
 JOIN bas_currency AS currency ON currency.id = c.base_currency_id
 ) AS company`
+/** listAuthorized/loadAuthorizedFrom 的别名必须与 COMPANY_SOURCE 的 `AS company` 逐字一致 */
+const COMPANY_ALIAS = 'company'
+const COMPANY_SELECT = sql`SELECT id, code, name, short_name, parent_id, base_currency_id,
+inserted_at, updated_at, parent_name, base_currency_name`
 
-export function createCompanyService(db: Kysely<Database>) {
-  async function get(actor: Actor, id: string): Promise<Company> {
-    requirePermission(actor, 'base.company:read')
-    const row = await sql<CompanyRow>`
-      SELECT id, code, name, short_name, parent_id, base_currency_id,
-             inserted_at, updated_at, parent_name, base_currency_name
-      ${COMPANY_SOURCE}
-      WHERE id = ${id}
-    `.execute(db)
-    const first = row.rows[0]
-    if (!first) throw new ApiError('not_found', '公司不存在')
-    return mapJoined(first)
+export function createCompanyService(db: Kysely<Database>, registry: Registry) {
+  const target = registry.authzTarget(COMPANY_RESOURCE_NAME)
+
+  async function get(permit: Permit, id: string): Promise<Company> {
+    return loadAuthorizedFrom({
+      db,
+      permit,
+      target,
+      alias: COMPANY_ALIAS,
+      source: COMPANY_SOURCE,
+      select: COMPANY_SELECT,
+      id,
+      mapRow: (r) => mapJoined(r as unknown as CompanyRow),
+      notFoundMessage: '公司不存在',
+    })
   }
 
   async function list(
-    actor: Actor,
+    permit: Permit,
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: Company[] }> {
-    requirePermission(actor, 'base.company:read')
-    return listFromSource({
+    return listAuthorized({
       db,
-      resource: companyResourceMeta(),
+      permit,
+      target,
+      alias: COMPANY_ALIAS,
+      resource: META,
       source: COMPANY_SOURCE,
-      select: sql`SELECT id, code, name, short_name, parent_id, base_currency_id,
-inserted_at, updated_at, parent_name, base_currency_name`,
+      select: COMPANY_SELECT,
       defaultOrder: sql`"code" ASC, "id" ASC`,
       query,
       mapRow: (r) => mapJoined(r as unknown as CompanyRow),
     })
   }
 
-  async function create(actor: Actor, input: CreateCompanyInput): Promise<Company> {
-    requirePermission(actor, 'base.company:create')
+  async function create(permit: Permit, input: CreateCompanyInput): Promise<Company> {
     const normalized = validateCreate(input)
     return withTx(db, async (trx) => {
       await validateCurrency(trx, normalized.baseCurrencyId)
@@ -113,7 +131,7 @@ inserted_at, updated_at, parent_name, base_currency_name`,
           .returning('id')
           .executeTakeFirstOrThrow()
         const item = await getInTx(trx, inserted.id)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'bas_company',
           recordId: item.id,
           recordLabel: item.name,
@@ -121,7 +139,7 @@ inserted_at, updated_at, parent_name, base_currency_name`,
           actionName: 'create',
           changes: auditCreated(snapshot(item), AUDIT),
         })
-        await seedCompanyDefaultWarehouses(trx, actor, item.id, item.code)
+        await seedCompanyDefaultWarehouses(trx, permit.actor, item.id, item.code)
         return item
       } catch (err) {
         if (err instanceof ApiError) throw err
@@ -132,17 +150,20 @@ inserted_at, updated_at, parent_name, base_currency_name`,
     })
   }
 
-  async function update(actor: Actor, id: string, input: UpdateCompanyInput): Promise<Company> {
-    requirePermission(actor, 'base.company:update')
+  async function update(permit: Permit, id: string, input: UpdateCompanyInput): Promise<Company> {
     validateUpdate(input)
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('bas_company')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '公司不存在')
+      const locked = lockedRow(
+        await loadAuthorized({
+          db: trx,
+          permit,
+          target,
+          table: TABLE,
+          id,
+          forUpdate: true,
+          notFoundMessage: '公司不存在',
+        }),
+      )
       const before = {
         id: locked.id,
         code: locked.code,
@@ -186,7 +207,7 @@ inserted_at, updated_at, parent_name, base_currency_name`,
           .where('id', '=', id)
           .execute()
         const item = await getInTx(trx, id)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'bas_company',
           recordId: item.id,
           recordLabel: item.name,
@@ -204,16 +225,19 @@ inserted_at, updated_at, parent_name, base_currency_name`,
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'base.company:delete')
+  async function remove(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('bas_company')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '公司不存在')
+      const locked = lockedRow(
+        await loadAuthorized({
+          db: trx,
+          permit,
+          target,
+          table: TABLE,
+          id,
+          forUpdate: true,
+          notFoundMessage: '公司不存在',
+        }),
+      )
       const item = {
         id: locked.id,
         code: locked.code,
@@ -235,7 +259,7 @@ inserted_at, updated_at, parent_name, base_currency_name`,
           { code: '23503', message: '公司已被业务数据引用,不可删除' },
         ])
       }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'bas_company',
         recordId: item.id,
         recordLabel: item.name,
@@ -259,6 +283,20 @@ inserted_at, updated_at, parent_name, base_currency_name`,
 }
 
 export type CompanyService = ReturnType<typeof createCompanyService>
+
+/** loadAuthorized 返回裸行（平台层不承担领域投影）；此处只做写路径需要的列收窄 */
+function lockedRow(row: Record<string, unknown>): {
+  id: string
+  code: string
+  name: string
+  short_name: string
+  parent_id: string | null
+  base_currency_id: string
+  inserted_at: Date | string
+  updated_at: Date | string
+} {
+  return row as never
+}
 
 async function getInTx(trx: DbHandle, id: string): Promise<Company> {
   const row = await sql<CompanyRow>`

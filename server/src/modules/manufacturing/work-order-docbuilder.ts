@@ -3,9 +3,10 @@
  * 键名对齐打印字段目录（db 列名 / relation.field）。
  */
 import { sql } from 'kysely'
+import { findAuthorized } from '~/db/load.ts'
 import type { DbHandle } from '~/db/tx.ts'
-import { canAccessCompany } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import type { DocBuilder } from '~/platform/printing/docbuilder.ts'
 import {
   enumLabel,
@@ -17,6 +18,7 @@ import {
   formatText,
 } from '~/platform/printing/format.ts'
 import type { BuiltDoc, PrintDoc } from '~/platform/printing/types.ts'
+import { WORK_ORDER_RESOURCE } from './work-order-service.ts'
 
 const WO_STATUS_LABELS: Record<string, string> = {
   in_progress: '进行中',
@@ -84,17 +86,23 @@ interface ByproductRow {
   u_symbol: string | null
 }
 
-export function createWorkOrderDocBuilder(db: DbHandle): DocBuilder {
+export function createWorkOrderDocBuilder(db: DbHandle, registry: Registry): DocBuilder {
+  const target = registry.authzTarget(WORK_ORDER_RESOURCE)
   return {
     label: () => '生产工单',
-    async buildDocs(actor, ids) {
+    async buildDocs(permit, ids) {
       const result: BuiltDoc[] = []
       for (const id of ids) {
-        const head = await loadHead(db, id)
+        // 行可达性一次编译到 WHERE（公司/部门/属主）；不命中与不存在同为 not_found
+        const reachable = await findAuthorized({
+          db,
+          permit,
+          target,
+          table: 'mfg_work_order',
+          id,
+        })
+        const head = reachable ? await loadHead(db, id) : undefined
         if (!head) {
-          throw new ApiError('not_found', '部分单据不存在或无权查看')
-        }
-        if (!canAccessCompany(actor, head.company_id)) {
           throw new ApiError('not_found', '部分单据不存在或无权查看')
         }
         const [components, routes, byproducts] = await Promise.all([
@@ -115,8 +123,9 @@ export function createWorkOrderDocBuilder(db: DbHandle): DocBuilder {
 export function registerWorkOrderDocBuilder(
   printing: { registerDocBuilder: (resource: string, builder: DocBuilder) => void },
   db: DbHandle,
+  registry: Registry,
 ): void {
-  printing.registerDocBuilder('mfg.work_order', createWorkOrderDocBuilder(db))
+  printing.registerDocBuilder('mfg.work_order', createWorkOrderDocBuilder(db, registry))
 }
 
 async function loadHead(db: DbHandle, id: string): Promise<HeadRow | undefined> {

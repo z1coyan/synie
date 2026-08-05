@@ -10,11 +10,14 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
+import { systemPermit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import type { SettingsService } from '~/platform/settings/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { findAuthorized, loadAuthorized } from '~/db/load.ts'
 import {
   compactError,
   createPublicMarketClient,
@@ -24,8 +27,8 @@ import {
   type SettlementPriceClient,
 } from './fetch.ts'
 import {
-  INSTRUMENT_PERMISSION_PREFIX,
-  PRICE_POINT_PERMISSION_PREFIX,
+  INSTRUMENT_RESOURCE_NAME,
+  PRICE_POINT_RESOURCE_NAME,
   instrumentResourceMeta,
   pricePointResourceMeta,
 } from './meta.ts'
@@ -145,9 +148,22 @@ export interface RefreshResult {
   count: number
 }
 
-const INSTRUMENT_AUDIT = auditFieldsOf(instrumentResourceMeta())
+const INSTRUMENT_META = instrumentResourceMeta()
+const POINT_META = pricePointResourceMeta()
+const INSTRUMENT_TABLE = INSTRUMENT_META.table
+const POINT_TABLE = POINT_META.table
 
-const POINT_AUDIT = auditFieldsOf(pricePointResourceMeta())
+const INSTRUMENT_AUDIT = auditFieldsOf(INSTRUMENT_META)
+
+const POINT_AUDIT = auditFieldsOf(POINT_META)
+
+/**
+ * 调度器的系统主体凭证（spec §4：杀 null-actor 分支）。
+ * 价点无 created_by_id 外键，可安全用 system 主体落库；调度器在 jobs 侧构造。
+ */
+export function marketSchedulerPermit(): Permit {
+  return systemPermit(PRICE_POINT_RESOURCE_NAME, 'create')
+}
 
 const WRITE_MAPPINGS = [
   { code: '23505', constraint: 'market_instrument_unique_code', message: '行情品种编码已存在' },
@@ -161,6 +177,7 @@ const WRITE_MAPPINGS = [
 
 export interface MarketServiceDeps {
   settings: SettingsService
+  registry: Registry
 }
 
 /**
@@ -169,28 +186,33 @@ export interface MarketServiceDeps {
  */
 export function createMarketService(db: Kysely<Database>, deps: MarketServiceDeps) {
   const { settings } = deps
+  const instrumentTarget = deps.registry.authzTarget(INSTRUMENT_RESOURCE_NAME)
+  const pointTarget = deps.registry.authzTarget(PRICE_POINT_RESOURCE_NAME)
 
   // ── 品种 ──────────────────────────────────────────────
 
-  async function getInstrument(actor: Actor, id: string): Promise<MarketInstrument> {
-    requirePermission(actor, `${INSTRUMENT_PERMISSION_PREFIX}:read`)
-    const row = await db
-      .selectFrom('bas_market_instrument')
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst()
-    if (!row) throw new ApiError('not_found', '行情品种不存在')
-    return mapInstrument(row)
+  async function getInstrument(permit: Permit, id: string): Promise<MarketInstrument> {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target: instrumentTarget,
+      table: INSTRUMENT_TABLE,
+      id,
+      notFoundMessage: '行情品种不存在',
+    })
+    return mapInstrument(row as never)
   }
 
   async function listInstruments(
-    actor: Actor,
+    permit: Permit,
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: MarketInstrument[] }> {
-    requirePermission(actor, `${INSTRUMENT_PERMISSION_PREFIX}:read`)
-    return listFromSource({
+    return listAuthorized({
       db,
-      resource: instrumentResourceMeta(),
+      permit,
+      target: instrumentTarget,
+      alias: INSTRUMENT_TABLE,
+      resource: INSTRUMENT_META,
       source: sql` FROM bas_market_instrument`,
       select: sql`SELECT id,code,name,source_type,default_price_kind,active,fetch_enabled,
 external_last_code,external_product_group,note,currency_id,unit_id,inserted_at,updated_at`,
@@ -218,10 +240,9 @@ external_last_code,external_product_group,note,currency_id,unit_id,inserted_at,u
   }
 
   async function createInstrument(
-    actor: Actor,
+    permit: Permit,
     input: InstrumentCreate,
   ): Promise<MarketInstrument> {
-    requirePermission(actor, `${INSTRUMENT_PERMISSION_PREFIX}:create`)
     const normalized = normalizeInstrument(
       input.code,
       input.name,
@@ -267,7 +288,7 @@ external_last_code,external_product_group,note,currency_id,unit_id,inserted_at,u
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapInstrument(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'bas_market_instrument',
           recordId: item.id,
           recordLabel: item.name,
@@ -283,20 +304,21 @@ external_last_code,external_product_group,note,currency_id,unit_id,inserted_at,u
   }
 
   async function updateInstrument(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: InstrumentUpdate,
   ): Promise<MarketInstrument> {
-    requirePermission(actor, `${INSTRUMENT_PERMISSION_PREFIX}:update`)
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('bas_market_instrument')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '行情品种不存在')
-      const before = mapInstrument(locked)
+      const locked = await loadAuthorized({
+        db: trx,
+        permit,
+        target: instrumentTarget,
+        table: INSTRUMENT_TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '行情品种不存在',
+      })
+      const before = mapInstrument(locked as never)
 
       let name = before.name
       let kind = before.defaultPriceKind.toLowerCase()
@@ -363,7 +385,7 @@ external_last_code,external_product_group,note,currency_id,unit_id,inserted_at,u
           INSTRUMENT_AUDIT,
         )
         if (Object.keys(changes).length > 0) {
-          await writeAudit(trx, actor, {
+          await writeAudit(trx, permit.actor, {
             resource: 'bas_market_instrument',
             recordId: item.id,
             recordLabel: item.name,
@@ -379,17 +401,18 @@ external_last_code,external_product_group,note,currency_id,unit_id,inserted_at,u
     })
   }
 
-  async function deleteInstrument(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, `${INSTRUMENT_PERMISSION_PREFIX}:delete`)
+  async function deleteInstrument(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('bas_market_instrument')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '行情品种不存在')
-      const item = mapInstrument(locked)
+      const locked = await loadAuthorized({
+        db: trx,
+        permit,
+        target: instrumentTarget,
+        table: INSTRUMENT_TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '行情品种不存在',
+      })
+      const item = mapInstrument(locked as never)
       const hasPoints = await trx
         .selectFrom('bas_market_price_point')
         .select('id')
@@ -400,7 +423,7 @@ external_last_code,external_product_group,note,currency_id,unit_id,inserted_at,u
       }
       try {
         await trx.deleteFrom('bas_market_instrument').where('id', '=', id).execute()
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'bas_market_instrument',
           recordId: item.id,
           recordLabel: item.name,
@@ -416,25 +439,28 @@ external_last_code,external_product_group,note,currency_id,unit_id,inserted_at,u
 
   // ── 价点 ──────────────────────────────────────────────
 
-  async function getPricePoint(actor: Actor, id: string): Promise<MarketPricePoint> {
-    requirePermission(actor, `${PRICE_POINT_PERMISSION_PREFIX}:read`)
-    const row = await db
-      .selectFrom('bas_market_price_point')
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst()
-    if (!row) throw new ApiError('not_found', '行情价点不存在')
-    return mapPoint(row)
+  async function getPricePoint(permit: Permit, id: string): Promise<MarketPricePoint> {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target: pointTarget,
+      table: POINT_TABLE,
+      id,
+      notFoundMessage: '行情价点不存在',
+    })
+    return mapPoint(row as never)
   }
 
   async function listPricePoints(
-    actor: Actor,
+    permit: Permit,
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: MarketPricePoint[] }> {
-    requirePermission(actor, `${PRICE_POINT_PERMISSION_PREFIX}:read`)
-    return listFromSource({
+    return listAuthorized({
       db,
-      resource: pricePointResourceMeta(),
+      permit,
+      target: pointTarget,
+      alias: POINT_TABLE,
+      resource: POINT_META,
       source: sql` FROM bas_market_price_point`,
       select: sql`SELECT id,observed_at,price,price_kind,source,is_voided,note,
 instrument_id,currency_id,unit_id,inserted_at,updated_at`,
@@ -459,11 +485,9 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
   }
 
   async function createPricePoint(
-    actor: Actor | null,
+    permit: Permit,
     input: PricePointCreate,
   ): Promise<MarketPricePoint> {
-    // 调度器/拉取 seam 可传 null actor；HTTP 入口带 actor 时检 create
-    if (actor) requirePermission(actor, `${PRICE_POINT_PERMISSION_PREFIX}:create`)
     const missing: Record<string, string[]> = {}
     if (!input.observedAt || Number.isNaN(input.observedAt.getTime())) {
       missing.observedAt = ['不能为空']
@@ -528,7 +552,7 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapPoint(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'bas_market_price_point',
           recordId: item.id,
           actionType: 'create',
@@ -542,17 +566,18 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
     })
   }
 
-  async function voidPricePoint(actor: Actor, id: string): Promise<MarketPricePoint> {
-    requirePermission(actor, `${PRICE_POINT_PERMISSION_PREFIX}:void`)
+  async function voidPricePoint(permit: Permit, id: string): Promise<MarketPricePoint> {
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('bas_market_price_point')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '行情价点不存在')
-      const before = mapPoint(locked)
+      const locked = await loadAuthorized({
+        db: trx,
+        permit,
+        target: pointTarget,
+        table: POINT_TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '行情价点不存在',
+      })
+      const before = mapPoint(locked as never)
       if (before.isVoided) {
         throw ApiError.validation('价点已作废', { isVoided: ['价点已作废'] })
       }
@@ -569,7 +594,7 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
           .executeTakeFirstOrThrow()
         const item = mapPoint(updated)
         const changes = auditDiff(pointSnapshot(before), pointSnapshot(item), POINT_AUDIT)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'bas_market_price_point',
           recordId: item.id,
           actionType: 'update',
@@ -588,18 +613,25 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
   /**
    * ≤ at 的最近一条未作废价点；priceKind 缺省回落品种默认。
    * 无点 → not_found；品种不存在 → not_found（instrument）。
+   *
+   * 跨模块受信任读（定价链路取行情）：主体显式为 system（systemPermit），
+   * 取代「裸函数即受信任」的隐式约定；调用方的业务码覆盖鉴权。
    */
   async function takeQuote(
     instrumentId: string,
     at: Date,
     priceKind?: string | null,
   ): Promise<MarketPricePoint> {
-    const inst = await db
-      .selectFrom('bas_market_instrument')
-      .select(['id', 'default_price_kind'])
-      .where('id', '=', instrumentId)
-      .executeTakeFirst()
-    if (!inst) throw new ApiError('not_found', '行情品种不存在')
+    const trusted = systemPermit(INSTRUMENT_RESOURCE_NAME, 'read')
+    const instRow = await findAuthorized({
+      db,
+      permit: trusted,
+      target: instrumentTarget,
+      table: INSTRUMENT_TABLE,
+      id: instrumentId,
+    })
+    if (!instRow) throw new ApiError('not_found', '行情品种不存在')
+    const inst = { default_price_kind: String(instRow.default_price_kind) }
     let kind = inst.default_price_kind
     if (priceKind != null && priceKind.trim() !== '') {
       kind = priceKind.trim().toLowerCase()
@@ -641,8 +673,9 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
 
   // ── 图区 ──────────────────────────────────────────────
 
-  async function chartInstruments(actor: Actor): Promise<ChartInstrument[]> {
-    requirePermission(actor, `${PRICE_POINT_PERMISSION_PREFIX}:read`)
+  async function chartInstruments(permit: Permit): Promise<ChartInstrument[]> {
+    // 图区是跨行聚合投影：码级门控由路由 guard 承担，行过滤不适用（global 资源无公司列）
+    void permit
     const rows = await sql<{
       id: string
       code: string
@@ -675,13 +708,13 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
   }
 
   async function priceSeries(
-    actor: Actor,
+    permit: Permit,
     ids: string[],
     priceKind: string,
     from: Date,
     to: Date,
   ): Promise<PriceSeries> {
-    requirePermission(actor, `${PRICE_POINT_PERMISSION_PREFIX}:read`)
+    void permit
     const unique: string[] = []
     const seen = new Set<string>()
     for (const id of ids) {
@@ -805,14 +838,12 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
   // ── 拉取 ──────────────────────────────────────────────
 
   async function refresh(
-    actor: Actor | null,
+    permit: Permit,
     instrumentId: string | null | undefined,
     now = new Date(),
     lastClient?: LastPriceClient,
     settlementClient?: SettlementPriceClient,
   ): Promise<RefreshResult> {
-    // 调度器可传 null；HTTP 手动刷新带 actor 时检 create
-    if (actor) requirePermission(actor, `${PRICE_POINT_PERMISSION_PREFIX}:create`)
     const client = lastClient ?? createPublicMarketClient()
     const settleClient = settlementClient ?? createPublicMarketClient()
     const instruments = await fetchableInstruments(instrumentId ?? null)
@@ -821,18 +852,18 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
       system.marketFetchSettlementEnabled && pastSettlementWindow(now)
     const items: RefreshItem[] = []
     for (const instrument of instruments) {
-      items.push(await fetchLast(actor, instrument, now, client))
+      items.push(await fetchLast(permit, instrument, now, client))
       if (trySettlement) {
-        items.push(await fetchSettlement(actor, instrument, now, settleClient))
+        items.push(await fetchSettlement(permit, instrument, now, settleClient))
       }
     }
     const result: RefreshResult = { items, count: items.length }
-    await settings.recordMarketFetch(actor, summarizeRefresh('手动刷新', items))
+    await settings.recordMarketFetch(permit, summarizeRefresh('手动刷新', items))
     return result
   }
 
   async function refreshLasts(
-    actor: Actor | null,
+    permit: Permit,
     instrumentId: string | null | undefined,
     now: Date,
     lastClient?: LastPriceClient,
@@ -841,17 +872,17 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
     const instruments = await fetchableInstruments(instrumentId ?? null)
     const items: RefreshItem[] = []
     for (const instrument of instruments) {
-      items.push(await fetchLast(actor, instrument, now, client))
+      items.push(await fetchLast(permit, instrument, now, client))
     }
     const result: RefreshResult = { items, count: items.length }
     if (items.length > 0) {
-      await settings.recordMarketFetch(actor, summarizeRefresh('定时最新价', items))
+      await settings.recordMarketFetch(permit, summarizeRefresh('定时最新价', items))
     }
     return result
   }
 
   async function refreshSettlements(
-    actor: Actor | null,
+    permit: Permit,
     instrumentId: string | null | undefined,
     now: Date,
     settlementClient?: SettlementPriceClient,
@@ -860,11 +891,11 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
     const instruments = await fetchableInstruments(instrumentId ?? null)
     const items: RefreshItem[] = []
     for (const instrument of instruments) {
-      items.push(await fetchSettlement(actor, instrument, now, client))
+      items.push(await fetchSettlement(permit, instrument, now, client))
     }
     const result: RefreshResult = { items, count: items.length }
     if (items.length > 0) {
-      await settings.recordMarketFetch(actor, summarizeRefresh('定时结算价', items))
+      await settings.recordMarketFetch(permit, summarizeRefresh('定时结算价', items))
     }
     return result
   }
@@ -881,7 +912,7 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
   }
 
   async function fetchLast(
-    actor: Actor | null,
+    permit: Permit,
     instrument: MarketInstrument,
     now: Date,
     client: LastPriceClient,
@@ -898,7 +929,7 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
       const quote = await client.fetchLast(code)
       let note = `sina ${code}`
       if (quote.asOfDate) note += ` @${quote.asOfDate}`
-      const point = await createPricePoint(actor, {
+      const point = await createPricePoint(permit, {
         instrumentId: instrument.id,
         observedAt,
         price: toDecimalString(quote.price),
@@ -913,7 +944,7 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
   }
 
   async function fetchSettlement(
-    actor: Actor | null,
+    permit: Permit,
     instrument: MarketInstrument,
     now: Date,
     client: SettlementPriceClient,
@@ -936,7 +967,7 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
     try {
       const quote = await client.fetchSettlement(group, tradeDate)
       const note = `shfe ${group}${quote.deliveryMonth} main OI=${quote.openInterest}`
-      const point = await createPricePoint(actor, {
+      const point = await createPricePoint(permit, {
         instrumentId: instrument.id,
         observedAt,
         price: toDecimalString(quote.price),

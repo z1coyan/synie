@@ -3,7 +3,7 @@ import { createFieldCatalog } from './catalog.ts'
 import { printTemplateResourceMeta } from './meta.ts'
 
 export { createFieldCatalog, type FieldCatalog } from './catalog.ts'
-export { createPrintingService, canUseTemplates, type PrintingService } from './service.ts'
+export { createPrintingService, type PrintingService } from './service.ts'
 export { systemPrintingRoutes, printingRoutes } from './routes.ts'
 export { printTemplateResourceMeta, RESOURCE_NAME, PERMISSION_PREFIX } from './meta.ts'
 export { createSofficeConverter } from './pdf.ts'

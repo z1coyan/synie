@@ -54,10 +54,19 @@ import type {
   StockCountService,
   StockEntryService,
 } from './modules/inventory/index.ts'
-import { tradingRouteMounts, type TradingServices } from './modules/trading/index.ts'
-import { scmRouteMounts, type ScmServices } from './modules/scm/index.ts'
-import { manufacturingRoutes, type ManufacturingServices } from './modules/manufacturing/index.ts'
 import {
+  SALES_RESOURCE_NAME,
+  tradingRouteMounts,
+  type TradingServices,
+} from './modules/trading/index.ts'
+import { scmRouteMounts, type ScmServices } from './modules/scm/index.ts'
+import {
+  MFG_RESOURCE_NAME,
+  manufacturingRoutes,
+  type ManufacturingServices,
+} from './modules/manufacturing/index.ts'
+import {
+  ACC_RESOURCE_NAME,
   vatInvoiceRoutes,
   bankAccountRoutes,
   bankTransactionRoutes,
@@ -212,23 +221,39 @@ export function buildApp(deps: AppDeps) {
     .route('/auth', authRoutes(deps.auth))
     .on(['GET', 'POST'], '/auth/*', (c) => deps.betterAuth.handler(c.req.raw))
     .route('/meta', metaRoutes(deps.registry, deps.auth))
-    .route('/settings', settingsRoutes({ auth: deps.auth, settings: deps.settings }))
-    .route('/system/numbering', numberingRoutes({ auth: deps.auth, numbering: deps.numbering }))
+    .route(
+      '/settings',
+      settingsRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        settings: deps.settings,
+        resources: {
+          sales: SALES_RESOURCE_NAME,
+          manufacturing: MFG_RESOURCE_NAME,
+          accounting: ACC_RESOURCE_NAME,
+        },
+      }),
+    )
+    .route('/system/numbering', numberingRoutes({ auth: deps.auth, authz: deps.authz, numbering: deps.numbering }))
     .route('/files', fileRoutes({ auth: deps.auth, authz: deps.authz, files: deps.files }))
     .route(
       '/system/storages',
       storageRoutes({ auth: deps.auth, authz: deps.authz, storages: deps.storages }),
     )
-    .route('/system/audit-logs', auditRoutes({ auth: deps.auth, audit: deps.audit }))
+    .route('/system/audit-logs', auditRoutes({ auth: deps.auth, authz: deps.authz, audit: deps.audit }))
     .route(
       '/system/printing',
-      systemPrintingRoutes({ auth: deps.auth, printing: deps.printing }),
+      systemPrintingRoutes({ auth: deps.auth, authz: deps.authz, printing: deps.printing }),
     )
-    .route('/printing', printingRoutes({ auth: deps.auth, printing: deps.printing }))
+    .route(
+      '/printing',
+      printingRoutes({ auth: deps.auth, authz: deps.authz, printing: deps.printing }),
+    )
     .route(
       '/base',
       baseRoutes({
         auth: deps.auth,
+        authz: deps.authz,
         currencies: deps.currencies,
         companies: deps.companies,
         units: deps.units,
@@ -239,6 +264,7 @@ export function buildApp(deps: AppDeps) {
       '/base/market-instruments',
       marketInstrumentRoutes({
         auth: deps.auth,
+        authz: deps.authz,
         market: deps.market,
       }),
     )
@@ -246,22 +272,23 @@ export function buildApp(deps: AppDeps) {
       '/base/market-price-points',
       marketPricePointRoutes({
         auth: deps.auth,
+        authz: deps.authz,
         market: deps.market,
       }),
     )
-    .route('/system/users', iamUserRoutes({ auth: deps.auth, iam: deps.iam }))
+    .route('/system/users', iamUserRoutes({ auth: deps.auth, authz: deps.authz, iam: deps.iam }))
     .route(
       '/system/departments',
       iamDepartmentRoutes({ auth: deps.auth, authz: deps.authz, departments: deps.departments }),
     )
-    .route('/system/roles', iamRoleRoutes({ auth: deps.auth, iam: deps.iam }))
-    .route('/base/customers', customerRoutes({ auth: deps.auth, customers: deps.customers }))
-    .route('/base/suppliers', supplierRoutes({ auth: deps.auth, suppliers: deps.suppliers }))
+    .route('/system/roles', iamRoleRoutes({ auth: deps.auth, authz: deps.authz, iam: deps.iam }))
+    .route('/base/customers', customerRoutes({ auth: deps.auth, authz: deps.authz, customers: deps.customers }))
+    .route('/base/suppliers', supplierRoutes({ auth: deps.auth, authz: deps.authz, suppliers: deps.suppliers }))
     .route(
       '/base/party-addresses',
-      partyAddressRoutes({ auth: deps.auth, addresses: deps.partyAddresses }),
+      partyAddressRoutes({ auth: deps.auth, authz: deps.authz, addresses: deps.partyAddresses }),
     )
-    .route('/hr/employees', employeeRoutes({ auth: deps.auth, employees: deps.employees }))
+    .route('/hr/employees', employeeRoutes({ auth: deps.auth, authz: deps.authz, employees: deps.employees }))
     .route(
       '/hr/attendance-punches',
       attendancePunchRoutes({ auth: deps.auth, attendance: deps.hr.attendance }),

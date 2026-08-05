@@ -42,6 +42,12 @@ export interface AuthzEnforcer {
   decideFor: (actor: Actor, resource: string, action: string, options?: GuardOptions) => Decision
   /** 已解析的判定归宿（列绑定 + via join 链），SQL 编译层消费 */
   targetOf: (resource: string) => AuthzTarget
+  /**
+   * (资源, 动作) 是否已在 sealed registry 声明。
+   * 打印这类「请求形态派生动作码」的路径需要它：资源未声明该动作即无权限点，
+   * 路由按主体种类 fail-closed（只有 superAdmin/system 放行），而不是 500。
+   */
+  hasAction: (resource: string, action: string) => boolean
 }
 
 export function createAuthzEnforcer(registry: Registry): AuthzEnforcer {
@@ -121,7 +127,32 @@ export function createAuthzEnforcer(registry: Registry): AuthzEnforcer {
     }
   }
 
-  return { guard, permitFor, decideFor, targetOf }
+  function hasAction(resource: string, action: string): boolean {
+    const target = targetOf(resource)
+    if (action === 'read' && target.readAnyOf.length > 0) return true
+    const root = registry.get(target.rootResource)!
+    return root.actions.some((a) => (a.permissionAction ?? a.key) === action)
+  }
+
+  return { guard, permitFor, decideFor, targetOf, hasAction }
+}
+
+/**
+ * 主体判定中间件（封闭代数的主体种类，非权限码）：仅 superAdmin 可进。
+ * 用于「初始化向导」这类没有、也不该有权限点的端点——码级词汇表不为它增长。
+ * 必须挂在 `requireAuth` 之后。
+ */
+export function requireSuperAdmin(): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const actor = c.get('actor')
+    if (!actor) {
+      throw new ApiError('unauthorized', '未登录或登录状态已失效')
+    }
+    if (!actor.superAdmin) {
+      throw new ApiError('forbidden', '仅超级管理员可执行初始化')
+    }
+    await next()
+  }
 }
 
 /** 取本请求的 Permit；未经 guard 即抛（fail-closed，不静默放行） */

@@ -25,11 +25,6 @@ const FORBIDDEN = [
 const EXEMPT = new Set<string>([
   'modules/accounting/entry-service.ts',
   'modules/accounting/journal-service.ts',
-  'modules/base/account-service.ts',
-  'modules/base/company-service.ts',
-  'modules/base/currency-service.ts',
-  'modules/base/market/service.ts',
-  'modules/base/unit-service.ts',
   'modules/finance/banking-accounts.ts',
   'modules/finance/banking-import.ts',
   'modules/finance/banking-recon.ts',
@@ -39,7 +34,6 @@ const EXEMPT = new Set<string>([
   'modules/finance/invoice-service.ts',
   'modules/hr/attendance-service.ts',
   'modules/hr/payroll-service.ts',
-  'modules/iam/service.ts',
   'modules/inventory/category-service.ts',
   'modules/inventory/material-service.ts',
   'modules/inventory/material-unit-service.ts',
@@ -47,15 +41,11 @@ const EXEMPT = new Set<string>([
   'modules/manufacturing/helpers.ts',
   'modules/manufacturing/master-service.ts',
   'modules/manufacturing/mold-design-service.ts',
-  'modules/manufacturing/work-order-docbuilder.ts',
-  'modules/party/address-service.ts',
-  'modules/party/party-service.ts',
   'modules/sales/company-account-default.ts',
   'modules/scm/orderflow/routes.ts',
   'modules/scm/orderflow/service.ts',
   'modules/trading/common.ts',
   'modules/trading/fulfillment/service.ts',
-  'modules/trading/order/docbuilder.ts',
   'modules/trading/order/outsourced-config.ts',
   'modules/trading/order/service.ts',
   'modules/trading/outsourced/service.ts',
@@ -99,6 +89,6 @@ describe('封路：modules 不得使用旧授权原语', () => {
   })
 
   test('豁免规模只减不增（扫荡进度快照）', () => {
-    expect(EXEMPT.size).toBeLessThanOrEqual(38)
+    expect(EXEMPT.size).toBeLessThanOrEqual(28)
   })
 })

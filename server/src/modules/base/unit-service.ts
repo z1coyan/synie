@@ -1,3 +1,9 @@
+/**
+ * 计量单位（全局主数据，无公司列）。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
+ * global 形态只有码级判定；基准唯一/换算比例是领域不变量，留在本文件。
+ */
 import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
@@ -10,11 +16,13 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { listFromSource } from '~/db/list.ts'
-import { unitResourceMeta } from './meta.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { loadAuthorized } from '~/db/load.ts'
+import { UNIT_RESOURCE_NAME, unitResourceMeta } from './meta.ts'
 
 export type UnitTypeWire = 'LENGTH' | 'AREA' | 'WEIGHT' | 'QUANTITY'
 const UNIT_TYPES = new Set(['length', 'area', 'weight', 'quantity'])
@@ -46,24 +54,35 @@ export interface UpdateUnitInput {
   ratio?: string
 }
 
-const AUDIT = auditFieldsOf(unitResourceMeta())
+const META = unitResourceMeta()
+const AUDIT = auditFieldsOf(META)
+const TABLE = META.table
 
-export function createUnitService(db: Kysely<Database>) {
-  async function get(actor: Actor, id: string): Promise<Unit> {
-    requirePermission(actor, 'base.unit:read')
-    const row = await db.selectFrom('bas_unit').selectAll().where('id', '=', id).executeTakeFirst()
-    if (!row) throw new ApiError('not_found', '计量单位不存在')
-    return mapRow(row)
+export function createUnitService(db: Kysely<Database>, registry: Registry) {
+  const target = registry.authzTarget(UNIT_RESOURCE_NAME)
+
+  async function get(permit: Permit, id: string): Promise<Unit> {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target,
+      table: TABLE,
+      id,
+      notFoundMessage: '计量单位不存在',
+    })
+    return mapRow(row as never)
   }
 
   async function list(
-    actor: Actor,
+    permit: Permit,
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: Unit[] }> {
-    requirePermission(actor, 'base.unit:read')
-    return listFromSource({
+    return listAuthorized({
       db,
-      resource: unitResourceMeta(),
+      permit,
+      target,
+      alias: TABLE,
+      resource: META,
       source: sql` FROM bas_unit`,
       select: sql`SELECT id, unit_type, is_base, name, symbol, ratio, inserted_at, updated_at`,
       defaultOrder: sql`"unit_type", "name", "id"`,
@@ -82,8 +101,7 @@ export function createUnitService(db: Kysely<Database>) {
     })
   }
 
-  async function create(actor: Actor, input: CreateUnitInput): Promise<Unit> {
-    requirePermission(actor, 'base.unit:create')
+  async function create(permit: Permit, input: CreateUnitInput): Promise<Unit> {
     const isBase = input.isBase ?? false
     const normalized = normalize(input.unitType, input.name, input.symbol, input.ratio, isBase)
     return withTx(db, async (trx) => {
@@ -100,7 +118,7 @@ export function createUnitService(db: Kysely<Database>) {
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapRow(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'bas_unit',
           recordId: item.id,
           recordLabel: item.name,
@@ -118,17 +136,18 @@ export function createUnitService(db: Kysely<Database>) {
     })
   }
 
-  async function update(actor: Actor, id: string, input: UpdateUnitInput): Promise<Unit> {
-    requirePermission(actor, 'base.unit:update')
+  async function update(permit: Permit, id: string, input: UpdateUnitInput): Promise<Unit> {
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('bas_unit')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '计量单位不存在')
-      const before = mapRow(locked)
+      const locked = await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '计量单位不存在',
+      })
+      const before = mapRow(locked as never)
       const unitType = input.unitType ?? before.unitType
       const name = input.name ?? before.name
       const symbol = input.symbol ?? before.symbol
@@ -152,7 +171,7 @@ export function createUnitService(db: Kysely<Database>) {
         const item = mapRow(row)
         const changes = auditDiff(snapshot(before), snapshot(item), AUDIT)
         if (Object.keys(changes).length > 0) {
-          await writeAudit(trx, actor, {
+          await writeAudit(trx, permit.actor, {
             resource: 'bas_unit',
             recordId: id,
             recordLabel: item.name,
@@ -171,17 +190,18 @@ export function createUnitService(db: Kysely<Database>) {
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'base.unit:delete')
+  async function remove(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('bas_unit')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '计量单位不存在')
-      const item = mapRow(locked)
+      const locked = await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '计量单位不存在',
+      })
+      const item = mapRow(locked as never)
       try {
         await trx.deleteFrom('bas_unit').where('id', '=', id).execute()
       } catch (err) {
@@ -189,7 +209,7 @@ export function createUnitService(db: Kysely<Database>) {
           { code: '23503', message: '计量单位已被业务数据引用,不可删除' },
         ])
       }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'bas_unit',
         recordId: id,
         recordLabel: item.name,

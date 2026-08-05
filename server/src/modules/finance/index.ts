@@ -47,6 +47,7 @@ export {
   type AccountingSettingService,
   type AccountingSetting,
   type AccountingUpdate,
+  ACC_RESOURCE_NAME,
 } from './settings.ts'
 
 export function registerFinanceResources(registry: Registry): void {

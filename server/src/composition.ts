@@ -76,30 +76,32 @@ function assembleDomain(
     manufacturing: createManufacturingSettingService(db),
     accounting: createAccountingSettingService(db),
   })
-  const numbering = createNumberingService(db, buildNumberingCatalog(opts.registry))
+  const numbering = createNumberingService(db, buildNumberingCatalog(opts.registry), opts.registry)
   // 附件宿主从 Meta Registry 派生（meta.attachments 即声明即注册，启动期 fail-closed）
   const owners = buildOwnerRegistryFromMeta(opts.registry.list())
   // 判定入口（无状态，归宿解析的记忆化在 Registry 内）：平台服务与路由共用同一份声明
   const authz = createAuthzEnforcer(opts.registry)
   const files = createFileService({ db, owners, authz })
   const storages = createStorageService({ db, authz })
-  const audit = createAuditService(db)
+  const audit = createAuditService(db, opts.registry)
   const printing = createPrintingService({
     db,
     files,
     catalog: buildPrintingCatalog(opts.registry),
+    registry: opts.registry,
     converter: opts.converter ?? createSofficeConverter(),
   })
   // 业务域 DocBuilder 显式装配（platform 不内置业务表查询）
-  registerSalesOrderDocBuilder(printing, db)
-  registerWorkOrderDocBuilder(printing, db)
-  const base = createBaseServices(db)
-  const market = createMarketService(db, { settings })
+  registerSalesOrderDocBuilder(printing, db, opts.registry)
+  registerWorkOrderDocBuilder(printing, db, opts.registry)
+  const base = createBaseServices(db, opts.registry)
+  const market = createMarketService(db, { settings, registry: opts.registry })
   const iam = createIamService(db, opts.registry)
   const departments = createDepartmentService(db, opts.registry)
-  const party = createPartyServices(db, numbering)
+  const party = createPartyServices(db, numbering, opts.registry)
   const hr = createHrServices(db, files, {
     employees: party.employees,
+    authz,
   })
   const companyAccountDefaults = createCompanyAccountDefaultService(db)
   const inv = createInventoryServices(db, numbering, opts.registry)

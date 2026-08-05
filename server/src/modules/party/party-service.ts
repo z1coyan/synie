@@ -1,3 +1,10 @@
+/**
+ * 客户 / 供应商 / 员工（全局主数据，无公司列 → global 形态）。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、单条/写前取行 `loadAuthorized`。
+ * 关联物料/唯一约束是领域不变量，留在本文件。
+ */
 import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
@@ -10,13 +17,19 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf, auditSpecOf } from '~/platform/audit/spec.ts'
-import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
+import type { AuthzTarget } from '~/platform/meta/resource-authz.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { loadAuthorized } from '~/db/load.ts'
 import { deleteAddressesForParty } from './address-service.ts'
 import {
+  CUSTOMER_RESOURCE_NAME,
+  EMPLOYEE_RESOURCE_NAME,
+  SUPPLIER_RESOURCE_NAME,
   customerResourceMeta,
   employeeResourceMeta,
   INSURANCE_WIRE,
@@ -53,12 +66,12 @@ const PARTY_AUDIT = auditFieldsOf(customerResourceMeta())
 const EMP_AUDIT_SPEC = auditSpecOf(employeeResourceMeta())
 const EMP_AUDIT = EMP_AUDIT_SPEC.fields
 
-export function createCustomerService(db: Kysely<Database>) {
+export function createCustomerService(db: Kysely<Database>, registry: Registry) {
   return createPartyKind(db, {
     table: 'sal_customers',
     resource: 'sal_customer',
     label: '客户',
-    permPrefix: 'base.customer',
+    target: registry.authzTarget(CUSTOMER_RESOURCE_NAME),
     meta: customerResourceMeta(),
     notFound: '客户不存在',
     materialCheck: true,
@@ -66,12 +79,12 @@ export function createCustomerService(db: Kysely<Database>) {
   })
 }
 
-export function createSupplierService(db: Kysely<Database>) {
+export function createSupplierService(db: Kysely<Database>, registry: Registry) {
   return createPartyKind(db, {
     table: 'pur_supplier',
     resource: 'pur_supplier',
     label: '供应商',
-    permPrefix: 'base.supplier',
+    target: registry.authzTarget(SUPPLIER_RESOURCE_NAME),
     meta: supplierResourceMeta(),
     notFound: '供应商不存在',
     materialCheck: false,
@@ -85,24 +98,31 @@ function createPartyKind(
     table: 'sal_customers' | 'pur_supplier'
     resource: string
     label: string
-    permPrefix: string
+    target: AuthzTarget
     meta: ReturnType<typeof customerResourceMeta>
     notFound: string
     materialCheck: boolean
     addressPartyType: 'CUSTOMER' | 'SUPPLIER'
   },
 ) {
-  async function get(actor: Actor, id: string): Promise<Party> {
-    requirePermission(actor, `${opts.permPrefix}:read`)
-    const row = await db.selectFrom(opts.table).selectAll().where('id', '=', id).executeTakeFirst()
-    if (!row) throw new ApiError('not_found', opts.notFound)
-    return mapParty(row)
+  async function get(permit: Permit, id: string): Promise<Party> {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target: opts.target,
+      table: opts.table,
+      id,
+      notFoundMessage: opts.notFound,
+    })
+    return mapParty(row as never)
   }
 
-  async function list(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, `${opts.permPrefix}:read`)
-    return listFromSource({
+  async function list(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: opts.target,
+      alias: opts.table,
       resource: opts.meta,
       source: sql` FROM ${sql.table(opts.table)}`,
       select: sql`SELECT id, code, name, short_name, inserted_at, updated_at`,
@@ -121,10 +141,9 @@ function createPartyKind(
   }
 
   async function create(
-    actor: Actor,
+    permit: Permit,
     input: { code: string; name: string; shortName?: string | null },
   ): Promise<Party> {
-    requirePermission(actor, `${opts.permPrefix}:create`)
     const { code, name, shortName } = normalizeParty(input.code, input.name, input.shortName)
     return withTx(db, async (trx) => {
       try {
@@ -134,7 +153,7 @@ function createPartyKind(
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapParty(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: opts.resource,
           recordId: item.id,
           recordLabel: item.name,
@@ -152,7 +171,7 @@ function createPartyKind(
   }
 
   async function update(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       code?: string
@@ -161,16 +180,17 @@ function createPartyKind(
       shortNamePresent?: boolean
     },
   ): Promise<Party> {
-    requirePermission(actor, `${opts.permPrefix}:update`)
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom(opts.table)
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', opts.notFound)
-      const before = mapParty(locked)
+      const locked = await loadAuthorized({
+        db: trx,
+        permit,
+        target: opts.target,
+        table: opts.table,
+        id,
+        forUpdate: true,
+        notFoundMessage: opts.notFound,
+      })
+      const before = mapParty(locked as never)
       const { code, name, shortName } = normalizeParty(
         input.code ?? before.code,
         input.name ?? before.name,
@@ -192,7 +212,7 @@ function createPartyKind(
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapParty(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: opts.resource,
           recordId: item.id,
           recordLabel: item.name,
@@ -209,16 +229,17 @@ function createPartyKind(
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, `${opts.permPrefix}:delete`)
+  async function remove(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom(opts.table)
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', opts.notFound)
+      const locked = await loadAuthorized({
+        db: trx,
+        permit,
+        target: opts.target,
+        table: opts.table,
+        id,
+        forUpdate: true,
+        notFoundMessage: opts.notFound,
+      })
       if (opts.materialCheck) {
         const linked = await trx
           .selectFrom('inv_material')
@@ -227,7 +248,7 @@ function createPartyKind(
           .executeTakeFirst()
         if (linked) throw new ApiError('conflict', '存在关联物料,不能删除')
       }
-      const item = mapParty(locked)
+      const item = mapParty(locked as never)
       await deleteAddressesForParty(trx, opts.addressPartyType, id)
       try {
         await trx.deleteFrom(opts.table).where('id', '=', id).execute()
@@ -236,7 +257,7 @@ function createPartyKind(
           { code: '23503', message: `${opts.label}已被业务数据引用,不可删除` },
         ])
       }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: opts.resource,
         recordId: item.id,
         recordLabel: item.name,
@@ -253,18 +274,31 @@ function createPartyKind(
 export type CustomerService = ReturnType<typeof createCustomerService>
 export type SupplierService = ReturnType<typeof createSupplierService>
 
-export function createEmployeeService(db: Kysely<Database>, numbering: NumberingService) {
-  async function get(actor: Actor, id: string): Promise<Employee> {
-    requirePermission(actor, 'hr.employee:read')
-    const row = await db.selectFrom('hr_employees').selectAll().where('id', '=', id).executeTakeFirst()
-    if (!row) throw new ApiError('not_found', '员工不存在')
-    return mapEmployee(row)
+export function createEmployeeService(
+  db: Kysely<Database>,
+  numbering: NumberingService,
+  registry: Registry,
+) {
+  const target = registry.authzTarget(EMPLOYEE_RESOURCE_NAME)
+
+  async function get(permit: Permit, id: string): Promise<Employee> {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target,
+      table: 'hr_employees',
+      id,
+      notFoundMessage: '员工不存在',
+    })
+    return mapEmployee(row as never)
   }
 
-  async function list(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'hr.employee:read')
-    return listFromSource({
+  async function list(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target,
+      alias: 'hr_employees',
       resource: employeeResourceMeta(),
       source: sql` FROM hr_employees`,
       select: sql`SELECT id,code,name,attendance_no,id_number,household_registration,phone,current_address,
@@ -276,7 +310,7 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
   }
 
   async function create(
-    actor: Actor,
+    permit: Permit,
     input: {
       code?: string | null
       name: string
@@ -290,7 +324,6 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
       insuranceTypes?: string[]
     },
   ): Promise<Employee> {
-    requirePermission(actor, 'hr.employee:create')
     let code = input.code?.trim() || ''
     if (!code) {
       code = await numbering.next({ resource: 'hr.employee' })
@@ -326,7 +359,7 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapEmployee(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'hr_employee',
           recordId: item.id,
           recordLabel: item.name,
@@ -348,14 +381,14 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
 
   /**
    * 考勤导入自动建档接缝（调用方持 trx）。
-   * 仍检 hr.employee:create（与公开 create 同源），防御跨域漏检。
+   * 分支内二次授权：调用方在分支里再取一张 `hr.employee:create` 的 Permit（spec §7），
+   * 本函数只消费凭证不做判定。
    */
   async function autoCreateForAttendance(
     trx: TrxHandle,
-    actor: Actor,
+    permit: Permit,
     attendanceNo: string,
   ): Promise<{ id: string; code: string; name: string; attendanceNo: string }> {
-    requirePermission(actor, 'hr.employee:create')
     const code = await numbering.nextInTx(trx, { resource: 'hr.employee' })
     const name = '[未知]'
     try {
@@ -364,7 +397,7 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
         .values({ code, name, attendance_no: attendanceNo })
         .returning('id')
         .executeTakeFirstOrThrow()
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'hr_employee',
         recordId: emp.id,
         recordLabel: name,
@@ -388,7 +421,7 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
   }
 
   async function update(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       code?: string
@@ -411,16 +444,17 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
       insuranceTypesPresent?: boolean
     },
   ): Promise<Employee> {
-    requirePermission(actor, 'hr.employee:update')
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('hr_employees')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '员工不存在')
-      const before = mapEmployee(locked)
+      const locked = await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: 'hr_employees',
+        id,
+        forUpdate: true,
+        notFoundMessage: '员工不存在',
+      })
+      const before = mapEmployee(locked as never)
       const draft = {
         code: input.code ?? before.code,
         name: input.name ?? before.name,
@@ -465,7 +499,7 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapEmployee(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'hr_employee',
           recordId: item.id,
           recordLabel: item.name,
@@ -485,17 +519,18 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'hr.employee:delete')
+  async function remove(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('hr_employees')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '员工不存在')
-      const item = mapEmployee(locked)
+      const locked = await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: 'hr_employees',
+        id,
+        forUpdate: true,
+        notFoundMessage: '员工不存在',
+      })
+      const item = mapEmployee(locked as never)
       try {
         await trx.deleteFrom('hr_employees').where('id', '=', id).execute()
       } catch (err) {
@@ -503,7 +538,7 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
           { code: '23503', message: '员工已被业务数据引用,不可删除' },
         ])
       }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'hr_employee',
         recordId: item.id,
         recordLabel: item.name,

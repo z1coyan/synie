@@ -7,6 +7,7 @@ import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createJournalService } from '~/modules/accounting/journal-service.ts'
@@ -17,12 +18,23 @@ import { createVatInvoiceService } from './invoice-service.ts'
 import { createReconciliationService } from '~/modules/trading/reconciliation/service.ts'
 import { testActor } from '~/platform/authz/testing.ts'
 
+
+/** 编号服务需要 sealed registry（授权归宿解析） */
+const numberingRegistry = createSealedResourceRegistry()
+/** 编号规则（global）：夹具建规则现取凭证（superAdmin → rowFilter 全集） */
+function numberingPermit(actor: Parameters<typeof numberingAuthz.decideFor>[0]) {
+  const decision = numberingAuthz.decideFor(actor, 'sysNumberingRules', 'create')
+  if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+  return decision.permit
+}
+const numberingAuthz = createAuthzEnforcer(numberingRegistry)
+
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
 
 run('PG 集成（财务运营 12）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
+  const numbering = createNumberingService(db, buildNumberingCatalog(numberingRegistry), numberingRegistry)
   const gl = createGlEngine()
   const reconciliations = createReconciliationService(db, numbering, gl)
   const banking = createBankingService(db, numbering, {
@@ -120,7 +132,7 @@ run('PG 集成（财务运营 12）', () => {
         ) AS e
       `.execute(db)
       if (exists.rows[0]?.e) continue
-      await numbering.create(numberingActor, {
+      await numbering.create(numberingPermit(numberingActor), {
         resource,
         name: `${resource}-${suffix}`,
         segments: [

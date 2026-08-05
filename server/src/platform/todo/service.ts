@@ -2,6 +2,10 @@
  * 待办查询与用户痕迹（已读/个人忽略）。
  * 生产者在对账 confirm / 发票结单接缝；本服务只负责消费侧 API。
  * 业务权限 / 对手名 / 草稿关联由 TodoSourceRegistry 注入，platform 不硬编码业务表。
+ *
+ * 待办没有自己的权限点：可读性是**各源权限码的析取**（D6）——
+ * 注册表给出声明，路由用封闭代数的 `anyOf` 组合子执行（见 todoPermit）。
+ * 公司边界由 authz 声明编译（compileRowFilter），手滚变体已收编。
  */
 import { decimal, toDecimalString, type ListQuery } from '@synie/shared'
 import { sql, type RawBuilder } from 'kysely'
@@ -10,12 +14,12 @@ import { buildListQuery } from '~/db/filterbuild.ts'
 import { toReadSpec } from '~/platform/meta/read-spec.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import {
-  companyFilter,
-  hasPermission,
-  type Actor,
-} from '~/platform/authz/actor.ts'
+import { compileRowFilter } from '~/db/authz-sql.ts'
+import { loadAuthorized } from '~/db/load.ts'
+import type { Actor, Permit } from '~/platform/authz/core/index.ts'
+import { anyOf, decide } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import { resolveAuthzBinding, type AuthzTarget } from '~/platform/meta/resource-authz.ts'
 import type { ResourceMeta } from '~/platform/meta/types.ts'
 import {
   assertSourcesRegistered,
@@ -69,13 +73,18 @@ export interface Todo {
   dismissed: boolean
 }
 
-/** filterbuild 内部 Meta（不注册进公开 Registry） */
+/**
+ * filterbuild 内部 Meta（不注册进公开 Registry：待办无独立权限点，
+ * 可读性由各源的 actionPermissions/unreadPermissions 析取给出）。
+ * authz 声明在此，供 compileRowFilter 取公司列绑定——手滚公司谓词由此收编。
+ */
 function todoQueryMeta(): ResourceMeta {
   return {
     name: '_sysTodosInternal',
     permissionPrefix: 'sys.todo',
     permissionLabel: '待办',
     table: 'sys_todo',
+    authz: { kind: 'company' },
     fields: [
       {
         name: 'id',
@@ -274,30 +283,50 @@ function detailSelect(registry: TodoSourceRegistry): RawBuilder<unknown> {
 
 export type TodoService = ReturnType<typeof createTodoService>
 
+const TODO_TABLE = 'sys_todo'
+/**
+ * 待办的判定归宿：资源不进公开 Registry，故归宿由本地 meta 声明解析而来。
+ * 只提供列绑定（公司列），码级判定由 todoPermit 的 anyOf 承担。
+ */
+const TODO_TARGET: AuthzTarget = {
+  resource: '_sysTodosInternal',
+  rootResource: '_sysTodosInternal',
+  prefix: 'sys.todo',
+  root: resolveAuthzBinding(todoQueryMeta()),
+  readAnyOf: [],
+  chain: [],
+}
+
+/**
+ * 待办凭证：任一已注册源的权限码命中即放行（声明即执行）。
+ * `kind` 选 action（列表/已读/忽略）或 unread（未读计数），与迁移前的两组码一致。
+ */
+export function todoPermit(
+  actor: Actor,
+  sources: TodoSourceRegistry,
+  kind: 'action' | 'unread',
+): Permit {
+  assertSourcesRegistered(sources)
+  const codes = kind === 'action' ? sources.actionPermissionCodes() : sources.unreadPermissionCodes()
+  const decision = decide(actor, {
+    resource: '_sysTodosInternal',
+    action: kind === 'action' ? 'read' : 'unread_count',
+    requirement: anyOf(codes),
+  })
+  if (decision.outcome === 'deny') {
+    throw new ApiError('forbidden', '无权限查看待办')
+  }
+  return decision.permit
+}
+
 export function createTodoService(db: Kysely<Database>, sources: TodoSourceRegistry) {
   const selectSql = detailSelect(sources)
 
-  function requireAction(actor: Actor): void {
-    assertSourcesRegistered(sources)
-    const codes = sources.actionPermissionCodes()
-    if (!codes.some((code) => hasPermission(actor, code))) {
-      throw new ApiError('forbidden', '无权限查看待办')
-    }
-  }
-
-  function requireUnread(actor: Actor): void {
-    assertSourcesRegistered(sources)
-    const codes = sources.unreadPermissionCodes()
-    if (!codes.some((code) => hasPermission(actor, code))) {
-      throw new ApiError('forbidden', '无权限查看待办')
-    }
-  }
-
   async function list(
-    actor: Actor,
+    permit: Permit,
     query: TodoListQuery,
   ): Promise<{ count: number; results: Todo[] }> {
-    requireAction(actor)
+    const actor = permit.actor
     let limit = query.limit === undefined || query.limit === 0 ? 20 : query.limit
     const offset = query.offset ?? 0
     const tab = (query.tab && query.tab !== '' ? query.tab : 'active').toLowerCase()
@@ -319,14 +348,8 @@ export function createTodoService(db: Kysely<Database>, sources: TodoSourceRegis
     const parts: ReturnType<typeof sql>[] = []
     if (built.where) parts.push(built.where)
 
-    const scope = companyFilter(actor)
-    if (!scope.bypass) {
-      if (scope.ids.length === 0) {
-        parts.push(sql`false`)
-      } else {
-        parts.push(sql`"company_id"=ANY(${[...scope.ids]}::uuid[])`)
-      }
-    }
+    // 公司谓词由平台按 authz 声明编译（手滚 NULL-admitting 变体收编）
+    parts.push(compileRowFilter(permit, TODO_TARGET, TODO_TABLE))
 
     if (tab === 'active' || tab === 'recent') {
       parts.push(sql`"status"='active'`)
@@ -380,34 +403,33 @@ export function createTodoService(db: Kysely<Database>, sources: TodoSourceRegis
     return { count, results: rows.rows.map(mapTodo) }
   }
 
-  async function markRead(actor: Actor, id: string): Promise<Todo> {
-    return changeState(actor, id, false)
+  async function markRead(permit: Permit, id: string): Promise<Todo> {
+    return changeState(permit, id, false)
   }
 
-  async function dismiss(actor: Actor, id: string): Promise<Todo> {
-    return changeState(actor, id, true)
+  async function dismiss(permit: Permit, id: string): Promise<Todo> {
+    return changeState(permit, id, true)
   }
 
   async function changeState(
-    actor: Actor,
+    permit: Permit,
     id: string,
     doDismiss: boolean,
   ): Promise<Todo> {
-    requireAction(actor)
+    const actor = permit.actor
     if (!actor.userId) {
-      throw new ApiError('forbidden', '待办操作缺少用户身份')
+      throw new ApiError('conflict', '待办操作缺少用户身份')
     }
     return withTx(db, async (trx) => {
-      const scope = companyFilter(actor)
-      const locked = await sql<{ id: string }>`
-        SELECT id FROM sys_todo
-        WHERE id=${id}::uuid
-          AND (${scope.bypass} OR company_id=ANY(${[...scope.ids]}::uuid[]))
-        FOR UPDATE
-      `.execute(trx)
-      if (locked.rows.length === 0) {
-        throw new ApiError('not_found', '待办不存在或无权访问')
-      }
+      await loadAuthorized({
+        db: trx,
+        permit,
+        target: TODO_TARGET,
+        table: TODO_TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '待办不存在或无权访问',
+      })
       if (doDismiss) {
         // reset_basis_at 直接取库内 source_changed_at，避免 JS Date 精度漂移导致 dismissed 判定失败
         await sql`
@@ -442,16 +464,15 @@ export function createTodoService(db: Kysely<Database>, sources: TodoSourceRegis
     })
   }
 
-  async function unreadCount(actor: Actor): Promise<number> {
-    requireUnread(actor)
-    const scope = companyFilter(actor)
+  async function unreadCount(permit: Permit): Promise<number> {
+    const actor = permit.actor
     const row = await sql<{ count: string }>`
       SELECT count(*)::text AS count
       FROM sys_todo todo
       LEFT JOIN sys_todo_state state
         ON state.todo_id=todo.id AND state.user_id=${actor.userId}::uuid
       WHERE todo.status='active'
-        AND (${scope.bypass} OR todo.company_id=ANY(${[...scope.ids]}::uuid[]))
+        AND ${compileRowFilter(permit, TODO_TARGET, 'todo')}
         AND state.read_at IS NULL
         AND NOT (
           state.dismissed_at IS NOT NULL

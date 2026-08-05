@@ -4,9 +4,12 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
+import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
+import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { INSTRUMENT_RESOURCE_NAME, PRICE_POINT_RESOURCE_NAME } from './meta.ts'
 import type {
   MarketInstrument,
   MarketPricePoint,
@@ -159,19 +162,25 @@ function parseDateTime(value: string, field: string): Date {
   return d
 }
 
-/** 挂载于 `/base/market-instruments` */
+/**
+ * 挂载于 `/base/market-instruments`。
+ * 逐端点挂 `guard(资源, 动作)`（requireAuth 之后），handler 用 `permitOf(c)` 取凭证。
+ */
 export function marketInstrumentRoutes(deps: {
   auth: AuthService
+  authz: AuthzEnforcer
   market: MarketService
 }) {
-  const { auth, market } = deps
+  const { auth, authz, market } = deps
+  const instrumentGuard = (action: string) => authz.guard(INSTRUMENT_RESOURCE_NAME, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
       '/query',
+      instrumentGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await market.listInstruments(c.get('actor')!, toListQuery(c.req.valid('json')))
+        const result = await market.listInstruments(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({
           count: result.count,
           results: result.results.map(instrumentDto),
@@ -180,30 +189,31 @@ export function marketInstrumentRoutes(deps: {
     )
     .post(
       '/',
+      instrumentGuard('create'),
       zValidator('json', instrumentCreateSchema, validationHook),
       async (c) => {
-        const actor = c.get('actor')!
         const body = c.req.valid('json')
-        const item = await market.createInstrument(actor, body)
+        const item = await market.createInstrument(permitOf(c), body)
         return c.json(instrumentDto(item), 201)
       },
     )
     .get(
       '/:id',
+      instrumentGuard('read'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        return c.json(instrumentDto(await market.getInstrument(c.get('actor')!, c.req.valid('param').id)))
+        return c.json(instrumentDto(await market.getInstrument(permitOf(c), c.req.valid('param').id)))
       },
     )
     .patch(
       '/:id',
+      instrumentGuard('update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', instrumentUpdateSchema, validationHook),
       async (c) => {
-        const actor = c.get('actor')!
         const raw = (await c.req.json()) as Record<string, unknown>
         const body = c.req.valid('json')
-        const item = await market.updateInstrument(actor, c.req.valid('param').id, {
+        const item = await market.updateInstrument(permitOf(c), c.req.valid('param').id, {
           name: body.name,
           defaultPriceKind: body.defaultPriceKind,
           active: body.active,
@@ -220,28 +230,35 @@ export function marketInstrumentRoutes(deps: {
     )
     .delete(
       '/:id',
+      instrumentGuard('delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        const actor = c.get('actor')!
-        await market.deleteInstrument(actor, c.req.valid('param').id)
+        await market.deleteInstrument(permitOf(c), c.req.valid('param').id)
         return c.body(null, 204)
       },
     )
 }
 
-/** 挂载于 `/base/market-price-points` */
+/**
+ * 挂载于 `/base/market-price-points`。
+ * 图区（chart-instruments / price-series）与手动刷新沿用已声明动作：
+ * 图区是 read，刷新是 create（meta 未声明 refresh 独立动作，不为好看新增权限码）。
+ */
 export function marketPricePointRoutes(deps: {
   auth: AuthService
+  authz: AuthzEnforcer
   market: MarketService
 }) {
-  const { auth, market } = deps
+  const { auth, authz, market } = deps
+  const pointGuard = (action: string) => authz.guard(PRICE_POINT_RESOURCE_NAME, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
       '/query',
+      pointGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await market.listPricePoints(c.get('actor')!, toListQuery(c.req.valid('json')))
+        const result = await market.listPricePoints(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({
           count: result.count,
           results: result.results.map(pricePointDto),
@@ -250,17 +267,19 @@ export function marketPricePointRoutes(deps: {
     )
     .get(
       '/chart-instruments',
+      pointGuard('read'),
       async (c) => {
-        return c.json(await market.chartInstruments(c.get('actor')!))
+        return c.json(await market.chartInstruments(permitOf(c)))
       },
     )
     .post(
       '/price-series',
+      pointGuard('read'),
       zValidator('json', priceSeriesSchema, validationHook),
       async (c) => {
         const body = c.req.valid('json')
         const result = await market.priceSeries(
-          c.get('actor')!,
+          permitOf(c),
           body.instrumentIds,
           body.priceKind,
           parseDateTime(body.from, 'from'),
@@ -271,21 +290,21 @@ export function marketPricePointRoutes(deps: {
     )
     .post(
       '/refresh',
+      pointGuard('create'),
       zValidator('json', refreshSchema, validationHook),
       async (c) => {
-        const actor = c.get('actor')!
         const body = c.req.valid('json')
-        const result = await market.refresh(actor, body.instrumentId ?? null)
+        const result = await market.refresh(permitOf(c), body.instrumentId ?? null)
         return c.json(result)
       },
     )
     .post(
       '/',
+      pointGuard('create'),
       zValidator('json', pricePointCreateSchema, validationHook),
       async (c) => {
-        const actor = c.get('actor')!
         const body = c.req.valid('json')
-        const item = await market.createPricePoint(actor, {
+        const item = await market.createPricePoint(permitOf(c), {
           instrumentId: body.instrumentId,
           observedAt: parseDateTime(body.observedAt, 'observedAt'),
           price: body.price,
@@ -298,17 +317,18 @@ export function marketPricePointRoutes(deps: {
     )
     .get(
       '/:id',
+      pointGuard('read'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        return c.json(pricePointDto(await market.getPricePoint(c.get('actor')!, c.req.valid('param').id)))
+        return c.json(pricePointDto(await market.getPricePoint(permitOf(c), c.req.valid('param').id)))
       },
     )
     .post(
       '/:id/void',
+      pointGuard('void'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        const actor = c.get('actor')!
-        const item = await market.voidPricePoint(actor, c.req.valid('param').id)
+        const item = await market.voidPricePoint(permitOf(c), c.req.valid('param').id)
         return c.json(pricePointDto(item))
       },
     )
@@ -317,7 +337,8 @@ export function marketPricePointRoutes(deps: {
 /** 兼容旧命名 */
 export function marketInstrumentRoutesLegacy(deps: {
   auth: AuthService
+  authz: AuthzEnforcer
   instruments: MarketService
 }) {
-  return marketInstrumentRoutes({ auth: deps.auth, market: deps.instruments })
+  return marketInstrumentRoutes({ auth: deps.auth, authz: deps.authz, market: deps.instruments })
 }
