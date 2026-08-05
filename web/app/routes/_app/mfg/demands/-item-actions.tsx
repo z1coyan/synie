@@ -1,8 +1,7 @@
 import { useState, type ReactNode } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { AlertDialog, Button, toast } from '@heroui/react'
 import type { Row } from '~/components/synie-data-grid/types'
-import { fetchMyPermissions } from '~/lib/permissions'
 import { toastError } from '~/lib/toast'
 import { workOrderClient } from '~/lib/resources/manufacturing'
 import { resourceBindingFor } from '~/lib/resources/registry'
@@ -20,15 +19,6 @@ export const canGenerateWorkOrder = (row: Row) => {
   )
   if (Number.isFinite(rem)) return rem > 0
   return row.status === 'PENDING' || row.status === 'SCHEDULED'
-}
-
-/** 当前用户权限集(other-stock 页同一取法;60s 缓存) */
-export function useMyPermissions() {
-  return useQuery({
-    queryKey: ['myPermissions'],
-    queryFn: fetchMyPermissions,
-    staleTime: 60_000,
-  })
 }
 
 const rowLabel = (row: Row) =>

@@ -6,7 +6,7 @@
  * 本文件是权限系统**自身的写侧**：授权目录闭包与 scope 合法性、内置角色冻结、
  * 部门与公司授权一致性都是 IAM 写侧校验（spec §1.3），留在这里，不属判定内核。
  */
-import type { ListQuery } from '@synie/shared'
+import type { DataScope, ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle } from '~/db/tx.ts'
@@ -21,6 +21,10 @@ import { auditFieldsOf, auditSpecOf } from '~/platform/audit/spec.ts'
 import { syncAuthUserEmail, syncUserCredential } from '~/platform/auth/credentials.ts'
 import { hashPassword } from '~/platform/auth/password.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
+import {
+  SCOPE_COLUMN_VALUES,
+  type ScopeColumnValue,
+} from '~/platform/authz/core/scope.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import { isMenuCode } from '~/platform/menu/catalog.ts'
@@ -67,6 +71,26 @@ export interface UserAccess {
 const USER_AUDIT_SPEC = auditSpecOf(userResourceMeta())
 const USER_AUDIT = USER_AUDIT_SPEC.fields
 const ROLE_AUDIT = auditFieldsOf(roleResourceMeta())
+
+/** (role, code, scope) 三元组授权的 wire 形态（scope 为 DataScope 名；DB 列存 snake 值） */
+export interface PermissionGrant {
+  permission: string
+  scope: DataScope
+}
+
+/** wire DataScope 名 → DB 列值（SCOPE_COLUMN_VALUES 的反查；deptTree ↔ dept_tree） */
+const SCOPE_WIRE_TO_COLUMN = Object.fromEntries(
+  Object.entries(SCOPE_COLUMN_VALUES).map(([column, atom]) => [atom, column]),
+) as Record<DataScope, ScopeColumnValue>
+
+/** DB 列值 → wire DataScope 名；granted 预留值与未知值即数据损坏——抛错（fail-closed，不得回落放大约为 all） */
+function scopeWireOf(column: string): DataScope {
+  const atom = SCOPE_COLUMN_VALUES[column as ScopeColumnValue]
+  if (!atom || atom === 'granted') {
+    throw new Error(`sys_role_permission.scope 含非法值: ${column}`)
+  }
+  return atom
+}
 
 /** 邮箱规范化：trim + lower；空串视为 null；格式校验 */
 function normalizeEmail(raw: string | null | undefined): string | null {
@@ -563,7 +587,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
   async function rolePermissions(
     permit: Permit,
     roleId: string,
-  ): Promise<{ id: string; permission: string }[]> {
+  ): Promise<{ id: string; permission: string; scope: DataScope }[]> {
     await loadAuthorized({
       db,
       permit,
@@ -574,12 +598,12 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
     })
     const rows = await db
       .selectFrom('sys_role_permission')
-      .select(['id', 'permission'])
+      .select(['id', 'permission', 'scope'])
       .where('role_id', '=', roleId)
       .orderBy('permission')
       .orderBy('id')
       .execute()
-    return rows
+    return rows.map((r) => ({ id: r.id, permission: r.permission, scope: scopeWireOf(r.scope) }))
   }
 
   /**
@@ -602,16 +626,26 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
     }
   }
 
+  /**
+   * 覆盖式同步角色授权（(role, code, scope) 三元组，spec §3）：
+   * 按 permission 去重（先现者优先）；删除目录内不在 desired 的码；
+   * 码仍在但 scope 变了的行 UPDATE scope；新码 INSERT 带 scope。
+   * unique 约束 (role_id, permission) 保证一码一行；目录外存量行保留不动。
+   */
   async function syncRolePermissions(
     permit: Permit,
     roleId: string,
-    desired: string[],
-  ): Promise<string[]> {
+    desired: PermissionGrant[],
+  ): Promise<PermissionGrant[]> {
     const catalog = new Set(registry.allPermissionCodes())
-    const wanted = uniqueStrings(desired)
-    for (const code of wanted) {
-      // 数据范围第一期恒 all；三元组授权的 wire 升级见工单 13
-      assertGrantable(code, 'all')
+    const wanted = new Map<string, DataScope>()
+    for (const item of desired) {
+      const code = item.permission.trim()
+      if (!code || wanted.has(code)) continue
+      wanted.set(code, item.scope)
+    }
+    for (const [code, scope] of wanted) {
+      assertGrantable(code, scope)
     }
     return withTx(db, async (trx) => {
       const locked = lockedRole(
@@ -628,13 +662,17 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
       if (locked.builtin) throw new ApiError('conflict', '内置角色的授权不可增删')
       const existing = await trx
         .selectFrom('sys_role_permission')
-        .select(['id', 'permission'])
+        .select(['id', 'permission', 'scope'])
         .where('role_id', '=', roleId)
         .execute()
-      const before = existing.map((r) => r.permission).sort()
-      const wantedSet = new Set(wanted)
+      // 审计快照：按 permission 排序的 { permission, scope }[]（wire scope 名）
+      const snap = (rows: readonly { permission: string; scope: string }[]): PermissionGrant[] =>
+        rows
+          .map((r) => ({ permission: r.permission, scope: scopeWireOf(r.scope) }))
+          .sort((a, b) => a.permission.localeCompare(b.permission))
+      const before = snap(existing)
       const remove = existing
-        .filter((r) => catalog.has(r.permission) && !wantedSet.has(r.permission))
+        .filter((r) => catalog.has(r.permission) && !wanted.has(r.permission))
         .map((r) => r.permission)
       if (remove.length > 0) {
         await trx
@@ -643,21 +681,31 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
           .where('permission', 'in', remove)
           .execute()
       }
-      for (const permission of wanted) {
-        await trx
-          .insertInto('sys_role_permission')
-          // 数据范围第一期恒 all；三元组授权的 wire 升级见工单 13
-          .values({ role_id: roleId, permission, scope: 'all' })
-          .onConflict((oc) => oc.columns(['role_id', 'permission']).doNothing())
-          .execute()
+      const existingByCode = new Map(existing.map((r) => [r.permission, r.scope]))
+      for (const [permission, scope] of wanted) {
+        const column = SCOPE_WIRE_TO_COLUMN[scope]
+        const current = existingByCode.get(permission)
+        if (current === undefined) {
+          await trx
+            .insertInto('sys_role_permission')
+            .values({ role_id: roleId, permission, scope: column })
+            .execute()
+        } else if (current !== column) {
+          await trx
+            .updateTable('sys_role_permission')
+            .set({ scope: column })
+            .where('role_id', '=', roleId)
+            .where('permission', '=', permission)
+            .execute()
+        }
       }
       const finalRows = await trx
         .selectFrom('sys_role_permission')
-        .select('permission')
+        .select(['permission', 'scope'])
         .where('role_id', '=', roleId)
         .execute()
-      const final = finalRows.map((r) => r.permission).sort()
-      if (before.join('\0') !== final.join('\0')) {
+      const final = snap(finalRows)
+      if (JSON.stringify(before) !== JSON.stringify(final)) {
         await writeAudit(trx, permit.actor, {
           resource: 'sys_role_permission',
           recordId: roleId,

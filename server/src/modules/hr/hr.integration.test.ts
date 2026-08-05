@@ -163,11 +163,11 @@ describePg('hr operations integration', () => {
 
   test('meta 注册 + 权限优先 + 考勤导入日算 + 工资借款联动', async () => {
     // meta
-    const meta = await json<{ name: string; grid: { capabilities: string[] } }>(
+    const meta = await json<{ name: string; capabilities: { action: string }[] }>(
       '/meta/resources/hrPayrolls',
     )
     expect(meta.name).toBe('hrPayrolls')
-    expect(meta.grid.capabilities).toContain('create')
+    expect(meta.capabilities.some((entry) => entry.action === 'create')).toBe(true)
 
     // 权限优先：无 token → 401 或 403；reader 无 create
     const denied = await app.request('/api/v1/hr/payrolls', {

@@ -114,9 +114,6 @@ function QuotationItemsTab() {
         extraFields={['materialId', 'materialName', 'materialSpec', 'customerPartNo']}
         // 默认报价日期倒序(新单在前);calc 列排序沿用销售报价条目已验证的能力
         defaultSort={{ column: 'quotationDate', direction: 'descending' }}
-        // purQuotationItems 复用 purchase.quotation 权限码,meta capabilities 为空:显式声明本视图
-        // 可用动作(整单「新建报价单」+ 草稿单「编辑/审核整单」),不声明 delete,删除不进条目视图
-        capabilities={['create', 'update', 'audit']}
         createLabel="新建报价单"
         onCreate={() => openDrawer('create', null)}
         onView={(row) => openDrawer('view', { id: String(row.quotationId), status: row.quotationStatus })}

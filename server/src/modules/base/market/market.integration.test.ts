@@ -286,11 +286,12 @@ describe.skipIf(!dbUrl)('market integration', () => {
     })
     expect(meta.status).toBe(200)
     const metaBody = (await meta.json()) as {
-      form?: { exclude?: string[] }
-      grid: { columns: Array<{ name: string }> }
+      form?: { kind: string }
+      list: { columns: string[] }
     }
-    expect(metaBody.form?.exclude?.sort()).toEqual(['id', 'insertedAt', 'updatedAt'].sort())
-    expect(metaBody.grid.columns.some((c) => c.name === 'externalLastCode')).toBe(true)
+    // v3 文档无 v1 form.exclude/grid sibling：技术字段不进表单由投影保证，这里核对 v3 形状
+    expect(metaBody.form?.kind).toBe('basic')
+    expect(metaBody.list.columns).toContain('externalLastCode')
 
     const cross = await market.createInstrument(inst$('create'), {
       code: `${code}X`,

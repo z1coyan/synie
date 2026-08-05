@@ -1,12 +1,15 @@
 import type {
+  CapabilityEntry,
   DataScope,
   FieldDocument,
   PermissionGroup,
   ResourceDocument,
+  ResourceDocumentAuthz,
   ResourceSummary,
 } from '@synie/shared'
 import { assertValidAuditDeclaration } from '../audit/spec.ts'
 import { hasPermission, type Actor } from '../authz/actor.ts'
+import { topAtom } from '../authz/core/index.ts'
 import { ApiError } from '../http/errors.ts'
 import {
   buildNormalizedResource,
@@ -38,7 +41,7 @@ export interface SealReport {
 /**
  * Meta Registry / Resource Catalog：
  * 生命周期 register → seal → project/read。
- * 投影仅产出 ResourceDocument v2（contract 后无 v1 grid/form sibling）。
+ * 投影仅产出 ResourceDocument v3（contract 后无 v1 grid/form sibling）。
  * Catalog 不提供通用 create/update/delete 或 SQL 保存入口。
  */
 export function createRegistry() {
@@ -184,22 +187,54 @@ export function createRegistry() {
     return anyOf.some((code) => hasPermission(actor, code))
   }
 
-  function collectCapabilities(resource: ResourceMeta, actor: Actor): string[] {
-    const capabilities: string[] = []
+  /**
+   * 投影 v3 capabilities：动作 + Actor 行级范围（格上已折叠）。
+   * via 子行资源遍历判定归宿（宿主根）的 actions——「items 资源经 via 投影取真值」；
+   * 非 via 遍历自身 actions。无授权的动作不进 capabilities；read 恒排除。
+   */
+  function collectCapabilities(resource: ResourceMeta, actor: Actor): CapabilityEntry[] {
+    const target = authzTarget(resource.name)
+    const actionsSource =
+      target.rootResource === resource.name ? resource : resources.get(target.rootResource)!
+    const capabilities: CapabilityEntry[] = []
     const seen = new Set<string>()
-    for (const action of resource.actions) {
+    for (const action of actionsSource.actions) {
       const permissionAction = action.permissionAction ?? action.key
-      if (
-        permissionAction !== 'read' &&
-        hasPermission(actor, `${resource.permissionPrefix}:${permissionAction}`)
-      ) {
-        if (!seen.has(permissionAction)) {
-          seen.add(permissionAction)
-          capabilities.push(permissionAction)
-        }
+      if (permissionAction === 'read' || seen.has(permissionAction)) continue
+      const scope = grantScope(actor, `${target.prefix}:${permissionAction}`)
+      if (scope) {
+        seen.add(permissionAction)
+        capabilities.push({ action: permissionAction, scope })
       }
     }
     return capabilities
+  }
+
+  /**
+   * 文档 authz 维度：非 via 的 company 资源把 owner/dept 绑定列映射为 wire 名（apiName）。
+   * 绑定列无对应字段即 seal 漏拦（不变量破坏），抛错而非静默丢维度——
+   * 丢维度会让前端行级判定静默失效。via/global 不携带：
+   * 前端只对携带 authz 的文档做行级本地判定，via 子行由服务端权威兜底。
+   */
+  function documentAuthz(resource: ResourceMeta): ResourceDocumentAuthz | undefined {
+    const binding = resolveAuthzBinding(resource)
+    if (binding.kind !== 'company') return undefined
+    const apiNameOf = (column: string): string => {
+      const field = resource.fields.find((f) => f.dbColumn === column)
+      if (!field) {
+        throw new Error(
+          `Meta 资源「${resource.name}」authz 绑定列 ${column} 无对应字段（seal 应已拦截）`,
+        )
+      }
+      return field.apiName
+    }
+    const authz: ResourceDocumentAuthz = {}
+    if (binding.owner) authz.ownerId = apiNameOf(binding.owner.column)
+    if (binding.dept) {
+      authz.deptId = apiNameOf(binding.dept.column)
+      authz.deptMode = binding.dept.mode
+    }
+    return authz.ownerId || authz.deptId ? authz : undefined
   }
 
   function applyRefAvailability(field: FieldDocument, actor: Actor): FieldDocument {
@@ -232,7 +267,7 @@ export function createRegistry() {
   }
 
   /**
-   * 按 Actor 投影完整 ResourceDocument v2（唯一 wire envelope）。
+   * 按 Actor 投影完整 ResourceDocument v3（唯一 wire envelope）。
    */
   function buildDocument(name: string, actor: Actor): ResourceDocument {
     const resource = resources.get(name)
@@ -244,8 +279,11 @@ export function createRegistry() {
     if (!norm) {
       throw new Error(`Meta 资源 ${name} 缺少 Catalog 规范化结果（须经 register/seal）`)
     }
-    return projectResourceDocument(norm, capabilities, (field) =>
-      applyRefAvailability(field, actor),
+    return projectResourceDocument(
+      norm,
+      capabilities,
+      (field) => applyRefAvailability(field, actor),
+      documentAuthz(resource),
     )
   }
 
@@ -345,6 +383,18 @@ export function createRegistry() {
 }
 
 export type Registry = ReturnType<typeof createRegistry>
+
+/**
+ * Actor 在某精确码上的行级范围（格上最大原子）；superAdmin/system 恒 'all'，无授权为 null。
+ */
+function grantScope(actor: Actor, code: string): DataScope | null {
+  if (actor.superAdmin || actor.kind === 'system') return 'all'
+  const set = actor.grants.get(code)
+  if (!set) return null
+  const top = topAtom(set)
+  // granted 正交预留位不进格（topAtom 不会返回），防御性排除
+  return top === 'granted' ? null : top
+}
 
 function collectBasicFieldNames(form: {
   kind: 'basic'

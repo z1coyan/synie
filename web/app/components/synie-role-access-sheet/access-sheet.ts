@@ -3,11 +3,19 @@
 // - 两区勾选态各有独立基线，dirty = 当前勾选 ≠ 基线
 // - 保存计划只含「dirty 且可写」的区，顺序固定 菜单 → 功能权限（两 sync 幂等无耦合，
 //   顺序仅让部分失败的归因可预期）；计划为空时保存钮禁用
+import type { DataScope } from '@synie/shared'
 
 /** 两集合逐元相等（dirty = !setsEqual(当前勾选, 基线)） */
 export function setsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   if (a.size !== b.size) return false
   for (const v of a) if (!b.has(v)) return false
+  return true
+}
+
+/** 两授权表逐元相等（功能权限区 dirty = !grantsEqual(当前授权, 基线)）：码集相同且 scope 逐一相等 */
+export function grantsEqual(a: ReadonlyMap<string, DataScope>, b: ReadonlyMap<string, DataScope>): boolean {
+  if (a.size !== b.size) return false
+  for (const [code, scope] of a) if (b.get(code) !== scope) return false
   return true
 }
 

@@ -10,3 +10,6 @@ export class AppError extends Error {
 
 export const isForbidden = (error: unknown): boolean =>
   error instanceof AppError && error.codes.includes('forbidden')
+
+export const isNotFound = (error: unknown): boolean =>
+  error instanceof AppError && error.codes.includes('not_found')

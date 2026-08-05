@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "note": "行级本地判定对拍夹具（工单 14）：rowInScope(scope, row, dims, me)。scope 为格上已折叠原子；dims 为 ResourceDocument.authz（绑定列 apiName）；me 取 /auth/me 的 user.id/departmentId/departmentSubtreeIds。fail-closed：行值 null/缺列/缺维度一律 false（all 除外）。web 消费见 web/app/lib/row-scope.test.ts。",
+  "cases": [
+    {
+      "name": "all：无维度也命中",
+      "me": { "userId": "u1", "deptId": null, "deptSubtreeIds": [] },
+      "dims": {},
+      "scope": "all",
+      "row": {},
+      "expect": true
+    },
+    {
+      "name": "self：本人行命中",
+      "me": { "userId": "u1", "deptId": null, "deptSubtreeIds": [] },
+      "dims": { "ownerId": "createdById" },
+      "scope": "self",
+      "row": { "createdById": "u1" },
+      "expect": true
+    },
+    {
+      "name": "self：他人行不命中",
+      "me": { "userId": "u1", "deptId": null, "deptSubtreeIds": [] },
+      "dims": { "ownerId": "createdById" },
+      "scope": "self",
+      "row": { "createdById": "u2" },
+      "expect": false
+    },
+    {
+      "name": "self：缺 ownerId 维度 fail-closed",
+      "me": { "userId": "u1", "deptId": null, "deptSubtreeIds": [] },
+      "dims": { "deptId": "ownerDeptId" },
+      "scope": "self",
+      "row": { "createdById": "u1" },
+      "expect": false
+    },
+    {
+      "name": "dept：本部门行命中",
+      "me": { "userId": "u1", "deptId": "d1", "deptSubtreeIds": ["d1", "d1a"] },
+      "dims": { "deptId": "ownerDeptId" },
+      "scope": "dept",
+      "row": { "ownerDeptId": "d1" },
+      "expect": true
+    },
+    {
+      "name": "dept：子部门行不命中（deptTree 才含子树）",
+      "me": { "userId": "u1", "deptId": "d1", "deptSubtreeIds": ["d1", "d1a"] },
+      "dims": { "deptId": "ownerDeptId" },
+      "scope": "dept",
+      "row": { "ownerDeptId": "d1a" },
+      "expect": false
+    },
+    {
+      "name": "dept：me 无部门 fail-closed",
+      "me": { "userId": "u1", "deptId": null, "deptSubtreeIds": [] },
+      "dims": { "deptId": "ownerDeptId" },
+      "scope": "dept",
+      "row": { "ownerDeptId": "d1" },
+      "expect": false
+    },
+    {
+      "name": "deptTree：子部门行命中",
+      "me": { "userId": "u1", "deptId": "d1", "deptSubtreeIds": ["d1", "d1a"] },
+      "dims": { "deptId": "ownerDeptId" },
+      "scope": "deptTree",
+      "row": { "ownerDeptId": "d1a" },
+      "expect": true
+    },
+    {
+      "name": "deptTree：树外部门不命中",
+      "me": { "userId": "u1", "deptId": "d1", "deptSubtreeIds": ["d1", "d1a"] },
+      "dims": { "deptId": "ownerDeptId" },
+      "scope": "deptTree",
+      "row": { "ownerDeptId": "d2" },
+      "expect": false
+    },
+    {
+      "name": "deptTree：行值 null fail-closed",
+      "me": { "userId": "u1", "deptId": "d1", "deptSubtreeIds": ["d1"] },
+      "dims": { "deptId": "ownerDeptId" },
+      "scope": "deptTree",
+      "row": { "ownerDeptId": null },
+      "expect": false
+    },
+    {
+      "name": "dept：缺列 fail-closed",
+      "me": { "userId": "u1", "deptId": "d1", "deptSubtreeIds": ["d1"] },
+      "dims": { "deptId": "ownerDeptId" },
+      "scope": "dept",
+      "row": {},
+      "expect": false
+    }
+  ]
+}

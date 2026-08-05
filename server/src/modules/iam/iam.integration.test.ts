@@ -66,15 +66,17 @@ run('PG 集成（IAM）', () => {
     expect(role.builtin).toBe(false)
 
     const perms = await iam.syncRolePermissions(permit(ROLE_RESOURCE, 'update'), role.id, [
-      'sys.user:read',
-      'sys.role:read',
-      'base.company:read',
+      { permission: 'sys.user:read', scope: 'all' },
+      { permission: 'sys.role:read', scope: 'all' },
+      { permission: 'base.company:read', scope: 'all' },
     ])
-    expect(perms).toContain('sys.user:read')
+    expect(perms.map((p) => p.permission)).toContain('sys.user:read')
     expect(perms.length).toBe(3)
 
     await expect(
-      iam.syncRolePermissions(permit(ROLE_RESOURCE, 'update'), role.id, ['not.a.real:perm']),
+      iam.syncRolePermissions(permit(ROLE_RESOURCE, 'update'), role.id, [
+        { permission: 'not.a.real:perm', scope: 'all' },
+      ]),
     ).rejects.toMatchObject({ code: 'validation' })
 
     const created = await iam.createUser(permit(USER_RESOURCE, 'create'), {

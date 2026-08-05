@@ -1,3 +1,4 @@
+import { hasCapability } from '@synie/shared'
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -125,7 +126,7 @@ function PayrollSlipsPage() {
   // 发放按 hr_payroll_payment 自身权限码门控(发放≠改单)
   const paymentsMeta = useGridMeta(
     'hrPayrollPayments', true)
-  const canPay = (paymentsMeta.data?.capabilities ?? []).includes('create')
+  const canPay = hasCapability(paymentsMeta.data?.capabilities ?? [], 'create')
 
   const stats = useQuery({
     queryKey: ['payrollMonthStats', month],

@@ -1,5 +1,5 @@
 /**
- * Catalog client：解码并缓存完整 ResourceDocument v2。
+ * Catalog client：解码并缓存完整 ResourceDocument v3。
  * Meta 响应即 ResourceDocument（无 v1 grid/form envelope）。
  */
 import {
@@ -28,4 +28,16 @@ export async function fetchResourceDocument(resource: string): Promise<ResourceD
   const document = decodeResourceDocument(raw)
   if (!ssr) setCachedDocument(resource, document)
   return document
+}
+
+/**
+ * ['resourceDocument', name] 查询的唯一查询定义：同 key 不得出现第二个 queryFn。
+ * useResourceDocument / useResourceCapabilities 都从这里取，再各自叠加 enabled/retry。
+ */
+export function resourceDocumentQuery(resource: string) {
+  return {
+    queryKey: ['resourceDocument', resource] as const,
+    queryFn: () => fetchResourceDocument(resource),
+    staleTime: 5 * 60_000,
+  }
 }

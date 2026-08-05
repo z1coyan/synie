@@ -8,5 +8,6 @@ import './synie-record-drawer/document-preview-checks.ts'
 import './synie-remote-select/remote-select-checks.ts'
 import './synie-editable-table/editable-table-checks.ts'
 import './synie-permission-sheet/permission-sheet-checks.ts'
+import '../lib/authz-guard-checks.ts'
 
 console.log('run-checks ok')

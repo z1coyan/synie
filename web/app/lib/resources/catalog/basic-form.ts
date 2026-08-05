@@ -1,5 +1,5 @@
 /**
- * 从 ResourceDocument v2 派生 SynieRecordDrawer 可用的静态表单配置。
+ * 从 ResourceDocument v3 派生 SynieRecordDrawer 可用的静态表单配置。
  * expand/migrate：Basic Form renderer 消费 Catalog，不再在页面重复 label/required/edit。
  */
 import type {

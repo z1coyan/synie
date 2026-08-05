@@ -4,12 +4,12 @@
 
 **Blocked by:** 03, 05
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] wire 契约与 sync 端点升级（02 的写侧校验此时全量放开）
-- [ ] 矩阵组件：范围选择、supportedScopes 驱动渲染、无通配简化
-- [ ] 角色权限读取回显三元组；审计 diff 含 scope 变化
-- [ ] 自检用例（permission-sheet-checks）换代
-- [ ] 产品文档：系统管理篇角色节补数据范围
+- [x] wire 契约与 sync 端点升级（02 的写侧校验此时全量放开）
+- [x] 矩阵组件：范围选择、supportedScopes 驱动渲染、无通配简化
+- [x] 角色权限读取回显三元组；审计 diff 含 scope 变化
+- [x] 自检用例（permission-sheet-checks）换代
+- [x] 产品文档：系统管理篇角色节补数据范围
 
 ## Comments

@@ -4,12 +4,12 @@
 
 **Blocked by:** 03, 04, 05
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] packages/shared ResourceDocument v3 + decoder + 特征化测试
-- [ ] grid-from-document / use-grid-actions 消费 {action, scope}；行级求值与 fixtures 对拍
-- [ ] me hook 合一、全站 fail-closed、web 两份 candidates 删除
-- [ ] capabilities 覆盖与硬编码码清零（grep 断言进测试）
-- [ ] 权限相关前端自检/E2E 全绿
+- [x] packages/shared ResourceDocument v3 + decoder + 特征化测试
+- [x] grid-from-document / use-grid-actions 消费 {action, scope}；行级求值与 fixtures 对拍
+- [x] me hook 合一、全站 fail-closed、web 两份 candidates 删除
+- [x] capabilities 覆盖与硬编码码清零（grep 断言进测试）
+- [x] 权限相关前端自检/E2E 全绿
 
 ## Comments

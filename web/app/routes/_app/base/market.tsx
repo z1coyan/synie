@@ -1,3 +1,4 @@
+import { hasCapability } from '@synie/shared'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -303,7 +304,7 @@ function MarketPage() {
   const instrumentMeta = useGridMeta('basMarketInstruments', true)
   const canPriceRead = priceMeta.data != null
   const canInstrumentRead = instrumentMeta.data != null
-  const canPriceCreate = (priceMeta.data?.capabilities ?? []).includes('create')
+  const canPriceCreate = hasCapability(priceMeta.data?.capabilities ?? [], 'create')
   const permissionsPending = priceMeta.isPending || instrumentMeta.isPending
   const permissionsError = [priceMeta.error, instrumentMeta.error].find(
     (error) => error != null && !isForbidden(error),

@@ -134,16 +134,18 @@ describeIf('printing integration', () => {
     const meta = (await metaRes.json()) as {
       schemaVersion: number
       name: string
-      capabilities: string[]
+      capabilities: { action: string; scope: string }[]
     }
-    expect(meta.schemaVersion).toBe(2)
+    expect(meta.schemaVersion).toBe(3)
     expect(meta.name).toBe('sysPrintTemplates')
-    expect([...meta.capabilities].sort().join(',')).toBe('create,delete,update')
+    expect(meta.capabilities.map((entry) => entry.action).sort().join(',')).toBe(
+      'create,delete,update',
+    )
 
     const resourcesRes = await app.request('/api/v1/printing/resources', { headers })
     expect(resourcesRes.status).toBe(200)
     const resources = (await resourcesRes.json()) as { resources: string[] }
-    expect(resources.resources.length).toBe(61)
+    expect(resources.resources.length).toBe(64)
     expect(resources.resources).toContain('sales.order')
 
     const catalogRes = await app.request(
@@ -152,7 +154,7 @@ describeIf('printing integration', () => {
     )
     expect(catalogRes.status).toBe(200)
     const catalog = (await catalogRes.json()) as { fields: unknown[]; loops: unknown[] }
-    expect(catalog.fields.length).toBe(25)
+    expect(catalog.fields.length).toBe(27)
     expect(catalog.loops.length).toBe(1)
 
     const form = new FormData()

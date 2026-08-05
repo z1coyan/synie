@@ -1,3 +1,4 @@
+import { hasCapability } from '@synie/shared'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Chip, Spinner, Table, toast } from '@heroui/react'
@@ -35,7 +36,7 @@ export function PaymentsSection(props: { payroll: Row; onChanged: () => void }) 
   // 门控按 hrPayrollPayments 自身权限码(发放≠改单)
   const meta = useGridMeta(
     'hrPayrollPayments', true)
-  const can = (action: string) => (meta.data?.capabilities ?? []).includes(action)
+  const can = (action: string) => hasCapability(meta.data?.capabilities ?? [], action)
 
   const payments = useQuery({
     queryKey: ['payrollPayments', payrollId],

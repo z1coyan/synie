@@ -7,12 +7,8 @@ import {
 import type { Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { DEMAND_ITEM_STATUS_ENUM_COLORS } from '~/lib/doc-status'
-import { hasPermission } from '~/lib/permissions'
-import {
-  canGenerateWorkOrder,
-  useDemandItemActions,
-  useMyPermissions,
-} from './-item-actions'
+import { useResourceCapabilities } from '~/lib/use-resource-capabilities'
+import { canGenerateWorkOrder, useDemandItemActions } from './-item-actions'
 import { useDemandDrawer } from './-demand-drawer'
 
 export const Route = createFileRoute('/_app/mfg/demands/items')({
@@ -71,15 +67,11 @@ const GRID_OVERRIDES = {
 
 function DemandItemsTab() {
   const openDrawer = useDemandDrawer()
-  const perms = useMyPermissions()
+  // 门控改消费文档投影（fail-closed）：新建看 mfgDemands:create，生成工单看 mfgWorkOrders:create
+  const demandCaps = useResourceCapabilities('mfgDemands')
+  const workOrderCaps = useResourceCapabilities('mfgWorkOrders')
   const refetchRef = useRef<() => void>(() => {})
   const itemActions = useDemandItemActions(() => refetchRef.current())
-
-  const canCreateDemand = hasPermission(perms.data, 'mfg.demand:create')
-  const canCreateWorkOrder = hasPermission(
-    perms.data,
-    'mfg.work_order:create',
-  )
 
   return (
     <>
@@ -89,11 +81,12 @@ function DemandItemsTab() {
         overrides={GRID_OVERRIDES}
         // 物料富单元格所需快照字段与物料外键(撤列后仍随查询取回;需求行无 customerPartNo 快照)
         extraFields={['materialId', 'materialName', 'materialSpec']}
-        capabilities={[...(canCreateDemand ? ['create'] : [])]}
         createLabel="新建需求单"
-        onCreate={() => openDrawer('create', null)}
+        onCreate={
+          demandCaps.has('create') ? () => openDrawer('create', null) : undefined
+        }
         rowActions={[
-          ...(canCreateWorkOrder
+          ...(workOrderCaps.has('create')
             ? [
                 {
                   key: 'generateWorkOrder',

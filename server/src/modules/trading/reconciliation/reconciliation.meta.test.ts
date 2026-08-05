@@ -1,5 +1,5 @@
 /**
- * 对账 Meta 字段/动作表面（ResourceDocument v2）。
+ * 对账 Meta 字段/动作表面（ResourceDocument v3）。
  */
 import { describe, expect, test } from 'bun:test'
 import { createRegistry } from '~/platform/meta/registry.ts'
@@ -49,13 +49,13 @@ describe('对账 Meta 表面', () => {
       'baseGrossTotal',
     ])
     expect(head.capabilities).toEqual([
-      'create',
-      'update',
-      'delete',
-      'confirm',
-      'unconfirm',
-      'audit',
-      'void',
+      { action: 'create', scope: 'all' },
+      { action: 'update', scope: 'all' },
+      { action: 'delete', scope: 'all' },
+      { action: 'confirm', scope: 'all' },
+      { action: 'unconfirm', scope: 'all' },
+      { action: 'audit', scope: 'all' },
+      { action: 'void', scope: 'all' },
     ])
     expect(head.commands[0]?.label).toBe('客户确认')
     expect(item.fields.map((c) => c.name)).toEqual([
@@ -79,7 +79,9 @@ describe('对账 Meta 表面', () => {
       'unitName',
       'orderCurrencyCode',
     ])
-    expect(item.capabilities).toEqual([])
+    // via 子行经宿主投影取真值：superadmin 行文档能力与宿主一致；行文档不携带 authz 维度
+    expect(item.capabilities).toEqual(head.capabilities)
+    expect(item.authz).toBeUndefined()
   })
 
   test('采购头/行字段与动作', () => {

@@ -1,14 +1,16 @@
 /**
- * ResourceDocument v2 — 类型安全 Resource Catalog 的唯一 wire 契约。
+ * ResourceDocument v3 — 类型安全 Resource Catalog 的唯一 wire 契约。
  *
  * 服务端按 Actor 投影完整文档；Grid 与基础 Form 都从本契约派生。
  * contract 后 GET /meta/resources/{name} 直接返回本文档（无 v1 grid/form sibling）。
+ * v3：capabilities 从 string[] 换代为 { action, scope }[]（行级范围随投影下发），
+ * 文档可携带 authz 维度（绑定列 apiName）供前端行级本地判定。
  */
 import type { FilterState, SortState } from './filter.ts'
-import type { GridEnumOption } from './meta.ts'
+import type { DataScope, GridEnumOption } from './meta.ts'
 
 /** 当前支持的 ResourceDocument schema 版本 */
-export const RESOURCE_DOCUMENT_SCHEMA_VERSION = 2 as const
+export const RESOURCE_DOCUMENT_SCHEMA_VERSION = 3 as const
 
 export type ResourceDocumentSchemaVersion = typeof RESOURCE_DOCUMENT_SCHEMA_VERSION
 
@@ -180,7 +182,7 @@ export type FormKind = FormDocument['kind']
 export type CommandTarget = 'collection' | 'row' | 'bulk' | 'rowOrBulk'
 
 /**
- * v2 命令文档：语义 key + 权限能力 + target。
+ * v3 命令文档：语义 key + 权限能力 + target。
  * 不含 HTTP path/method/mutation；transport 只存在于前端 Adapter。
  */
 export interface CommandDocument {
@@ -193,6 +195,36 @@ export interface CommandDocument {
 }
 
 /**
+ * v3 能力项：动作 + Actor 在该动作上的行级范围（格上已折叠的最大原子）。
+ * 不含 read（读权由文档可达性表达）。
+ */
+export interface CapabilityEntry {
+  action: string
+  scope: DataScope
+}
+
+/** 能力表查找（entry 形态的 includes 替代） */
+export function hasCapability(
+  capabilities: readonly CapabilityEntry[],
+  action: string,
+): boolean {
+  return capabilities.some((entry) => entry.action === action)
+}
+
+/**
+ * v3 authz 维度声明：行级本地判定所需的绑定列 wire 名（apiName）。
+ * 仅 company 形态且声明了 owner/dept 绑定的资源携带；via/global 不携带
+ * （via 子行行上无宿主盖章列，不做行级本地判定，服务端仍是权威）。
+ */
+export interface ResourceDocumentAuthz {
+  /** owner 绑定列的 apiName（scope=self 判定用） */
+  ownerId?: string
+  /** dept 绑定列的 apiName（scope=dept/deptTree 判定用） */
+  deptId?: string
+  deptMode?: 'stamped' | 'assigned'
+}
+
+/**
  * Actor 投影后的完整资源文档。
  * 标准 CRUD 只贡献 capabilities，不重复进入 commands。
  */
@@ -202,8 +234,10 @@ export interface ResourceDocument {
   /** 独立显示标签（可与 permissionLabel 不同，如「货币」vs 权限组「币种」） */
   label: string
   permissionPrefix: string
-  /** 当前 Actor 有效能力码（不含 read） */
-  capabilities: string[]
+  /** 当前 Actor 有效能力（动作 + 行级范围，不含 read） */
+  capabilities: CapabilityEntry[]
+  /** 行级判定维度（company 形态且声明 owner/dept 绑定时携带） */
+  authz?: ResourceDocumentAuthz
   fields: FieldDocument[]
   lookup: ResourceLookupMeta
   list: ListLayoutMeta

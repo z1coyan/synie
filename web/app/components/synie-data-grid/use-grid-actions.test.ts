@@ -176,11 +176,11 @@ describe('runBindingMutation 命令 target 契约', () => {
   test('requiredCapability 与 key 分离：gridMetaFromDocument 携带字段', async () => {
     const { gridMetaFromDocument } = await import('~/lib/resources/catalog/grid-from-document')
     const meta = gridMetaFromDocument({
-      schemaVersion: 2,
+      schemaVersion: 3,
       name: 'sysStorages',
       label: '存储',
       permissionPrefix: 'sys.storage',
-      capabilities: ['update'],
+      capabilities: [{ action: 'update', scope: 'all' }],
       fields: [
         {
           kind: 'scalar',
@@ -211,6 +211,49 @@ describe('runBindingMutation 命令 target 契约', () => {
       target: 'row',
     })
     // 门控应用 requiredCapability：持 update 即可见 setDefault
-    expect(meta.capabilities).toContain('update')
+    expect(meta.capabilities).toContainEqual({ action: 'update', scope: 'all' })
+  })
+
+  test('v3：authz 维度透传进 GridMeta；canDelete 按 entry 查找', async () => {
+    const { gridMetaFromDocument } = await import('~/lib/resources/catalog/grid-from-document')
+    const base = {
+      schemaVersion: 3 as const,
+      name: 'mfgDemands',
+      label: '履约需求单',
+      permissionPrefix: 'mfg.demand',
+      fields: [
+        {
+          kind: 'scalar' as const,
+          scalarType: 'string' as const,
+          name: 'name',
+          label: '名称',
+          visibility: 'readable' as const,
+          input: { create: 'required' as const, update: 'allowed' as const },
+          filterable: true,
+          sortable: true,
+        },
+      ],
+      lookup: { labelField: 'name', searchFields: ['name'] },
+      list: { columns: ['name'] },
+      form: { kind: 'none' as const },
+      commands: [],
+    }
+    const meta = gridMetaFromDocument({
+      ...base,
+      capabilities: [
+        { action: 'update', scope: 'dept' },
+        { action: 'delete', scope: 'all' },
+      ],
+      authz: { deptId: 'assignedDeptId', deptMode: 'assigned' },
+    })
+    expect(meta.authz).toEqual({ deptId: 'assignedDeptId', deptMode: 'assigned' })
+    expect(meta.canDelete).toBe(true)
+
+    const noDelete = gridMetaFromDocument({
+      ...base,
+      capabilities: [{ action: 'update', scope: 'dept' }],
+    })
+    expect(noDelete.canDelete).toBe(false)
+    expect(noDelete.authz).toBeUndefined()
   })
 })

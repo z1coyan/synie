@@ -1,3 +1,4 @@
+import { hasCapability } from '@synie/shared'
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { parseDate, parseDateTime } from '@internationalized/date'
 import {
@@ -19,6 +20,7 @@ import {
 import { EmptyState, Sheet } from '@heroui-pro/react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { defaultCompanyId, useAuthorizedCompanies } from '~/lib/form-defaults'
+import { isNotFound } from '~/lib/errors'
 import { executeSingleRowCommandWithInvalidation } from '~/lib/resources/command-invalidation'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { QueryState } from '../synie-query-state/QueryState'
@@ -181,7 +183,9 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const row = props.row ?? byId.data ?? null
   // isPending 含 enabled 未就绪(等 meta)阶段;data === null 是「查过了但没有」(未查完是 undefined)
   const rowPending = wantsFetch && validId && byId.isPending
-  const rowMissing = wantsFetch && (!validId || byId.data === null)
+  // not_found(含行级范围不命中的新语义)按「查无此行」呈现,不落泛化加载失败文案
+  const rowMissing =
+    wantsFetch && (!validId || byId.data === null || isNotFound(byId.error))
 
   // 关闭动画期间冻结最后一次打开时的内容:onOpenChange(false) 后父级常把 mode 回落
   // 'view'、row 置 undefined,若渲染路径跟着实时切换,会在 Sheet 退出动画播放期间把
@@ -220,9 +224,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const canSaveAndAudit =
     !!props.onSubmit &&
     !!auditAction &&
-    (remoteMeta.data?.capabilities ?? []).includes(
-      auditAction.requiredCapability,
-    ) &&
+    hasCapability(remoteMeta.data?.capabilities ?? [], auditAction.requiredCapability) &&
     (renderRow?.status == null || renderRow?.status === 'DRAFT')
   // 当前 tab:null 表示未手动切换过(回落首 tab),每次打开抽屉重置
   const [activeTab, setActiveTab] = useState<string | null>(null)
@@ -426,7 +428,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
               <Sheet.Heading>{title}</Sheet.Heading>
             </Sheet.Header>
             <Sheet.Body>
-              {metaError || byId.isError ? (
+              {metaError || (byId.isError && !isNotFound(byId.error)) ? (
                 // GridMeta/rowId 取数失败:展示报错并可重试(与 SynieDataGrid 同一套失败态)。
                 // 错误分支在 spinner 之前:meta 失败时 byId 因 enabled 门控永远 isPending,反序会卡死转圈。
                 // 403 由 QueryState 渲染「无权限访问」专属态(与 grid 对齐;此前混在通用失败态里)

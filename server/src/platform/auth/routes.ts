@@ -30,8 +30,7 @@ export function authRoutes(auth: AuthService) {
     .get('/me', requireAuth(auth), async (c) => {
       const actor = c.get('actor')
       const menuCodes = await auth.menuCodes(actor)
-      // Actor v2 投影：精确码（无通配）+ 每码数据范围 + 部门维度。
-      // permissions 仍以纯码数组并存，供前端换代前消费（工单 14 收口后移除）。
+      // Actor v2 投影：精确码（无通配）+ 每码数据范围 + 部门维度（工单 14 收口后唯一权限通道）。
       const grants = [...actor.grants.entries()]
         .map(([code, scopes]) => ({ code, scope: topAtom(scopes) ?? 'none' }))
         .sort((a, b) => a.code.localeCompare(b.code))
@@ -39,7 +38,6 @@ export function authRoutes(auth: AuthService) {
         user: { id: actor.userId, username: actor.username, name: actor.name },
         superAdmin: actor.superAdmin,
         allCompanies: actor.companies.all,
-        permissions: grants.map((g) => g.code),
         grants,
         companyIds: actor.companies.ids,
         departmentId: actor.deptId,

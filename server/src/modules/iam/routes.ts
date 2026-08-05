@@ -70,7 +70,19 @@ const roleUpdateSchema = z
   })
   .strict()
 
-const permissionsSchema = z.object({ permissions: z.array(z.string()) }).strict()
+/** (role, code, scope) 三元组授权（spec §3）；granted 为预留值，第一期拒写 */
+const permissionsSchema = z
+  .object({
+    permissions: z.array(
+      z
+        .object({
+          permission: z.string(),
+          scope: z.enum(['all', 'deptTree', 'dept', 'self']),
+        })
+        .strict(),
+    ),
+  })
+  .strict()
 
 const menusSchema = z.object({ menuCodes: z.array(z.string()) }).strict()
 

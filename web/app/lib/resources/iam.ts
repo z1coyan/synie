@@ -1,4 +1,5 @@
 import { apiData, api } from '../api/client'
+import type { DataScope } from '@synie/shared'
 import type { Row } from '~/components/synie-data-grid/types'
 import { restTransport } from './rest-transport'
 import type { ResourceClient } from './types'
@@ -34,11 +35,17 @@ export const resetUserPassword = (id: string) =>
   apiData(
     api.system.users[':id']['reset-password'].$post({ param: { id } }),
   )
+/** (role, code, scope) 三元组授权（spec §3）；scope 为 DataScope 名 */
+export interface RolePermissionGrant {
+  permission: string
+  scope: DataScope
+}
+
 export const fetchRolePermissions = (id: string) =>
   apiData(
     api.system.roles[':id'].permissions.$get({ param: { id } }),
   )
-export const syncRolePermissions = (id: string, permissions: string[]) =>
+export const syncRolePermissions = (id: string, permissions: RolePermissionGrant[]) =>
   apiData(
     api.system.roles[':id'].permissions.$put({
       param: { id },

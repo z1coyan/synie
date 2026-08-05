@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { domainOfPrefix, permRowId, savePlan, setsEqual } from './access-sheet'
+import { domainOfPrefix, grantsEqual, permRowId, savePlan, setsEqual } from './access-sheet'
 
 describe('setsEqual', () => {
   test('同内容集合相等，与插入顺序无关', () => {
@@ -13,6 +13,27 @@ describe('setsEqual', () => {
   })
   test('双空集相等', () => {
     expect(setsEqual(new Set(), new Set())).toBe(true)
+  })
+})
+
+describe('grantsEqual（功能权限区 dirty：码集 + scope 双向比较）', () => {
+  test('同码同 scope 相等，与插入顺序无关', () => {
+    expect(
+      grantsEqual(
+        new Map([['a:read', 'all'], ['b:read', 'dept']]),
+        new Map([['b:read', 'dept'], ['a:read', 'all']]),
+      ),
+    ).toBe(true)
+  })
+  test('码同 scope 不同即不等（范围变化也是 dirty）', () => {
+    expect(grantsEqual(new Map([['a:read', 'all']]), new Map([['a:read', 'dept']]))).toBe(false)
+  })
+  test('码集不同即不等', () => {
+    expect(grantsEqual(new Map([['a:read', 'all']]), new Map([['a:read', 'all'], ['b:read', 'all']]))).toBe(false)
+    expect(grantsEqual(new Map([['a:read', 'all']]), new Map([['b:read', 'all']]))).toBe(false)
+  })
+  test('双空表相等', () => {
+    expect(grantsEqual(new Map(), new Map())).toBe(true)
   })
 })
 

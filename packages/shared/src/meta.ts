@@ -1,13 +1,15 @@
 /**
  * Meta wire DTO（Grid 本地类型 / 权限目录）。
- * ResourceDocument v2 是 Meta 资源响应的唯一 envelope（见 resource-document.ts）。
+ * ResourceDocument v3 是 Meta 资源响应的唯一 envelope（见 resource-document.ts）。
  * Grid 列/动作本地类型仍由此文件导出，供前端从 ResourceDocument 派生。
  */
 import type { FilterState } from './filter.ts'
 import type {
   BasicFormSection,
   BasicFormTab,
+  CapabilityEntry,
   ResourceDocument,
+  ResourceDocumentAuthz,
 } from './resource-document.ts'
 
 export type GridColumnType =
@@ -75,7 +77,9 @@ export interface GridActionMeta {
 
 export interface GridMeta {
   columns: GridColumnMeta[]
-  capabilities: string[]
+  capabilities: CapabilityEntry[]
+  /** 行级判定维度（company 形态且声明 owner/dept 绑定时携带；via/global 无） */
+  authz?: ResourceDocumentAuthz
   extendedActions: GridActionMeta[]
   /** 是否可删除（由 capabilities 与 binding writer 共同决定；兼容字段） */
   canDelete: boolean
@@ -129,7 +133,7 @@ export interface FormMeta {
 }
 
 /**
- * GET /api/v1/meta/resources/{name} 的 wire 响应：完整 ResourceDocument v2。
+ * GET /api/v1/meta/resources/{name} 的 wire 响应：完整 ResourceDocument v3。
  * 别名保留便于渐进替换 import。
  */
 export type ResourceMetaDocument = ResourceDocument

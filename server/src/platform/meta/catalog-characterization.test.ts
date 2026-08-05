@@ -1,6 +1,6 @@
 /**
  * Resource Catalog 特征测试：锁定 Actor 投影与 Catalog 行为。
- * contract 后 Meta 响应仅为 ResourceDocument v2。
+ * contract 后 Meta 响应仅为 ResourceDocument v3。
  */
 import { describe, expect, test } from 'bun:test'
 import type { Actor } from '../authz/actor.ts'
@@ -44,14 +44,20 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
     expect(names).toContain('mfgSettings')
   })
 
-  test('superadmin 币种 Meta 为 ResourceDocument v2 且含完整 capabilities', () => {
+  test('superadmin 币种 Meta 为 ResourceDocument v3 且含完整 capabilities', () => {
     const doc = registry.buildDocument(CURRENCY_RESOURCE_NAME, superAdmin)
-    expect(doc.schemaVersion).toBe(2)
+    expect(doc.schemaVersion).toBe(3)
     expect(doc.name).toBe(CURRENCY_RESOURCE_NAME)
     expect(doc.label).toBe('货币')
     expect(doc.form.kind).toBe('basic')
-    expect(doc.capabilities).toEqual(expect.arrayContaining(['create', 'update', 'delete']))
-    expect(doc.capabilities).not.toContain('read')
+    expect(doc.capabilities).toEqual(
+      expect.arrayContaining([
+        { action: 'create', scope: 'all' },
+        { action: 'update', scope: 'all' },
+        { action: 'delete', scope: 'all' },
+      ]),
+    )
+    expect(doc.capabilities.some((entry) => entry.action === 'read')).toBe(false)
     const iso = doc.fields.find((f) => f.name === 'isoCode')
     expect(iso?.label).toBe('ISO 编码')
     expect(iso?.sortable).toBe(true)
@@ -73,7 +79,7 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
       permissions: new Set(['base.currency:read', 'base.currency:update']),
     }))
     const editDoc = registry.buildDocument(CURRENCY_RESOURCE_NAME, editor)
-    expect(editDoc.capabilities).toEqual(['update'])
+    expect(editDoc.capabilities).toEqual([{ action: 'update', scope: 'all' }])
   })
 
   test('普通外键：有目标读取权时保留 reference', () => {
@@ -130,7 +136,7 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
       permissions: new Set(['sys.storage:read', 'sys.storage:update']),
     }))
     const doc = registry.buildDocument('sysStorages', updater)
-    expect(doc.capabilities).toContain('update')
+    expect(doc.capabilities).toContainEqual({ action: 'update', scope: 'all' })
     const setDefault = doc.commands.find((a) => a.key === 'setDefault')
     expect(setDefault).toMatchObject({
       key: 'setDefault',
@@ -147,8 +153,8 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
       permissions: new Set(['acc.bank_transaction:read', 'acc.bank_transaction:reconcile']),
     }))
     const reconDoc = registry.buildDocument('accBankTransactions', recon)
-    expect(reconDoc.capabilities).toContain('reconcile')
-    expect(reconDoc.capabilities).not.toContain('export')
+    expect(reconDoc.capabilities).toContainEqual({ action: 'reconcile', scope: 'all' })
+    expect(reconDoc.capabilities.some((entry) => entry.action === 'export')).toBe(false)
     expect(reconDoc.commands.some((c) => c.key === 'reconcile')).toBe(true)
     const reconMeta = registry.get('accBankTransactions')!
     expect(
@@ -159,8 +165,8 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
       permissions: new Set(['hr.attendance_day:read', 'hr.attendance_day:recalc']),
     }))
     const recalcDoc = registry.buildDocument('hrAttendanceDays', recalc)
-    expect(recalcDoc.capabilities).toContain('recalc')
-    expect(recalcDoc.capabilities).not.toContain('import')
+    expect(recalcDoc.capabilities).toContainEqual({ action: 'recalc', scope: 'all' })
+    expect(recalcDoc.capabilities.some((entry) => entry.action === 'import')).toBe(false)
     expect(recalcDoc.commands.some((c) => c.key === 'recalc')).toBe(true)
     const dayMeta = registry.get('hrAttendanceDays')!
     expect(
@@ -175,5 +181,36 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
       const placed = doc.form.layout.fields?.map((p) => p.field) ?? []
       expect(placed).toEqual(expect.arrayContaining(['name', 'isoCode', 'symbol']))
     }
+  })
+
+  test('v3 capability 携带行级范围：grants 位集按格折叠投影', () => {
+    const deptScoped = actor(
+      testActor({
+        permissions: undefined,
+        scopes: {
+          'base.currency:read': ['all'],
+          'base.currency:update': ['dept', 'self'],
+        },
+      }),
+    )
+    const doc = registry.buildDocument(CURRENCY_RESOURCE_NAME, deptScoped)
+    expect(doc.capabilities).toEqual([{ action: 'update', scope: 'dept' }])
+
+    const none = actor(testActor({ scopes: { 'base.currency:read': ['all'] } }))
+    expect(registry.buildDocument(CURRENCY_RESOURCE_NAME, none).capabilities).toEqual([])
+  })
+
+  test('v3 authz 维度：company 资源按绑定列 apiName 投影，global/via 不携带', () => {
+    // assigned 形态：显式业务列 → deptId=assignedDeptId
+    const demands = registry.buildDocument('mfgDemands', superAdmin)
+    expect(demands.authz).toEqual({ deptId: 'assignedDeptId', deptMode: 'assigned' })
+
+    // stamped 形态：缺省 owner_dept_id → deptId=ownerDeptId
+    const workOrders = registry.buildDocument('mfgWorkOrders', superAdmin)
+    expect(workOrders.authz).toEqual({ deptId: 'ownerDeptId', deptMode: 'stamped' })
+
+    // 无 owner/dept 绑定的 company 资源不携带 authz 维度
+    const currencies = registry.buildDocument(CURRENCY_RESOURCE_NAME, superAdmin)
+    expect(currencies.authz).toBeUndefined()
   })
 })

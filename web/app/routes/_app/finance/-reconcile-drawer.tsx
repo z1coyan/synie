@@ -1,3 +1,4 @@
+import { hasCapability } from '@synie/shared'
 import { useEffect, useState } from 'react'
 import {
   Alert,
@@ -90,7 +91,7 @@ function FinanceReconcileSection({
   })
   const journalMeta = useGridMeta('accGlJournals', true)
   const canQuick = ['create', 'audit'].every((capability) =>
-    (journalMeta.data?.capabilities ?? []).includes(capability),
+    hasCapability(journalMeta.data?.capabilities ?? [], capability),
   )
 
   return (

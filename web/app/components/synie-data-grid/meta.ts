@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { fetchResourceDocument, gridMetaFromDocument } from '~/lib/resources/catalog'
 
 /**
- * Grid Meta：从 ResourceDocument v2 派生。
+ * Grid Meta：从 ResourceDocument v3 派生。
  * 不再经传输层 meta()。
  */
 export function useGridMeta(resource: string, enabled = true) {

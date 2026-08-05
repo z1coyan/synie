@@ -54,7 +54,7 @@ run('PG 集成（auth + meta + healthz）', () => {
       headers: { authorization: `Bearer ${login.token}` },
     })
     expect(me.status).toBe(200)
-    const actor = (await me.json()) as { superAdmin: boolean; permissions: string[] }
+    const actor = (await me.json()) as { superAdmin: boolean; grants: { code: string }[] }
     expect(actor.superAdmin).toBe(true)
 
     const anonymous = await server.request('/api/v1/auth/me')

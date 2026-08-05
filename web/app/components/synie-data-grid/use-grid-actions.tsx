@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { AlertDialog, Button, toast } from '@heroui/react'
 import { useQueryClient } from '@tanstack/react-query'
+import type { CapabilityEntry } from '@synie/shared'
 import type { ResourceBinding } from '~/lib/resources/catalog'
 import type { QueryInvalidationAdapter } from '~/lib/resources/catalog/query-cache'
 import {
@@ -8,6 +9,8 @@ import {
   type ResourceBindingResolver,
 } from '~/lib/resources/command-invalidation'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { rowInScope } from '~/lib/row-scope'
+import { useMyPermissions } from '~/lib/use-my-perms'
 import type { ActionContext, BulkAction, GridActionMeta, GridMeta, Row, RowAction } from './types'
 
 export interface ResolvedAction {
@@ -146,7 +149,7 @@ function failureDescription(fail: number, ok: number, messages: string[]): strin
 export function useGridActions(opts: {
   meta: GridMeta | undefined
   binding: ResourceBinding
-  capabilities?: string[]
+  capabilities?: CapabilityEntry[]
   refetch: () => void
   clearSelection: () => void
   onView?: (row: Row) => void
@@ -166,10 +169,28 @@ export function useGridActions(opts: {
   const queryClient = useQueryClient()
   const [pending, setPending] = useState<PendingConfirm | null>(null)
   const [running, setRunning] = useState(false)
+  const me = useMyPermissions()
 
+  const capabilityEntry = (action: string): CapabilityEntry | undefined =>
+    (opts.capabilities ?? meta?.capabilities ?? []).find((entry) => entry.action === action)
   const can = (capability?: string) =>
-    !capability || (opts.capabilities ?? meta?.capabilities ?? []).includes(capability)
+    !capability || capabilityEntry(capability) !== undefined
   const ctx: ActionContext = { refetch }
+
+  /**
+   * 行级本地判定（与服务端 decide 同一封闭代数；服务端仍是权威）：
+   * scope 非 all 且文档携带 authz 维度时按行求值，不命中则该行此项不渲染；
+   * 无维度（via 子行/global）照常渲染——行上无宿主盖章列，不做本地判定。
+   */
+  const rowAllowed = (capability: string | undefined, row: Row): boolean => {
+    if (!capability) return true
+    const entry = capabilityEntry(capability)
+    if (!entry || entry.scope === 'all') return true
+    const dims = meta?.authz
+    if (!dims) return true
+    if (me.pending) return false
+    return rowInScope(entry.scope, row, dims, me)
+  }
 
   const canDelete =
     can('delete') &&
@@ -254,19 +275,23 @@ export function useGridActions(opts: {
   ]
 
   const vis = (key: string, row: Row) => opts.actionVisible?.[key]?.(row) ?? true
+  const extendedCapability = (key: string) =>
+    (meta?.extendedActions ?? []).find((a) => a.key === key)?.requiredCapability
   const rowMenuFor = (row: Row): ResolvedAction[] => [
     ...(opts.onView
       ? [{ key: 'view', label: '查看', isDanger: false, mobile: mob('view'), run: () => opts.onView!(row) }]
       : []),
-    ...(can('update') && opts.onEdit && vis('edit', row)
+    ...(can('update') && opts.onEdit && vis('edit', row) && rowAllowed('update', row)
       ? [{ key: 'edit', label: '编辑', isDanger: false, mobile: mob('edit'), run: () => opts.onEdit!(row) }]
       : []),
-    ...(can('print') && opts.onPrintRows
+    ...(can('print') && opts.onPrintRows && rowAllowed('print', row)
       ? [{ key: 'print', label: '打印', isDanger: false, mobile: mob('print'), run: () => opts.onPrintRows!([row]) }]
       : []),
-    ...extended('row').filter((a) => vis(a.key, row)),
+    ...extended('row').filter(
+      (a) => vis(a.key, row) && rowAllowed(extendedCapability(a.key), row),
+    ),
     ...(opts.rowActions ?? [])
-      .filter((a) => can(a.capability) && vis(a.key, row))
+      .filter((a) => can(a.capability) && vis(a.key, row) && rowAllowed(a.capability, row))
       .map((a) => ({
         key: a.key,
         label: a.label,
@@ -274,7 +299,7 @@ export function useGridActions(opts: {
         mobile: a.mobile,
         run: () => a.onAction(row, ctx),
       })),
-    ...(canDelete && vis('delete', row)
+    ...(canDelete && vis('delete', row) && rowAllowed('delete', row)
       ? [
           {
             key: 'delete',

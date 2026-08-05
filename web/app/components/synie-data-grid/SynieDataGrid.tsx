@@ -3,6 +3,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ActionBar, DataGrid, EmptyState, InlineSelect, type DataGridColumn, type DataGridSortDescriptor } from '@heroui-pro/react'
 import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, SearchField, Separator, toast } from '@heroui/react'
 import type { Selection } from 'react-aria-components'
+import type { CapabilityEntry } from '@synie/shared'
 import { useMediaQuery } from '~/lib/use-media-query'
 import { createResourceQueryCache } from '~/lib/resources/catalog'
 import { resourceBindingFor } from '~/lib/resources/registry'
@@ -74,10 +75,10 @@ export interface SynieDataGridProps {
   columns?: string[]
   exclude?: string[]
   overrides?: Record<string, ColumnOverride>
-  /** 覆盖 meta 下发的 capabilities 门控:资源复用他人权限码、meta capabilities 为空时
-   *  页面显式声明可用动作(如 salOrderItems 复用 sales.order 权限码,条目视图声明 ['create','update']);
+  /** 覆盖 meta 下发的 capabilities 门控:仅保留给「同文档多视图」场景(如远程选择器只读态传 []);
+   *  生产页面不得再传动作数组硬覆盖——via 子行能力由服务端文档投影取宿主真值。
    *  仅驱动按钮显隐,服务端 policy 仍是权威校验 */
-  capabilities?: string[]
+  capabilities?: CapabilityEntry[]
   /** 传了就在行内菜单第一项显示「查看」(打开详情抽屉) */
   onView?: (row: Row) => void
   onCreate?: () => void

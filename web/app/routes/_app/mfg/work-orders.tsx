@@ -13,7 +13,7 @@ import {
   getWorkOrderBomSnapshot,
   workOrderClient,
 } from '~/lib/resources/manufacturing'
-import { fetchMyPermissions, hasPermission } from '~/lib/permissions'
+import { useResourceCapabilities } from '~/lib/use-resource-capabilities'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useTemplatePrint } from '~/components/synie-print/TemplatePrintDialog'
 import { WORK_ORDER_STATUS_ENUM_COLORS } from '~/lib/doc-status'
@@ -110,13 +110,11 @@ function WorkOrdersPageInner() {
   const { start: startPrint, dialog: printDialog } =
     useTemplatePrint('mfg.work_order')
 
-  const perms = useQuery({
-    queryKey: ['myPermissions'],
-    queryFn: fetchMyPermissions,
-    staleTime: 60_000,
-  })
-  const canCreateBom = hasPermission(perms.data, 'mfg.bom:create')
-  const canUpdateWo = hasPermission(perms.data, 'mfg.work_order:update')
+  // BOM 新建/工单编辑门控改消费资源文档投影(fail-closed)
+  const bomCaps = useResourceCapabilities('mfgBoms')
+  const workOrderCaps = useResourceCapabilities(RESOURCE)
+  const canCreateBom = bomCaps.has('create')
+  const canUpdateWo = workOrderCaps.has('update')
 
   const rowId = drawer?.recordId ?? null
   // status 与 hook 自查行同缓存键(binding.cache.rowKey),不另发请求

@@ -86,6 +86,6 @@ export interface ResourceBinding {
   readonly writer?: RecordWriter
   readonly draft?: AggregateDraftAdapter
   readonly commands?: CommandAdapter
-  /** 拉取并缓存完整 ResourceDocument v2 */
+  /** 拉取并缓存完整 ResourceDocument v3 */
   loadDocument(): Promise<ResourceDocument>
 }
