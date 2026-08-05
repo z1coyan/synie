@@ -173,6 +173,18 @@ describe('supportedScopes 投影', () => {
     expect(supportedScopesOf(metaOf('mfgDemandItems'))).toEqual([])
   })
 
+  test('库存三单据与分录只出 all（无 owner/dept 绑定，矩阵不得授出行级范围）', () => {
+    for (const name of ['invStockDocs', 'invStockTransfers', 'invStockCounts', 'invStockEntries']) {
+      expect([name, supportedScopesOf(metaOf(name))]).toEqual([name, ['all']])
+      const binding = resolveAuthzBinding(metaOf(name))
+      expect([name, binding.owner, binding.dept]).toEqual([name, undefined, undefined])
+    }
+    // 单据行随母单（via），自身不拥有范围
+    for (const name of ['invStockDocItems', 'invStockTransferItems', 'invStockCountItems']) {
+      expect([name, supportedScopesOf(metaOf(name))]).toEqual([name, []])
+    }
+  })
+
   test('via 的挂接资源与文件同前缀，不新增权限码', () => {
     const codes = registry.allPermissionCodes().filter((c) => c.startsWith('sys.file:'))
     expect(codes).toEqual(['sys.file:create', 'sys.file:delete', 'sys.file:read'])

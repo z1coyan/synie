@@ -346,7 +346,7 @@ run('PG 集成（setup 向导）', () => {
         employees: party.employees,
       })
       const companyAccountDefaults = createCompanyAccountDefaultService(db)
-      const inv = createInventoryServices(db, numbering)
+      const inv = createInventoryServices(db, numbering, registry)
       const accounting = createAccountingServices(db, numbering, {
         isJournalLinkedToBankRecon,
       })
@@ -360,6 +360,7 @@ run('PG 集成（setup 向导）', () => {
 
       const sample = {
         db,
+        authz: createAuthzEnforcer(registry),
         accounts: base.accounts,
         companyAccountDefaults,
         warehouses: inv.warehouses,

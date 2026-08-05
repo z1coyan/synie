@@ -1,5 +1,11 @@
 /**
  * 库存盘点单：刷新/审核/作废；审核走 withTx + 库存过账骨架 + 快照兜底。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、写前取行 `loadAuthorized`（不命中一律 not_found）、
+ * create 走 `assertCompanyWritable`。模块内零鉴权代码。
+ * 状态前置条件（草稿才能改等）是领域不变量，留在本文件抛 conflict。
+ * `refresh` 无独立动作码（meta 未声明），沿用 update 的门控。
  */
 import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -14,18 +20,18 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
-import { canAccessCompany } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
 import {
   auditInventoryDocInTx,
   voidInventoryDocInTx,
 } from '~/platform/posting/skeleton.ts'
 import {
-  requirePermission,
   currentBookQty,
   dateWire,
   projectStockItem,
@@ -84,41 +90,85 @@ const ITEM_AUDIT = auditFieldsOf(stockCountItemResourceMeta())
 const DOC_META = stockCountResourceMeta()
 const ITEM_META = stockCountItemResourceMeta()
 const LABEL = '库存盘点单'
+const ITEM_LABEL = '库存盘点单行'
 const VOUCHER_TYPE = 'inv.stock_count'
+
+export const COUNT_RESOURCE = 'invStockCounts'
+export const COUNT_ITEM_RESOURCE = 'invStockCountItems'
+
+const DOC_TABLE = 'inv_stock_count'
+const ITEM_TABLE = 'inv_stock_count_item'
 
 export function createStockCountService(
   db: Kysely<Database>,
   numbering: NumberingService,
   inventory: InventoryEngine,
+  registry: Registry,
 ) {
-  async function get(actor: Actor, id: string): Promise<StockCount> {
-    requirePermission(actor, 'inv.stock_count:read')
-    const row = await db.selectFrom('inv_stock_count').selectAll().where('id', '=', id).executeTakeFirst()
-    if (!row || !canAccessCompany(actor, row.company_id)) {
-      throw new ApiError('not_found', '库存盘点单不存在')
-    }
-    return mapDoc(row)
+  const docTarget = registry.authzTarget(COUNT_RESOURCE)
+  const itemTarget = registry.authzTarget(COUNT_ITEM_RESOURCE)
+
+  /** 按 Permit 取单头（可锁）；不命中一律 not_found */
+  async function loadCount(
+    handle: DbHandle,
+    permit: Permit,
+    id: string,
+    forUpdate: boolean,
+  ): Promise<StockCount> {
+    const row = await loadAuthorized({
+      db: handle,
+      permit,
+      target: docTarget,
+      table: DOC_TABLE,
+      id,
+      forUpdate,
+      notFoundMessage: `${LABEL}不存在`,
+    })
+    return mapDoc(row as never)
   }
 
-  async function list(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'inv.stock_count:read')
-    const scope = companyScopeWhere(actor, 'company_id')
-    if (scope.empty) return { count: 0, results: [] as StockCount[] }
-    return listFromSource({
+  /** 锁草稿单头：行编辑的公共前置（授权 → 状态守卫） */
+  async function lockDraftCount(trx: DbHandle, permit: Permit, id: string): Promise<StockCount> {
+    const count = await loadCount(trx, permit, id, true)
+    if (count.status !== 'DRAFT') {
+      throw new ApiError('conflict', `仅草稿${LABEL}可编辑单据行`)
+    }
+    return count
+  }
+
+  /** 盘点行的母单：行不存在与母单不可达同为 not_found */
+  async function parentOf(trx: DbHandle, permit: Permit, itemId: string): Promise<StockCount> {
+    const row = await trx
+      .selectFrom('inv_stock_count_item')
+      .select('count_id')
+      .where('id', '=', itemId)
+      .executeTakeFirst()
+    if (!row) throw new ApiError('not_found', `${ITEM_LABEL}不存在`)
+    return lockDraftCount(trx, permit, row.count_id)
+  }
+
+  async function get(permit: Permit, id: string): Promise<StockCount> {
+    return loadCount(db, permit, id, false)
+  }
+
+  async function list(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: docTarget,
+      alias: DOC_TABLE,
       resource: DOC_META,
       source: sql` FROM inv_stock_count`,
       select: sql`SELECT id,doc_no,posting_date,summary,remarks,status,audited_at,snapshot_taken_at,
         inserted_at,updated_at,company_id,warehouse_id,created_by_id,audited_by_id`,
       defaultOrder: sql`"doc_no" ASC, "id" ASC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapDoc(r as never),
     })
   }
 
   async function create(
-    actor: Actor,
+    permit: Permit,
     input: {
       docNo?: string | null
       postingDate?: string | null
@@ -135,10 +185,6 @@ export function createStockCountService(
       loadAll?: boolean
     },
   ): Promise<StockCount> {
-    requirePermission(actor, 'inv.stock_count:create')
-    if (!canAccessCompany(actor, input.companyId)) {
-      throw new ApiError('forbidden', '无权操作该公司数据')
-    }
     const fields: Record<string, string[]> = {}
     if (!input.companyId) fields.companyId = ['必填']
     if (!input.warehouseId) fields.warehouseId = ['必填']
@@ -151,6 +197,8 @@ export function createStockCountService(
     if (Object.keys(fields).length > 0) {
       throw ApiError.validation(`${LABEL}参数不合法`, fields)
     }
+    // 入参校验（400）先于公司边界（404）：错误语义唯一规则只管后者
+    assertCompanyWritable(permit, input.companyId, '公司不存在')
     return withTx(db, async (trx) => {
       await validateLeafWarehouse(trx, input.companyId, input.warehouseId, LABEL)
       const postingDate = input.postingDate ? dateWire(input.postingDate) : utcToday()
@@ -176,12 +224,12 @@ export function createStockCountService(
             snapshot_taken_at: sql`(now() AT TIME ZONE 'utc')`,
             company_id: input.companyId,
             warehouse_id: input.warehouseId,
-            created_by_id: actor.userId?.trim() ? actor.userId : null,
+            created_by_id: permit.actor.userId || null,
           })
           .returningAll()
           .executeTakeFirstOrThrow()
         const count = mapDoc(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'inv_stock_count',
           recordId: count.id,
           recordLabel: count.docNo,
@@ -218,7 +266,7 @@ export function createStockCountService(
             ORDER BY m.code ASC, m.id ASC
           `.execute(trx)
           for (const p of projections.rows) {
-            await insertCountItem(trx, actor, count, {
+            await insertCountItem(trx, permit, count, {
               materialId: p.material_id,
               unitId: p.unit_id,
               countedQuantity: null,
@@ -233,7 +281,7 @@ export function createStockCountService(
           }
         } else {
           for (const line of input.items ?? []) {
-            await createItemInTx(trx, actor, count, {
+            await createItemInTx(trx, permit, count, {
               materialId: line.materialId,
               unitId: line.unitId,
               countedQuantity: line.countedQuantity ?? null,
@@ -252,7 +300,7 @@ export function createStockCountService(
   }
 
   async function update(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       docNo?: string
@@ -264,19 +312,8 @@ export function createStockCountService(
       warehouseId?: string
     },
   ): Promise<StockCount> {
-    requirePermission(actor, 'inv.stock_count:update')
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('inv_stock_count')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '库存盘点单不存在')
-      const before = mapDoc(locked)
-      if (!canAccessCompany(actor, before.companyId)) {
-        throw new ApiError('forbidden', '无权操作该公司数据')
-      }
+      const before = await loadCount(trx, permit, id, true)
       if (before.status !== 'DRAFT') {
         throw new ApiError('conflict', '仅草稿库存盘点单可修改或删除')
       }
@@ -315,7 +352,7 @@ export function createStockCountService(
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapDoc(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'inv_stock_count',
           recordId: item.id,
           recordLabel: item.docNo,
@@ -333,25 +370,14 @@ export function createStockCountService(
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'inv.stock_count:delete')
+  async function remove(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('inv_stock_count')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '库存盘点单不存在')
-      const item = mapDoc(locked)
-      if (!canAccessCompany(actor, item.companyId)) {
-        throw new ApiError('forbidden', '无权操作该公司数据')
-      }
+      const item = await loadCount(trx, permit, id, true)
       if (item.status !== 'DRAFT') {
         throw new ApiError('conflict', '仅草稿库存盘点单可修改或删除')
       }
       await trx.deleteFrom('inv_stock_count').where('id', '=', id).execute()
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_stock_count',
         recordId: item.id,
         recordLabel: item.docNo,
@@ -363,20 +389,9 @@ export function createStockCountService(
     })
   }
 
-  async function refresh(actor: Actor, id: string): Promise<StockCount> {
-    requirePermission(actor, 'inv.stock_count:update')
+  async function refresh(permit: Permit, id: string): Promise<StockCount> {
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('inv_stock_count')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '库存盘点单不存在')
-      const before = mapDoc(locked)
-      if (!canAccessCompany(actor, before.companyId)) {
-        throw new ApiError('forbidden', '无权操作该公司数据')
-      }
+      const before = await loadCount(trx, permit, id, true)
       if (before.status !== 'DRAFT') {
         throw new ApiError('conflict', '仅草稿库存盘点单可刷新账面数量')
       }
@@ -400,7 +415,7 @@ export function createStockCountService(
         const afterItem = mapItem(row)
         const changes = auditDiff(itemSnap(beforeItem), itemSnap(afterItem), ITEM_AUDIT)
         if (Object.keys(changes).length > 0) {
-          await writeAudit(trx, actor, {
+          await writeAudit(trx, permit.actor, {
             resource: 'inv_stock_count_item',
             recordId: afterItem.id,
             recordLabel: afterItem.materialCode,
@@ -421,7 +436,7 @@ export function createStockCountService(
         .returningAll()
         .executeTakeFirstOrThrow()
       const after = mapDoc(row)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_stock_count',
         recordId: after.id,
         recordLabel: after.docNo,
@@ -434,26 +449,15 @@ export function createStockCountService(
     })
   }
 
-  async function approve(actor: Actor, id: string): Promise<StockCount> {
-    requirePermission(actor, 'inv.stock_count:approve')
+  async function approve(permit: Permit, id: string): Promise<StockCount> {
     return withTx(db, async (trx) =>
-      auditInventoryDocInTx(trx, actor, inventory, {
+      auditInventoryDocInTx(trx, permit.actor, inventory, {
         voucherType: VOUCHER_TYPE,
         headTable: 'inv_stock_count',
         actionName: 'approve',
         setPostingDate: false,
         lockDraft: async (t) => {
-          const locked = await t
-            .selectFrom('inv_stock_count')
-            .selectAll()
-            .where('id', '=', id)
-            .forUpdate()
-            .executeTakeFirst()
-          if (!locked) throw new ApiError('not_found', '库存盘点单不存在')
-          const before = mapDoc(locked)
-          if (!canAccessCompany(actor, before.companyId)) {
-            throw new ApiError('forbidden', '无权操作该公司数据')
-          }
+          const before = await loadCount(t, permit, id, true)
           if (before.status !== 'DRAFT') {
             throw new ApiError('conflict', '仅草稿库存盘点单可审核')
           }
@@ -532,26 +536,15 @@ export function createStockCountService(
     )
   }
 
-  async function cancel(actor: Actor, id: string): Promise<StockCount> {
-    requirePermission(actor, 'inv.stock_count:cancel')
+  async function cancel(permit: Permit, id: string): Promise<StockCount> {
     return withTx(db, async (trx) =>
-      voidInventoryDocInTx(trx, actor, inventory, {
+      voidInventoryDocInTx(trx, permit.actor, inventory, {
         voucherType: VOUCHER_TYPE,
         headTable: 'inv_stock_count',
         voidStatus: 'cancelled',
         actionName: 'cancel',
         lockAudited: async (t) => {
-          const locked = await t
-            .selectFrom('inv_stock_count')
-            .selectAll()
-            .where('id', '=', id)
-            .forUpdate()
-            .executeTakeFirst()
-          if (!locked) throw new ApiError('not_found', '库存盘点单不存在')
-          const before = mapDoc(locked)
-          if (!canAccessCompany(actor, before.companyId)) {
-            throw new ApiError('forbidden', '无权操作该公司数据')
-          }
+          const before = await loadCount(t, permit, id, true)
           if (before.status !== 'AUDITED') {
             throw new ApiError('conflict', '仅已审核库存盘点单可作废')
           }
@@ -572,25 +565,25 @@ export function createStockCountService(
     )
   }
 
-  async function getItem(actor: Actor, id: string): Promise<StockCountItem> {
-    requirePermission(actor, 'inv.stock_count:read')
-    const row = await db
-      .selectFrom('inv_stock_count_item')
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst()
-    if (!row || !canAccessCompany(actor, row.company_id)) {
-      throw new ApiError('not_found', '库存盘点单行不存在')
-    }
-    return mapItem(row)
+  /** 行的可达性经 via 链递归到母单自身的行谓词 */
+  async function getItem(permit: Permit, id: string): Promise<StockCountItem> {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target: itemTarget,
+      table: ITEM_TABLE,
+      id,
+      notFoundMessage: `${ITEM_LABEL}不存在`,
+    })
+    return mapItem(row as never)
   }
 
-  async function queryItems(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'inv.stock_count:read')
-    const scope = companyScopeWhere(actor, 'company_id')
-    if (scope.empty) return { count: 0, results: [] as StockCountItem[] }
-    return listFromSource({
+  async function queryItems(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: itemTarget,
+      alias: ITEM_TABLE,
       resource: ITEM_META,
       source: sql` FROM inv_stock_count_item`,
       select: sql`SELECT id,counted_quantity,converted_counted,book_quantity,material_code,
@@ -598,13 +591,12 @@ export function createStockCountService(
         count_id,company_id,material_id,unit_id`,
       defaultOrder: sql`"material_code" ASC, "id" ASC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapItem(r as never),
     })
   }
 
   async function createItem(
-    actor: Actor,
+    permit: Permit,
     input: {
       countId: string
       materialId: string
@@ -613,10 +605,9 @@ export function createStockCountService(
       remark?: string | null
     },
   ): Promise<StockCountItem> {
-    requirePermission(actor, 'inv.stock_count:create')
     return withTx(db, async (trx) => {
-      const count = await lockDraftCount(trx, actor, input.countId)
-      return createItemInTx(trx, actor, count, {
+      const count = await lockDraftCount(trx, permit, input.countId)
+      return createItemInTx(trx, permit, count, {
         materialId: input.materialId,
         unitId: input.unitId,
         countedQuantity: input.countedQuantity ?? null,
@@ -626,7 +617,7 @@ export function createStockCountService(
   }
 
   async function updateItem(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       materialId?: string
@@ -637,22 +628,16 @@ export function createStockCountService(
       remarkPresent?: boolean
     },
   ): Promise<StockCountItem> {
-    requirePermission(actor, 'inv.stock_count:update')
     return withTx(db, async (trx) => {
-      const current = await trx
-        .selectFrom('inv_stock_count_item')
-        .selectAll()
-        .where('id', '=', id)
-        .executeTakeFirst()
-      if (!current) throw new ApiError('not_found', '库存盘点单行不存在')
-      const count = await lockDraftCount(trx, actor, current.count_id)
+      // 母单先锁（授权 + 草稿门），再锁行：与并发路径的加锁顺序一致
+      const count = await parentOf(trx, permit, id)
       const locked = await trx
         .selectFrom('inv_stock_count_item')
         .selectAll()
         .where('id', '=', id)
         .forUpdate()
         .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '库存盘点单行不存在')
+      if (!locked) throw new ApiError('not_found', `${ITEM_LABEL}不存在`)
       const before = mapItem(locked)
       const materialId = input.materialId ?? before.materialId
       const unitId = input.unitId ?? before.unitId
@@ -706,7 +691,7 @@ export function createStockCountService(
         .returningAll()
         .executeTakeFirstOrThrow()
       const item = mapItem(row)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_stock_count_item',
         recordId: item.id,
         recordLabel: item.materialCode,
@@ -719,26 +704,19 @@ export function createStockCountService(
     })
   }
 
-  async function removeItem(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'inv.stock_count:delete')
+  async function removeItem(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const current = await trx
-        .selectFrom('inv_stock_count_item')
-        .selectAll()
-        .where('id', '=', id)
-        .executeTakeFirst()
-      if (!current) throw new ApiError('not_found', '库存盘点单行不存在')
-      await lockDraftCount(trx, actor, current.count_id)
+      await parentOf(trx, permit, id)
       const locked = await trx
         .selectFrom('inv_stock_count_item')
         .selectAll()
         .where('id', '=', id)
         .forUpdate()
         .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '库存盘点单行不存在')
+      if (!locked) throw new ApiError('not_found', `${ITEM_LABEL}不存在`)
       const item = mapItem(locked)
       await trx.deleteFrom('inv_stock_count_item').where('id', '=', id).execute()
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_stock_count_item',
         recordId: item.id,
         recordLabel: item.materialCode,
@@ -769,27 +747,9 @@ export function createStockCountService(
 
 export type StockCountService = ReturnType<typeof createStockCountService>
 
-async function lockDraftCount(db: DbHandle, actor: Actor, id: string): Promise<StockCount> {
-  const row = await db
-    .selectFrom('inv_stock_count')
-    .selectAll()
-    .where('id', '=', id)
-    .forUpdate()
-    .executeTakeFirst()
-  if (!row) throw new ApiError('not_found', '库存盘点单不存在')
-  const count = mapDoc(row)
-  if (!canAccessCompany(actor, count.companyId)) {
-    throw new ApiError('forbidden', '无权操作该公司数据')
-  }
-  if (count.status !== 'DRAFT') {
-    throw new ApiError('conflict', '仅草稿库存盘点单可编辑单据行')
-  }
-  return count
-}
-
 async function createItemInTx(
   db: DbHandle,
-  actor: Actor,
+  permit: Permit,
   count: StockCount,
   input: {
     materialId: string
@@ -807,7 +767,7 @@ async function createItemInTx(
     input.unitId,
     counted,
   )
-  return insertCountItem(db, actor, count, {
+  return insertCountItem(db, permit, count, {
     materialId: input.materialId,
     unitId: input.unitId,
     countedQuantity: counted == null ? null : (wireDecimal(counted) ?? counted.toFixed()),
@@ -826,7 +786,7 @@ async function createItemInTx(
 
 async function insertCountItem(
   db: DbHandle,
-  actor: Actor | null,
+  permit: Permit,
   count: StockCount,
   values: {
     materialId: string
@@ -860,7 +820,7 @@ async function insertCountItem(
     .returningAll()
     .executeTakeFirstOrThrow()
   const item = mapItem(row)
-  await writeAudit(db, actor, {
+  await writeAudit(db, permit.actor, {
     resource: 'inv_stock_count_item',
     recordId: item.id,
     recordLabel: item.materialCode,

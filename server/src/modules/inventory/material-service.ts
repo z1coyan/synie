@@ -10,12 +10,12 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listFromSource } from '~/db/list.ts'
-import {requirePermission,  runeLen, toDate, trimOrNull } from './helpers.ts'
+import { runeLen, toDate, trimOrNull } from './helpers.ts'
 import { materialResourceMeta } from './meta.ts'
 
 export interface MaterialRef {

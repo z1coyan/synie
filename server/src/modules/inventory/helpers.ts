@@ -1,27 +1,13 @@
 /**
- * 库存域共享工具：日期/状态 wire、单位折算、叶子仓校验、鉴权辅助。
+ * 库存域共享工具：日期/状态 wire、单位折算、叶子仓校验。
+ *
+ * 鉴权不在本文件：路由挂 `guard(资源, 动作)`，服务收 Permit，
+ * 三个执行点（listAuthorized / loadAuthorized / assertCompanyWritable）由平台拥有。
  */
 import { decimal, roundBaseQty, toDecimalString, type Decimal } from '@synie/shared'
 import { sql } from 'kysely'
 import type { DbHandle } from '~/db/tx.ts'
-import {
-  hasPermission,
-  requirePermission,
-  type Actor,
-} from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-
-export { requirePermission }
-
-/** 多码任一即可（对齐 routes requireAnyPerm） */
-export function requireAnyPermission(
-  actor: Actor | null,
-  ...codes: string[]
-): asserts actor is Actor {
-  if (!codes.some((code) => hasPermission(actor, code))) {
-    requirePermission(actor, codes[0]!)
-  }
-}
 
 export function toDate(value: unknown): Date {
   if (value instanceof Date) return value

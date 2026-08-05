@@ -41,13 +41,8 @@ const EXEMPT = new Set<string>([
   'modules/hr/payroll-service.ts',
   'modules/iam/service.ts',
   'modules/inventory/category-service.ts',
-  'modules/inventory/helpers.ts',
   'modules/inventory/material-service.ts',
   'modules/inventory/material-unit-service.ts',
-  'modules/inventory/stock-count-service.ts',
-  'modules/inventory/stock-doc-service.ts',
-  'modules/inventory/stock-entry-service.ts',
-  'modules/inventory/stock-transfer-service.ts',
   'modules/inventory/warehouse-service.ts',
   'modules/manufacturing/helpers.ts',
   'modules/manufacturing/master-service.ts',
@@ -104,6 +99,6 @@ describe('封路：modules 不得使用旧授权原语', () => {
   })
 
   test('豁免规模只减不增（扫荡进度快照）', () => {
-    expect(EXEMPT.size).toBeLessThanOrEqual(43)
+    expect(EXEMPT.size).toBeLessThanOrEqual(38)
   })
 })

@@ -94,6 +94,18 @@ async function findAuthorizedFrom<T>(
 }
 
 /**
+ * 公司是否落在 Permit 的公司边界内。
+ * 单公司聚合端点（库存余额等）按此判定：不命中即返回空结果，不泄露存在性。
+ * 逐行列表一律走 `listAuthorized`，不用本函数手滚。
+ */
+export function companyInPermitScope(permit: Permit, companyId: string): boolean {
+  const scope = permit.rowFilter.company
+  if (scope === 'bypass') return true
+  if (scope === 'none') return false
+  return scope.ids.includes(companyId)
+}
+
+/**
  * create 写侧守卫：目标公司必须在 Permit 的公司边界内，不命中 `not_found`
  * （不泄露公司存在性，与错误语义唯一规则一致）。
  */
@@ -102,9 +114,7 @@ export function assertCompanyWritable(
   companyId: string,
   message = '公司不存在',
 ): void {
-  const scope = permit.rowFilter.company
-  if (scope === 'bypass') return
-  if (scope === 'none' || !scope.ids.includes(companyId)) {
+  if (!companyInPermitScope(permit, companyId)) {
     throw new ApiError('not_found', message)
   }
 }

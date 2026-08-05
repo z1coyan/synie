@@ -4,6 +4,7 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { createDb } from '~/db/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createCompanyService } from '../base/company-service.ts'
@@ -44,9 +45,11 @@ async function allocCompanyCode(
 
 run('PG 集成（库存单据状态机与引擎）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
+  const registry = createSealedResourceRegistry()
+  const numbering = createNumberingService(db, buildNumberingCatalog(registry))
+  const authz = createAuthzEnforcer(registry)
   const companies = createCompanyService(db)
-  const inv = createInventoryServices(db, numbering)
+  const inv = createInventoryServices(db, numbering, registry)
   let actor: Actor = testActor({
     userId: crypto.randomUUID(),
     username: 'inv-test',
@@ -56,6 +59,16 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     permissions: new Set(),
     companyIds: [],
   })
+  /**
+   * superAdmin 凭证的 rowFilter 恒为全集，本文件只验领域行为（状态机/过账/负库存），
+   * 故一张凭证够用；逐动作码门控与公司边界见 test/inventory-authz.integration.test.ts。
+   * ensureBaseline 会改写 actor.userId，故每次现取（created_by_id 要落真实用户）。
+   */
+  const permit = () => {
+    const decision = authz.decideFor(actor, 'invStockDocs', 'read')
+    if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+    return decision.permit
+  }
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
   const tracked: {
     companyIds: string[]
@@ -269,7 +282,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     const [fromWh, toWh, transitWh] = warehouses
 
     // 入库 10
-    const inbound = await inv.stockDocs.create(actor, {
+    const inbound = await inv.stockDocs.create(permit(), {
       docNo: `T${suffix}-IN`,
       direction: 'IN',
       companyId: company.id,
@@ -278,7 +291,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     })
     tracked.docIds.push(inbound.id)
     expect(inbound.status).toBe('DRAFT')
-    const line = await inv.stockDocs.createItem(actor, {
+    const line = await inv.stockDocs.createItem(permit(), {
       stockDocId: inbound.id,
       idx: 1,
       qty: '10',
@@ -286,11 +299,11 @@ run('PG 集成（库存单据状态机与引擎）', () => {
       unitId,
     })
     expect(line.baseQty).toBe('10')
-    const audited = await inv.stockDocs.audit(actor, inbound.id)
+    const audited = await inv.stockDocs.audit(permit(), inbound.id)
     expect(audited.status).toBe('AUDITED')
 
     // 调拨 4
-    const transfer = await inv.stockTransfers.create(actor, {
+    const transfer = await inv.stockTransfers.create(permit(), {
       docNo: `T${suffix}-TR`,
       companyId: company.id,
       fromWarehouseId: fromWh!.id,
@@ -298,29 +311,29 @@ run('PG 集成（库存单据状态机与引擎）', () => {
       transitWarehouseId: transitWh!.id,
     })
     tracked.transferIds.push(transfer.id)
-    const tItem = await inv.stockTransfers.createItem(actor, {
+    const tItem = await inv.stockTransfers.createItem(permit(), {
       stockTransferId: transfer.id,
       idx: 1,
       qty: '4',
       materialId: mat.id,
       unitId,
     })
-    const shipped = await inv.stockTransfers.ship(actor, transfer.id)
+    const shipped = await inv.stockTransfers.ship(permit(), transfer.id)
     expect(shipped.status).toBe('SHIPPED')
-    const received = await inv.stockTransfers.receive(actor, transfer.id, {})
+    const received = await inv.stockTransfers.receive(permit(), transfer.id, {})
     expect(received.status).toBe('RECEIVED')
-    const tLine = await inv.stockTransfers.getItem(actor, tItem.id)
+    const tLine = await inv.stockTransfers.getItem(permit(), tItem.id)
     expect(tLine.receivedQty).toBe('4')
 
     // 盘点：调入仓账面 4，实盘 5
-    const count = await inv.stockCounts.create(actor, {
+    const count = await inv.stockCounts.create(permit(), {
       docNo: `T${suffix}-CT`,
       companyId: company.id,
       warehouseId: toWh!.id,
       items: [{ materialId: mat.id, unitId, countedQuantity: '5' }],
     })
     tracked.countIds.push(count.id)
-    const countItems = await inv.stockCounts.queryItems(actor, {
+    const countItems = await inv.stockCounts.queryItems(permit(), {
       limit: 20,
       offset: 0,
       filter: {
@@ -331,11 +344,11 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     expect(countItems.results[0]!.bookQuantity).toBe('4')
     expect(countItems.results[0]!.countedQuantity).toBe('5')
 
-    await inv.stockCounts.refresh(actor, count.id)
-    const approved = await inv.stockCounts.approve(actor, count.id)
+    await inv.stockCounts.refresh(permit(), count.id)
+    const approved = await inv.stockCounts.approve(permit(), count.id)
     expect(approved.status).toBe('AUDITED')
 
-    const balance = await inv.stockEntries.balance(actor, {
+    const balance = await inv.stockEntries.balance(permit(), {
       companyId: company.id,
       materialId: mat.id,
       hideZero: false,
@@ -345,11 +358,11 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     expect(byWh[toWh!.id]).toBe('5')
     expect(byWh[transitWh!.id]).toBe('0')
 
-    const cancelled = await inv.stockCounts.cancel(actor, count.id)
+    const cancelled = await inv.stockCounts.cancel(permit(), count.id)
     expect(cancelled.status).toBe('CANCELLED')
 
     // 负库存：作废入库会导致出库仓不足
-    await expect(inv.stockDocs.void(actor, inbound.id)).rejects.toMatchObject({
+    await expect(inv.stockDocs.void(permit(), inbound.id)).rejects.toMatchObject({
       code: 'conflict',
     })
   })
@@ -423,7 +436,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     tracked.warehouseIds.push(whA.id, whB.id, whT.id, whOff.id)
 
     // 方向创建后不可改
-    const draft = await inv.stockDocs.create(actor, {
+    const draft = await inv.stockDocs.create(permit(), {
       docNo: `B${edgeSuffix}-DIR`,
       direction: 'IN',
       companyId: company.id,
@@ -431,12 +444,12 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     })
     tracked.docIds.push(draft.id)
     await expect(
-      inv.stockDocs.update(actor, draft.id, { direction: 'OUT' }),
+      inv.stockDocs.update(permit(), draft.id, { direction: 'OUT' }),
     ).rejects.toMatchObject({ code: 'validation' })
 
     // 停用仓拦新
     await expect(
-      inv.stockDocs.create(actor, {
+      inv.stockDocs.create(permit(), {
         docNo: `B${edgeSuffix}-OFF`,
         direction: 'IN',
         companyId: company.id,
@@ -445,17 +458,17 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     ).rejects.toMatchObject({ code: 'validation' })
 
     // 建库存：入库 8 到 A
-    await inv.stockDocs.createItem(actor, {
+    await inv.stockDocs.createItem(permit(), {
       stockDocId: draft.id,
       idx: 1,
       qty: '8',
       materialId: mat.id,
       unitId,
     })
-    await inv.stockDocs.audit(actor, draft.id)
+    await inv.stockDocs.audit(permit(), draft.id)
 
     // 调拨 5：部分收货 3 → 在途留 2
-    const tr = await inv.stockTransfers.create(actor, {
+    const tr = await inv.stockTransfers.create(permit(), {
       docNo: `B${edgeSuffix}-TR`,
       companyId: company.id,
       fromWarehouseId: whA.id,
@@ -463,33 +476,33 @@ run('PG 集成（库存单据状态机与引擎）', () => {
       transitWarehouseId: whT.id,
     })
     tracked.transferIds.push(tr.id)
-    const ti = await inv.stockTransfers.createItem(actor, {
+    const ti = await inv.stockTransfers.createItem(permit(), {
       stockTransferId: tr.id,
       idx: 1,
       qty: '5',
       materialId: mat.id,
       unitId,
     })
-    await inv.stockTransfers.ship(actor, tr.id)
+    await inv.stockTransfers.ship(permit(), tr.id)
 
     // 已发货不可改删
-    await expect(inv.stockTransfers.update(actor, tr.id, { summary: 'x' })).rejects.toMatchObject({
+    await expect(inv.stockTransfers.update(permit(), tr.id, { summary: 'x' })).rejects.toMatchObject({
       code: 'conflict',
     })
-    await expect(inv.stockTransfers.remove(actor, tr.id)).rejects.toMatchObject({ code: 'conflict' })
+    await expect(inv.stockTransfers.remove(permit(), tr.id)).rejects.toMatchObject({ code: 'conflict' })
 
     // 实收 > 已发 拒绝
     await expect(
-      inv.stockTransfers.receive(actor, tr.id, {
+      inv.stockTransfers.receive(permit(), tr.id, {
         receipts: [{ itemId: ti.id, qty: '9' }],
       }),
     ).rejects.toMatchObject({ code: 'conflict' })
 
     // 部分收货
-    await inv.stockTransfers.receive(actor, tr.id, {
+    await inv.stockTransfers.receive(permit(), tr.id, {
       receipts: [{ itemId: ti.id, qty: '3' }],
     })
-    const bal = await inv.stockEntries.balance(actor, {
+    const bal = await inv.stockEntries.balance(permit(), {
       companyId: company.id,
       materialId: mat.id,
       hideZero: false,
@@ -500,7 +513,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     expect(byWh[whB.id]).toBe('3')
 
     // 快照兜底：开盘点后若再动库存则审核拒
-    const ct = await inv.stockCounts.create(actor, {
+    const ct = await inv.stockCounts.create(permit(), {
       docNo: `B${edgeSuffix}-CT`,
       companyId: company.id,
       warehouseId: whB.id,
@@ -508,29 +521,29 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     })
     tracked.countIds.push(ct.id)
     // 再入一笔到 B，使快照过期
-    const late = await inv.stockDocs.create(actor, {
+    const late = await inv.stockDocs.create(permit(), {
       docNo: `B${edgeSuffix}-LATE`,
       direction: 'IN',
       companyId: company.id,
       warehouseId: whB.id,
     })
     tracked.docIds.push(late.id)
-    await inv.stockDocs.createItem(actor, {
+    await inv.stockDocs.createItem(permit(), {
       stockDocId: late.id,
       idx: 1,
       qty: '1',
       materialId: mat.id,
       unitId,
     })
-    await inv.stockDocs.audit(actor, late.id)
+    await inv.stockDocs.audit(permit(), late.id)
 
-    await expect(inv.stockCounts.approve(actor, ct.id)).rejects.toMatchObject({
+    await expect(inv.stockCounts.approve(permit(), ct.id)).rejects.toMatchObject({
       code: 'conflict',
     })
     // 刷新后可过
-    await inv.stockCounts.refresh(actor, ct.id)
+    await inv.stockCounts.refresh(permit(), ct.id)
     // 刷新后账面 4，实盘仍是 3 → 差异 -1
-    const afterRefresh = await inv.stockCounts.queryItems(actor, {
+    const afterRefresh = await inv.stockCounts.queryItems(permit(), {
       limit: 10,
       offset: 0,
       filter: {
@@ -538,7 +551,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
       },
     })
     expect(afterRefresh.results[0]!.bookQuantity).toBe('4')
-    const appr = await inv.stockCounts.approve(actor, ct.id)
+    const appr = await inv.stockCounts.approve(permit(), ct.id)
     expect(appr.status).toBe('AUDITED')
   })
 
@@ -593,7 +606,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     tracked.warehouseIds.push(whT.id)
 
     // 手工出入库行拦 VIRTUAL/ASSET
-    const doc = await inv.stockDocs.create(actor, {
+    const doc = await inv.stockDocs.create(permit(), {
       docNo: `T${typeSuffix}-IN`,
       direction: 'IN',
       companyId: company.id,
@@ -601,7 +614,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     })
     tracked.docIds.push(doc.id)
     await expect(
-      inv.stockDocs.createItem(actor, {
+      inv.stockDocs.createItem(permit(), {
         stockDocId: doc.id,
         idx: 1,
         qty: '1',
@@ -613,7 +626,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
       fields: { materialId: ['仅库存类物料可进库存单据'] },
     })
     await expect(
-      inv.stockDocs.createItem(actor, {
+      inv.stockDocs.createItem(permit(), {
         stockDocId: doc.id,
         idx: 1,
         qty: '1',
@@ -626,7 +639,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     })
 
     // 手工调拨行拦
-    const transfer = await inv.stockTransfers.create(actor, {
+    const transfer = await inv.stockTransfers.create(permit(), {
       docNo: `T${typeSuffix}-TR`,
       companyId: company.id,
       fromWarehouseId: wh.id,
@@ -635,7 +648,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     })
     tracked.transferIds.push(transfer.id)
     await expect(
-      inv.stockTransfers.createItem(actor, {
+      inv.stockTransfers.createItem(permit(), {
         stockTransferId: transfer.id,
         idx: 1,
         qty: '1',
@@ -649,7 +662,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
 
     // 盘点行拦（实盘与账面两条路径共用同一折算校验）
     await expect(
-      inv.stockCounts.create(actor, {
+      inv.stockCounts.create(permit(), {
         docNo: `T${typeSuffix}-CT`,
         companyId: company.id,
         warehouseId: wh.id,
@@ -660,7 +673,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
       fields: { materialId: ['仅库存类物料可进库存单据'] },
     })
     await expect(
-      inv.stockCounts.create(actor, {
+      inv.stockCounts.create(permit(), {
         docNo: `T${typeSuffix}-CT2`,
         companyId: company.id,
         warehouseId: wh.id,
@@ -721,21 +734,21 @@ run('PG 集成（库存单据状态机与引擎）', () => {
       isLeaf: true,
     })
     tracked.warehouseIds.push(wh.id)
-    const doc = await inv.stockDocs.create(actor, {
+    const doc = await inv.stockDocs.create(permit(), {
       docNo: `L${lockSuffix}-IN`,
       direction: 'IN',
       companyId: company.id,
       warehouseId: wh.id,
     })
     tracked.docIds.push(doc.id)
-    await inv.stockDocs.createItem(actor, {
+    await inv.stockDocs.createItem(permit(), {
       stockDocId: doc.id,
       idx: 1,
       qty: '1',
       materialId: mat.id,
       unitId,
     })
-    await inv.stockDocs.audit(actor, doc.id)
+    await inv.stockDocs.audit(permit(), doc.id)
     await expect(
       inv.materials.update(actor, mat.id, { materialType: 'ASSET' }),
     ).rejects.toMatchObject({ code: 'conflict' })

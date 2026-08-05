@@ -10,13 +10,12 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
-import { canAccessCompany } from '~/platform/authz/actor.ts'
+import { canAccessCompany, requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import { seedCompanyDefaultWarehouses } from '../base/warehouse-seed.ts'
-import {requirePermission,  runeLen, toDate } from './helpers.ts'
+import { runeLen, toDate } from './helpers.ts'
 import { warehouseResourceMeta } from './meta.ts'
 
 export interface Warehouse {

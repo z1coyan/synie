@@ -1,8 +1,26 @@
 import { decimal } from '@synie/shared'
 import type { Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { daysAgo, type MasterData, type SeedCtx } from './helpers.ts'
 import type { SampleDataDeps } from './types.ts'
+
+/**
+ * 种子对已迁 Permit 的服务现取凭证（不绕过判定，也不用 systemPermit——
+ * 单据 created_by_id 有 sys_user 外键，须落在真实种子用户上）。
+ */
+function permitFor(
+  deps: SampleDataDeps,
+  actor: Actor,
+  resource: string,
+  action: string,
+): Permit {
+  const decision = deps.authz.decideFor(actor, resource, action)
+  if (decision.outcome !== 'permit') {
+    throw new ApiError('forbidden', `示例数据种子缺少权限：${resource}:${action}`)
+  }
+  return decision.permit
+}
 
 export async function seedOpeningStock(
   deps: SampleDataDeps,
@@ -91,7 +109,7 @@ async function createStockDoc(
   items: Array<{ key: string; qty: number }>,
   md: MasterData,
 ): Promise<string> {
-  const doc = await deps.stockDocs.create(actor, {
+  const doc = await deps.stockDocs.create(permitFor(deps, actor, 'invStockDocs', 'create'), {
     direction,
     docDate: daysAgo(dateAgoN),
     summary,
@@ -103,7 +121,7 @@ async function createStockDoc(
     const line = items[i]!
     const mat = md.materials[line.key]
     if (!mat) throw new Error(`示例物料缺失: ${line.key}`)
-    await deps.stockDocs.createItem(actor, {
+    await deps.stockDocs.createItem(permitFor(deps, actor, 'invStockDocItems', 'create'), {
       stockDocId: doc.id,
       idx: i + 1,
       qty: String(line.qty),
@@ -111,7 +129,7 @@ async function createStockDoc(
       unitId: mat.defaultUnitId,
     })
   }
-  await deps.stockDocs.audit(actor, doc.id)
+  await deps.stockDocs.audit(permitFor(deps, actor, 'invStockDocs', 'audit'), doc.id)
   return doc.id
 }
 
@@ -121,15 +139,18 @@ async function seedTransfer(
   sc: SeedCtx,
   md: MasterData,
 ): Promise<void> {
-  const transfer = await deps.stockTransfers.create(actor, {
-    docDate: daysAgo(10),
-    summary: '成品转仓调拨',
-    remarks: '初始化示例调拨单',
-    companyId: sc.company.id,
-    fromWarehouseId: sc.warehouses.default,
-    toWarehouseId: sc.warehouses.finished,
-    transitWarehouseId: sc.warehouses.transit,
-  })
+  const transfer = await deps.stockTransfers.create(
+    permitFor(deps, actor, 'invStockTransfers', 'create'),
+    {
+      docDate: daysAgo(10),
+      summary: '成品转仓调拨',
+      remarks: '初始化示例调拨单',
+      companyId: sc.company.id,
+      fromWarehouseId: sc.warehouses.default,
+      toWarehouseId: sc.warehouses.finished,
+      transitWarehouseId: sc.warehouses.transit,
+    },
+  )
   const lines = [
     { key: 'box_shell', qty: 15 },
     { key: 'terminal_block', qty: 400 },
@@ -138,22 +159,29 @@ async function seedTransfer(
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!
     const mat = md.materials[line.key]!
-    const item = await deps.stockTransfers.createItem(actor, {
-      stockTransferId: transfer.id,
-      idx: i + 1,
-      qty: String(line.qty),
-      materialId: mat.id,
-      unitId: mat.defaultUnitId,
-    })
+    const item = await deps.stockTransfers.createItem(
+      permitFor(deps, actor, 'invStockTransferItems', 'create'),
+      {
+        stockTransferId: transfer.id,
+        idx: i + 1,
+        qty: String(line.qty),
+        materialId: mat.id,
+        unitId: mat.defaultUnitId,
+      },
+    )
     itemIds.push(item.id)
   }
-  await deps.stockTransfers.ship(actor, transfer.id)
-  await deps.stockTransfers.receive(actor, transfer.id, {
-    receipts: [
-      { itemId: itemIds[0]!, qty: '15' },
-      { itemId: itemIds[1]!, qty: '250' },
-    ],
-  })
+  await deps.stockTransfers.ship(permitFor(deps, actor, 'invStockTransfers', 'ship'), transfer.id)
+  await deps.stockTransfers.receive(
+    permitFor(deps, actor, 'invStockTransfers', 'receive'),
+    transfer.id,
+    {
+      receipts: [
+        { itemId: itemIds[0]!, qty: '15' },
+        { itemId: itemIds[1]!, qty: '250' },
+      ],
+    },
+  )
 }
 
 async function seedStockCount(
@@ -162,7 +190,7 @@ async function seedStockCount(
   sc: SeedCtx,
   md: MasterData,
 ): Promise<void> {
-  const count = await deps.stockCounts.create(actor, {
+  const count = await deps.stockCounts.create(permitFor(deps, actor, 'invStockCounts', 'create'), {
     postingDate: daysAgo(3),
     summary: '月末例行盘点',
     remarks: '初始化示例盘点单',
@@ -170,10 +198,13 @@ async function seedStockCount(
     warehouseId: sc.warehouses.default,
     loadAll: true,
   })
-  const listed = await deps.stockCounts.queryItems(actor, {
-    filter: { countId: { kind: 'fk', values: [count.id], labels: [] } },
-    limit: 200,
-  })
+  const listed = await deps.stockCounts.queryItems(
+    permitFor(deps, actor, 'invStockCountItems', 'read'),
+    {
+      filter: { countId: { kind: 'fk', values: [count.id], labels: [] } },
+      limit: 200,
+    },
+  )
   const items = listed.results
   if (items.length === 0) {
     throw new ApiError('conflict', '示例数据盘点整仓带出失败:默认仓库无账面余额')
@@ -185,10 +216,11 @@ async function seedStockCount(
     let counted = book
     if (item.materialId === screwId) counted = book.sub(50)
     if (item.materialId === railId) counted = book.add(5)
-    await deps.stockCounts.updateItem(actor, item.id, {
-      countedQuantity: counted.toFixed(),
-      countedQuantityPresent: true,
-    })
+    await deps.stockCounts.updateItem(
+      permitFor(deps, actor, 'invStockCountItems', 'update'),
+      item.id,
+      { countedQuantity: counted.toFixed(), countedQuantityPresent: true },
+    )
   }
-  await deps.stockCounts.approve(actor, count.id)
+  await deps.stockCounts.approve(permitFor(deps, actor, 'invStockCounts', 'approve'), count.id)
 }

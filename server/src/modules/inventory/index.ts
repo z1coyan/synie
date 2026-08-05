@@ -33,7 +33,11 @@ export function registerInventoryResources(registry: Registry): void {
 }
 
 /** 装配库存域全部服务（主数据 + 单据 + 分录/余额） */
-export function createInventoryServices(db: Kysely<Database>, numbering: NumberingService) {
+export function createInventoryServices(
+  db: Kysely<Database>,
+  numbering: NumberingService,
+  registry: Registry,
+) {
   const inventory = createInventoryEngine()
   return {
     inventory,
@@ -41,10 +45,10 @@ export function createInventoryServices(db: Kysely<Database>, numbering: Numberi
     materials: createMaterialService(db, numbering),
     materialUnits: createMaterialUnitService(db),
     warehouses: createWarehouseService(db),
-    stockDocs: createStockDocService(db, numbering, inventory),
-    stockTransfers: createStockTransferService(db, numbering, inventory),
-    stockCounts: createStockCountService(db, numbering, inventory),
-    stockEntries: createStockEntryService(db, inventory),
+    stockDocs: createStockDocService(db, numbering, inventory, registry),
+    stockTransfers: createStockTransferService(db, numbering, inventory, registry),
+    stockCounts: createStockCountService(db, numbering, inventory, registry),
+    stockEntries: createStockEntryService(db, inventory, registry),
   }
 }
 

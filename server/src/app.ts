@@ -308,6 +308,7 @@ export function buildApp(deps: AppDeps) {
       '/inventory',
       inventoryRoutes({
         auth: deps.auth,
+        authz: deps.authz,
         stockDocs: deps.invStockDocs,
         stockTransfers: deps.invStockTransfers,
         stockCounts: deps.invStockCounts,

@@ -102,7 +102,7 @@ function assembleDomain(
     employees: party.employees,
   })
   const companyAccountDefaults = createCompanyAccountDefaultService(db)
-  const inv = createInventoryServices(db, numbering)
+  const inv = createInventoryServices(db, numbering, opts.registry)
   const accounting = createAccountingServices(db, numbering, {
     isJournalLinkedToBankRecon,
   })
@@ -153,6 +153,8 @@ export interface Services extends ReturnType<typeof assembleDomain> {
 /** 装配全部平台 + 领域服务；overrides 应用之后再构造 setup */
 export function createServices(db: Kysely<Database>, opts: CreateServicesOptions): Services {
   const merged = { ...assembleDomain(db, opts), ...opts.overrides }
+  // 判定入口无状态（归宿解析记忆化在 Registry 内），种子闭包按需再取一份
+  const authz = createAuthzEnforcer(opts.registry)
   // setup 必须在 overrides 之后构造：seedSampleData 闭包要看到替换后的服务集
   const setup =
     opts.overrides?.setup ??
@@ -164,6 +166,7 @@ export function createServices(db: Kysely<Database>, opts: CreateServicesOptions
         seedSampleData(
           {
             db,
+            authz,
             accounts: merged.base.accounts,
             companyAccountDefaults: merged.companyAccountDefaults,
             warehouses: merged.inv.warehouses,

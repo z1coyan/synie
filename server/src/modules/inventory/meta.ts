@@ -361,6 +361,8 @@ export function stockEntryResourceMeta(): ResourceMeta {
     permissionPrefix: 'inv.stock_entry',
     permissionLabel: '库存分录',
     table: 'inv_stock_entry',
+    // 来源单据是多态的（voucher_type/voucher_id），静态 via 只能声明单 parent；
+    // 分录自带 company_id，故按公司域声明。余额聚合端点共用本前缀的 read 码与公司边界。
     authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
@@ -501,6 +503,7 @@ export function stockDocResourceMeta(): ResourceMeta {
     permissionPrefix: 'inv.stock_doc',
     permissionLabel: '手工出入库单',
     table: 'inv_stock_doc',
+    // 手工库存单据不按人/部门收窄：不声明 owner/dept，supportedScopes 只出 all
     authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
@@ -681,6 +684,7 @@ export function stockTransferResourceMeta(): ResourceMeta {
     permissionPrefix: 'inv.stock_transfer',
     permissionLabel: '手工调拨单',
     table: 'inv_stock_transfer',
+    // 同手工出入库单：无 owner/dept 绑定，只有公司边界
     authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
@@ -891,6 +895,7 @@ export function stockCountResourceMeta(): ResourceMeta {
     permissionPrefix: 'inv.stock_count',
     permissionLabel: '库存盘点单',
     table: 'inv_stock_count',
+    // 同手工出入库单：无 owner/dept 绑定，只有公司边界
     authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),

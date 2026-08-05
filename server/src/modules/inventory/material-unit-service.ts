@@ -10,11 +10,11 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import { hasPermission, requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listFromSource } from '~/db/list.ts'
-import {requirePermission, requireAnyPermission,  toDate, wireDecimal } from './helpers.ts'
+import { toDate, wireDecimal } from './helpers.ts'
 import { materialUnitResourceMeta } from './meta.ts'
 
 export interface MaterialUnit {
@@ -30,6 +30,16 @@ export interface MaterialUnit {
 
 const AUDIT = auditFieldsOf(materialUnitResourceMeta())
 const META = materialUnitResourceMeta()
+
+/**
+ * 多码任一即可（单位转换沿用物料的 create/update/delete 码）。
+ * @deprecated 扫荡期过渡：改用 guard(资源, 动作, { anyOf })（工单 11）
+ */
+function requireAnyPermission(actor: Actor | null, ...codes: string[]): asserts actor is Actor {
+  if (!codes.some((code) => hasPermission(actor, code))) {
+    requirePermission(actor, codes[0]!)
+  }
+}
 
 const SOURCE = sql`
   FROM (

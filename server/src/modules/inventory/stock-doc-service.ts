@@ -1,5 +1,10 @@
 /**
  * 手工出入库单：审核/作废走 withTx + 库存过账骨架（auditInventoryDocInTx）。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、写前取行 `loadAuthorized`（不命中一律 not_found）、
+ * create 走 `assertCompanyWritable`。模块内零鉴权代码。
+ * 状态前置条件（草稿才能改等）是领域不变量，留在本文件抛 conflict。
  */
 import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -14,18 +19,18 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
-import { canAccessCompany } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
 import {
   auditInventoryDocInTx,
   voidInventoryDocInTx,
 } from '~/platform/posting/skeleton.ts'
 import {
-  requirePermission,
   dateWire,
   lowerStatus,
   projectStockItem,
@@ -85,41 +90,84 @@ const ITEM_AUDIT = auditFieldsOf(stockDocItemResourceMeta())
 const DOC_META = stockDocResourceMeta()
 const ITEM_META = stockDocItemResourceMeta()
 const LABEL = '手工出入库单'
+const ITEM_LABEL = '手工出入库单行'
 const VOUCHER_TYPE = 'inv.stock_doc'
+
+export const DOC_RESOURCE = 'invStockDocs'
+export const DOC_ITEM_RESOURCE = 'invStockDocItems'
+
+const DOC_TABLE = 'inv_stock_doc'
+const ITEM_TABLE = 'inv_stock_doc_item'
 
 export function createStockDocService(
   db: Kysely<Database>,
   numbering: NumberingService,
   inventory: InventoryEngine,
+  registry: Registry,
 ) {
-  async function get(actor: Actor, id: string): Promise<StockDoc> {
-    requirePermission(actor, 'inv.stock_doc:read')
-    const row = await db.selectFrom('inv_stock_doc').selectAll().where('id', '=', id).executeTakeFirst()
-    if (!row || !canAccessCompany(actor, row.company_id)) {
-      throw new ApiError('not_found', '手工出入库单不存在')
-    }
-    return mapDoc(row)
+  const docTarget = registry.authzTarget(DOC_RESOURCE)
+  const itemTarget = registry.authzTarget(DOC_ITEM_RESOURCE)
+
+  /** 按 Permit 取单头（可锁）；不命中一律 not_found */
+  async function loadDoc(
+    handle: DbHandle,
+    permit: Permit,
+    id: string,
+    forUpdate: boolean,
+  ): Promise<StockDoc> {
+    const row = await loadAuthorized({
+      db: handle,
+      permit,
+      target: docTarget,
+      table: DOC_TABLE,
+      id,
+      forUpdate,
+      notFoundMessage: `${LABEL}不存在`,
+    })
+    return mapDoc(row as never)
   }
 
-  async function list(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'inv.stock_doc:read')
-    const scope = companyScopeWhere(actor, 'company_id')
-    if (scope.empty) return { count: 0, results: [] as StockDoc[] }
-    return listFromSource({
+  /** 锁草稿单头：行编辑与工作流的公共前置（授权 → 状态守卫） */
+  async function lockDraftDoc(trx: DbHandle, permit: Permit, docId: string): Promise<StockDoc> {
+    const doc = await loadDoc(trx, permit, docId, true)
+    if (doc.status !== 'DRAFT') {
+      throw new ApiError('conflict', `仅草稿${LABEL}可编辑单据行`)
+    }
+    return doc
+  }
+
+  /** 单据行的母单：行不存在与母单不可达同为 not_found */
+  async function parentOf(trx: DbHandle, permit: Permit, itemId: string): Promise<StockDoc> {
+    const row = await trx
+      .selectFrom('inv_stock_doc_item')
+      .select('stock_doc_id')
+      .where('id', '=', itemId)
+      .executeTakeFirst()
+    if (!row) throw new ApiError('not_found', `${ITEM_LABEL}不存在`)
+    return lockDraftDoc(trx, permit, row.stock_doc_id)
+  }
+  async function get(permit: Permit, id: string): Promise<StockDoc> {
+    return loadDoc(db, permit, id, false)
+  }
+
+  async function list(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: docTarget,
+      alias: DOC_TABLE,
       resource: DOC_META,
       source: sql` FROM inv_stock_doc`,
       select: sql`SELECT id,doc_no,direction,doc_date,summary,remarks,status,audited_at,
         inserted_at,updated_at,company_id,warehouse_id,created_by_id,audited_by_id`,
       defaultOrder: sql`"doc_no" ASC, "id" ASC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapDoc(r as never),
     })
   }
 
   async function create(
-    actor: Actor,
+    permit: Permit,
     input: {
       docNo?: string | null
       direction: StockDocDirection
@@ -130,10 +178,6 @@ export function createStockDocService(
       warehouseId: string
     },
   ): Promise<StockDoc> {
-    requirePermission(actor, 'inv.stock_doc:create')
-    if (!canAccessCompany(actor, input.companyId)) {
-      throw new ApiError('forbidden', '无权操作该公司数据')
-    }
     const fields: Record<string, string[]> = {}
     if (input.direction !== 'IN' && input.direction !== 'OUT') {
       fields.direction = ['必须是 IN 或 OUT']
@@ -146,6 +190,8 @@ export function createStockDocService(
     if (Object.keys(fields).length > 0) {
       throw ApiError.validation(`${LABEL}参数不合法`, fields)
     }
+    // 入参校验（400）先于公司边界（404）：错误语义唯一规则只管后者
+    assertCompanyWritable(permit, input.companyId, '公司不存在')
     return withTx(db, async (trx) => {
       await validateLeafWarehouse(trx, input.companyId, input.warehouseId, LABEL)
       const docDate = input.docDate ? dateWire(input.docDate) : utcToday()
@@ -174,12 +220,12 @@ export function createStockDocService(
             remarks: trimOrNull(input.remarks),
             company_id: input.companyId,
             warehouse_id: input.warehouseId,
-            created_by_id: actor.userId?.trim() ? actor.userId : null,
+            created_by_id: permit.actor.userId || null,
           })
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapDoc(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'inv_stock_doc',
           recordId: item.id,
           recordLabel: item.docNo,
@@ -198,7 +244,7 @@ export function createStockDocService(
   }
 
   async function update(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       docNo?: string
@@ -211,19 +257,8 @@ export function createStockDocService(
       warehouseId?: string
     },
   ): Promise<StockDoc> {
-    requirePermission(actor, 'inv.stock_doc:update')
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('inv_stock_doc')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '手工出入库单不存在')
-      const before = mapDoc(locked)
-      if (!canAccessCompany(actor, before.companyId)) {
-        throw new ApiError('forbidden', '无权操作该公司数据')
-      }
+      const before = await loadDoc(trx, permit, id, true)
       if (before.status !== 'DRAFT') {
         throw new ApiError('conflict', '仅草稿手工出入库单可修改或删除')
       }
@@ -263,7 +298,7 @@ export function createStockDocService(
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapDoc(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'inv_stock_doc',
           recordId: item.id,
           recordLabel: item.docNo,
@@ -281,25 +316,14 @@ export function createStockDocService(
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'inv.stock_doc:delete')
+  async function remove(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('inv_stock_doc')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '手工出入库单不存在')
-      const item = mapDoc(locked)
-      if (!canAccessCompany(actor, item.companyId)) {
-        throw new ApiError('forbidden', '无权操作该公司数据')
-      }
+      const item = await loadDoc(trx, permit, id, true)
       if (item.status !== 'DRAFT') {
         throw new ApiError('conflict', '仅草稿手工出入库单可修改或删除')
       }
       await trx.deleteFrom('inv_stock_doc').where('id', '=', id).execute()
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_stock_doc',
         recordId: item.id,
         recordLabel: item.docNo,
@@ -311,25 +335,14 @@ export function createStockDocService(
     })
   }
 
-  async function audit(actor: Actor, id: string): Promise<StockDoc> {
-    requirePermission(actor, 'inv.stock_doc:audit')
+  async function audit(permit: Permit, id: string): Promise<StockDoc> {
     return withTx(db, async (trx) =>
-      auditInventoryDocInTx(trx, actor, inventory, {
+      auditInventoryDocInTx(trx, permit.actor, inventory, {
         voucherType: VOUCHER_TYPE,
         headTable: 'inv_stock_doc',
         setPostingDate: false,
         lockDraft: async (t) => {
-          const locked = await t
-            .selectFrom('inv_stock_doc')
-            .selectAll()
-            .where('id', '=', id)
-            .forUpdate()
-            .executeTakeFirst()
-          if (!locked) throw new ApiError('not_found', '手工出入库单不存在')
-          const before = mapDoc(locked)
-          if (!canAccessCompany(actor, before.companyId)) {
-            throw new ApiError('forbidden', '无权操作该公司数据')
-          }
+          const before = await loadDoc(t, permit, id, true)
           if (before.status !== 'DRAFT') {
             throw new ApiError('conflict', '仅草稿手工出入库单可审核')
           }
@@ -369,24 +382,13 @@ export function createStockDocService(
     )
   }
 
-  async function voidDoc(actor: Actor, id: string): Promise<StockDoc> {
-    requirePermission(actor, 'inv.stock_doc:void')
+  async function voidDoc(permit: Permit, id: string): Promise<StockDoc> {
     return withTx(db, async (trx) =>
-      voidInventoryDocInTx(trx, actor, inventory, {
+      voidInventoryDocInTx(trx, permit.actor, inventory, {
         voucherType: VOUCHER_TYPE,
         headTable: 'inv_stock_doc',
         lockAudited: async (t) => {
-          const locked = await t
-            .selectFrom('inv_stock_doc')
-            .selectAll()
-            .where('id', '=', id)
-            .forUpdate()
-            .executeTakeFirst()
-          if (!locked) throw new ApiError('not_found', '手工出入库单不存在')
-          const before = mapDoc(locked)
-          if (!canAccessCompany(actor, before.companyId)) {
-            throw new ApiError('forbidden', '无权操作该公司数据')
-          }
+          const before = await loadDoc(t, permit, id, true)
           if (before.status !== 'AUDITED') {
             throw new ApiError('conflict', '仅已审核手工出入库单可作废')
           }
@@ -408,38 +410,37 @@ export function createStockDocService(
   }
 
   // —— 行 ——
-  async function getItem(actor: Actor, id: string): Promise<StockDocItem> {
-    requirePermission(actor, 'inv.stock_doc:read')
-    const row = await db
-      .selectFrom('inv_stock_doc_item')
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst()
-    if (!row || !canAccessCompany(actor, row.company_id)) {
-      throw new ApiError('not_found', '手工出入库单行不存在')
-    }
-    return mapItem(row)
+  /** 行的可达性经 via 链递归到母单自身的行谓词 */
+  async function getItem(permit: Permit, id: string): Promise<StockDocItem> {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target: itemTarget,
+      table: ITEM_TABLE,
+      id,
+      notFoundMessage: `${ITEM_LABEL}不存在`,
+    })
+    return mapItem(row as never)
   }
 
-  async function queryItems(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'inv.stock_doc:read')
-    const scope = companyScopeWhere(actor, 'company_id')
-    if (scope.empty) return { count: 0, results: [] as StockDocItem[] }
-    return listFromSource({
+  async function queryItems(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: itemTarget,
+      alias: ITEM_TABLE,
       resource: ITEM_META,
       source: sql` FROM inv_stock_doc_item`,
       select: sql`SELECT id,idx,qty,base_qty,material_code,material_name,material_spec,unit_name,
         remark,inserted_at,updated_at,stock_doc_id,company_id,material_id,unit_id`,
       defaultOrder: sql`"idx" ASC, "id" ASC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapItem(r as never),
     })
   }
 
   async function createItem(
-    actor: Actor,
+    permit: Permit,
     input: {
       stockDocId: string
       idx: number
@@ -449,11 +450,10 @@ export function createStockDocService(
       remark?: string | null
     },
   ): Promise<StockDocItem> {
-    requirePermission(actor, 'inv.stock_doc:create')
     const qty = parseQty(input.qty)
     validateItemInput(qty, input.materialId, input.unitId, input.remark)
     return withTx(db, async (trx) => {
-      const doc = await lockDraftDoc(trx, actor, input.stockDocId)
+      const doc = await lockDraftDoc(trx, permit, input.stockDocId)
       const projection = await projectStockItem(
         trx,
         input.materialId,
@@ -480,7 +480,7 @@ export function createStockDocService(
         .returningAll()
         .executeTakeFirstOrThrow()
       const item = mapItem(row)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_stock_doc_item',
         recordId: item.id,
         recordLabel: item.materialCode,
@@ -494,7 +494,7 @@ export function createStockDocService(
   }
 
   async function updateItem(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       idx?: number
@@ -505,22 +505,16 @@ export function createStockDocService(
       remarkPresent?: boolean
     },
   ): Promise<StockDocItem> {
-    requirePermission(actor, 'inv.stock_doc:update')
     return withTx(db, async (trx) => {
-      const current = await trx
-        .selectFrom('inv_stock_doc_item')
-        .selectAll()
-        .where('id', '=', id)
-        .executeTakeFirst()
-      if (!current) throw new ApiError('not_found', '手工出入库单行不存在')
-      await lockDraftDoc(trx, actor, current.stock_doc_id)
+      // 母单先锁（授权 + 草稿门），再锁行：与并发路径的加锁顺序一致
+      await parentOf(trx, permit, id)
       const locked = await trx
         .selectFrom('inv_stock_doc_item')
         .selectAll()
         .where('id', '=', id)
         .forUpdate()
         .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '手工出入库单行不存在')
+      if (!locked) throw new ApiError('not_found', `${ITEM_LABEL}不存在`)
       const before = mapItem(locked)
       const qty = input.qty != null ? parseQty(input.qty) : decimal(before.qty)
       const materialId = input.materialId ?? before.materialId
@@ -563,7 +557,7 @@ export function createStockDocService(
         .returningAll()
         .executeTakeFirstOrThrow()
       const item = mapItem(row)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_stock_doc_item',
         recordId: item.id,
         recordLabel: item.materialCode,
@@ -576,26 +570,19 @@ export function createStockDocService(
     })
   }
 
-  async function removeItem(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'inv.stock_doc:delete')
+  async function removeItem(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const current = await trx
-        .selectFrom('inv_stock_doc_item')
-        .selectAll()
-        .where('id', '=', id)
-        .executeTakeFirst()
-      if (!current) throw new ApiError('not_found', '手工出入库单行不存在')
-      await lockDraftDoc(trx, actor, current.stock_doc_id)
+      await parentOf(trx, permit, id)
       const locked = await trx
         .selectFrom('inv_stock_doc_item')
         .selectAll()
         .where('id', '=', id)
         .forUpdate()
         .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '手工出入库单行不存在')
+      if (!locked) throw new ApiError('not_found', `${ITEM_LABEL}不存在`)
       const item = mapItem(locked)
       await trx.deleteFrom('inv_stock_doc_item').where('id', '=', id).execute()
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_stock_doc_item',
         recordId: item.id,
         recordLabel: item.materialCode,
@@ -624,24 +611,6 @@ export function createStockDocService(
 }
 
 export type StockDocService = ReturnType<typeof createStockDocService>
-
-async function lockDraftDoc(db: DbHandle, actor: Actor, docId: string): Promise<StockDoc> {
-  const row = await db
-    .selectFrom('inv_stock_doc')
-    .selectAll()
-    .where('id', '=', docId)
-    .forUpdate()
-    .executeTakeFirst()
-  if (!row) throw new ApiError('not_found', '手工出入库单不存在')
-  const doc = mapDoc(row)
-  if (!canAccessCompany(actor, doc.companyId)) {
-    throw new ApiError('forbidden', '无权操作该公司数据')
-  }
-  if (doc.status !== 'DRAFT') {
-    throw new ApiError('conflict', '仅草稿手工出入库单可编辑单据行')
-  }
-  return doc
-}
 
 function mapDoc(row: {
   id: string
