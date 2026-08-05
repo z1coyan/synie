@@ -1,5 +1,8 @@
 /**
  * 银行对账 + 快速对账凭证。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`（对账命令码 `acc.bank_transaction:reconcile`
+ * 声明在银行流水资源上），本服务只收 Permit，行级判定走 listAuthorized / loadAuthorized。
  */
 import { decimal, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -11,19 +14,21 @@ import {
   auditCreated, auditDestroyed, writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { requireCompanyAccess, requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { loadAuthorized } from '~/db/load.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import {
-  loadTransaction, reconcileStatus, txnAmount, type BankTransaction,
-} from './banking-shared.ts'
+import { reconcileStatus, txnAmount, type BankTransaction } from './banking-shared.ts'
 import {
   asIso, conflict, lower, notFound,
   validateOptionalText, validation, wireDecRequired,
 } from './common.ts'
 import { bankReconciliationResourceMeta } from './meta.ts'
-import { ACC_BANK_TRANSACTION } from './permissions.ts'
+
+export const BANK_RECONCILIATION_RESOURCE = 'accBankReconciliations'
+const RECON_TABLE = 'acc_bank_reconciliation'
 
 export interface BankReconciliation {
   id: string; amount: string; insertedAt: string; updatedAt: string
@@ -173,33 +178,40 @@ export async function hasReconForBankAccount(
 
 export function createReconOps(
   db: Kysely<Database>,
+  registry: Registry,
   deps: {
     journals: Pick<JournalService, 'createAndAuditJournal'>
+    /** 流水的授权入口（banking-accounts 注入，全模块共用同一份 loadAuthorized 参数） */
+    authorizedTransaction: (
+      handle: DbHandle, permit: Permit, id: string, forUpdate: boolean,
+    ) => Promise<BankTransaction>
   },
 ) {
-  const { journals } = deps
-  async function listReconciliations(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, ACC_BANK_TRANSACTION.read, '无权限执行银行业务操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as BankReconciliation[] }
-    return listFromSource({
-      db, resource: bankReconciliationResourceMeta(),
+  const { journals, authorizedTransaction } = deps
+  const reconTarget = registry.authzTarget(BANK_RECONCILIATION_RESOURCE)
+
+  async function listReconciliations(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
+      db, permit, target: reconTarget, alias: RECON_TABLE,
+      resource: bankReconciliationResourceMeta(),
       source: sql` FROM acc_bank_reconciliation`,
       select: sql`SELECT id,amount,inserted_at,updated_at,company_id,bank_transaction_id,journal_id`,
-      defaultOrder: sql`"id"`, query, extraWhere: scope.where, mapRow: mapRecon,
+      defaultOrder: sql`"id"`, query, mapRow: mapRecon,
     })
   }
 
-  async function getReconciliation(actor: Actor, id: string) {
-    requirePermission(actor, ACC_BANK_TRANSACTION.read, '无权限执行银行业务操作')
-    const item = await loadRecon(db, id, false)
-    requireCompanyAccess(actor, item.companyId, '银行对账记录不存在')
-    return item
+  async function getReconciliation(permit: Permit, id: string) {
+    const row = await loadAuthorized({
+      db, permit, target: reconTarget, table: RECON_TABLE, id,
+      notFoundMessage: '银行对账记录不存在',
+    })
+    return mapRecon(row)
   }
 
   async function createReconciliationLocked(
-    trx: DbHandle, actor: Actor, transaction: BankTransaction, journalId: string, amountStr: string,
+    trx: DbHandle, permit: Permit, transaction: BankTransaction, journalId: string, amountStr: string,
   ): Promise<BankReconciliation> {
+    const actor = permit.actor
     const ledgerAccountId = await bankLedgerAccount(trx, transaction, true)
     const journalRows = await sql<{ id: string; status: string; company_id: string }>`
       SELECT id,status,company_id FROM acc_gl_journal WHERE id=${journalId}::uuid FOR UPDATE
@@ -258,22 +270,17 @@ export function createReconOps(
     }
   }
 
-  async function createReconciliation(actor: Actor, input: {
+  async function createReconciliation(permit: Permit, input: {
     bankTransactionId: string; journalId: string; amount: string
   }) {
-    requirePermission(actor, ACC_BANK_TRANSACTION.reconcile, '无权限执行银行业务操作')
     return withTx(db, async (trx) => {
-      const transaction = await loadTransaction(trx, input.bankTransactionId, true)
-      requireCompanyAccess(actor, transaction.companyId, '银行流水不存在')
-      return createReconciliationLocked(trx, actor, transaction, input.journalId, input.amount)
+      const transaction = await authorizedTransaction(trx, permit, input.bankTransactionId, true)
+      return createReconciliationLocked(trx, permit, transaction, input.journalId, input.amount)
     })
   }
 
-  async function remaining(actor: Actor, bankTransactionId: string, journalId: string) {
-    requirePermission(actor, ACC_BANK_TRANSACTION.read, '无权限执行银行业务操作')
-    requirePermission(actor, 'acc.gl_journal:read', '无权限执行银行业务操作')
-    const transaction = await loadTransaction(db, bankTransactionId, false)
-    requireCompanyAccess(actor, transaction.companyId, '银行流水或凭证不存在')
+  async function remaining(permit: Permit, bankTransactionId: string, journalId: string) {
+    const transaction = await authorizedTransaction(db, permit, bankTransactionId, false)
     const journalRows = await sql<{ id: string; company_id: string }>`
       SELECT id,company_id FROM acc_gl_journal WHERE id=${journalId}::uuid
     `.execute(db)
@@ -296,11 +303,11 @@ export function createReconOps(
   /**
    * 快速对账凭证：借贷两行，经 accounting 窄 seam 在同一 trx 内建立并审核。
    * 凭证生命周期（编号/审计/状态机/GL）归 journal-service 唯一实现，此处不再复制。
-   * 权限：调用方 quickCreate 已检 acc.bank_transaction:reconcile；
+   * 权限：端点已由 guard 判过 acc.bank_transaction:reconcile；
    * createAndAuditJournal 为无闸 seam，不在此叠 gl_journal:create/audit。
    */
   async function createQuickJournal(
-    trx: TrxHandle, actor: Actor, input: {
+    trx: TrxHandle, permit: Permit, input: {
       companyId: string; bankLedgerAccountId: string; counterAccountId: string
       income: boolean; amount: ReturnType<typeof decimal>; summary: string | null; postingDate: string
     },
@@ -315,7 +322,7 @@ export function createReconOps(
           { accountId: input.counterAccountId, debit: amount, credit: decimal(0), remarks: input.summary },
           { accountId: input.bankLedgerAccountId, debit: decimal(0), credit: amount, remarks: input.summary },
         ]
-    const journal = await journals.createAndAuditJournal(trx, actor, {
+    const journal = await journals.createAndAuditJournal(trx, permit.actor, {
       companyId: input.companyId,
       date: input.postingDate,
       postingDate: input.postingDate,
@@ -325,12 +332,11 @@ export function createReconOps(
     return journal.id
   }
 
-  async function quickCreate(actor: Actor, input: {
+  // 业务能力码：快速对账在银行语境下隐含创建+审核凭证；不要求 gl_journal 双码
+  async function quickCreate(permit: Permit, input: {
     bankTransactionId: string; counterAccountId: string; amount: string
     summary?: string | null; postingDate: string
   }) {
-    // 业务能力码：快速对账在银行语境下隐含创建+审核凭证；不要求 gl_journal 双码
-    requirePermission(actor, ACC_BANK_TRANSACTION.reconcile, '无权限执行银行业务操作')
     const fields: Record<string, string[]> = {}
     const amount = decimal(input.amount)
     if (!amount.gt(0)) fields.amount = ['对账金额必须大于零']
@@ -338,8 +344,7 @@ export function createReconOps(
     validateOptionalText(fields, 'summary', input.summary, 255)
     if (Object.keys(fields).length) throw validation('快速对账', fields)
     return withTx(db, async (trx) => {
-      const transaction = await loadTransaction(trx, input.bankTransactionId, true)
-      requireCompanyAccess(actor, transaction.companyId, '银行流水不存在')
+      const transaction = await authorizedTransaction(trx, permit, input.bankTransactionId, true)
       const ledgerAccountId = await bankLedgerAccount(trx, transaction, true)
       if (input.counterAccountId === ledgerAccountId) {
         throw validation('快速对账', { counterAccountId: ['对方科目不能是银行账户绑定的科目'] })
@@ -357,23 +362,23 @@ export function createReconOps(
       if (amount.gt(remainingAmt)) {
         throw validation('快速对账', { amount: [`超过流水未对账金额(剩余 ${remainingAmt.toFixed()})`] })
       }
-      const journalId = await createQuickJournal(trx, actor, {
+      const journalId = await createQuickJournal(trx, permit, {
         companyId: transaction.companyId,
         bankLedgerAccountId: ledgerAccountId,
         counterAccountId: input.counterAccountId,
         income: transaction.income != null,
         amount, summary: input.summary ?? null, postingDate: input.postingDate,
       })
-      return createReconciliationLocked(trx, actor, transaction, journalId, amount.toFixed())
+      return createReconciliationLocked(trx, permit, transaction, journalId, amount.toFixed())
     })
   }
 
-  async function deleteReconciliation(actor: Actor, id: string) {
-    requirePermission(actor, ACC_BANK_TRANSACTION.reconcile, '无权限执行银行业务操作')
+  async function deleteReconciliation(permit: Permit, id: string) {
+    const actor = permit.actor
     return withTx(db, async (trx) => {
+      // 加锁顺序：母行（流水）先行，再锁对账行
       const seed = await loadRecon(trx, id, false)
-      const transaction = await loadTransaction(trx, seed.bankTransactionId, true)
-      requireCompanyAccess(actor, transaction.companyId, '银行对账记录不存在')
+      const transaction = await authorizedTransaction(trx, permit, seed.bankTransactionId, true)
       const item = await loadRecon(trx, id, true)
       if (item.bankTransactionId !== transaction.id) throw conflict('银行对账记录已被并发修改')
       try {

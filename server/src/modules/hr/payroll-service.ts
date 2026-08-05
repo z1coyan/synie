@@ -1,5 +1,10 @@
 /**
  * 工资：工资单 / 发放 / 员工借款。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
+ * 三张表都**无 company_id**（全局 HR 数据），故 meta 声明 `global`——
+ * 行级过滤恒放行，`listAuthorized`/`loadAuthorized` 承担码级判定与统一 404。
+ * 发放一键化的锁内核算顺序（advisory lock → 锁工资单 → 读借款台账 → 纯核决策）保持不变。
  */
 import {
   decimal,
@@ -18,9 +23,11 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import type { Actor, Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { listFromSource } from '~/db/list.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { loadAuthorized } from '~/db/load.ts'
 import {
   employeeLoanResourceMeta,
   payrollPaymentResourceMeta,
@@ -50,6 +57,14 @@ import {
   parseDecimal,
   writeErr,
 } from './helpers.ts'
+
+export const PAYROLL_RESOURCE = 'hrPayrolls'
+export const PAYROLL_PAYMENT_RESOURCE = 'hrPayrollPayments'
+export const EMPLOYEE_LOAN_RESOURCE = 'hrEmployeeLoans'
+
+const PAYROLL_TABLE = 'hr_payroll'
+const PAYMENT_TABLE = 'hr_payroll_payment'
+const LOAN_TABLE = 'hr_employee_loan'
 import type {
   EmployeeLoan,
   EmployeeLoanBalance,
@@ -74,17 +89,25 @@ const LOAN_AUDIT = auditFieldsOf(employeeLoanResourceMeta())
 
 export interface PayrollServiceDeps {
   db: Kysely<Database>
+  /** 判定归宿解析（三个执行点共用） */
+  registry: Registry
 }
 
 export function createPayrollService(deps: PayrollServiceDeps) {
-  const { db } = deps
+  const { db, registry } = deps
+  const payrollTarget = registry.authzTarget(PAYROLL_RESOURCE)
+  const paymentTarget = registry.authzTarget(PAYROLL_PAYMENT_RESOURCE)
+  const loanTarget = registry.authzTarget(EMPLOYEE_LOAN_RESOURCE)
 
   // ── payrolls ───────────────────────────────────────────────────────────
 
-  async function listPayrolls(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'hr.payroll:read')
-    return listFromSource({
+  async function listPayrolls(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: payrollTarget,
+      // 投影带别名 p（`FROM hr_payroll p`），别名必须逐字一致
+      alias: 'p',
       resource: payrollResourceMeta(),
       source: sql` FROM hr_payroll p`,
       select: sql`SELECT p.id, p.month, p.workdays, p.attendance_days, p.missing_days,
@@ -115,13 +138,23 @@ export function createPayrollService(deps: PayrollServiceDeps) {
     return mapPayrollRow(r)
   }
 
-  async function getPayroll(actor: Actor, id: string): Promise<Payroll> {
-    requirePermission(actor, 'hr.payroll:read')
-    return loadPayroll(db, id)
+  /** 按 Permit 取工资单（可锁）；不命中一律 not_found */
+  async function authorizedPayroll(
+    handle: DbHandle, permit: Permit, id: string, forUpdate: boolean,
+  ): Promise<Payroll> {
+    await loadAuthorized({
+      db: handle, permit, target: payrollTarget, table: PAYROLL_TABLE, id, forUpdate,
+      notFoundMessage: '工资单不存在',
+    })
+    return loadPayroll(handle, id)
   }
 
-  async function createPayroll(actor: Actor, input: PayrollInput): Promise<Payroll> {
-    requirePermission(actor, 'hr.payroll:create')
+  async function getPayroll(permit: Permit, id: string): Promise<Payroll> {
+    return authorizedPayroll(db, permit, id, false)
+  }
+
+  async function createPayroll(permit: Permit, input: PayrollInput): Promise<Payroll> {
+    const actor = permit.actor
     const normalized = normalizePayrollInput(input)
     return withTx(db, async (trx) => {
       const item = await insertPayroll(trx, normalized)
@@ -138,7 +171,7 @@ export function createPayrollService(deps: PayrollServiceDeps) {
   }
 
   async function updatePayroll(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       workdays?: string
@@ -154,9 +187,10 @@ export function createPayrollService(deps: PayrollServiceDeps) {
       remarksPresent?: boolean
     },
   ): Promise<Payroll> {
-    requirePermission(actor, 'hr.payroll:update')
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await lockPayroll(trx, id)
+      // 授权 404 → 状态 409（顺序不可倒）
+      const before = await authorizedPayroll(trx, permit, id, true)
       if (before.status !== upperWire(PAYROLL_PENDING)) {
         throw new ApiError('conflict', '仅待发放工资单可修改或删除,差错请走补发')
       }
@@ -213,10 +247,10 @@ export function createPayrollService(deps: PayrollServiceDeps) {
     })
   }
 
-  async function refreshPayroll(actor: Actor, id: string): Promise<Payroll> {
-    requirePermission(actor, 'hr.payroll:update')
+  async function refreshPayroll(permit: Permit, id: string): Promise<Payroll> {
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await lockPayroll(trx, id)
+      const before = await authorizedPayroll(trx, permit, id, true)
       if (before.status !== upperWire(PAYROLL_PENDING)) {
         throw new ApiError('conflict', '仅待发放工资单可重取快照')
       }
@@ -273,10 +307,10 @@ export function createPayrollService(deps: PayrollServiceDeps) {
     })
   }
 
-  async function deletePayroll(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'hr.payroll:delete')
+  async function deletePayroll(permit: Permit, id: string): Promise<void> {
+    const actor = permit.actor
     await withTx(db, async (trx) => {
-      const before = await lockPayroll(trx, id)
+      const before = await authorizedPayroll(trx, permit, id, true)
       if (before.status !== upperWire(PAYROLL_PENDING)) {
         throw new ApiError('conflict', '仅待发放工资单可修改或删除,差错请走补发')
       }
@@ -297,10 +331,10 @@ export function createPayrollService(deps: PayrollServiceDeps) {
   }
 
   async function generatePayrolls(
-    actor: Actor,
+    permit: Permit,
     month: string,
   ): Promise<{ created: number; skipped: number }> {
-    requirePermission(actor, 'hr.payroll:create')
+    const actor = permit.actor
     const first = parseMonth(month)
     const next = addMonth(first)
     return withTx(db, async (trx) => {
@@ -354,8 +388,9 @@ export function createPayrollService(deps: PayrollServiceDeps) {
     })
   }
 
+  // 月度聚合：只做码级门控，不套行过滤（聚合投影无绑定列）
   async function payrollMonthStats(
-    actor: Actor,
+    _permit: Permit,
     month: string,
   ): Promise<{
     count: number
@@ -363,7 +398,6 @@ export function createPayrollService(deps: PayrollServiceDeps) {
     payableTotal: string
     paidTotal: string
   }> {
-    requirePermission(actor, 'hr.payroll:read')
     parseMonth(month)
     const row = await sql<Record<string, unknown>>`
       SELECT count(*)::bigint AS count,
@@ -388,10 +422,12 @@ export function createPayrollService(deps: PayrollServiceDeps) {
 
   // ── payments ───────────────────────────────────────────────────────────
 
-  async function listPayments(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'hr.payroll_payment:read')
-    return listFromSource({
+  async function listPayments(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: paymentTarget,
+      alias: PAYMENT_TABLE,
       resource: payrollPaymentResourceMeta(),
       source: sql` FROM hr_payroll_payment`,
       select: sql`SELECT id, month, paid_on, amount, kind, remarks, inserted_at, updated_at,
@@ -414,35 +450,39 @@ export function createPayrollService(deps: PayrollServiceDeps) {
     return mapPaymentRow(r)
   }
 
-  async function getPayment(actor: Actor, id: string): Promise<PayrollPayment> {
-    requirePermission(actor, 'hr.payroll_payment:read')
+  async function getPayment(permit: Permit, id: string): Promise<PayrollPayment> {
+    await loadAuthorized({
+      db, permit, target: paymentTarget, table: PAYMENT_TABLE, id,
+      notFoundMessage: '工资发放记录不存在',
+    })
     return loadPayment(db, id)
   }
 
   async function createPayment(
-    actor: Actor,
+    permit: Permit,
     input: { payrollId: string; paidOn: string; amount: string; remarks?: string | null },
   ): Promise<PayrollPayment> {
-    requirePermission(actor, 'hr.payroll_payment:create')
+    const actor = permit.actor
     const amount = parseDecimal(input.amount, 'amount', false, true)
     const paidOn = parseDate(input.paidOn, 'paidOn')
     return withTx(db, async (trx) => {
+      // 锁内核算顺序：advisory lock → 锁工资单 → 借款台账 → 纯核决策（顺序不可动）
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${input.payrollId}, 0))`.execute(trx)
-      const payroll = await lockPayroll(trx, input.payrollId)
+      const payroll = await authorizedPayroll(trx, permit, input.payrollId, true)
       return createPaymentInTx(trx, actor, payroll, paidOn, amount, input.remarks ?? null)
     })
   }
 
   async function payRemaining(
-    actor: Actor,
+    permit: Permit,
     input: { payrollId: string; paidOn: string; remarks?: string | null },
   ): Promise<PayrollPayment> {
-    requirePermission(actor, 'hr.payroll_payment:create')
+    const actor = permit.actor
     const paidOn = parseDate(input.paidOn, 'paidOn')
     return withTx(db, async (trx) => {
       // 事务级 advisory lock：串行化同工资单发放，避免并发 payRemaining 双成功
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${input.payrollId}, 0))`.execute(trx)
-      const payroll = await lockPayroll(trx, input.payrollId)
+      const payroll = await authorizedPayroll(trx, permit, input.payrollId, true)
       const paidRow = await sql<{ paid: string | null }>`
         SELECT COALESCE(sum(amount),0)::text AS paid
           FROM hr_payroll_payment WHERE payroll_id = ${payroll.id}::uuid
@@ -565,14 +605,15 @@ export function createPayrollService(deps: PayrollServiceDeps) {
     return value
   }
 
-  async function deletePayment(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'hr.payroll_payment:delete')
+  async function deletePayment(permit: Permit, id: string): Promise<void> {
+    const actor = permit.actor
     await withTx(db, async (trx) => {
-      const payRow = await sql<{ payroll_id: string }>`
-        SELECT payroll_id FROM hr_payroll_payment WHERE id = ${id}::uuid
-      `.execute(trx)
-      if (!payRow.rows[0]) throw new ApiError('not_found', '工资发放记录不存在')
-      const payroll = await lockPayroll(trx, payRow.rows[0].payroll_id)
+      // 加锁顺序：先定位发放归属，再锁工资单（母行先行）
+      const payRow = await loadAuthorized({
+        db: trx, permit, target: paymentTarget, table: PAYMENT_TABLE, id,
+        notFoundMessage: '工资发放记录不存在',
+      })
+      const payroll = await authorizedPayroll(trx, permit, String(payRow.payroll_id), true)
       const value = await loadPayment(trx, id)
       try {
         await trx.deleteFrom('hr_payroll_payment').where('id', '=', id).execute()
@@ -641,10 +682,12 @@ export function createPayrollService(deps: PayrollServiceDeps) {
 
   // ── loans ──────────────────────────────────────────────────────────────
 
-  async function listLoans(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'hr.employee_loan:read')
-    return listFromSource({
+  async function listLoans(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: loanTarget,
+      alias: LOAN_TABLE,
       resource: employeeLoanResourceMeta(),
       source: sql` FROM hr_employee_loan`,
       select: sql`SELECT id, kind, occurred_on, amount, remarks, inserted_at, updated_at,
@@ -667,13 +710,23 @@ export function createPayrollService(deps: PayrollServiceDeps) {
     return mapLoanRow(r)
   }
 
-  async function getLoan(actor: Actor, id: string): Promise<EmployeeLoan> {
-    requirePermission(actor, 'hr.employee_loan:read')
-    return loadLoan(db, id)
+  /** 按 Permit 取借款记录（可锁）；不命中一律 not_found */
+  async function authorizedLoan(
+    handle: DbHandle, permit: Permit, id: string, forUpdate: boolean,
+  ): Promise<EmployeeLoan> {
+    await loadAuthorized({
+      db: handle, permit, target: loanTarget, table: LOAN_TABLE, id, forUpdate,
+      notFoundMessage: '员工借款记录不存在',
+    })
+    return loadLoan(handle, id)
+  }
+
+  async function getLoan(permit: Permit, id: string): Promise<EmployeeLoan> {
+    return authorizedLoan(db, permit, id, false)
   }
 
   async function createLoan(
-    actor: Actor,
+    permit: Permit,
     input: {
       employeeId: string
       kind: string
@@ -682,7 +735,7 @@ export function createPayrollService(deps: PayrollServiceDeps) {
       remarks?: string | null
     },
   ): Promise<EmployeeLoan> {
-    requirePermission(actor, 'hr.employee_loan:create')
+    const actor = permit.actor
     const { kind, occurredOn, amount } = normalizeLoanInput(
       input.kind,
       input.occurredOn,
@@ -719,7 +772,7 @@ export function createPayrollService(deps: PayrollServiceDeps) {
   }
 
   async function updateLoan(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       employeeId?: string
@@ -730,9 +783,9 @@ export function createPayrollService(deps: PayrollServiceDeps) {
       remarksPresent?: boolean
     },
   ): Promise<EmployeeLoan> {
-    requirePermission(actor, 'hr.employee_loan:update')
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await loadLoan(trx, id)
+      const before = await authorizedLoan(trx, permit, id, true)
       if (before.payrollId) {
         throw new ApiError(
           'conflict',
@@ -778,10 +831,10 @@ export function createPayrollService(deps: PayrollServiceDeps) {
     })
   }
 
-  async function deleteLoan(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'hr.employee_loan:delete')
+  async function deleteLoan(permit: Permit, id: string): Promise<void> {
+    const actor = permit.actor
     await withTx(db, async (trx) => {
-      const before = await loadLoan(trx, id)
+      const before = await authorizedLoan(trx, permit, id, true)
       if (before.payrollId) {
         throw new ApiError(
           'conflict',
@@ -804,8 +857,8 @@ export function createPayrollService(deps: PayrollServiceDeps) {
     })
   }
 
-  async function loanBalances(actor: Actor): Promise<EmployeeLoanBalance[]> {
-    requirePermission(actor, 'hr.employee_loan:read')
+  // 跨资源聚合（借款 × 员工）：只做码级门控，不套行过滤
+  async function loanBalances(_permit: Permit): Promise<EmployeeLoanBalance[]> {
     const rows = await sql<Record<string, unknown>>`
       SELECT l.employee_id, e.code, e.name,
              COALESCE(sum(l.amount) FILTER (WHERE l.kind='borrow'),0) AS borrowed,
@@ -860,21 +913,6 @@ export function createPayrollService(deps: PayrollServiceDeps) {
     } catch (err) {
       throw writeErr(err, '创建工资单失败')
     }
-  }
-
-  async function lockPayroll(trx: DbHandle, id: string): Promise<Payroll> {
-    const row = await sql<Record<string, unknown>>`
-      SELECT p.id, p.month, p.workdays, p.attendance_days, p.missing_days,
-        p.overtime_hours, p.daily_wage, p.base_amount, p.allowance, p.bonus, p.fine,
-        p.loan_deduction, p.payable, p.status, p.remarks, p.inserted_at, p.updated_at,
-        p.employee_id,
-        (SELECT sum(payment.amount) FROM hr_payroll_payment payment
-          WHERE payment.payroll_id = p.id) AS paid_total
-        FROM hr_payroll p WHERE p.id = ${id}::uuid FOR UPDATE
-    `.execute(trx)
-    const r = row.rows[0]
-    if (!r) throw new ApiError('not_found', '工资单不存在')
-    return mapPayrollRow(r)
   }
 
   async function payrollSnapshotForEmployee(

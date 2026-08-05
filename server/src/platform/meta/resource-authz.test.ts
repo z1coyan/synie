@@ -55,7 +55,11 @@ describe('authz 声明覆盖', () => {
   test('readAnyOf 只用于无独立权限点的投影/重载，且码在目录内', () => {
     const codes = new Set(registry.allPermissionCodes())
     const withAnyOf = all.filter((m) => (m.authz!.readAnyOf ?? []).length > 0).map((m) => m.name)
-    expect(withAnyOf.sort()).toEqual(['hrAttendanceImports', 'scmOrderFlowItems'])
+    expect(withAnyOf.sort()).toEqual([
+      'accBankImports',
+      'hrAttendanceImports',
+      'scmOrderFlowItems',
+    ])
     for (const name of withAnyOf) {
       for (const code of metaOf(name).authz!.readAnyOf!) {
         expect(codes.has(code)).toBe(true)

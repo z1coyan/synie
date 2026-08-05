@@ -9,12 +9,18 @@ import { allAccountingResourceMetas } from './meta.ts'
 
 export {
   createJournalService,
+  JOURNAL_LINE_RESOURCE_NAME,
+  JOURNAL_RESOURCE_NAME,
   type JournalService,
   type JournalServiceDeps,
   type CreateAndAuditJournalInput,
   type CreateAndAuditLineInput,
 } from './journal-service.ts'
-export { createEntryService, type EntryService } from './entry-service.ts'
+export {
+  createEntryService,
+  GL_ENTRY_RESOURCE_NAME,
+  type EntryService,
+} from './entry-service.ts'
 export { accountingRoutes } from './routes.ts'
 export { allAccountingResourceMetas } from './meta.ts'
 
@@ -27,11 +33,12 @@ export function registerAccountingResources(registry: Registry): void {
 export function createAccountingServices(
   db: Kysely<Database>,
   numbering: NumberingService,
+  registry: Registry,
   deps: JournalServiceDeps = {},
 ) {
   const gl = createGlEngine()
   return {
-    journals: createJournalService(db, numbering, gl, deps),
-    entries: createEntryService(db),
+    journals: createJournalService(db, numbering, gl, registry, deps),
+    entries: createEntryService(db, registry),
   }
 }

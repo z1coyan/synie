@@ -1,5 +1,9 @@
 /**
  * 流水导入模板 / 导入批次 / 导入行。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
+ * 导入批次/行没有独立权限点——唯一门控码是 `acc.bank_transaction:import`
+ * （批次 meta 的 `authz.readAnyOf` 声明「read 由 import 码给出」，即 import-as-read 重载）。
  */
 import { type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -10,22 +14,32 @@ import {
   auditCreated, auditDestroyed, auditDiff, writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { requireCompanyAccess, requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import type { FileService } from '~/platform/files/service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { parseBankImport, type ParseTemplate } from './bank-parser.ts'
 import { validateOwnBankAccount } from './banking-accounts.ts'
 import { validateTxnShape, type BankTransaction } from './banking-shared.ts'
 import {
   actorUserId, asIso, asIsoOrNull, conflict, lower, notFound,
-  requireCompanyWrite, truncateRunes, upper, validateOptionalText,
+  truncateRunes, upper, validateOptionalText,
   validateRequiredText, validation, wireDec, wireEnum,
 } from './common.ts'
 import {
   bankImportItemResourceMeta, bankImportResourceMeta, bankImportTemplateResourceMeta,
 } from './meta.ts'
+
+export const BANK_IMPORT_TEMPLATE_RESOURCE = 'accBankImportTemplates'
+export const BANK_IMPORT_RESOURCE = 'accBankImports'
+export const BANK_IMPORT_ITEM_RESOURCE = 'accBankImportItems'
+
+const TEMPLATE_TABLE = 'acc_bank_import_template'
+const IMPORT_TABLE = 'acc_bank_import'
+const IMPORT_ITEM_TABLE = 'acc_bank_import_item'
 
 export interface BankImportTemplate {
   id: string; name: string; startRow: number
@@ -226,10 +240,11 @@ async function loadItem(db: DbHandle, id: string, lock: boolean): Promise<BankIm
 
 export function createImportOps(
   db: Kysely<Database>,
+  registry: Registry,
   deps: {
     files: Pick<FileService, 'readStoredFile'> | null
     createTransactionInTx: (
-      trx: DbHandle, actor: Actor,
+      trx: DbHandle, permit: Permit,
       input: {
         occurredAt: string; income?: string | null; expense?: string | null; balance?: string | null
         counterpartyName?: string | null; counterpartyAccount?: string | null
@@ -242,29 +257,60 @@ export function createImportOps(
 ) {
   const files = deps.files
   const utcOffsetMs = deps.utcOffsetMs ?? 8 * 60 * 60 * 1000
+  const templateTarget = registry.authzTarget(BANK_IMPORT_TEMPLATE_RESOURCE)
+  const importTarget = registry.authzTarget(BANK_IMPORT_RESOURCE)
+  const itemTarget = registry.authzTarget(BANK_IMPORT_ITEM_RESOURCE)
 
-  async function listTemplates(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'acc.bank_import_template:read', '无权限执行银行业务操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as BankImportTemplate[] }
-    return listFromSource({
-      db, resource: bankImportTemplateResourceMeta(),
+  /** 按 Permit 取模板（可锁）；不命中一律 not_found */
+  async function authorizedTemplate(
+    handle: DbHandle, permit: Permit, id: string, forUpdate: boolean,
+  ): Promise<BankImportTemplate> {
+    const row = await loadAuthorized({
+      db: handle, permit, target: templateTarget, table: TEMPLATE_TABLE, id, forUpdate,
+      notFoundMessage: '流水导入模板不存在',
+    })
+    return mapTemplate(row)
+  }
+
+  /** 按 Permit 取导入批次（可锁）；行锁后重读带计数的投影 */
+  async function authorizedImport(
+    handle: DbHandle, permit: Permit, id: string, forUpdate: boolean,
+  ): Promise<BankImport> {
+    await loadAuthorized({
+      db: handle, permit, target: importTarget, table: IMPORT_TABLE, id, forUpdate,
+      notFoundMessage: '流水导入记录不存在',
+    })
+    return loadImport(handle, id, false)
+  }
+
+  /** 按 Permit 取导入行（可锁）；via 链递归母批次 */
+  async function authorizedItem(
+    handle: DbHandle, permit: Permit, id: string, forUpdate: boolean,
+  ): Promise<BankImportItem> {
+    const row = await loadAuthorized({
+      db: handle, permit, target: itemTarget, table: IMPORT_ITEM_TABLE, id, forUpdate,
+      notFoundMessage: '流水导入行不存在',
+    })
+    return mapItem(row)
+  }
+
+  async function listTemplates(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
+      db, permit, target: templateTarget, alias: TEMPLATE_TABLE,
+      resource: bankImportTemplateResourceMeta(),
       source: sql` FROM acc_bank_import_template`,
       select: sql`SELECT id,name,start_row,datetime_col,datetime_format,date_col,date_format,time_col,
         time_format,income_col,expense_col,amount_col,balance_col,counterparty_name_col,
         counterparty_account_col,summary_col,note_col,inserted_at,updated_at,company_id,bank_account_id`,
-      defaultOrder: sql`"id"`, query, extraWhere: scope.where, mapRow: mapTemplate,
+      defaultOrder: sql`"id"`, query, mapRow: mapTemplate,
     })
   }
 
-  async function getTemplate(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.bank_import_template:read', '无权限执行银行业务操作')
-    const item = await loadTemplate(db, id, false)
-    requireCompanyAccess(actor, item.companyId, '流水导入模板不存在')
-    return item
+  async function getTemplate(permit: Permit, id: string) {
+    return authorizedTemplate(db, permit, id, false)
   }
 
-  async function createTemplate(actor: Actor, input: {
+  async function createTemplate(permit: Permit, input: {
     name: string; startRow?: number
     datetimeCol?: string | null; datetimeFormat?: string | null
     dateCol?: string | null; dateFormat?: string | null
@@ -274,8 +320,7 @@ export function createImportOps(
     counterpartyAccountCol?: string | null; summaryCol?: string | null; noteCol?: string | null
     companyId: string; bankAccountId: string
   }) {
-    requirePermission(actor, 'acc.bank_import_template:create', '无权限执行银行业务操作')
-    requireCompanyWrite(actor, input.companyId)
+    const actor = permit.actor
     const name = input.name.trim()
     const startRow = input.startRow && input.startRow !== 0 ? input.startRow : 2
     const datetimeCol = normalizeCol(input.datetimeCol)
@@ -298,6 +343,8 @@ export function createImportOps(
       columns: [datetimeCol, dateCol, timeCol, incomeCol, expenseCol, amountCol, balanceCol,
         counterpartyNameCol, counterpartyAccountCol, summaryCol, noteCol],
     })
+    // 入参校验（400）先于公司边界（404）
+    assertCompanyWritable(permit, input.companyId)
     return withTx(db, async (trx) => {
       await validateOwnBankAccount(trx, input.companyId, input.bankAccountId, false)
       try {
@@ -328,13 +375,12 @@ export function createImportOps(
     })
   }
 
-  async function updateTemplate(actor: Actor, id: string, input: Record<string, unknown> & {
+  async function updateTemplate(permit: Permit, id: string, input: Record<string, unknown> & {
     name?: string; startRow?: number; bankAccountId?: string
   }) {
-    requirePermission(actor, 'acc.bank_import_template:update', '无权限执行银行业务操作')
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await loadTemplate(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '流水导入模板不存在')
+      const before = await authorizedTemplate(trx, permit, id, true)
       const after = { ...before }
       if (input.name !== undefined) after.name = String(input.name)
       if (input.startRow !== undefined) after.startRow = Number(input.startRow)
@@ -395,11 +441,10 @@ export function createImportOps(
     })
   }
 
-  async function deleteTemplate(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.bank_import_template:delete', '无权限执行银行业务操作')
+  async function deleteTemplate(permit: Permit, id: string) {
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const item = await loadTemplate(trx, id, true)
-      requireCompanyAccess(actor, item.companyId, '流水导入模板不存在')
+      const item = await authorizedTemplate(trx, permit, id, true)
       try {
         await sql`DELETE FROM acc_bank_import_template WHERE id=${id}::uuid`.execute(trx)
         await writeAudit(trx, actor, {
@@ -414,34 +459,28 @@ export function createImportOps(
     })
   }
 
-  async function listImports(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'acc.bank_transaction:import', '无权限执行银行业务操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as BankImport[] }
-    return listFromSource({
-      db, resource: bankImportResourceMeta(),
+  async function listImports(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
+      db, permit, target: importTarget, alias: IMPORT_TABLE,
+      resource: bankImportResourceMeta(),
       source: sql` FROM acc_bank_import`,
       select: sql`SELECT id,status,error,imported_at,inserted_at,updated_at,company_id,bank_account_id,
         template_id,file_id,created_by_id,imported_by_id,
         (SELECT count(*) FROM acc_bank_import_item ii WHERE ii.import_id=acc_bank_import.id) AS item_count,
         (SELECT count(*) FROM acc_bank_import_item ii WHERE ii.import_id=acc_bank_import.id AND ii.error IS NOT NULL) AS error_count`,
-      defaultOrder: sql`"id"`, query, extraWhere: scope.where, mapRow: mapImport,
+      defaultOrder: sql`"id"`, query, mapRow: mapImport,
     })
   }
 
-  async function getImport(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.bank_transaction:import', '无权限执行银行业务操作')
-    const item = await loadImport(db, id, false)
-    requireCompanyAccess(actor, item.companyId, '流水导入记录不存在')
-    return item
+  async function getImport(permit: Permit, id: string) {
+    return authorizedImport(db, permit, id, false)
   }
 
-  async function createImport(actor: Actor, input: {
+  async function createImport(permit: Permit, input: {
     companyId: string; bankAccountId: string; templateId: string; fileId: string
   }) {
-    requirePermission(actor, 'acc.bank_transaction:import', '无权限执行银行业务操作')
-    requirePermission(actor, 'sys.file:read', '无权限执行银行业务操作')
-    requireCompanyWrite(actor, input.companyId)
+    const actor = permit.actor
+    assertCompanyWritable(permit, input.companyId)
     if (!files) throw new ApiError('internal', '文件读取服务未配置')
     return withTx(db, async (trx) => {
       await validateOwnBankAccount(trx, input.companyId, input.bankAccountId, true)
@@ -532,12 +571,10 @@ export function createImportOps(
     })
   }
 
-  async function runImport(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.bank_transaction:import', '无权限执行银行业务操作')
-    requirePermission(actor, 'acc.bank_transaction:create', '无权限执行银行业务操作')
+  async function runImport(permit: Permit, id: string) {
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await loadImport(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '流水导入记录不存在')
+      const before = await authorizedImport(trx, permit, id, true)
       if (before.status !== 'PARSED') throw conflict('仅「已解析」状态的导入记录可执行导入')
       const itemRows = await sql<Record<string, unknown>>`
         SELECT id,row_no,occurred_at,income,expense,balance,counterparty_name,counterparty_account,
@@ -562,7 +599,7 @@ export function createImportOps(
       }
       for (const staged of items) {
         try {
-          const created = await deps.createTransactionInTx(trx, actor, {
+          const created = await deps.createTransactionInTx(trx, permit, {
             occurredAt: staged.occurredAt ?? '',
             income: staged.income, expense: staged.expense, balance: staged.balance,
             counterpartyName: staged.counterpartyName, counterpartyAccount: staged.counterpartyAccount,
@@ -602,11 +639,10 @@ export function createImportOps(
     })
   }
 
-  async function deleteImport(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.bank_transaction:import', '无权限执行银行业务操作')
+  async function deleteImport(permit: Permit, id: string) {
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const item = await loadImport(trx, id, true)
-      requireCompanyAccess(actor, item.companyId, '流水导入记录不存在')
+      const item = await authorizedImport(trx, permit, id, true)
       if (item.status === 'IMPORTED') throw conflict('已导入的记录不可删除')
       try {
         await sql`DELETE FROM acc_bank_import WHERE id=${id}::uuid`.execute(trx)
@@ -622,24 +658,19 @@ export function createImportOps(
     })
   }
 
-  async function listItems(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'acc.bank_transaction:import', '无权限执行银行业务操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as BankImportItem[] }
-    return listFromSource({
-      db, resource: bankImportItemResourceMeta(),
+  async function listItems(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
+      db, permit, target: itemTarget, alias: IMPORT_ITEM_TABLE,
+      resource: bankImportItemResourceMeta(),
       source: sql` FROM acc_bank_import_item`,
       select: sql`SELECT id,row_no,occurred_at,income,expense,balance,counterparty_name,
         counterparty_account,summary,note,error,inserted_at,updated_at,import_id,company_id,transaction_id`,
-      defaultOrder: sql`"row_no","id"`, query, extraWhere: scope.where, mapRow: mapItem,
+      defaultOrder: sql`"row_no","id"`, query, mapRow: mapItem,
     })
   }
 
-  async function getItem(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.bank_transaction:import', '无权限执行银行业务操作')
-    const item = await loadItem(db, id, false)
-    requireCompanyAccess(actor, item.companyId, '流水导入行不存在')
-    return item
+  async function getItem(permit: Permit, id: string) {
+    return authorizedItem(db, permit, id, false)
   }
 
   async function lockParsedImport(trx: DbHandle, importId: string) {
@@ -652,7 +683,7 @@ export function createImportOps(
     }
   }
 
-  async function updateItem(actor: Actor, id: string, input: {
+  async function updateItem(permit: Permit, id: string, input: {
     occurredAt?: string
     income?: string | null; incomePresent?: boolean
     expense?: string | null; expensePresent?: boolean
@@ -662,13 +693,13 @@ export function createImportOps(
     summary?: string | null; summaryPresent?: boolean
     note?: string | null; notePresent?: boolean
   }) {
-    requirePermission(actor, 'acc.bank_transaction:import', '无权限执行银行业务操作')
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const seed = await loadItem(trx, id, false)
+      // 加锁顺序：母批次先行（草稿门），再锁本行
+      const seed = await authorizedItem(trx, permit, id, false)
       await lockParsedImport(trx, seed.importId)
-      const before = await loadItem(trx, id, true)
+      const before = await authorizedItem(trx, permit, id, true)
       if (before.importId !== seed.importId) throw conflict('流水导入行已被并发修改')
-      requireCompanyAccess(actor, before.companyId, '流水导入行不存在')
       const after = { ...before }
       if (input.occurredAt !== undefined) after.occurredAt = new Date(input.occurredAt).toISOString()
       if (input.incomePresent) after.income = input.income ?? null
@@ -707,13 +738,13 @@ export function createImportOps(
     })
   }
 
-  async function deleteItem(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.bank_transaction:import', '无权限执行银行业务操作')
+  async function deleteItem(permit: Permit, id: string) {
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const seed = await loadItem(trx, id, false)
+      // 加锁顺序：母批次先行（草稿门），再锁本行
+      const seed = await authorizedItem(trx, permit, id, false)
       await lockParsedImport(trx, seed.importId)
-      const item = await loadItem(trx, id, true)
-      requireCompanyAccess(actor, item.companyId, '流水导入行不存在')
+      const item = await authorizedItem(trx, permit, id, true)
       try {
         await sql`DELETE FROM acc_bank_import_item WHERE id=${id}::uuid`.execute(trx)
         await writeAudit(trx, actor, {

@@ -346,10 +346,11 @@ run('PG 集成（setup 向导）', () => {
       const hr = createHrServices(db, files, {
         employees: party.employees,
         authz: setupAuthz,
+        registry,
       })
       const companyAccountDefaults = createCompanyAccountDefaultService(db, registry)
       const inv = createInventoryServices(db, numbering, registry)
-      const accounting = createAccountingServices(db, numbering, {
+      const accounting = createAccountingServices(db, numbering, registry, {
         isJournalLinkedToBankRecon,
       })
       const trading = createTradingServices(db, numbering, registry)
@@ -357,6 +358,7 @@ run('PG 集成（setup 向导）', () => {
         reconciliations: trading.reconciliations,
         journals: accounting.journals,
         files,
+        registry,
       })
       const manufacturing = createManufacturingServices(db, numbering, registry)
 

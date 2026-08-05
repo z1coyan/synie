@@ -550,7 +550,12 @@ export function bankImportResourceMeta(): ResourceMeta {
     permissionPrefix: 'acc.bank_transaction',
     permissionLabel: '银行流水',
     table: 'acc_bank_import',
-    authz: { kind: 'company' },
+    /**
+     * import-as-read 重载：导入批次没有独立权限点，读写一律由单码
+     * `acc.bank_transaction:import` 门控（迁移前服务里就是这一个码）。
+     * readAnyOf 让 read 也解析到该码；批次因此不进权限目录（码归银行流水资源）。
+     */
+    authz: { kind: 'company', readAnyOf: [ACC_BANK_TRANSACTION.import] },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('status', 'status', 'enum', '状态', {
@@ -587,7 +592,12 @@ export function bankImportResourceMeta(): ResourceMeta {
       field('item_count', 'itemCount', 'integer', '行数', { readonly: true }),
       field('error_count', 'errorCount', 'integer', '错误行数', { readonly: true }),
     ],
-    actions: [{ key: 'read', label: '查看', scope: 'both' }],
+    // read 由 readAnyOf 给出；import 必须显式声明，否则 guard 的 assertActionDeclared 会 500。
+    // 本资源因 readAnyOf 不进权限目录，故两个动作都不新增权限码（码归 acc.bank_transaction）
+    actions: [
+      { key: 'read', label: '查看', scope: 'both' },
+      { key: 'import', label: '导入', scope: 'both' },
+    ],
     // exclude 保留历史审计面：聚合计数列不进审计 diff
     audit: { enabled: true, exclude: ['item_count', 'error_count'] },
 

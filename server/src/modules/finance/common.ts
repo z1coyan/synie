@@ -1,8 +1,11 @@
 /**
  * 财务运营公共辅助：校验/大小写/日期/金额/审计快照。
+ *
+ * 鉴权不在本文件：路由挂 `guard(资源, 动作)`，服务收 Permit，
+ * 列表/单记录/写侧三个执行点归 `db/list.ts` 与 `db/load.ts`。
  */
 import { decimal, isDecimalString, toDecimalString } from '@synie/shared'
-import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
+import type { Actor } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 
 export function lower(value: string): string {
@@ -13,14 +16,9 @@ export function upper(value: string): string {
   return value.trim().toUpperCase()
 }
 
+/** 空串归一为 null（对齐 uuid.Nil）；调用方传 `permit.actor` */
 export function actorUserId(actor: Actor): string | null {
   return actor.userId && actor.userId !== '' ? actor.userId : null
-}
-
-export function requireCompanyWrite(actor: Actor, companyId: string): void {
-  if (!canAccessCompany(actor, companyId)) {
-    throw new ApiError('forbidden', '无权操作该公司数据')
-  }
 }
 
 export function notFound(label: string): ApiError {

@@ -10,11 +10,18 @@ import { createPayrollService } from './payroll-service.ts'
 
 export {
   createAttendanceService,
+  ATTENDANCE_CORRECTION_RESOURCE,
+  ATTENDANCE_DAY_RESOURCE,
+  ATTENDANCE_IMPORT_RESOURCE,
+  ATTENDANCE_PUNCH_RESOURCE,
   type AttendanceService,
   type AttendanceServiceDeps,
 } from './attendance-service.ts'
 export {
   createPayrollService,
+  EMPLOYEE_LOAN_RESOURCE,
+  PAYROLL_PAYMENT_RESOURCE,
+  PAYROLL_RESOURCE,
   type PayrollService,
   type PayrollServiceDeps,
 } from './payroll-service.ts'
@@ -60,6 +67,8 @@ export function createHrServices(
     employees: Pick<EmployeeService, 'autoCreateForAttendance'>
     /** 考勤导入自动建档的分支内二次授权 */
     authz: AuthzEnforcer
+    /** 判定归宿解析（三个执行点共用） */
+    registry: Registry
   },
 ) {
   return {
@@ -68,8 +77,9 @@ export function createHrServices(
       files,
       employeeSeam: deps.employees,
       authz: deps.authz,
+      registry: deps.registry,
     }),
-    payroll: createPayrollService({ db }),
+    payroll: createPayrollService({ db, registry: deps.registry }),
   }
 }
 

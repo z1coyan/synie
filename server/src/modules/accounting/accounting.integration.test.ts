@@ -7,6 +7,8 @@ import { createDb } from '~/db/index.ts'
 import { withTx } from '~/db/tx.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createEntryService } from './entry-service.ts'
@@ -14,7 +16,7 @@ import { createJournalService } from './journal-service.ts'
 import { testActor } from '~/platform/authz/testing.ts'
 
 
-/** 编号服务需要 sealed registry（授权归宿解析） */
+/** sealed registry 同时供编号与 authz 执行面消费（授权归宿解析） */
 const numberingRegistry = createSealedResourceRegistry()
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -23,8 +25,9 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
   const db = createDb(url!)
   const numbering = createNumberingService(db, buildNumberingCatalog(numberingRegistry), numberingRegistry)
   const gl = createGlEngine()
-  const journals = createJournalService(db, numbering, gl)
-  const entries = createEntryService(db)
+  const authz = createAuthzEnforcer(numberingRegistry)
+  const journals = createJournalService(db, numbering, gl, numberingRegistry)
+  const entries = createEntryService(db, numberingRegistry)
   // userId 空串：不写 created_by/submitted_by FK（避免伪造不存在的 sys_user）
   const actor: Actor = testActor({
     userId: '',
@@ -35,6 +38,19 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
     permissions: new Set(),
     companyIds: [],
   })
+  /**
+   * 本文件只验领域行为（草稿门/借贷校验/落章/报表口径），superAdmin 凭证的 rowFilter 恒全集；
+   * 逐动作码门控与公司边界见 server/test/sweep-finance-accounting-hr.integration.test.ts。凭证每次现取。
+   */
+  const permit = (resource: string, action: string): Permit => {
+    const decision = authz.decideFor(actor, resource, action)
+    if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+    return decision.permit
+  }
+  const journalPermit = () => permit('accGlJournals', 'read')
+  const linePermit = () => permit('accGlJournalLines', 'read')
+  const entryPermit = () => permit('accGlEntries', 'read')
+
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
   const prefix = `GLJ${suffix}`
   const cleanupIds = {
@@ -158,7 +174,7 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
     const fx = await seedFixture()
     const date = '2026-07-26'
 
-    const journal = await journals.create(actor, {
+    const journal = await journals.create(journalPermit(), {
       voucherNo: `${prefix}-A`,
       date,
       companyId: fx.companyId,
@@ -168,7 +184,7 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
     expect(journal.status).toBe('DRAFT')
     expect(journal.company.id).toBe(fx.companyId)
 
-    const debit = await journals.createLine(actor, {
+    const debit = await journals.createLine(linePermit(), {
       journalId: journal.id,
       idx: 1,
       accountId: fx.receivableId,
@@ -182,7 +198,7 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
     expect(debit.currencyId).toBe(fx.currencyId)
     expect(debit.partyType).toBe('CUSTOMER')
 
-    const credit = await journals.createLine(actor, {
+    const credit = await journals.createLine(linePermit(), {
       journalId: journal.id,
       idx: 2,
       accountId: fx.cashId,
@@ -193,20 +209,20 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
     cleanupIds.lines.push(credit.id)
 
     // 草稿可改备注
-    const updated = await journals.update(actor, journal.id, {
+    const updated = await journals.update(journalPermit(), journal.id, {
       remarks: `${prefix}已更新`,
       remarksPresent: true,
     })
     expect(updated.remarks).toBe(`${prefix}已更新`)
 
-    const audited = await journals.audit(actor, journal.id, date)
+    const audited = await journals.audit(journalPermit(), journal.id, date)
     expect(audited.status).toBe('AUDITED')
     expect(audited.postingDate).toBe(date)
     expect(audited.submittedAt).not.toBeNull()
     expect(Number(audited.debitTotal)).toBe(125.5)
     expect(Number(audited.creditTotal)).toBe(125.5)
 
-    const entryList = await entries.list(actor, {
+    const entryList = await entries.list(entryPermit(), {
       limit: 50,
       offset: 0,
       filter: {
@@ -224,7 +240,7 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
     }
     expect(entryList.results[0]!.seq).toBeLessThan(entryList.results[1]!.seq)
 
-    const report = await entries.report(actor, { companyId: fx.companyId, asOf: '2026-07-31' })
+    const report = await entries.report(entryPermit(), { companyId: fx.companyId, asOf: '2026-07-31' })
     expect(report.asOf).toBe('2026-07-31')
     expect(report.roleAccounts.receivable?.some((a) => a.id === fx.receivableId)).toBe(true)
     const row = report.rows.find((r) => r.partyId === fx.customerId)
@@ -235,10 +251,10 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
 
     // 已审核不可再改头/行
     await expect(
-      journals.update(actor, journal.id, { remarks: 'x', remarksPresent: true }),
+      journals.update(journalPermit(), journal.id, { remarks: 'x', remarksPresent: true }),
     ).rejects.toMatchObject({ code: 'conflict' })
     await expect(
-      journals.createLine(actor, {
+      journals.createLine(linePermit(), {
         journalId: journal.id,
         idx: 3,
         accountId: fx.cashId,
@@ -247,10 +263,10 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
       }),
     ).rejects.toMatchObject({ code: 'conflict' })
 
-    const cancelled = await journals.cancel(actor, journal.id)
+    const cancelled = await journals.cancel(journalPermit(), journal.id)
     expect(cancelled.status).toBe('CANCELLED')
 
-    const cancelledEntries = await entries.list(actor, {
+    const cancelledEntries = await entries.list(entryPermit(), {
       limit: 50,
       offset: 0,
       filter: {
@@ -260,28 +276,28 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
     expect(cancelledEntries.count).toBe(2)
     expect(cancelledEntries.results.every((e) => e.isCancelled)).toBe(true)
 
-    const reportAfter = await entries.report(actor, {
+    const reportAfter = await entries.report(entryPermit(), {
       companyId: fx.companyId,
       asOf: '2026-07-31',
     })
     expect(reportAfter.rows.some((r) => r.partyId === fx.customerId)).toBe(false)
 
     // 取消后为终态
-    await expect(journals.cancel(actor, journal.id)).rejects.toMatchObject({ code: 'conflict' })
-    await expect(journals.audit(actor, journal.id, date)).rejects.toMatchObject({
+    await expect(journals.cancel(journalPermit(), journal.id)).rejects.toMatchObject({ code: 'conflict' })
+    await expect(journals.audit(journalPermit(), journal.id, date)).rejects.toMatchObject({
       code: 'conflict',
     })
   })
 
   test('仅草稿可删；删除头 cascade 行且不伪造行 destroy 审计', async () => {
     const fx = await seedFixture()
-    const journal = await journals.create(actor, {
+    const journal = await journals.create(journalPermit(), {
       voucherNo: `${prefix}-DEL`,
       date: '2026-07-26',
       companyId: fx.companyId,
     })
     cleanupIds.journals.push(journal.id)
-    const line = await journals.createLine(actor, {
+    const line = await journals.createLine(linePermit(), {
       journalId: journal.id,
       idx: 1,
       accountId: fx.cashId,
@@ -290,10 +306,10 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
     })
     cleanupIds.lines.push(line.id)
 
-    await journals.remove(actor, journal.id)
+    await journals.remove(journalPermit(), journal.id)
     cleanupIds.journals = cleanupIds.journals.filter((id) => id !== journal.id)
 
-    await expect(journals.getLine(actor, line.id)).rejects.toMatchObject({ code: 'not_found' })
+    await expect(journals.getLine(linePermit(), line.id)).rejects.toMatchObject({ code: 'not_found' })
 
     const fakeDestroy = await db
       .selectFrom('sys_audit_log')
@@ -307,20 +323,20 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
 
   test('审核无过账日期 → validation；配平失败 → 引擎 validation', async () => {
     const fx = await seedFixture()
-    const journal = await journals.create(actor, {
+    const journal = await journals.create(journalPermit(), {
       voucherNo: `${prefix}-BAD`,
       date: '2026-07-26',
       companyId: fx.companyId,
     })
     cleanupIds.journals.push(journal.id)
-    await journals.createLine(actor, {
+    await journals.createLine(linePermit(), {
       journalId: journal.id,
       idx: 1,
       accountId: fx.cashId,
       debit: '10',
       credit: '0',
     })
-    await journals.createLine(actor, {
+    await journals.createLine(linePermit(), {
       journalId: journal.id,
       idx: 2,
       accountId: fx.cashId,
@@ -328,23 +344,23 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
       credit: '5',
     })
 
-    await expect(journals.audit(actor, journal.id, null)).rejects.toMatchObject({
+    await expect(journals.audit(journalPermit(), journal.id, null)).rejects.toMatchObject({
       code: 'validation',
     })
-    await expect(journals.audit(actor, journal.id, '2026-07-26')).rejects.toMatchObject({
+    await expect(journals.audit(journalPermit(), journal.id, '2026-07-26')).rejects.toMatchObject({
       code: 'validation',
     })
   })
 
   test('红冲：引擎 reverse 取负对冲 + is_reversed；重复红冲 conflict', async () => {
     const fx = await seedFixture()
-    const journal = await journals.create(actor, {
+    const journal = await journals.create(journalPermit(), {
       voucherNo: `${prefix}-REV`,
       date: '2026-07-26',
       companyId: fx.companyId,
     })
     cleanupIds.journals.push(journal.id)
-    await journals.createLine(actor, {
+    await journals.createLine(linePermit(), {
       journalId: journal.id,
       idx: 1,
       accountId: fx.receivableId,
@@ -353,20 +369,20 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
       partyType: 'CUSTOMER',
       partyId: fx.customerId,
     })
-    await journals.createLine(actor, {
+    await journals.createLine(linePermit(), {
       journalId: journal.id,
       idx: 2,
       accountId: fx.cashId,
       debit: '0',
       credit: '80',
     })
-    await journals.audit(actor, journal.id, '2026-07-26')
+    await journals.audit(journalPermit(), journal.id, '2026-07-26')
 
     await withTx(db, async (trx) => {
       await gl.reverse(trx, { type: 'acc.gl_journal', id: journal.id }, '2026-07-28')
     })
 
-    const listed = await entries.list(actor, {
+    const listed = await entries.list(entryPermit(), {
       limit: 50,
       offset: 0,
       filter: {
@@ -395,7 +411,7 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
     ).rejects.toMatchObject({ code: 'conflict' })
 
     // 红冲后轧差归零，报表不再出现该客户净额（若仅本凭证贡献）
-    const report = await entries.report(actor, {
+    const report = await entries.report(entryPermit(), {
       companyId: fx.companyId,
       asOf: '2026-07-31',
     })

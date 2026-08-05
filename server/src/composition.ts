@@ -102,10 +102,11 @@ function assembleDomain(
   const hr = createHrServices(db, files, {
     employees: party.employees,
     authz,
+    registry: opts.registry,
   })
   const companyAccountDefaults = createCompanyAccountDefaultService(db, opts.registry)
   const inv = createInventoryServices(db, numbering, opts.registry)
-  const accounting = createAccountingServices(db, numbering, {
+  const accounting = createAccountingServices(db, numbering, opts.registry, {
     isJournalLinkedToBankRecon,
   })
   const trading = createTradingServices(db, numbering, opts.registry)
@@ -113,6 +114,7 @@ function assembleDomain(
     reconciliations: trading.reconciliations,
     journals: accounting.journals,
     files,
+    registry: opts.registry,
   })
   const todoSources = createTodoSourceRegistry()
   registerFinanceTodoSources(todoSources)

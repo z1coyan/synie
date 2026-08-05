@@ -291,28 +291,28 @@ export function buildApp(deps: AppDeps) {
     .route('/hr/employees', employeeRoutes({ auth: deps.auth, authz: deps.authz, employees: deps.employees }))
     .route(
       '/hr/attendance-punches',
-      attendancePunchRoutes({ auth: deps.auth, attendance: deps.hr.attendance }),
+      attendancePunchRoutes({ auth: deps.auth, authz: deps.authz, attendance: deps.hr.attendance }),
     )
     .route(
       '/hr/attendance-imports',
-      attendanceImportRoutes({ auth: deps.auth, attendance: deps.hr.attendance }),
+      attendanceImportRoutes({ auth: deps.auth, authz: deps.authz, attendance: deps.hr.attendance }),
     )
     .route(
       '/hr/attendance-days',
-      attendanceDayRoutes({ auth: deps.auth, attendance: deps.hr.attendance }),
+      attendanceDayRoutes({ auth: deps.auth, authz: deps.authz, attendance: deps.hr.attendance }),
     )
     .route(
       '/hr/attendance-corrections',
-      attendanceCorrectionRoutes({ auth: deps.auth, attendance: deps.hr.attendance }),
+      attendanceCorrectionRoutes({ auth: deps.auth, authz: deps.authz, attendance: deps.hr.attendance }),
     )
-    .route('/hr/payrolls', payrollRoutes({ auth: deps.auth, payroll: deps.hr.payroll }))
+    .route('/hr/payrolls', payrollRoutes({ auth: deps.auth, authz: deps.authz, payroll: deps.hr.payroll }))
     .route(
       '/hr/payroll-payments',
-      payrollPaymentRoutes({ auth: deps.auth, payroll: deps.hr.payroll }),
+      payrollPaymentRoutes({ auth: deps.auth, authz: deps.authz, payroll: deps.hr.payroll }),
     )
     .route(
       '/hr/employee-loans',
-      employeeLoanRoutes({ auth: deps.auth, payroll: deps.hr.payroll }),
+      employeeLoanRoutes({ auth: deps.auth, authz: deps.authz, payroll: deps.hr.payroll }),
     )
     .route(
       '/sales/company-account-defaults',
@@ -348,54 +348,55 @@ export function buildApp(deps: AppDeps) {
       '/accounting',
       accountingRoutes({
         auth: deps.auth,
+        authz: deps.authz,
         journals: deps.journals,
         entries: deps.entries,
       }),
     )
     .route(
       '/finance/vat-invoices',
-      vatInvoiceRoutes({ auth: deps.auth, invoices: deps.invoices }),
+      vatInvoiceRoutes({ auth: deps.auth, authz: deps.authz, invoices: deps.invoices }),
     )
     .route(
       '/finance/bank-accounts',
-      bankAccountRoutes({ auth: deps.auth, banking: deps.banking }),
+      bankAccountRoutes({ auth: deps.auth, authz: deps.authz, banking: deps.banking }),
     )
     .route(
       '/finance/bank-transactions',
-      bankTransactionRoutes({ auth: deps.auth, banking: deps.banking }),
+      bankTransactionRoutes({ auth: deps.auth, authz: deps.authz, banking: deps.banking }),
     )
     .route(
       '/finance/bank-import-templates',
-      bankImportTemplateRoutes({ auth: deps.auth, banking: deps.banking }),
+      bankImportTemplateRoutes({ auth: deps.auth, authz: deps.authz, banking: deps.banking }),
     )
     .route(
       '/finance/bank-imports',
-      bankImportRoutes({ auth: deps.auth, banking: deps.banking }),
+      bankImportRoutes({ auth: deps.auth, authz: deps.authz, banking: deps.banking }),
     )
     .route(
       '/finance/bank-import-items',
-      bankImportItemRoutes({ auth: deps.auth, banking: deps.banking }),
+      bankImportItemRoutes({ auth: deps.auth, authz: deps.authz, banking: deps.banking }),
     )
     .route(
       '/finance/bank-reconciliations',
-      bankReconciliationRoutes({ auth: deps.auth, banking: deps.banking }),
+      bankReconciliationRoutes({ auth: deps.auth, authz: deps.authz, banking: deps.banking }),
     )
     .route(
       '/finance/expense-reports',
-      expenseReportRoutes({ auth: deps.auth, expenses: deps.expenses }),
+      expenseReportRoutes({ auth: deps.auth, authz: deps.authz, expenses: deps.expenses }),
     )
     .route(
       '/finance/expense-report-items',
-      expenseReportItemRoutes({ auth: deps.auth, expenses: deps.expenses }),
+      expenseReportItemRoutes({ auth: deps.auth, authz: deps.authz, expenses: deps.expenses }),
     )
-    .route('/finance/bills', billRoutes({ auth: deps.auth, bills: deps.bills }))
+    .route('/finance/bills', billRoutes({ auth: deps.auth, authz: deps.authz, bills: deps.bills }))
     .route(
       '/finance/bill-transactions',
-      billTransactionRoutes({ auth: deps.auth, bills: deps.bills }),
+      billTransactionRoutes({ auth: deps.auth, authz: deps.authz, bills: deps.bills }),
     )
     .route(
       '/finance/bill-holdings',
-      billHoldingRoutes({ auth: deps.auth, bills: deps.bills }),
+      billHoldingRoutes({ auth: deps.auth, authz: deps.authz, bills: deps.bills }),
     )
     .route('/todos', todoRoutes({ auth: deps.auth, todos: deps.todos }))
     .route(

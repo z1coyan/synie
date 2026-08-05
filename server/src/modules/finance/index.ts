@@ -17,10 +17,34 @@ import { allFinanceResourceMetas } from './meta.ts'
 import type { TodoSourceRegistry } from '~/platform/todo/source-registry.ts'
 import { registerFinanceSettingResources } from './settings.ts'
 
-export { createVatInvoiceService, type VatInvoiceService } from './invoice-service.ts'
-export { createBankingService, type BankingService } from './banking-service.ts'
-export { createExpenseService, type ExpenseService } from './expense-service.ts'
-export { createBillService, type BillService } from './bill-service.ts'
+export {
+  createVatInvoiceService,
+  VAT_INVOICE_RESOURCE_NAME,
+  type VatInvoiceService,
+} from './invoice-service.ts'
+export {
+  createBankingService,
+  BANK_ACCOUNT_RESOURCE,
+  BANK_IMPORT_ITEM_RESOURCE,
+  BANK_IMPORT_RESOURCE,
+  BANK_IMPORT_TEMPLATE_RESOURCE,
+  BANK_RECONCILIATION_RESOURCE,
+  BANK_TRANSACTION_RESOURCE,
+  type BankingService,
+} from './banking-service.ts'
+export {
+  createExpenseService,
+  EXPENSE_REPORT_ITEM_RESOURCE,
+  EXPENSE_REPORT_RESOURCE,
+  type ExpenseService,
+} from './expense-service.ts'
+export {
+  createBillService,
+  BILL_HOLDING_RESOURCE,
+  BILL_RESOURCE,
+  BILL_TRANSACTION_RESOURCE,
+  type BillService,
+} from './bill-service.ts'
 export { vatInvoiceRoutes } from './routes.ts'
 export {
   bankAccountRoutes,
@@ -96,21 +120,26 @@ export function createFinanceServices(
     >
     journals: Pick<JournalService, 'createAndAuditJournal'>
     files?: Pick<FileService, 'readStoredFile' | 'readReachableFile'> | null
+    /** 判定归宿解析（三个执行点共用） */
+    registry: Registry
   },
 ) {
   const gl = createGlEngine()
+  const registry = deps.registry
   return {
     invoices: createVatInvoiceService(db, numbering, {
       gl,
       reconciliations: deps.reconciliations,
       files: deps.files ?? null,
+      registry,
     }),
     banking: createBankingService(db, numbering, {
       journals: deps.journals,
       files: deps.files ?? null,
+      registry,
     }),
-    expenses: createExpenseService(db, numbering, gl),
-    bills: createBillService(db, numbering, { gl, files: deps.files ?? null }),
+    expenses: createExpenseService(db, numbering, gl, registry),
+    bills: createBillService(db, numbering, { gl, files: deps.files ?? null, registry }),
   }
 }
 

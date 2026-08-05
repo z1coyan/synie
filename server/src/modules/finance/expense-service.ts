@@ -1,5 +1,9 @@
 /**
  * 费用报销单：挂票/无票行、审核/作废走总账过账骨架。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、写前取行 `loadAuthorized`、create 走 `assertCompanyWritable`。
+ * 行（accExpenseReportItems）是 via(母单)，判定递归母单。
  */
 import { decimal, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -11,10 +15,12 @@ import {
   auditCreated, auditDiff, writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { requireCompanyAccess, requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { auditGlDocInTx, voidGlDocInTx } from '~/platform/posting/skeleton.ts'
 import {
@@ -23,6 +29,12 @@ import {
   wireDec, wireEnum,
 } from './common.ts'
 import { expenseReportItemResourceMeta, expenseReportResourceMeta } from './meta.ts'
+
+export const EXPENSE_REPORT_RESOURCE = 'accExpenseReports'
+export const EXPENSE_REPORT_ITEM_RESOURCE = 'accExpenseReportItems'
+
+const REPORT_TABLE = 'acc_expense_report'
+const REPORT_ITEM_TABLE = 'acc_expense_report_item'
 
 export interface ExpenseReport {
   id: string; docNo: string; expenseDate: string; postingDate: string | null
@@ -128,39 +140,61 @@ export function createExpenseService(
   db: Kysely<Database>,
   numbering: NumberingService,
   gl: GlEngine,
+  registry: Registry,
 ) {
-  async function listReports(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'acc.expense_report:read')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as ExpenseReport[] }
-    return listFromSource({
-      db, resource: expenseReportResourceMeta(),
+  const reportTarget = registry.authzTarget(EXPENSE_REPORT_RESOURCE)
+  const itemTarget = registry.authzTarget(EXPENSE_REPORT_ITEM_RESOURCE)
+
+  /** 按 Permit 取报销单（可锁）；不命中一律 not_found */
+  async function authorizedReport(
+    handle: DbHandle, permit: Permit, id: string, forUpdate: boolean,
+  ): Promise<ExpenseReport> {
+    const row = await loadAuthorized({
+      db: handle, permit, target: reportTarget, table: REPORT_TABLE, id, forUpdate,
+      notFoundMessage: '费用报销单不存在',
+    })
+    return mapReport(row)
+  }
+
+  /** 按 Permit 取报销行；via 链递归母单 */
+  async function authorizedItem(
+    handle: DbHandle, permit: Permit, id: string,
+  ): Promise<ExpenseReportItem> {
+    const row = await loadAuthorized({
+      db: handle, permit, target: itemTarget, table: REPORT_ITEM_TABLE, id,
+      notFoundMessage: '报销行不存在',
+    })
+    return mapItem(row)
+  }
+
+  async function listReports(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
+      db, permit, target: reportTarget, alias: REPORT_TABLE,
+      resource: expenseReportResourceMeta(),
       source: sql` FROM acc_expense_report`,
       select: sql`SELECT id,doc_no,expense_date,posting_date,remarks,status,audited_at,inserted_at,updated_at,
         company_id,employee_id,payment_account_id,created_by_id,audited_by_id`,
-      defaultOrder: sql`"id"`, query, extraWhere: scope.where, mapRow: mapReport,
+      defaultOrder: sql`"id"`, query, mapRow: mapReport,
     })
   }
 
-  async function getReport(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.expense_report:read')
-    const item = await loadReport(db, id, false)
-    requireCompanyAccess(actor, item.companyId, '费用报销单不存在')
-    return item
+  async function getReport(permit: Permit, id: string) {
+    return authorizedReport(db, permit, id, false)
   }
 
-  async function createReport(actor: Actor, input: {
+  async function createReport(permit: Permit, input: {
     companyId: string; docNo?: string | null; expenseDate: string
     postingDate?: string | null; remarks?: string | null
     employeeId: string; paymentAccountId: string
   }) {
-    requirePermission(actor, 'acc.expense_report:create')
-    requireCompanyAccess(actor, input.companyId, '费用报销单不存在')
+    const actor = permit.actor
+    // 入参校验（400）先于公司边界（404）
     const expenseDate = requireDate(input.expenseDate, 'expenseDate')
     if (!input.employeeId || !input.paymentAccountId) {
       throw ApiError.validation('费用报销单参数不合法', { references: ['员工与付款科目必填'] })
     }
     const postingDate = input.postingDate ? requireDate(input.postingDate, 'postingDate') : null
+    assertCompanyWritable(permit, input.companyId, '费用报销单不存在')
     return withTx(db, async (trx) => {
       await validateEmployeeAndAccount(trx, input.companyId, input.employeeId, input.paymentAccountId)
       let docNo = (input.docNo ?? '').trim()
@@ -191,17 +225,16 @@ export function createExpenseService(
     })
   }
 
-  async function updateReport(actor: Actor, id: string, input: {
+  async function updateReport(permit: Permit, id: string, input: {
     docNo?: string | null; docNoPresent?: boolean
     expenseDate?: string
     postingDate?: string | null; postingDatePresent?: boolean
     remarks?: string | null; remarksPresent?: boolean
     employeeId?: string; paymentAccountId?: string
   }) {
-    requirePermission(actor, 'acc.expense_report:update')
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await loadReport(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '费用报销单不存在')
+      const before = await authorizedReport(trx, permit, id, true)
       if (before.status !== 'DRAFT') throw conflict('仅草稿报销单可修改或删除')
       let docNo = before.docNo
       let expenseDate = before.expenseDate
@@ -244,11 +277,10 @@ export function createExpenseService(
     })
   }
 
-  async function deleteReport(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.expense_report:delete')
+  async function deleteReport(permit: Permit, id: string) {
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await loadReport(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '费用报销单不存在')
+      const before = await authorizedReport(trx, permit, id, true)
       if (before.status !== 'DRAFT') throw conflict('仅草稿报销单可修改或删除')
       try {
         await sql`DELETE FROM acc_expense_report WHERE id=${id}::uuid`.execute(trx)
@@ -309,8 +341,8 @@ export function createExpenseService(
     return { entries, total }
   }
 
-  async function auditReport(actor: Actor, id: string, postingDate: string) {
-    requirePermission(actor, 'acc.expense_report:audit')
+  async function auditReport(permit: Permit, id: string, postingDate: string) {
+    const actor = permit.actor
     const posting = requireDate(postingDate, 'postingDate')
     return withTx(db, async (trx) =>
       auditGlDocInTx(trx, actor, gl, {
@@ -318,8 +350,7 @@ export function createExpenseService(
         headTable: 'acc_expense_report',
         conflictMessage: '报销单已被并发处理',
         lockDraft: async (t) => {
-          const before = await loadReport(t, id, true)
-          requireCompanyAccess(actor, before.companyId, '费用报销单不存在')
+          const before = await authorizedReport(t, permit, id, true)
           if (before.status !== 'DRAFT') throw conflict('仅草稿报销单可审核')
           return before
         },
@@ -339,15 +370,14 @@ export function createExpenseService(
     )
   }
 
-  async function voidReport(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.expense_report:void')
+  async function voidReport(permit: Permit, id: string) {
+    const actor = permit.actor
     return withTx(db, async (trx) =>
       voidGlDocInTx(trx, actor, gl, {
         voucherType: VOUCHER,
         headTable: 'acc_expense_report',
         lockAudited: async (t) => {
-          const before = await loadReport(t, id, true)
-          requireCompanyAccess(actor, before.companyId, '费用报销单不存在')
+          const before = await authorizedReport(t, permit, id, true)
           if (before.status !== 'AUDITED') throw conflict('仅已审核报销单可作废')
           return before
         },
@@ -410,34 +440,29 @@ export function createExpenseService(
     throw ApiError.validation('报销行参数不合法', { kind: ['只允许 INVOICED 或 MANUAL'] })
   }
 
-  async function listItems(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'acc.expense_report:read')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as ExpenseReportItem[] }
-    return listFromSource({
-      db, resource: expenseReportItemResourceMeta(),
+  async function listItems(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
+      db, permit, target: itemTarget, alias: REPORT_ITEM_TABLE,
+      resource: expenseReportItemResourceMeta(),
       source: sql` FROM acc_expense_report_item`,
       select: sql`SELECT id,idx,kind,summary,amount,remarks,inserted_at,updated_at,report_id,company_id,invoice_id,expense_account_id`,
-      defaultOrder: sql`"id"`, query, extraWhere: scope.where, mapRow: mapItem,
+      defaultOrder: sql`"id"`, query, mapRow: mapItem,
     })
   }
 
-  async function getItem(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.expense_report:read')
-    const item = await loadItem(db, id)
-    requireCompanyAccess(actor, item.companyId, '报销行不存在')
-    return item
+  async function getItem(permit: Permit, id: string) {
+    return authorizedItem(db, permit, id)
   }
 
-  async function createItem(actor: Actor, input: {
+  async function createItem(permit: Permit, input: {
     reportId: string; idx: number; kind: string
     summary?: string | null; amount?: string | null; remarks?: string | null
     invoiceId?: string | null; expenseAccountId?: string | null
   }) {
-    requirePermission(actor, 'acc.expense_report:create')
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const report = await loadReport(trx, input.reportId, true)
-      requireCompanyAccess(actor, report.companyId, '费用报销单不存在')
+      // 加锁顺序：母单先行（授权 + 草稿门）
+      const report = await authorizedReport(trx, permit, input.reportId, true)
       if (report.status !== 'DRAFT') throw conflict('仅草稿报销单可增删改行')
       const normalized = await validateExpenseItem(trx, report, input, null)
       try {
@@ -463,7 +488,7 @@ export function createExpenseService(
     })
   }
 
-  async function updateItem(actor: Actor, id: string, input: {
+  async function updateItem(permit: Permit, id: string, input: {
     idx?: number; kind?: string
     summary?: string | null; summaryPresent?: boolean
     amount?: string | null; amountPresent?: boolean
@@ -471,11 +496,11 @@ export function createExpenseService(
     invoiceId?: string | null; invoiceIdPresent?: boolean
     expenseAccountId?: string | null; expenseAccountIdPresent?: boolean
   }) {
-    requirePermission(actor, 'acc.expense_report:update')
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await loadItem(trx, id)
-      const report = await loadReport(trx, before.reportId, true)
-      requireCompanyAccess(actor, report.companyId, '费用报销单不存在')
+      // 加锁顺序：先取行定位母单，再锁母单（授权 + 草稿门）
+      const before = await authorizedItem(trx, permit, id)
+      const report = await authorizedReport(trx, permit, before.reportId, true)
       if (report.status !== 'DRAFT') throw conflict('仅草稿报销单可增删改行')
       const merged = {
         idx: input.idx ?? before.idx,
@@ -509,12 +534,11 @@ export function createExpenseService(
     })
   }
 
-  async function deleteItem(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.expense_report:delete')
+  async function deleteItem(permit: Permit, id: string) {
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await loadItem(trx, id)
-      const report = await loadReport(trx, before.reportId, true)
-      requireCompanyAccess(actor, report.companyId, '费用报销单不存在')
+      const before = await authorizedItem(trx, permit, id)
+      const report = await authorizedReport(trx, permit, before.reportId, true)
       if (report.status !== 'DRAFT') throw conflict('仅草稿报销单可增删改行')
       try {
         await sql`DELETE FROM acc_expense_report_item WHERE id=${id}::uuid`.execute(trx)

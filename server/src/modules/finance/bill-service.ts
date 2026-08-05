@@ -1,6 +1,11 @@
 /**
  * 承兑票据 / 交易 / 持有段重放。
  * 审核/作废走总账过账骨架；replayBill 经 after* 钩子，REALLOCATE 跳过 GL。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
+ * 票据主档（acc_bill）声明 global（无公司列），其「本公司可见」语义由交易表的
+ * 派生可见性给出——用 `compileRowFilter` 把交易资源的行过滤编进 EXISTS 子查询，
+ * 判定仍归平台，模块不写公司/主体分支。
  */
 import { decimal, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -12,11 +17,14 @@ import {
   auditCreated, auditDiff, writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { companyFilter, requireCompanyAccess, requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import type { FileService } from '~/platform/files/service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { compileRowFilter } from '~/db/authz-sql.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { auditGlDocInTx, voidGlDocInTx } from '~/platform/posting/skeleton.ts'
 import {
@@ -113,6 +121,16 @@ const WRITE_MAP = [
 ] as const
 const VOUCHER = 'acc.bill_transaction'
 const TYPES = new Set(['RECEIVE','ENDORSE','SETTLE','DISCOUNT','REALLOCATE'])
+
+export const BILL_RESOURCE = 'accBills'
+export const BILL_TRANSACTION_RESOURCE = 'accBillTransactions'
+export const BILL_HOLDING_RESOURCE = 'accBillHoldings'
+
+const BILL_TABLE = 'acc_bill'
+const BILL_TX_TABLE = 'acc_bill_transaction'
+const BILL_HOLDING_TABLE = 'acc_bill_holding'
+/** 票据可见性的派生别名：EXISTS 子查询里代表交易行 */
+const BILL_SCOPE_TX_ALIAS = 'scope_tx'
 
 function mapBill(row: Record<string, unknown>): Bill {
   return {
@@ -240,33 +258,6 @@ async function loadTx(db: DbHandle, id: string, lock: boolean): Promise<BillTran
   return mapTx(rows.rows[0])
 }
 
-function billScopeWhere(actor: Actor) {
-  const scope = companyFilter(actor)
-  if (scope.bypass) return { empty: false as const, where: null }
-  if (scope.ids.length === 0) return { empty: true as const, where: sql`false` }
-  return {
-    empty: false as const,
-    where: sql`EXISTS(
-      SELECT 1 FROM acc_bill_transaction scope_tx
-      WHERE scope_tx.bill_id=acc_bill.id AND scope_tx.company_id=ANY(${[...scope.ids]}::uuid[])
-    )`,
-  }
-}
-
-async function lockBillForActor(db: DbHandle, id: string, actor: Actor): Promise<Bill> {
-  const item = await loadBill(db, id, true)
-  const scope = companyFilter(actor)
-  if (!scope.bypass) {
-    if (scope.ids.length === 0) throw notFound('承兑票据')
-    const ok = await sql<{ e: boolean }>`
-      SELECT EXISTS(SELECT 1 FROM acc_bill_transaction
-        WHERE bill_id=${id}::uuid AND company_id=ANY(${[...scope.ids]}::uuid[])) AS e
-    `.execute(db)
-    if (!ok.rows[0]?.e) throw notFound('承兑票据')
-  }
-  return item
-}
-
 /** 薄 IO adapter：读已审核交易 → 纯核重放 → 整删整建 holding */
 async function replayBill(trx: DbHandle, billId: string): Promise<void> {
   const bill = await loadBill(trx, billId, true)
@@ -365,45 +356,78 @@ export function createBillService(
     gl: GlEngine
     files?: Pick<FileService, 'readReachableFile'> | null
     ocr?: OcrDeps
+    /** 判定归宿解析（三个执行点共用） */
+    registry: Registry
   },
 ) {
   const gl = deps.gl
   const files = deps.files ?? null
+  const billTarget = deps.registry.authzTarget(BILL_RESOURCE)
+  const billTxTarget = deps.registry.authzTarget(BILL_TRANSACTION_RESOURCE)
+  const holdingTarget = deps.registry.authzTarget(BILL_HOLDING_RESOURCE)
 
-  async function listBills(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'acc.bill:read')
-    const scope = billScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Bill[] }
-    return listFromSource({
-      db, resource: billResourceMeta(),
+  /**
+   * 票据可见性谓词：票据自身无公司列（global），沿用「名下有本人可达交易」的既有语义。
+   * 交易行的可达性由平台编译（`compileRowFilter`），模块不写公司分支。
+   */
+  function billVisibleWhere(permit: Permit, billAlias: string) {
+    const txWhere = compileRowFilter(permit, billTxTarget, BILL_SCOPE_TX_ALIAS)
+    return sql`EXISTS(
+      SELECT 1 FROM acc_bill_transaction ${sql.raw(BILL_SCOPE_TX_ALIAS)}
+      WHERE ${sql.raw(BILL_SCOPE_TX_ALIAS)}.bill_id=${sql.raw(billAlias)}.id AND ${txWhere}
+    )`
+  }
+
+  /** 按 Permit 取票据主档（可锁）：票据码级判定 ∧ 名下有可达交易 */
+  async function authorizedBill(
+    handle: DbHandle, permit: Permit, id: string, forUpdate: boolean,
+  ): Promise<Bill> {
+    // 票据自身 global：loadAuthorized 只做码级 + 全局放行，可见性由交易派生
+    const bill = await loadAuthorized({
+      db: handle, permit, target: billTarget, table: BILL_TABLE, id, forUpdate,
+      notFoundMessage: '承兑票据不存在',
+    })
+    const ok = await sql<{ e: boolean }>`
+      SELECT ${billVisibleWhere(permit, 'acc_bill')} AS e FROM acc_bill WHERE id=${id}::uuid
+    `.execute(handle)
+    if (!ok.rows[0]?.e) throw notFound('承兑票据')
+    return mapBill(bill)
+  }
+
+  /** 按 Permit 取承兑交易（可锁）；不命中一律 not_found */
+  async function authorizedTx(
+    handle: DbHandle, permit: Permit, id: string, forUpdate: boolean,
+  ): Promise<BillTransaction> {
+    const row = await loadAuthorized({
+      db: handle, permit, target: billTxTarget, table: BILL_TX_TABLE, id, forUpdate,
+      notFoundMessage: '承兑交易不存在',
+    })
+    return mapTx(row)
+  }
+
+  async function listBills(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
+      db, permit, target: billTarget, alias: BILL_TABLE,
+      resource: billResourceMeta(),
       source: sql` FROM acc_bill`,
       select: sql`SELECT id,bill_no,bill_kind,issue_date,due_date,face_amount,drawer_name,drawer_account,
         drawer_bank_name,drawer_bank_no,payee_name,payee_account,payee_bank_name,payee_bank_no,
         acceptor_name,acceptor_account,acceptor_bank_name,acceptor_bank_no,transferable,
         acceptance_date,remarks,inserted_at,updated_at`,
-      defaultOrder: sql`"id"`, query, extraWhere: scope.where, mapRow: mapBill,
+      defaultOrder: sql`"id"`, query,
+      extraWhere: billVisibleWhere(permit, BILL_TABLE),
+      mapRow: mapBill,
     })
   }
 
-  async function getBill(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.bill:read')
-    const scope = companyFilter(actor)
-    if (!scope.bypass) {
-      if (scope.ids.length === 0) throw notFound('承兑票据')
-      const ok = await sql<{ e: boolean }>`
-        SELECT EXISTS(SELECT 1 FROM acc_bill b WHERE b.id=${id}::uuid AND EXISTS(
-          SELECT 1 FROM acc_bill_transaction t WHERE t.bill_id=b.id AND t.company_id=ANY(${[...scope.ids]}::uuid[])
-        )) AS e
-      `.execute(db)
-      if (!ok.rows[0]?.e) throw notFound('承兑票据')
-    }
-    return loadBill(db, id, false)
+  async function getBill(permit: Permit, id: string) {
+    return authorizedBill(db, permit, id, false)
   }
 
-  async function updateBill(actor: Actor, id: string, input: Record<string, unknown>) {
-    requirePermission(actor, 'acc.bill:update')
+  async function updateBill(permit: Permit, id: string, input: Record<string, unknown>) {
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await lockBillForActor(trx, id, actor)
+      const before = await authorizedBill(trx, permit, id, true)
       const attrs: BillAttrs = {
         billNo: before.billNo, billKind: before.billKind, issueDate: before.issueDate,
         dueDate: before.dueDate, faceAmount: before.faceAmount,
@@ -484,10 +508,10 @@ export function createBillService(
     })
   }
 
-  async function deleteBill(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.bill:delete')
+  async function deleteBill(permit: Permit, id: string) {
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await lockBillForActor(trx, id, actor)
+      const before = await authorizedBill(trx, permit, id, true)
       const exists = await sql<{ e: boolean }>`
         SELECT EXISTS(SELECT 1 FROM acc_bill_transaction WHERE bill_id=${id}::uuid) AS e
       `.execute(trx)
@@ -630,29 +654,24 @@ export function createBillService(
     }
   }
 
-  async function listTransactions(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'acc.bill_transaction:read')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as BillTransaction[] }
-    return listFromSource({
-      db, resource: billTransactionResourceMeta(),
+  async function listTransactions(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
+      db, permit, target: billTxTarget, alias: BILL_TX_TABLE,
+      resource: billTransactionResourceMeta(),
       source: sql` FROM acc_bill_transaction`,
       select: sql`SELECT id,doc_no,transaction_type,occurred_on,sub_start,sub_end,amount,party_type,party_id,
         discount_org,discount_rate,interest,net_amount,posting_date,status,audited_at,remarks,
         inserted_at,updated_at,company_id,bank_account_id,to_bank_account_id,bill_id,
         bill_account_id,settle_account_id,interest_account_id,created_by_id,audited_by_id`,
-      defaultOrder: sql`"id"`, query, extraWhere: scope.where, mapRow: mapTx,
+      defaultOrder: sql`"id"`, query, mapRow: mapTx,
     })
   }
 
-  async function getTransaction(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.bill_transaction:read')
-    const item = await loadTx(db, id, false)
-    requireCompanyAccess(actor, item.companyId, '承兑交易不存在')
-    return item
+  async function getTransaction(permit: Permit, id: string) {
+    return authorizedTx(db, permit, id, false)
   }
 
-  async function createTransaction(actor: Actor, input: {
+  async function createTransaction(permit: Permit, input: {
     docNo?: string | null; transactionType: string; occurredOn: string
     subStart: number; subEnd: number; amount: string
     partyType?: string | null; partyId?: string | null
@@ -664,8 +683,8 @@ export function createBillService(
     billAccountId?: string | null; settleAccountId?: string | null
     interestAccountId?: string | null
   }) {
-    requirePermission(actor, 'acc.bill_transaction:create')
-    requireCompanyAccess(actor, input.companyId, '承兑交易不存在')
+    const actor = permit.actor
+    assertCompanyWritable(permit, input.companyId, '承兑交易不存在')
     return withTx(db, async (trx) => {
       const type = upper(input.transactionType)
       let billId = input.billId ?? null
@@ -735,11 +754,10 @@ export function createBillService(
     })
   }
 
-  async function updateTransaction(actor: Actor, id: string, input: Record<string, unknown>) {
-    requirePermission(actor, 'acc.bill_transaction:update')
+  async function updateTransaction(permit: Permit, id: string, input: Record<string, unknown>) {
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await loadTx(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '承兑交易不存在')
+      const before = await authorizedTx(trx, permit, id, true)
       if (before.status !== 'DRAFT') throw conflict('仅草稿承兑交易可修改或删除')
       const has = (k: string) => Object.prototype.hasOwnProperty.call(input, k)
       const merged = {
@@ -804,11 +822,10 @@ export function createBillService(
     })
   }
 
-  async function deleteTransaction(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.bill_transaction:delete')
+  async function deleteTransaction(permit: Permit, id: string) {
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await loadTx(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '承兑交易不存在')
+      const before = await authorizedTx(trx, permit, id, true)
       if (before.status !== 'DRAFT') throw conflict('仅草稿承兑交易可修改或删除')
       try {
         await sql`DELETE FROM acc_bill_transaction WHERE id=${id}::uuid`.execute(trx)
@@ -885,17 +902,17 @@ export function createBillService(
     }
   }
 
-  async function auditTransaction(actor: Actor, id: string, postingDate?: string | null) {
-    requirePermission(actor, 'acc.bill_transaction:audit')
+  async function auditTransaction(permit: Permit, id: string, postingDate?: string | null) {
+    const actor = permit.actor
     return withTx(db, async (trx) => {
       let billId = ''
       return auditGlDocInTx(trx, actor, gl, {
         voucherType: VOUCHER,
         headTable: 'acc_bill_transaction',
         conflictMessage: '承兑交易已被并发处理',
+        // 领域校验顺序保持：授权 404 → 状态 409
         lockDraft: async (t) => {
-          const before = await loadTx(t, id, true)
-          requireCompanyAccess(actor, before.companyId, '承兑交易不存在')
+          const before = await authorizedTx(t, permit, id, true)
           if (before.status !== 'DRAFT') throw conflict('仅草稿承兑交易可审核')
           return before
         },
@@ -947,15 +964,14 @@ export function createBillService(
     })
   }
 
-  async function voidTransaction(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.bill_transaction:void')
+  async function voidTransaction(permit: Permit, id: string) {
+    const actor = permit.actor
     return withTx(db, async (trx) =>
       voidGlDocInTx(trx, actor, gl, {
         voucherType: VOUCHER,
         headTable: 'acc_bill_transaction',
         lockAudited: async (t) => {
-          const before = await loadTx(t, id, true)
-          requireCompanyAccess(actor, before.companyId, '承兑交易不存在')
+          const before = await authorizedTx(t, permit, id, true)
           if (before.status !== 'AUDITED') throw conflict('仅已审核承兑交易可作废')
           await loadBill(t, before.billId, true)
           return before
@@ -974,39 +990,31 @@ export function createBillService(
     )
   }
 
-  async function listHoldings(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'acc.bill_holding:read')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as BillHolding[] }
-    return listFromSource({
-      db, resource: billHoldingResourceMeta(),
+  async function listHoldings(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
+      db, permit, target: holdingTarget, alias: BILL_HOLDING_TABLE,
+      resource: billHoldingResourceMeta(),
       source: sql` FROM acc_bill_holding`,
       select: sql`SELECT id,bill_no,sub_start,sub_end,amount,due_date,acquired_on,inserted_at,
         company_id,bank_account_id,bill_id,source_transaction_id`,
-      defaultOrder: sql`"id"`, query, extraWhere: scope.where, mapRow: mapHolding,
+      defaultOrder: sql`"id"`, query, mapRow: mapHolding,
     })
   }
 
-  async function getHolding(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.bill_holding:read')
-    const rows = await sql<Record<string, unknown>>`
-      SELECT id,bill_no,sub_start,sub_end,amount,due_date,acquired_on,inserted_at,
-        company_id,bank_account_id,bill_id,source_transaction_id
-      FROM acc_bill_holding WHERE id=${id}::uuid
-    `.execute(db)
-    if (!rows.rows[0]) throw notFound('持有承兑')
-    const item = mapHolding(rows.rows[0])
-    requireCompanyAccess(actor, item.companyId, '持有承兑不存在')
-    return item
+  async function getHolding(permit: Permit, id: string) {
+    const row = await loadAuthorized({
+      db, permit, target: holdingTarget, table: BILL_HOLDING_TABLE, id,
+      notFoundMessage: '持有承兑不存在',
+    })
+    return mapHolding(row)
   }
 
-  async function ocrBill(actor: Actor, fileId: string): Promise<OcrPrefill> {
-    requirePermission(actor, 'acc.bill_transaction:create')
+  async function ocrBill(permit: Permit, fileId: string): Promise<OcrPrefill> {
     if (!files) {
       throw ApiError.validation('OCR 未配置', { fileId: ['文件服务未配置'] })
     }
     // 文件可达性归平台判定（码 forbidden / 行级 not_found），本域不再自造闸
-    const { file, content } = await files.readReachableFile(actor, fileId)
+    const { file, content } = await files.readReachableFile(permit.actor, fileId)
     return recognizeBankAcceptance(db, file, content, deps.ocr)
   }
 

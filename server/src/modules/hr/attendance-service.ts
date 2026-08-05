@@ -1,5 +1,10 @@
 /**
  * 考勤：打卡 / 导入 / 日考勤 / 补卡。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
+ * 四张考勤表都**无 company_id**（全局 HR 主数据），故 meta 声明 `global`——
+ * 行级过滤对它们恒为放行，`listAuthorized`/`loadAuthorized` 只承担码级判定与统一 404。
+ * D8 分支条件权限：导入自动建[未知]员工需 `hr.employee:create`，在分支内二次取凭证。
  */
 import type { ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -13,15 +18,15 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import type { Actor, Permit } from '~/platform/authz/core/index.ts'
 import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
-import type { Permit } from '~/platform/authz/core/index.ts'
 import type { FileService } from '~/platform/files/service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import { EMPLOYEE_RESOURCE_NAME } from '~/modules/party/meta.ts'
 import type { EmployeeService } from '~/modules/party/party-service.ts'
-import { HR_ATTENDANCE_DAY } from './permissions.ts'
-import { listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { loadAuthorized } from '~/db/load.ts'
 import {
   attendanceCorrectionResourceMeta,
   attendanceDayResourceMeta,
@@ -53,6 +58,16 @@ import {
   tsParam,
   writeErr,
 } from './helpers.ts'
+
+export const ATTENDANCE_PUNCH_RESOURCE = 'hrAttendancePunches'
+export const ATTENDANCE_IMPORT_RESOURCE = 'hrAttendanceImports'
+export const ATTENDANCE_DAY_RESOURCE = 'hrAttendanceDays'
+export const ATTENDANCE_CORRECTION_RESOURCE = 'hrAttendanceCorrections'
+
+const PUNCH_TABLE = 'hr_attendance_punch'
+const IMPORT_TABLE = 'hr_attendance_import'
+const DAY_TABLE = 'hr_attendance_day'
+const CORRECTION_TABLE = 'hr_attendance_correction'
 import type {
   AttendanceCorrection,
   AttendanceDay,
@@ -85,17 +100,25 @@ export interface AttendanceServiceDeps {
   employeeSeam: Pick<EmployeeService, 'autoCreateForAttendance'>
   /** 分支内二次授权：自动建档需 hr.employee:create（spec §7） */
   authz: AuthzEnforcer
+  /** 判定归宿解析（三个执行点共用） */
+  registry: Registry
 }
 
 export function createAttendanceService(deps: AttendanceServiceDeps) {
-  const { db, files, employeeSeam, authz } = deps
+  const { db, files, employeeSeam, authz, registry } = deps
+  const punchTarget = registry.authzTarget(ATTENDANCE_PUNCH_RESOURCE)
+  const importTarget = registry.authzTarget(ATTENDANCE_IMPORT_RESOURCE)
+  const dayTarget = registry.authzTarget(ATTENDANCE_DAY_RESOURCE)
+  const correctionTarget = registry.authzTarget(ATTENDANCE_CORRECTION_RESOURCE)
 
   // ── punches ────────────────────────────────────────────────────────────
 
-  async function listPunches(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'hr.attendance_punch:read')
-    return listFromSource({
+  async function listPunches(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: punchTarget,
+      alias: PUNCH_TABLE,
       resource: attendancePunchResourceMeta(),
       source: sql` FROM hr_attendance_punch`,
       select: sql`SELECT id, attendance_no,
@@ -108,8 +131,12 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
     })
   }
 
-  async function getPunch(actor: Actor, id: string): Promise<AttendancePunch> {
-    requirePermission(actor, 'hr.attendance_punch:read')
+  async function getPunch(permit: Permit, id: string): Promise<AttendancePunch> {
+    await loadAuthorized({
+      db, permit, target: punchTarget, table: PUNCH_TABLE, id,
+      notFoundMessage: '打卡记录不存在',
+    })
+    // 时间列需 to_char 成 UTC 墙钟 ISO，故授权后按原投影重读
     const row = await sql<Record<string, unknown>>`
       SELECT id, attendance_no,
         to_char(punched_at, 'YYYY-MM-DD"T"HH24:MI:SS".000Z"') AS punched_at,
@@ -124,10 +151,13 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
 
   // ── imports ────────────────────────────────────────────────────────────
 
-  async function listImports(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'hr.attendance_punch:import')
-    return listFromSource({
+  async function listImports(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: importTarget,
+      // 投影带别名 i（`FROM hr_attendance_import i`），别名必须逐字一致
+      alias: 'i',
       resource: attendanceImportResourceMeta(),
       source: sql` FROM hr_attendance_import i`,
       select: sql`SELECT i.id, i.status, i.error, i.total_rows, i.bad_rows, i.dup_rows,
@@ -158,14 +188,23 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
     return mapImportRow(r)
   }
 
-  async function getImport(actor: Actor, id: string): Promise<AttendanceImport> {
-    requirePermission(actor, 'hr.attendance_punch:import')
-    return loadImport(db, id)
+  /** 按 Permit 取导入批次（可锁）；不命中一律 not_found */
+  async function authorizedImport(
+    handle: DbHandle, permit: Permit, id: string, forUpdate: boolean,
+  ): Promise<AttendanceImport> {
+    await loadAuthorized({
+      db: handle, permit, target: importTarget, table: IMPORT_TABLE, id, forUpdate,
+      notFoundMessage: '考勤导入批次不存在',
+    })
+    return loadImport(handle, id)
   }
 
-  async function createImport(actor: Actor, fileId: string): Promise<AttendanceImport> {
-    requirePermission(actor, 'hr.attendance_punch:import')
-    requirePermission(actor, 'sys.file:read')
+  async function getImport(permit: Permit, id: string): Promise<AttendanceImport> {
+    return authorizedImport(db, permit, id, false)
+  }
+
+  async function createImport(permit: Permit, fileId: string): Promise<AttendanceImport> {
+    const actor = permit.actor
     if (!fileId) {
       throw ApiError.validation('考勤导入参数不合法', { fileId: ['不能为空'] })
     }
@@ -247,21 +286,21 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
   }
 
   async function executeImport(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: { autoCreateEmployees?: boolean },
   ): Promise<AttendanceImport> {
-    requirePermission(actor, 'hr.attendance_punch:import')
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const locked = await sql<{ file_id: string; status: string }>`
-        SELECT file_id, status FROM hr_attendance_import WHERE id = ${id}::uuid FOR UPDATE
-      `.execute(trx)
-      const row = locked.rows[0]
-      if (!row) throw new ApiError('not_found', '考勤导入批次不存在')
-      if (row.status !== IMPORT_PARSED) {
+      // 授权 404 → 状态 409（顺序不可倒）
+      const row = await loadAuthorized({
+        db: trx, permit, target: importTarget, table: IMPORT_TABLE, id, forUpdate: true,
+        notFoundMessage: '考勤导入批次不存在',
+      })
+      if (String(row.status) !== IMPORT_PARSED) {
         throw new ApiError('conflict', '仅「已解析」状态的批次可执行导入')
       }
-      const { content } = await files.readStoredFile(row.file_id)
+      const { content } = await files.readStoredFile(String(row.file_id))
       let parsed
       try {
         parsed = parseAttendanceFile(content)
@@ -274,17 +313,16 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
       const missing = missingAttendanceNos(parsed.rows, employees)
       let autoCreated = 0
       if (input.autoCreateEmployees && missing.length > 0) {
-        // 分支内二次取凭证（导入自动建档需 hr.employee:create），缺码即 403
-        let employeePermit: Permit
-        const decision = authz.decideFor(actor, EMPLOYEE_RESOURCE_NAME, 'create')
+        // D8 分支条件权限：只有勾选自动建档这一支才要 hr.employee:create，缺码即 403。
+        // 判定依赖请求体，路由算不出，故在分支内二次取凭证（凭证内核仍是唯一判定点）。
+        const decision = authz.decideFor(permit.actor, EMPLOYEE_RESOURCE_NAME, 'create')
         if (decision.outcome !== 'permit') {
           throw new ApiError(
             'forbidden',
             '无权自动创建员工(需要「员工-新增」权限),可去掉勾选仅导入已匹配的行',
           )
-        } else {
-          employeePermit = decision.permit
         }
+        const employeePermit = decision.permit
         for (const no of missing) {
           try {
             const emp = await employeeSeam.autoCreateForAttendance(trx, employeePermit, no)
@@ -370,10 +408,10 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
     })
   }
 
-  async function deleteImport(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'hr.attendance_punch:import')
+  async function deleteImport(permit: Permit, id: string): Promise<void> {
+    const actor = permit.actor
     await withTx(db, async (trx) => {
-      const before = await loadImport(trx, id)
+      const before = await authorizedImport(trx, permit, id, true)
       const punches = await sql<{ employee_id: string; punched_at: Date | string }>`
         SELECT employee_id, punched_at FROM hr_attendance_punch WHERE import_id = ${id}::uuid
       `.execute(trx)
@@ -401,10 +439,12 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
 
   // ── days ───────────────────────────────────────────────────────────────
 
-  async function listDays(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, HR_ATTENDANCE_DAY.read)
-    return listFromSource({
+  async function listDays(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: dayTarget,
+      alias: DAY_TABLE,
       resource: attendanceDayResourceMeta(),
       source: sql` FROM hr_attendance_day`,
       select: sql`SELECT id, date, to_char(morning_in,'HH24:MI:SS') AS morning_in,
@@ -419,8 +459,12 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
     })
   }
 
-  async function getDay(actor: Actor, id: string): Promise<AttendanceDay> {
-    requirePermission(actor, HR_ATTENDANCE_DAY.read)
+  async function getDay(permit: Permit, id: string): Promise<AttendanceDay> {
+    await loadAuthorized({
+      db, permit, target: dayTarget, table: DAY_TABLE, id,
+      notFoundMessage: '日考勤不存在',
+    })
+    // 时刻列需 to_char 成 HH24:MI:SS，故授权后按原投影重读
     const row = await sql<Record<string, unknown>>`
       SELECT id, date, to_char(morning_in,'HH24:MI:SS') AS morning_in,
         to_char(morning_out,'HH24:MI:SS') AS morning_out,
@@ -435,8 +479,7 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
     return mapDayRow(r)
   }
 
-  async function recalcDays(actor: Actor, dateFrom: string, dateTo: string): Promise<number> {
-    requirePermission(actor, HR_ATTENDANCE_DAY.recalc)
+  async function recalcDays(_permit: Permit, dateFrom: string, dateTo: string): Promise<number> {
     const from = parseDate(dateFrom, 'dateFrom')
     const to = parseDate(dateTo, 'dateTo')
     if (to.getTime() < from.getTime()) {
@@ -471,8 +514,8 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
     return pairsResult.rows.length
   }
 
-  async function monthSummary(actor: Actor, month: string): Promise<AttendanceMonthSummary[]> {
-    requirePermission(actor, HR_ATTENDANCE_DAY.read)
+  // 跨资源聚合（日考勤 × 员工）：只做码级门控，不套行过滤（聚合投影无绑定列）
+  async function monthSummary(_permit: Permit, month: string): Promise<AttendanceMonthSummary[]> {
     const first = parseMonth(month)
     const next = addMonth(first)
     const rows = await sql<Record<string, unknown>>`
@@ -504,10 +547,12 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
 
   // ── corrections ────────────────────────────────────────────────────────
 
-  async function listCorrections(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'hr.attendance_correction:read')
-    return listFromSource({
+  async function listCorrections(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: correctionTarget,
+      alias: CORRECTION_TABLE,
       resource: attendanceCorrectionResourceMeta(),
       source: sql` FROM hr_attendance_correction`,
       select: sql`SELECT id, date,
@@ -532,16 +577,26 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
     return mapCorrectionRow(r)
   }
 
-  async function getCorrection(actor: Actor, id: string): Promise<AttendanceCorrection> {
-    requirePermission(actor, 'hr.attendance_correction:read')
-    return loadCorrection(db, id)
+  /** 按 Permit 取补卡单（可锁）；不命中一律 not_found */
+  async function authorizedCorrection(
+    handle: DbHandle, permit: Permit, id: string, forUpdate: boolean,
+  ): Promise<AttendanceCorrection> {
+    await loadAuthorized({
+      db: handle, permit, target: correctionTarget, table: CORRECTION_TABLE, id, forUpdate,
+      notFoundMessage: '补卡单不存在',
+    })
+    return loadCorrection(handle, id)
+  }
+
+  async function getCorrection(permit: Permit, id: string): Promise<AttendanceCorrection> {
+    return authorizedCorrection(db, permit, id, false)
   }
 
   async function createCorrection(
-    actor: Actor,
+    permit: Permit,
     input: { employeeId: string; date: string; times: string[]; note?: string | null },
   ): Promise<AttendanceCorrection> {
-    requirePermission(actor, 'hr.attendance_correction:create')
+    const actor = permit.actor
     validateCorrectionNote(input.note)
     const { date, times } = validateCorrectionInput(input.date, input.times)
     return withTx(db, async (trx) => {
@@ -575,7 +630,7 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
   }
 
   async function updateCorrection(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       employeeId?: string
@@ -585,9 +640,9 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
       notePresent?: boolean
     },
   ): Promise<AttendanceCorrection> {
-    requirePermission(actor, 'hr.attendance_correction:update')
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await loadCorrection(trx, id)
+      const before = await authorizedCorrection(trx, permit, id, true)
       const after = {
         employeeId: input.employeeId ?? before.employeeId,
         date: input.date ?? before.date,
@@ -632,10 +687,10 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
     })
   }
 
-  async function deleteCorrection(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'hr.attendance_correction:delete')
+  async function deleteCorrection(permit: Permit, id: string): Promise<void> {
+    const actor = permit.actor
     await withTx(db, async (trx) => {
-      const before = await loadCorrection(trx, id)
+      const before = await authorizedCorrection(trx, permit, id, true)
       try {
         await trx.deleteFrom('hr_attendance_correction').where('id', '=', id).execute()
       } catch (err) {

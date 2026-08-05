@@ -7,6 +7,7 @@ import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
@@ -38,11 +39,25 @@ run('PG 集成（财务运营 12）', () => {
   const gl = createGlEngine()
   const reconciliations = createReconciliationService(db, numbering, gl, numberingRegistry)
   const banking = createBankingService(db, numbering, {
-    journals: createJournalService(db, numbering, gl),
+    journals: createJournalService(db, numbering, gl, numberingRegistry),
+    registry: numberingRegistry,
   })
-  const expenses = createExpenseService(db, numbering, gl)
-  const bills = createBillService(db, numbering, { gl })
-  const invoices = createVatInvoiceService(db, numbering, { gl, reconciliations })
+  const expenses = createExpenseService(db, numbering, gl, numberingRegistry)
+  const bills = createBillService(db, numbering, { gl, registry: numberingRegistry })
+  const invoices = createVatInvoiceService(db, numbering, {
+    gl,
+    reconciliations,
+    registry: numberingRegistry,
+  })
+  /**
+   * 本文件只验领域行为（对账额度/状态派生/重放不变量），superAdmin 凭证 rowFilter 恒全集；
+   * 逐动作码门控与公司边界见 server/test/sweep-finance-accounting-hr.integration.test.ts。凭证每次现取。
+   */
+  const permit = (resource: string, action = 'read'): Permit => {
+    const decision = numberingAuthz.decideFor(actor, resource, action)
+    if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+    return decision.permit
+  }
 
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `FO${suffix}`
@@ -176,7 +191,7 @@ run('PG 集成（财务运营 12）', () => {
   })
 
   test('银行对账：状态派生 + 解除重建', async () => {
-    const account = await banking.createAccount(actor, {
+    const account = await banking.createAccount(permit('accBankAccounts'), {
       alias: prefix + '户',
       bankName: '测试银行',
       holderName: '持有人',
@@ -185,7 +200,7 @@ run('PG 集成（财务运营 12）', () => {
       currencyId,
       accountId: accountBank,
     })
-    const txn = await banking.createTransaction(actor, {
+    const txn = await banking.createTransaction(permit('accBankTransactions'), {
       occurredAt: new Date('2099-06-15T10:00:00Z').toISOString(),
       income: '1234.56',
       companyId,
@@ -208,27 +223,27 @@ run('PG 集成（财务运营 12）', () => {
         (2, 0, 1000, ${journalId}::uuid, ${companyId}::uuid, ${accountCounter}::uuid)
     `.execute(db)
 
-    const remaining = await banking.remaining(actor, txn.id, journalId)
+    const remaining = await banking.remaining(permit('accBankReconciliations'), txn.id, journalId)
     expect(remaining.amount).toBe('1000')
 
-    const recon = await banking.createReconciliation(actor, {
+    const recon = await banking.createReconciliation(permit('accBankReconciliations'), {
       bankTransactionId: txn.id,
       journalId,
       amount: '1000',
     })
-    const partial = await banking.getTransaction(actor, txn.id)
+    const partial = await banking.getTransaction(permit('accBankTransactions'), txn.id)
     expect(partial.reconcileStatus).toBe('PARTIAL')
     expect(partial.reconciledAmount).toBe('1000')
     expect(partial.unreconciledAmount).toBe('234.56')
 
-    await banking.deleteReconciliation(actor, recon.id)
-    const cleared = await banking.getTransaction(actor, txn.id)
+    await banking.deleteReconciliation(permit('accBankReconciliations'), recon.id)
+    const cleared = await banking.getTransaction(permit('accBankTransactions'), txn.id)
     expect(cleared.reconcileStatus).toBe('UNRECONCILED')
     expect(cleared.reconciledAmount).toBe('0')
     expect(cleared.unreconciledAmount).toBe('1234.56')
 
     // 快速对账
-    const quick = await banking.quickCreate(actor, {
+    const quick = await banking.quickCreate(permit('accBankReconciliations'), {
       bankTransactionId: txn.id,
       counterAccountId: accountCounter,
       amount: '1234.56',
@@ -236,12 +251,12 @@ run('PG 集成（财务运营 12）', () => {
       summary: '快速对账',
     })
     expect(quick.amount).toBe('1234.56')
-    const full = await banking.getTransaction(actor, txn.id)
+    const full = await banking.getTransaction(permit('accBankTransactions'), txn.id)
     expect(full.reconcileStatus).toBe('RECONCILED')
   })
 
   test('报销：挂票核销 + 作废解除占用', async () => {
-    const inv = await invoices.create(actor, {
+    const inv = await invoices.create(permit('accVatInvoices'), {
       companyId,
       direction: 'INBOUND',
       partyType: 'EMPLOYEE',
@@ -256,21 +271,21 @@ run('PG 集成（财务运营 12）', () => {
       amountAccountId: accountExpense,
       taxAccountId: accountExpense,
     })
-    await invoices.audit(actor, inv.id, today)
+    await invoices.audit(permit('accVatInvoices'), inv.id, today)
 
-    const report = await expenses.createReport(actor, {
+    const report = await expenses.createReport(permit('accExpenseReports'), {
       companyId,
       expenseDate: today,
       employeeId,
       paymentAccountId: accountBank,
     })
-    await expenses.createItem(actor, {
+    await expenses.createItem(permit('accExpenseReports'), {
       reportId: report.id,
       idx: 1,
       kind: 'INVOICED',
       invoiceId: inv.id,
     })
-    await expenses.createItem(actor, {
+    await expenses.createItem(permit('accExpenseReports'), {
       reportId: report.id,
       idx: 2,
       kind: 'MANUAL',
@@ -279,13 +294,13 @@ run('PG 集成（财务运营 12）', () => {
       expenseAccountId: accountExpense,
     })
 
-    const audited = await expenses.auditReport(actor, report.id, today)
+    const audited = await expenses.auditReport(permit('accExpenseReports'), report.id, today)
     expect(audited.status).toBe('AUDITED')
 
     // 发票已被占用
     await expect(
-      expenses.createItem(actor, {
-        reportId: (await expenses.createReport(actor, {
+      expenses.createItem(permit('accExpenseReports'), {
+        reportId: (await expenses.createReport(permit('accExpenseReports'), {
           companyId,
           expenseDate: today,
           employeeId,
@@ -297,17 +312,17 @@ run('PG 集成（财务运营 12）', () => {
       }),
     ).rejects.toThrow(/挂票发票/)
 
-    const voided = await expenses.voidReport(actor, report.id)
+    const voided = await expenses.voidReport(permit('accExpenseReports'), report.id)
     expect(voided.status).toBe('VOIDED')
 
     // 作废后可再挂
-    const report2 = await expenses.createReport(actor, {
+    const report2 = await expenses.createReport(permit('accExpenseReports'), {
       companyId,
       expenseDate: today,
       employeeId,
       paymentAccountId: accountBank,
     })
-    const item = await expenses.createItem(actor, {
+    const item = await expenses.createItem(permit('accExpenseReports'), {
       reportId: report2.id,
       idx: 1,
       kind: 'INVOICED',
@@ -317,7 +332,7 @@ run('PG 集成（财务运营 12）', () => {
   })
 
   test('票据：接收审核 → 持有段；转让后不可再作废接收', async () => {
-    const bankAcct = await banking.createAccount(actor, {
+    const bankAcct = await banking.createAccount(permit('accBankAccounts'), {
       alias: prefix + '票户',
       bankName: '承兑银行',
       holderName: '持有人',
@@ -327,7 +342,7 @@ run('PG 集成（财务运营 12）', () => {
       accountId: accountBank,
     })
     // 票面 1000 元 → 子票 1-100000
-    const receive = await bills.createTransaction(actor, {
+    const receive = await bills.createTransaction(permit('accBillTransactions'), {
       transactionType: 'RECEIVE',
       occurredOn: today,
       subStart: 1,
@@ -347,10 +362,10 @@ run('PG 集成（财务运营 12）', () => {
         transferable: true,
       },
     })
-    const audited = await bills.auditTransaction(actor, receive.id, today)
+    const audited = await bills.auditTransaction(permit('accBillTransactions'), receive.id, today)
     expect(audited.status).toBe('AUDITED')
 
-    const holdings = await bills.listHoldings(actor, {
+    const holdings = await bills.listHoldings(permit('accBillHoldings'), {
       filter: { billId: { kind: 'fk', values: [receive.billId], labels: [] } },
       limit: 10,
     })
@@ -360,7 +375,7 @@ run('PG 集成（财务运营 12）', () => {
     expect(holdings.results[0]!.amount).toBe('1000')
 
     // 转让半段
-    const endorse = await bills.createTransaction(actor, {
+    const endorse = await bills.createTransaction(permit('accBillTransactions'), {
       transactionType: 'ENDORSE',
       occurredOn: today,
       subStart: 1,
@@ -374,9 +389,9 @@ run('PG 集成（财务运营 12）', () => {
       billAccountId: accountBill,
       settleAccountId: accountSettle,
     })
-    await bills.auditTransaction(actor, endorse.id, today)
+    await bills.auditTransaction(permit('accBillTransactions'), endorse.id, today)
 
-    const after = await bills.listHoldings(actor, {
+    const after = await bills.listHoldings(permit('accBillHoldings'), {
       filter: { billId: { kind: 'fk', values: [receive.billId], labels: [] } },
       limit: 10,
     })
@@ -385,6 +400,6 @@ run('PG 集成（财务运营 12）', () => {
     expect(after.results[0]!.subEnd).toBe(100000)
 
     // 作废接收应失败（后续已动）
-    await expect(bills.voidTransaction(actor, receive.id)).rejects.toThrow()
+    await expect(bills.voidTransaction(permit('accBillTransactions'), receive.id)).rejects.toThrow()
   })
 })
