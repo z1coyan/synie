@@ -70,9 +70,6 @@ function IssueItemsTab() {
         // 开抽屉需要母单 id;不进展示列,经 extraFields 取回(避免 issueId 为 undefined 过滤报错);
         // 材料富单元格所需快照字段与物料外键一并补取(发料行无 customerPartNo 快照,meta 无此字段)
         extraFields={['issueId', 'materialId', 'materialName', 'materialSpec']}
-        // purOutsourcedIssueItems 复用 purchase.outsourced_issue 权限码,meta capabilities 为空:
-        // 显式声明本视图可用动作(整单「新建发料单」+ 草稿单「编辑/审核整单」),删除不进条目视图
-        capabilities={['create', 'update', 'audit']}
         createLabel="新建发料单"
         onCreate={() => openDrawer('create', null)}
         onView={(row) => {

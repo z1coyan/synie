@@ -1,7 +1,13 @@
+import {
+  ORDER_BYPRODUCT_RESOURCE,
+  ORDER_MATERIAL_RESOURCE,
+} from '~/modules/trading/order/outsourced-config.ts'
+import { orderSpec } from '~/modules/trading/order/spec.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { createSideReconciliation } from './chains.ts'
 import { daysAgo, type MasterData, type SeedCtx } from './helpers.ts'
 import { createBOMComponent } from './mfg.ts'
+import { permitFor } from './permit.ts'
 import type { OutsourcedResult, SampleDataDeps } from './types.ts'
 
 export async function seedOutsourced(
@@ -12,7 +18,7 @@ export async function seedOutsourced(
 ): Promise<OutsourcedResult> {
   const s04 = md.suppliers.S04!
 
-  const bom = await deps.manufacturingMaster.createBom(actor, {
+  const bom = await deps.manufacturingMaster.createBom(permitFor(deps, actor, 'mfgBoms', 'create'), {
     materialId: md.materials.busbar!.id,
     planName: '委外方案',
     note: '委外加工配方(示例)',
@@ -25,7 +31,7 @@ export async function seedOutsourced(
     await createBOMComponent(deps, actor, bom.id, md, row.key, row.qty, row.loss, null)
   }
   const scrap = md.materials.scrap_copper!
-  await deps.manufacturingMaster.createByproduct(actor, {
+  await deps.manufacturingMaster.createByproduct(permitFor(deps, actor, 'mfgBomByproducts', 'update'), {
     bomId: bom.id,
     quantity: '0.06',
     note: '委外下料边角料',
@@ -34,15 +40,18 @@ export async function seedOutsourced(
   })
 
   const partyLabel = s04.shortName || s04.name
-  const wh = await deps.warehouses.create(actor, {
-    name: `${sc.company.code} - 外协仓-${partyLabel}`,
-    isLeaf: true,
-    isOutsourced: true,
-    partyType: 'supplier',
-    partyId: s04.id,
-    companyId: sc.company.id,
-    parentId: sc.warehouses.root,
-  })
+  const wh = await deps.warehouses.create(
+    permitFor(deps, actor, 'invWarehouses', 'create'),
+    {
+      name: `${sc.company.code} - 外协仓-${partyLabel}`,
+      isLeaf: true,
+      isOutsourced: true,
+      partyType: 'supplier',
+      partyId: s04.id,
+      companyId: sc.company.id,
+      parentId: sc.warehouses.root,
+    },
+  )
 
   const order1 = await createOutsourcedOrder(
     deps,
@@ -132,7 +141,10 @@ async function createOutsourcedOrder(
   byproducts: Array<{ key: string; qty: string }>,
 ): Promise<{ orderID: string; itemID: string; matLineIDs: string[] }> {
   const date = daysAgo(dateAgoN)
-  const head = await deps.trading.orders.createHead(actor, 'purchase', {
+  const head = await deps.trading.orders.createHead(
+    permitFor(deps, actor, orderSpec('purchase').headResource, 'create'),
+    'purchase',
+    {
     companyId: sc.company.id,
     orderDate: date,
     orderType: 'SPOT',
@@ -142,7 +154,10 @@ async function createOutsourcedOrder(
     remarks,
   })
   const mat = md.materials.busbar!
-  const item = await deps.trading.orders.createItem(actor, 'purchase', {
+  const item = await deps.trading.orders.createItem(
+    permitFor(deps, actor, orderSpec('purchase').itemResource, 'create'),
+    'purchase',
+    {
     orderId: head.id,
     idx: 1,
     qty: String(qty),
@@ -155,7 +170,9 @@ async function createOutsourcedOrder(
   const matLineIDs: string[] = []
   for (const line of materials) {
     const m = md.materials[line.key]!
-    const created = await deps.trading.outsourcedConfig.createMaterial(actor, {
+    const created = await deps.trading.outsourcedConfig.createMaterial(
+      permitFor(deps, actor, ORDER_MATERIAL_RESOURCE, 'create'),
+      {
       orderItemId: item.id,
       materialId: m.id,
       unitId: m.defaultUnitId,
@@ -165,7 +182,9 @@ async function createOutsourcedOrder(
   }
   for (const line of byproducts) {
     const m = md.materials[line.key]!
-    await deps.trading.outsourcedConfig.createByproduct(actor, {
+    await deps.trading.outsourcedConfig.createByproduct(
+      permitFor(deps, actor, ORDER_BYPRODUCT_RESOURCE, 'create'),
+      {
       orderItemId: item.id,
       materialId: m.id,
       unitId: m.defaultUnitId,
@@ -173,7 +192,11 @@ async function createOutsourcedOrder(
     })
   }
   if (audit) {
-    await deps.trading.orders.audit(actor, 'purchase', head.id)
+    await deps.trading.orders.audit(
+      permitFor(deps, actor, orderSpec('purchase').headResource, 'audit'),
+      'purchase',
+      head.id,
+    )
   }
   return { orderID: head.id, itemID: item.id, matLineIDs }
 }
@@ -188,7 +211,9 @@ async function createOutsourcedIssue(
 ): Promise<string> {
   const date = daysAgo(9)
   const from = sc.warehouses.default
-  const issue = await deps.trading.outsourced.createIssue(actor, {
+  const issue = await deps.trading.outsourced.createIssue(
+    permitFor(deps, actor, 'purOutsourcedIssues', 'create'),
+    {
     companyId: sc.company.id,
     issueDate: date,
     partyType: 'supplier',
@@ -199,7 +224,9 @@ async function createOutsourcedIssue(
   })
   const qtys = [60, 400, 15]
   for (let i = 0; i < matLines.length; i++) {
-    await deps.trading.outsourced.createIssueItem(actor, {
+    await deps.trading.outsourced.createIssueItem(
+      permitFor(deps, actor, 'purOutsourcedIssueItems', 'create'),
+      {
       issueId: issue.id as string,
       idx: i + 1,
       qty: String(qtys[i]!),
@@ -208,7 +235,10 @@ async function createOutsourcedIssue(
       outsourcedWarehouseId: outsourcedWH,
     })
   }
-  await deps.trading.outsourced.auditIssue(actor, issue.id as string)
+  await deps.trading.outsourced.auditIssue(
+    permitFor(deps, actor, 'purOutsourcedIssues', 'audit'),
+    issue.id as string,
+  )
   return String(issue.id)
 }
 
@@ -222,7 +252,9 @@ async function createOutsourcedReceipt(
 ): Promise<{ itemId: string; receiptId: string }> {
   const date = daysAgo(4)
   const finished = sc.warehouses.finished
-  const receipt = await deps.trading.outsourced.createReceipt(actor, {
+  const receipt = await deps.trading.outsourced.createReceipt(
+    permitFor(deps, actor, 'purOutsourcedReceipts', 'create'),
+    {
     companyId: sc.company.id,
     receiptDate: date,
     postingDate: date,
@@ -234,13 +266,19 @@ async function createOutsourcedReceipt(
     creditAccountId: sc.accounts.unbilledAP,
     remarks: '初始化示例委外入库',
   })
-  const item = await deps.trading.outsourced.createReceiptItem(actor, {
+  const item = await deps.trading.outsourced.createReceiptItem(
+    permitFor(deps, actor, 'purOutsourcedReceiptItems', 'create'),
+    {
     receiptId: receipt.id as string,
     idx: 1,
     qty: '30',
     orderItemId,
     warehouseId: finished,
   })
-  await deps.trading.outsourced.auditReceipt(actor, receipt.id as string, {})
+  await deps.trading.outsourced.auditReceipt(
+    permitFor(deps, actor, 'purOutsourcedReceipts', 'audit'),
+    receipt.id as string,
+    {},
+  )
   return { itemId: String(item.id), receiptId: String(receipt.id) }
 }

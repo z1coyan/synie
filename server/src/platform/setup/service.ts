@@ -728,25 +728,21 @@ export const SALES_ROLE_MENUS: ReadonlyArray<string> = [
 
 /**
  * 预置内置角色（幂等；ADR 2026-07-29 由迁移种子改归 setup 完成动作）：
- * - admin：全域通配 `*` 授权，新权限点自动覆盖；菜单白名单恒空（不限制）；
- * - sales：销售业务员，逐码授权（SALES_ROLE_PERMISSIONS）+ 菜单白名单（SALES_ROLE_MENUS）。
+ * - admin：持全域授权旗标 grants_all（新权限点自动覆盖，无通配授权行）；菜单白名单恒空（不限制）；
+ * - sales：销售业务员，逐码授权（SALES_ROLE_PERMISSIONS，范围恒 all）+ 菜单白名单（SALES_ROLE_MENUS）。
  * 授权仅补 builtin 角色行，界面创建的同名普通角色不被接管。
  */
 async function seedBuiltinRoles(trx: DbHandle): Promise<void> {
   try {
     await sql`
-      INSERT INTO sys_role (code, name, enabled, builtin)
-      SELECT 'admin', '管理员', true, true
+      INSERT INTO sys_role (code, name, enabled, builtin, grants_all)
+      SELECT 'admin', '管理员', true, true, true
       WHERE NOT EXISTS (SELECT 1 FROM sys_role WHERE code = 'admin')
     `.execute(trx)
+    // 幂等补旗标：老环境的 admin 行由迁移折叠而来，此处兜底
     await sql`
-      INSERT INTO sys_role_permission (role_id, permission)
-      SELECT r.id, '*'
-      FROM sys_role r
-      WHERE r.code = 'admin' AND r.builtin
-        AND NOT EXISTS (
-          SELECT 1 FROM sys_role_permission rp WHERE rp.role_id = r.id AND rp.permission = '*'
-        )
+      UPDATE sys_role SET grants_all = true
+      WHERE code = 'admin' AND builtin AND NOT grants_all
     `.execute(trx)
 
     await sql`
@@ -756,8 +752,8 @@ async function seedBuiltinRoles(trx: DbHandle): Promise<void> {
     `.execute(trx)
     for (const permission of SALES_ROLE_PERMISSIONS) {
       await sql`
-        INSERT INTO sys_role_permission (role_id, permission)
-        SELECT r.id, ${permission}
+        INSERT INTO sys_role_permission (role_id, permission, scope)
+        SELECT r.id, ${permission}, 'all'
         FROM sys_role r
         WHERE r.code = 'sales' AND r.builtin
           AND NOT EXISTS (

@@ -1,21 +1,38 @@
 /**
  * 订单收发货历史只读投影（scm_order_flow_item 视图）。
- * 权限为四种来源单据 read 的 OR；orderId/orderItemId 作锚点筛选。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 'read')`，「四种来源单据 read 的 OR」是 meta 的
+ * `authz.readAnyOf` 声明（声明即执行），本服务不再手写析取，也不再手滚公司谓词。
+ * 留在服务层的只有领域语义：orderId/orderItemId 锚点筛选与 id 格式校验。
  */
 import type { ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
-import type { Kysely } from 'kysely'
+import type { Kysely, RawBuilder } from 'kysely'
 import type { DB as Database } from '~/db/types.ts'
-import { hasPermission, type Actor } from '~/platform/authz/actor.ts'
+import { compileRowFilter, conjunction } from '~/db/authz-sql.ts'
+import { ident } from '~/db/ident.ts'
+import { listAuthorized } from '~/db/list.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import {
   asDate,
   asOptionalString,
   upperStatus,
   wireRequiredDecimal,
 } from '../../trading/common.ts'
-import { ORDER_FLOW_SOURCE_READ_PERMISSIONS, orderFlowItemMeta } from './meta.ts'
+import { orderFlowItemMeta } from './meta.ts'
+
+export const FLOW_RESOURCE = 'scmOrderFlowItems'
+
+const META = orderFlowItemMeta()
+
+/** 列表与单条共用同一份投影：别名只有一处可写错（须与 source 逐字一致） */
+const FLOW_ALIAS = 'scm_order_flow_item'
+const FLOW_SOURCE = sql` FROM scm_order_flow_item`
+const FLOW_SELECT = sql`SELECT id,flow_type,voucher_no,voucher_date,status,company_id,
+  order_id,order_item_id,material_code,material_name,material_spec,
+  customer_part_no,unit_name,qty`
 
 const FLOW_PREFIXES = new Set([
   'purchase_receipt',
@@ -27,53 +44,42 @@ const FLOW_PREFIXES = new Set([
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export function createOrderFlowService(db: Kysely<Database>) {
-  async function get(actor: Actor, id: string) {
-    requireRead(actor)
+export function createOrderFlowService(db: Kysely<Database>, registry: Registry) {
+  const target = registry.authzTarget(FLOW_RESOURCE)
+
+  async function get(permit: Permit, id: string) {
     if (!validFlowId(id)) {
       throw ApiError.validation('订单收发货历史行参数不合法', { id: ['格式不合法'] })
     }
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) throw new ApiError('not_found', '订单收发货历史行不存在')
-    const extra = scope.where
-      ? sql`id=${id} AND ${scope.where}`
-      : sql`id=${id}`
+    // 本视图主键是「单据类型:uuid」文本，不能走 loadAuthorized 的 ::uuid 转换，故直接编译行过滤拼进 WHERE
+    const where = compileRowFilter(permit, target, FLOW_ALIAS)
     const rows = await sql<Record<string, unknown>>`
-      SELECT id,flow_type,voucher_no,voucher_date,status,company_id,
-        order_id,order_item_id,material_code,material_name,material_spec,
-        customer_part_no,unit_name,qty
-      FROM scm_order_flow_item WHERE ${extra}
+      ${FLOW_SELECT}${FLOW_SOURCE}
+      WHERE ${ident(FLOW_ALIAS)}.id = ${id} AND ${where}
     `.execute(db)
     if (!rows.rows[0]) throw new ApiError('not_found', '订单收发货历史行不存在')
     return mapDto(rows.rows[0])
   }
 
-  async function list(actor: Actor, query: Partial<ListQuery>) {
-    requireRead(actor)
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
-
+  async function list(permit: Permit, query: Partial<ListQuery>) {
     const filter = { ...(query.filter ?? {}) } as Record<string, unknown>
     const orderId = takeAnchor(filter, 'orderId')
     const orderItemId = takeAnchor(filter, 'orderItemId')
-    const extras = [scope.where]
-    if (orderId) extras.push(sql`"order_id"=${orderId}::uuid`)
-    if (orderItemId) extras.push(sql`"order_item_id"=${orderItemId}::uuid`)
-    const extraWhere =
-      extras.filter(Boolean).length > 0
-        ? sql`${sql.join(extras.filter((x): x is NonNullable<typeof x> => x != null), sql` AND `)}`
-        : null
+    const anchors: RawBuilder<unknown>[] = []
+    if (orderId) anchors.push(sql`"order_id"=${orderId}::uuid`)
+    if (orderItemId) anchors.push(sql`"order_item_id"=${orderItemId}::uuid`)
 
-    return listFromSource({
+    return listAuthorized({
       db,
-      resource: orderFlowItemMeta(),
-      source: sql` FROM scm_order_flow_item`,
-      select: sql`SELECT id,flow_type,voucher_no,voucher_date,status,company_id,
-        order_id,order_item_id,material_code,material_name,material_spec,
-        customer_part_no,unit_name,qty`,
+      permit,
+      target,
+      alias: FLOW_ALIAS,
+      resource: META,
+      source: FLOW_SOURCE,
+      select: FLOW_SELECT,
       defaultOrder: sql`"voucher_date" DESC, "id" ASC`,
       query: { ...query, filter: filter as ListQuery['filter'] },
-      extraWhere,
+      extraWhere: anchors.length > 0 ? conjunction(anchors) : null,
       mapRow: mapDto,
     })
   }
@@ -82,11 +88,6 @@ export function createOrderFlowService(db: Kysely<Database>) {
 }
 
 export type OrderFlowService = ReturnType<typeof createOrderFlowService>
-
-function requireRead(actor: Actor) {
-  const ok = ORDER_FLOW_SOURCE_READ_PERMISSIONS.some((p) => hasPermission(actor, p))
-  if (!ok) throw new ApiError('forbidden', '无权限读取订单收发货历史')
-}
 
 function validFlowId(id: string): boolean {
   const idx = id.indexOf(':')

@@ -9,6 +9,7 @@ import {
   DEMAND_AUDIT_CONFIG,
   useDemandDrawer,
 } from './-demand-drawer'
+import { useDispatchDemand } from './-dispatch-dialog'
 import { useAuditDoc } from '../../scm/-audit-doc'
 
 export const Route = createFileRoute('/_app/mfg/demands/orders')({
@@ -19,17 +20,19 @@ const GRID_COLUMNS = [
   'demandNo',
   'demandDate',
   'companyId',
+  'assignedDeptId',
   'status',
   'remarks',
 ]
 
 // 状态机动作显隐（后端权威校验兜底）：审核/删除/编辑仅草稿；
-// 关闭/作废仅已确认(后端已收紧:草稿不可作废,走删除)
+// 关闭/作废/下发车间仅已确认(后端已收紧:草稿不可作废,走删除;草稿改车间走表单)
 const ACTION_VISIBLE = {
   edit: (row: Row) => row.status === 'DRAFT',
   audit: (row: Row) => row.status === 'DRAFT',
   close: (row: Row) => row.status === 'CONFIRMED',
   void: (row: Row) => row.status === 'CONFIRMED',
+  dispatch: (row: Row) => row.status === 'CONFIRMED',
   delete: (row: Row) => row.status === 'DRAFT',
 } satisfies Record<string, (row: Row) => boolean>
 
@@ -43,11 +46,14 @@ const GRID_OVERRIDES = {
     enumColors: DEMAND_DOC_STATUS_ENUM_COLORS,
   },
   companyId: { mobileRole: 'summary' },
+  // 下发车间:未下发即空,车间经理按此列看到本车间的单
+  assignedDeptId: { label: '下发车间', mobileRole: 'summary' },
 } satisfies Record<string, ColumnOverride>
 
 function DemandOrdersTab() {
   const openDrawer = useDemandDrawer()
   const { requestAudit, auditDialog } = useAuditDoc(DEMAND_AUDIT_CONFIG)
+  const { requestDispatch, dispatchDialog } = useDispatchDemand()
 
   return (
     <>
@@ -63,10 +69,12 @@ function DemandOrdersTab() {
         actionHandlers={{
           audit: (rows, ctx) =>
             requestAudit(String(rows[0].id), ctx.refetch),
+          dispatch: (rows, ctx) => requestDispatch(rows[0], ctx.refetch),
         }}
         actionVisible={ACTION_VISIBLE}
       />
       {auditDialog}
+      {dispatchDialog}
     </>
   )
 }

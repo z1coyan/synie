@@ -1,14 +1,16 @@
 /**
- * ResourceDocument v2 运行时 decoder：拒绝未知 schema、非法 kind、断裂布局与非法 target。
+ * ResourceDocument v3 运行时 decoder：拒绝未知 schema、非法 kind、断裂布局与非法 target。
  * 无 zod 依赖：手写 fail-closed 校验，供 shared/server/web 共用。
  */
 import type { FilterState, SortState } from './filter.ts'
+import type { DataScope } from './meta.ts'
 import {
   RESOURCE_DOCUMENT_SCHEMA_VERSION,
   type BasicFormFieldPlacement,
   type BasicFormLayout,
   type BasicFormSection,
   type BasicFormTab,
+  type CapabilityEntry,
   type CommandDocument,
   type CommandTarget,
   type FieldDocument,
@@ -18,6 +20,7 @@ import {
   type ListLayoutMeta,
   type PolymorphicReferenceVariant,
   type ResourceDocument,
+  type ResourceDocumentAuthz,
   type ResourceLookupMeta,
   type ScalarFieldType,
 } from './resource-document.ts'
@@ -57,6 +60,8 @@ const FORM_KINDS = new Set(['none', 'extension', 'basic'])
 const SHOW_IN = new Set<FormShowIn>(['create', 'edit', 'view'])
 const PICKERS = new Set(['default', 'dialog'])
 const CONFIRM_KINDS = new Set(['none', 'generic', 'audit_doc'])
+const DATA_SCOPES = new Set<DataScope>(['all', 'deptTree', 'dept', 'self'])
+const DEPT_MODES = new Set(['stamped', 'assigned'])
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -384,7 +389,42 @@ function decodeCommand(raw: unknown, path: string): CommandDocument {
   return cmd
 }
 
-/** 解码并校验完整 ResourceDocument v2 */
+function decodeCapabilities(raw: unknown, path: string): CapabilityEntry[] {
+  if (!Array.isArray(raw)) fail(path, '须为能力项数组')
+  const seen = new Set<string>()
+  return raw.map((item, i) => {
+    const p = `${path}[${i}]`
+    if (!isObject(item)) fail(p, '须为对象')
+    const action = asString(item.action, `${p}.action`)
+    if (seen.has(action)) fail(`${p}.action`, `能力动作重复: ${action}`)
+    seen.add(action)
+    const scope = asString(item.scope, `${p}.scope`)
+    if (!DATA_SCOPES.has(scope as DataScope)) fail(`${p}.scope`, `非法数据范围: ${scope}`)
+    return { action, scope: scope as DataScope }
+  })
+}
+
+function decodeAuthz(raw: unknown, path: string): ResourceDocumentAuthz {
+  if (!isObject(raw)) fail(path, '须为对象')
+  const authz: ResourceDocumentAuthz = {}
+  if (raw.ownerId !== undefined) {
+    authz.ownerId = asString(raw.ownerId, `${path}.ownerId`)
+  }
+  if (raw.deptId !== undefined) {
+    authz.deptId = asString(raw.deptId, `${path}.deptId`)
+  }
+  if (raw.deptMode !== undefined) {
+    const mode = asString(raw.deptMode, `${path}.deptMode`)
+    if (!DEPT_MODES.has(mode)) fail(`${path}.deptMode`, `非法部门形态: ${mode}`)
+    authz.deptMode = mode as ResourceDocumentAuthz['deptMode']
+  }
+  if (!authz.ownerId && !authz.deptId) {
+    fail(path, '至少声明 ownerId 或 deptId 一个维度')
+  }
+  return authz
+}
+
+/** 解码并校验完整 ResourceDocument v3 */
 export function decodeResourceDocument(raw: unknown): ResourceDocument {
   if (!isObject(raw)) fail('$', '须为对象')
 
@@ -459,12 +499,24 @@ export function decodeResourceDocument(raw: unknown): ResourceDocument {
     }
   }
 
+  let authz: ResourceDocumentAuthz | undefined
+  if (raw.authz !== undefined) {
+    authz = decodeAuthz(raw.authz, '$.authz')
+    if (authz.ownerId && !fieldNames.has(authz.ownerId)) {
+      fail('$.authz.ownerId', `引用未知字段: ${authz.ownerId}`)
+    }
+    if (authz.deptId && !fieldNames.has(authz.deptId)) {
+      fail('$.authz.deptId', `引用未知字段: ${authz.deptId}`)
+    }
+  }
+
   return {
     schemaVersion: RESOURCE_DOCUMENT_SCHEMA_VERSION,
     name: asString(raw.name, '$.name'),
     label: asString(raw.label, '$.label'),
     permissionPrefix: asString(raw.permissionPrefix, '$.permissionPrefix'),
-    capabilities: asStringArray(raw.capabilities, '$.capabilities'),
+    capabilities: decodeCapabilities(raw.capabilities, '$.capabilities'),
+    ...(authz ? { authz } : {}),
     fields,
     lookup,
     list,

@@ -4,20 +4,30 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '../auth/middleware.ts'
 import type { AuthService } from '../auth/service.ts'
+import type { AuthzEnforcer } from '../authz/enforce.ts'
+import { permitOf } from '../authz/enforce.ts'
 import type { AppEnv } from '../http/context.ts'
 import { listQuerySchema, validationHook } from '../http/zod.ts'
+import { AUDIT_LOG_RESOURCE_NAME } from './meta.ts'
 import type { AuditService } from './service.ts'
+
+/** 审计查询 REST：逐端点挂 guard（requireAuth 之后），handler 用 permitOf(c) 取凭证 */
 
 const idParam = z.object({ id: z.string().uuid() })
 
-export function auditRoutes(deps: { auth: AuthService; audit: AuditService }) {
-  const { auth, audit } = deps
+export function auditRoutes(deps: {
+  auth: AuthService
+  authz: AuthzEnforcer
+  audit: AuditService
+}) {
+  const { auth, authz, audit } = deps
+  const guard = (action: string) => authz.guard(AUDIT_LOG_RESOURCE_NAME, action)
 
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
+    .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
       const body = c.req.valid('json')
-      const result = await audit.list(c.get('actor'), {
+      const result = await audit.list(permitOf(c), {
         limit: body.limit,
         offset: body.offset,
         search: body.search,
@@ -29,8 +39,8 @@ export function auditRoutes(deps: { auth: AuthService; audit: AuditService }) {
         results: result.results.map(dto),
       })
     })
-    .get('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      const value = await audit.get(c.get('actor'), c.req.valid('param').id)
+    .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
+      const value = await audit.get(permitOf(c), c.req.valid('param').id)
       return c.json(dto(value))
     })
 }

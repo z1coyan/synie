@@ -1,3 +1,4 @@
+import { hasCapability } from '@synie/shared'
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { parseDate, parseDateTime } from '@internationalized/date'
 import {
@@ -19,6 +20,7 @@ import {
 import { EmptyState, Sheet } from '@heroui-pro/react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { defaultCompanyId, useAuthorizedCompanies } from '~/lib/form-defaults'
+import { isNotFound } from '~/lib/errors'
 import { executeSingleRowCommandWithInvalidation } from '~/lib/resources/command-invalidation'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { QueryState } from '../synie-query-state/QueryState'
@@ -181,7 +183,9 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const row = props.row ?? byId.data ?? null
   // isPending 含 enabled 未就绪(等 meta)阶段;data === null 是「查过了但没有」(未查完是 undefined)
   const rowPending = wantsFetch && validId && byId.isPending
-  const rowMissing = wantsFetch && (!validId || byId.data === null)
+  // not_found(含行级范围不命中的新语义)按「查无此行」呈现,不落泛化加载失败文案
+  const rowMissing =
+    wantsFetch && (!validId || byId.data === null || isNotFound(byId.error))
 
   // 关闭动画期间冻结最后一次打开时的内容:onOpenChange(false) 后父级常把 mode 回落
   // 'view'、row 置 undefined,若渲染路径跟着实时切换,会在 Sheet 退出动画播放期间把
@@ -199,6 +203,12 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const fields = resolveFields(columns, renderMode, exclude, props.fields)
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [saving, setSaving] = useState(false)
+  /** 上次提交的服务端字段错误（ApiError.fields）；与 props.fieldErrors 合并展示 */
+  const [serverFieldErrors, setServerFieldErrors] = useState<Record<string, string[]>>({})
+  const fieldErrorsOf = (name: string): string[] => [
+    ...(props.fieldErrors?.[name] ?? []),
+    ...(serverFieldErrors[name] ?? []),
+  ]
   const queryClient = useQueryClient()
 
   // 新建态公司默认:授权列表第一家(字段 defaultValue / 列筛优先;异步到达后补丁)
@@ -214,9 +224,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const canSaveAndAudit =
     !!props.onSubmit &&
     !!auditAction &&
-    (remoteMeta.data?.capabilities ?? []).includes(
-      auditAction.requiredCapability,
-    ) &&
+    hasCapability(remoteMeta.data?.capabilities ?? [], auditAction.requiredCapability) &&
     (renderRow?.status == null || renderRow?.status === 'DRAFT')
   // 当前 tab:null 表示未手动切换过(回落首 tab),每次打开抽屉重置
   const [activeTab, setActiveTab] = useState<string | null>(null)
@@ -228,6 +236,8 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
     if (isOpen && mode !== 'view') {
       setValues(initialValues(resolveFields(columns, mode, exclude, props.fields), row))
     }
+    // 换行/换模式/重开抽屉即丢弃上次提交的服务端字段错误
+    setServerFieldErrors({})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, mode, row, columns])
 
@@ -320,9 +330,15 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
           }
         }
       }
+      setServerFieldErrors({})
       if (closeAfterSave) props.onOpenChange(false)
     } catch (e) {
-      toast.danger('保存失败', { description: (e as Error).message })
+      // 服务端字段级校验（ApiError.fields）就近展示在字段下方，并把文案带进 toast——
+      // 否则用户只看到 envelope 顶层的「XX 参数不合法」，真正的原因被丢掉
+      const fields = serverFieldErrorsOf(e)
+      setServerFieldErrors(fields ?? {})
+      const detail = fields ? Object.values(fields).flat().join('；') : (e as Error).message
+      toast.danger('保存失败', { description: detail })
     } finally {
       setSaving(false)
     }
@@ -374,9 +390,9 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                     patchValues={patchValues}
                   />
                 )}
-                {renderMode !== 'view' && props.fieldErrors?.[f.name]?.length ? (
+                {renderMode !== 'view' && fieldErrorsOf(f.name).length > 0 ? (
                   <p className="mt-1 text-xs text-danger" role="alert">
-                    {props.fieldErrors[f.name].join('；')}
+                    {fieldErrorsOf(f.name).join('；')}
                   </p>
                 ) : null}
               </div>
@@ -412,7 +428,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
               <Sheet.Heading>{title}</Sheet.Heading>
             </Sheet.Header>
             <Sheet.Body>
-              {metaError || byId.isError ? (
+              {metaError || (byId.isError && !isNotFound(byId.error)) ? (
                 // GridMeta/rowId 取数失败:展示报错并可重试(与 SynieDataGrid 同一套失败态)。
                 // 错误分支在 spinner 之前:meta 失败时 byId 因 enabled 门控永远 isPending,反序会卡死转圈。
                 // 403 由 QueryState 渲染「无权限访问」专属态(与 grid 对齐;此前混在通用失败态里)
@@ -508,6 +524,23 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
 }
 
 /** view 态字段:label + 与表格同一套格式化(cellText) */
+/**
+ * 从提交异常里取服务端字段级错误（`ApiError.fields` wire 形状：字段名 → 文案数组）。
+ * 结构判定而非 instanceof：抽屉不依赖 HTTP 客户端，测试用的假错误同样适用。
+ */
+function serverFieldErrorsOf(error: unknown): Record<string, string[]> | null {
+  if (typeof error !== 'object' || error === null || !('fields' in error)) return null
+  const fields = (error as { fields?: unknown }).fields
+  if (typeof fields !== 'object' || fields === null) return null
+  const out: Record<string, string[]> = {}
+  for (const [name, messages] of Object.entries(fields as Record<string, unknown>)) {
+    if (Array.isArray(messages) && messages.length > 0) {
+      out[name] = messages.map((m) => String(m))
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
 function ViewField({ field, row }: { field: ResolvedField; row: Row }) {
   if (field.col.type === 'fk' && field.col.ref && !field.render) {
     return (

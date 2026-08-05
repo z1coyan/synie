@@ -1,10 +1,17 @@
+/**
+ * 客商/公司从属地址（多态主体，无公司列 → global 形态）。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
+ * 默认地址唯一、主体存在性是领域不变量，留在本文件。
+ */
 import type { ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { loadAuthorized } from '~/db/load.ts'
 import {
   auditCreated,
   auditDestroyed,
@@ -12,9 +19,10 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { partyAddressResourceMeta } from './meta.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
+import { PARTY_ADDRESS_RESOURCE_NAME, partyAddressResourceMeta } from './meta.ts'
 
 export type PartyAddressPartyType = 'CUSTOMER' | 'SUPPLIER' | 'COMPANY'
 export type PartyAddressPurpose = 'SHIPPING' | 'OFFICE' | 'OTHER'
@@ -46,8 +54,8 @@ const PARTY_TYPES = new Set<string>(['CUSTOMER', 'SUPPLIER', 'COMPANY'])
 const PURPOSES = new Set<string>(['SHIPPING', 'OFFICE', 'OTHER'])
 const AUDIT = auditFieldsOf(partyAddressResourceMeta())
 const AUDIT_RESOURCE = 'bas_party_address'
-const PERM = 'base.party_address'
 const META = partyAddressResourceMeta()
+const TABLE = META.table
 
 /** wire 大写 → 库内小写 */
 function toDbEnum(value: string): string {
@@ -72,22 +80,27 @@ export async function deleteAddressesForParty(
     .execute()
 }
 
-export function createPartyAddressService(db: Kysely<Database>) {
-  async function get(actor: Actor, id: string): Promise<PartyAddress> {
-    requirePermission(actor, `${PERM}:read`)
-    const row = await db
-      .selectFrom('bas_party_address')
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst()
-    if (!row) throw new ApiError('not_found', '地址不存在')
-    return mapRow(row)
+export function createPartyAddressService(db: Kysely<Database>, registry: Registry) {
+  const target = registry.authzTarget(PARTY_ADDRESS_RESOURCE_NAME)
+
+  async function get(permit: Permit, id: string): Promise<PartyAddress> {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target,
+      table: TABLE,
+      id,
+      notFoundMessage: '地址不存在',
+    })
+    return mapRow(row as never)
   }
 
-  async function list(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, `${PERM}:read`)
-    return listFromSource({
+  async function list(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target,
+      alias: TABLE,
       resource: META,
       source: sql` FROM bas_party_address`,
       select: sql`SELECT id, party_type, party_id, name, purpose, contact_name, contact_phone,
@@ -117,7 +130,7 @@ export function createPartyAddressService(db: Kysely<Database>) {
   }
 
   async function create(
-    actor: Actor,
+    permit: Permit,
     input: {
       partyType: string
       partyId: string
@@ -134,7 +147,6 @@ export function createPartyAddressService(db: Kysely<Database>) {
       remarks?: string | null
     },
   ): Promise<PartyAddress> {
-    requirePermission(actor, `${PERM}:create`)
     const partyType = parsePartyType(input.partyType)
     const purpose = parsePurpose(input.purpose)
     const name = requireText(input.name, 'name', '地址名称')
@@ -174,7 +186,7 @@ export function createPartyAddressService(db: Kysely<Database>) {
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapRow(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: AUDIT_RESOURCE,
           recordId: item.id,
           recordLabel: item.name,
@@ -192,7 +204,7 @@ export function createPartyAddressService(db: Kysely<Database>) {
   }
 
   async function update(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       name?: string
@@ -211,16 +223,17 @@ export function createPartyAddressService(db: Kysely<Database>) {
       remarksPresent?: boolean
     },
   ): Promise<PartyAddress> {
-    requirePermission(actor, `${PERM}:update`)
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('bas_party_address')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '地址不存在')
-      const before = mapRow(locked)
+      const locked = await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '地址不存在',
+      })
+      const before = mapRow(locked as never)
 
       const name =
         input.name !== undefined ? requireText(input.name, 'name', '地址名称') : before.name
@@ -292,7 +305,7 @@ export function createPartyAddressService(db: Kysely<Database>) {
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapRow(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: AUDIT_RESOURCE,
           recordId: item.id,
           recordLabel: item.name,
@@ -309,19 +322,20 @@ export function createPartyAddressService(db: Kysely<Database>) {
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, `${PERM}:delete`)
+  async function remove(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('bas_party_address')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '地址不存在')
-      const item = mapRow(locked)
+      const locked = await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '地址不存在',
+      })
+      const item = mapRow(locked as never)
       await trx.deleteFrom('bas_party_address').where('id', '=', id).execute()
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: AUDIT_RESOURCE,
         recordId: item.id,
         recordLabel: item.name,

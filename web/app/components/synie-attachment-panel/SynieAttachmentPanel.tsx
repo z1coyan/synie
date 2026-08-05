@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, Spinner, toast } from '@heroui/react'
-import { fetchMyPermissions, hasPermission } from '~/lib/permissions'
+import { useResourceCapabilities } from '~/lib/use-resource-capabilities'
 import { deleteAttachment, fileClient } from '~/lib/resources/files'
 import { downloadFile, uploadFile, type UploadedFile } from '~/lib/files'
 import { attachmentListKey, fetchAttachmentList, type AttachmentRow } from './attachments'
@@ -64,15 +64,10 @@ export function SynieAttachmentPanel({
 
   const pendingMode = !ownerId && !!pending
 
-  // 无共享权限 hook,面板自查;queryKey 共享,多实例只发一次。fail-closed:拉不到=无权限
-  const perms = useQuery({
-    queryKey: ['myPermissions'],
-    queryFn: fetchMyPermissions,
-  })
-  const canCreate =
-    hasPermission(perms.data, 'sys.file:create') && !readonly
-  const canDelete =
-    hasPermission(perms.data, 'sys.file:delete') && !readonly
+  // 上传/删除按 sysFiles 文档投影门控(fail-closed:文档 403/未解析即无权限)
+  const fileCaps = useResourceCapabilities('sysFiles')
+  const canCreate = fileCaps.has('create') && !readonly
+  const canDelete = fileCaps.has('delete') && !readonly
 
   const listKey = attachmentListKey(ownerType, ownerId, category)
 

@@ -9,6 +9,11 @@ import { createSalesSettingService } from '~/modules/trading/settings.ts'
 import { createSettingsService } from '~/platform/settings/service.ts'
 import { buildTestApp, testDatabaseUrl } from '../../../../test/helpers.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+import { testActor } from '~/platform/authz/testing.ts'
+import { INSTRUMENT_RESOURCE_NAME, PRICE_POINT_RESOURCE_NAME } from './meta.ts'
 
 const dbUrl = testDatabaseUrl()
 
@@ -69,7 +74,7 @@ describe.skipIf(!dbUrl)('market integration', () => {
     }
     expect(body).toBeTruthy()
     token = body!.token
-    actor = {
+    actor = testActor({
       userId: body!.user.id,
       username: body!.user.username,
       name: null,
@@ -77,7 +82,7 @@ describe.skipIf(!dbUrl)('market integration', () => {
       allCompanies: true,
       permissions: new Set(['*']),
       companyIds: [],
-    }
+    })
 
     // 共享库可能被 setup 清空后残留 inactive 币种；优先启用已有 CNY/任意币种
     let cur = await db
@@ -186,11 +191,21 @@ describe.skipIf(!dbUrl)('market integration', () => {
       manufacturing: createManufacturingSettingService(db),
       accounting: createAccountingSettingService(db),
     })
-    const market = createMarketService(db, { settings })
+    const registry = createSealedResourceRegistry()
+    const authz = createAuthzEnforcer(registry)
+    const market = createMarketService(db, { settings, registry })
+    /** superAdmin 凭证：行情两资源都是 global，rowFilter 恒全集 */
+    const permit = (resource: string, action: string): Permit => {
+      const decision = authz.decideFor(actor, resource, action)
+      if (decision.outcome !== 'permit') throw new Error(`夹具应当 permit：${resource}:${action}`)
+      return decision.permit
+    }
+    const inst$ = (action: string) => permit(INSTRUMENT_RESOURCE_NAME, action)
+    const point$ = (action: string) => permit(PRICE_POINT_RESOURCE_NAME, action)
     const suffix = crypto.randomUUID().replaceAll('-', '').slice(0, 8).toUpperCase()
     const code = `T14${suffix}`
 
-    const inst = await market.createInstrument(actor, {
+    const inst = await market.createInstrument(inst$('create'), {
       code,
       name: `工单14-${suffix}`,
       sourceType: 'EXCHANGE',
@@ -203,7 +218,7 @@ describe.skipIf(!dbUrl)('market integration', () => {
     expect(inst.fetchEnabled).toBe(false)
     expect(inst.externalLastCode).toBeNull()
 
-    const point = await market.createPricePoint(actor, {
+    const point = await market.createPricePoint(point$('create'), {
       instrumentId: inst.id,
       observedAt: new Date('2024-02-03T04:05:06Z'),
       price: '101.25',
@@ -214,7 +229,7 @@ describe.skipIf(!dbUrl)('market integration', () => {
     expect(point.currencyId).toBe(currencyId)
 
     await expect(
-      market.createPricePoint(actor, {
+      market.createPricePoint(point$('create'), {
         instrumentId: inst.id,
         observedAt: new Date('2024-02-03T04:05:06Z'),
         price: '199',
@@ -222,10 +237,10 @@ describe.skipIf(!dbUrl)('market integration', () => {
       }),
     ).rejects.toMatchObject({ code: 'conflict' })
 
-    const voided = await market.voidPricePoint(actor, point.id)
+    const voided = await market.voidPricePoint(point$('void'), point.id)
     expect(voided.isVoided).toBe(true)
 
-    const rerecorded = await market.createPricePoint(actor, {
+    const rerecorded = await market.createPricePoint(point$('create'), {
       instrumentId: inst.id,
       observedAt: new Date('2024-02-03T04:05:06Z'),
       price: '102.5',
@@ -236,15 +251,14 @@ describe.skipIf(!dbUrl)('market integration', () => {
     expect(quote.price).toBe('102.5')
     expect(quote.priceKind).toBe('SETTLEMENT')
 
-    const later = await market.createPricePoint(actor, {
+    const later = await market.createPricePoint(point$('create'), {
       instrumentId: inst.id,
       observedAt: new Date('2024-02-04T04:05:06Z'),
       price: '103',
     })
     createdPoints.push(later.id)
 
-    const series = await market.priceSeries(
-      actor,
+    const series = await market.priceSeries(point$('read'),
       [inst.id],
       'SETTLEMENT',
       new Date('2024-02-03T04:05:06Z'),
@@ -253,7 +267,7 @@ describe.skipIf(!dbUrl)('market integration', () => {
     expect(series.priceKind).toBe('settlement')
     expect(series.series[0]?.points.map((p) => p.price)).toEqual(['102.5', '103'])
 
-    await expect(market.deleteInstrument(actor, inst.id)).rejects.toMatchObject({
+    await expect(market.deleteInstrument(inst$('delete'), inst.id)).rejects.toMatchObject({
       code: 'conflict',
     })
 
@@ -272,13 +286,14 @@ describe.skipIf(!dbUrl)('market integration', () => {
     })
     expect(meta.status).toBe(200)
     const metaBody = (await meta.json()) as {
-      form?: { exclude?: string[] }
-      grid: { columns: Array<{ name: string }> }
+      form?: { kind: string }
+      list: { columns: string[] }
     }
-    expect(metaBody.form?.exclude?.sort()).toEqual(['id', 'insertedAt', 'updatedAt'].sort())
-    expect(metaBody.grid.columns.some((c) => c.name === 'externalLastCode')).toBe(true)
+    // v3 文档无 v1 form.exclude/grid sibling：技术字段不进表单由投影保证，这里核对 v3 形状
+    expect(metaBody.form?.kind).toBe('basic')
+    expect(metaBody.list.columns).toContain('externalLastCode')
 
-    const cross = await market.createInstrument(actor, {
+    const cross = await market.createInstrument(inst$('create'), {
       code: `${code}X`,
       name: `跨单位-${suffix}`,
       sourceType: 'EXCHANGE',
@@ -288,8 +303,7 @@ describe.skipIf(!dbUrl)('market integration', () => {
     })
     createdInstruments.push(cross.id)
     await expect(
-      market.priceSeries(
-        actor,
+      market.priceSeries(point$('read'),
         [inst.id, cross.id],
         'SETTLEMENT',
         new Date('2024-02-03T04:05:06Z'),
@@ -311,7 +325,7 @@ describe.skipIf(!dbUrl)('market integration', () => {
     expect(sys.marketFetchLastRunAt).not.toBeNull()
 
     // 注入假客户端刷新：最新价 + 结算价（上海 16:00 → 过结算窗）
-    const fetchInst = await market.createInstrument(actor, {
+    const fetchInst = await market.createInstrument(inst$('create'), {
       code: `${code}F`,
       name: `拉取-${suffix}`,
       sourceType: 'EXCHANGE',
@@ -326,7 +340,7 @@ describe.skipIf(!dbUrl)('market integration', () => {
     const now = new Date(Date.UTC(2026, 6, 17, 8, 0, 45)) // 上海 16:00
     const { decimal: d } = await import('@synie/shared')
     const refresh = await market.refresh(
-      actor,
+      point$('create'),
       fetchInst.id,
       now,
       {
@@ -349,7 +363,7 @@ describe.skipIf(!dbUrl)('market integration', () => {
       if (item.pricePointId) createdPoints.push(item.pricePointId)
     }
     // 同分钟再刷最新价应 skip
-    const again = await market.refreshLasts(actor, fetchInst.id, now, {
+    const again = await market.refreshLasts(point$('create'), fetchInst.id, now, {
       fetchLast: async () => {
         throw new Error('should not call')
       },

@@ -30,7 +30,14 @@ export {
   employeeRoutes,
   partyAddressRoutes,
 } from './routes.ts'
-export { allPartyResourceMetas, partyAddressResourceMeta } from './meta.ts'
+export {
+  allPartyResourceMetas,
+  partyAddressResourceMeta,
+  CUSTOMER_RESOURCE_NAME,
+  SUPPLIER_RESOURCE_NAME,
+  EMPLOYEE_RESOURCE_NAME,
+  PARTY_ADDRESS_RESOURCE_NAME,
+} from './meta.ts'
 
 export function registerPartyResources(registry: Registry): void {
   for (const meta of allPartyResourceMetas()) {
@@ -44,11 +51,15 @@ export function registerPartyTodoSources(todos: TodoSourceRegistry): void {
   todos.registerParty('supplier', { table: 'pur_supplier', nameColumn: 'name' })
 }
 
-export function createPartyServices(db: Kysely<Database>, numbering: NumberingService) {
+export function createPartyServices(
+  db: Kysely<Database>,
+  numbering: NumberingService,
+  registry: Registry,
+) {
   return {
-    customers: createCustomerService(db),
-    suppliers: createSupplierService(db),
-    employees: createEmployeeService(db, numbering),
-    addresses: createPartyAddressService(db),
+    customers: createCustomerService(db, registry),
+    suppliers: createSupplierService(db, registry),
+    employees: createEmployeeService(db, numbering, registry),
+    addresses: createPartyAddressService(db, registry),
   }
 }

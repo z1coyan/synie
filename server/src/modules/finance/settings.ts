@@ -34,6 +34,7 @@ export function accountingSettingResourceMeta(): ResourceMeta {
     permissionPrefix: 'acc.setting',
     permissionLabel: '财务设置',
     table: 'acc_setting',
+    authz: { kind: 'global' },
     fields: [
       {
         name: 'id',
@@ -97,7 +98,6 @@ export function createAccountingSettingService(db: Kysely<Database>) {
     table: 'acc_setting',
     resource: 'acc_setting',
     notFoundMessage: '财务设置不存在',
-    permissionPrefix: 'acc.setting',
     mapRow: mapAcc,
     auditFields: ACC_AUDIT_SPEC.fields,
     sensitiveFields: ACC_AUDIT_SPEC.sensitiveFields,
@@ -150,9 +150,9 @@ export function createAccountingSettingService(db: Kysely<Database>) {
   }
 
   return {
-    getAccounting: (actor: Parameters<typeof inner.get>[0]) => inner.get(actor),
-    updateAccounting: (actor: Parameters<typeof inner.update>[0], input: AccountingUpdate) =>
-      inner.update(actor, input),
+    getAccounting: (permit: Parameters<typeof inner.get>[0]) => inner.get(permit),
+    updateAccounting: (permit: Parameters<typeof inner.update>[0], input: AccountingUpdate) =>
+      inner.update(permit, input),
     ocrConfigured,
   }
 }

@@ -31,13 +31,13 @@ export function registerBaseResources(registry: Registry): void {
   }
 }
 
-/** 装配 base 四资源服务（公司/货币/单位/科目） */
-export function createBaseServices(db: Kysely<Database>) {
+/** 装配 base 四资源服务（公司/货币/单位/科目）；registry 提供授权归宿声明 */
+export function createBaseServices(db: Kysely<Database>, registry: Registry) {
   return {
-    currencies: createCurrencyService(db),
-    companies: createCompanyService(db),
-    units: createUnitService(db),
-    accounts: createAccountService(db),
+    currencies: createCurrencyService(db, registry),
+    companies: createCompanyService(db, registry),
+    units: createUnitService(db, registry),
+    accounts: createAccountService(db, registry),
   }
 }
 

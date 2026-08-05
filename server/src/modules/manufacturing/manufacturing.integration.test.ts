@@ -5,18 +5,22 @@ import { afterAll, describe, expect, test } from 'bun:test'
 import { decimal } from '@synie/shared'
 import { createDb } from '~/db/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createManufacturingServices } from './index.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
 
 run('PG 集成（制造：BOM/需求/工单/入库）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
-  const mfg = createManufacturingServices(db, numbering)
-  const actor: Actor = {
+  const registry = createSealedResourceRegistry()
+  const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
+  const authz = createAuthzEnforcer(registry)
+  const mfg = createManufacturingServices(db, numbering, registry)
+  const actor: Actor = testActor({
     // 空 userId → 单据 created_by_id 写 null（避免测试环境无 sys_user 行）
     userId: '',
     username: 'mfg-test',
@@ -25,6 +29,19 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
+  })
+  // superAdmin 凭证的 rowFilter 恒为全集，本文件只验领域行为，故一张凭证够用；
+  // 逐动作码门控与部门范围见 test/demand-dispatch.integration.test.ts
+  const permit = (() => {
+    const decision = authz.decideFor(actor, 'mfgDemands', 'read')
+    if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+    return decision.permit
+  })()
+  /** 主数据（工序/工艺模板/BOM 及子行）：各资源现取凭证 */
+  const masterPermit = (resource: string, action: string) => {
+    const decision = authz.decideFor(actor, resource, action)
+    if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+    return decision.permit
   }
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10)
   const currencyId = crypto.randomUUID()
@@ -185,19 +202,19 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
   })
 
   test('工序/工艺模板/BOM 配料与模板带入', async () => {
-    const op = await mfg.master.createOperation(actor, {
+    const op = await mfg.master.createOperation(masterPermit('mfgOperations', 'create'), {
       code: `OP${suffix}`,
       name: `冲网-${suffix}`,
     })
     cleanupIds.operations.push(op.id)
     expect(op.code).toBe(`OP${suffix}`)
 
-    const tpl = await mfg.master.createTemplate(actor, {
+    const tpl = await mfg.master.createTemplate(masterPermit('mfgProcessTemplates', 'create'), {
       code: `T${suffix}`,
       name: `模板-${suffix}`,
     })
     cleanupIds.templates.push(tpl.id)
-    await mfg.master.createTemplateItem(actor, {
+    await mfg.master.createTemplateItem(masterPermit('mfgProcessTemplateItems', 'update'), {
       templateId: tpl.id,
       operationId: op.id,
       seq: 10,
@@ -205,7 +222,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       isOutsourced: false,
     })
 
-    const bom = await mfg.master.createBom(actor, {
+    const bom = await mfg.master.createBom(masterPermit('mfgBoms', 'create'), {
       code: `B${suffix}`,
       materialId,
       planName: '自用',
@@ -213,7 +230,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     cleanupIds.boms.push(bom.id)
     expect(bom.status).toBe('draft')
 
-    const comp = await mfg.master.createComponent(actor, {
+    const comp = await mfg.master.createComponent(masterPermit('mfgBomComponents', 'update'), {
       bomId: bom.id,
       materialId: componentId,
       unitId,
@@ -224,7 +241,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     expect(comp.lossRate).toBe('0.05')
 
     await expect(
-      mfg.master.createComponent(actor, {
+      mfg.master.createComponent(masterPermit('mfgBomComponents', 'update'), {
         bomId: bom.id,
         materialId, // 自引用
         unitId,
@@ -232,65 +249,67 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       }),
     ).rejects.toMatchObject({ code: 'validation' })
 
-    const routes = await mfg.master.applyRouteTemplate(actor, bom.id, tpl.id)
+    const routes = await mfg.master.applyRouteTemplate(masterPermit('mfgBoms', 'update'), bom.id, tpl.id)
     expect(routes).toHaveLength(1)
     expect(routes[0]!.operationId).toBe(op.id)
     expect(routes[0]!.requirement).toBe('注意毛刺')
 
-    await expect(mfg.master.applyRouteTemplate(actor, bom.id, tpl.id)).rejects.toMatchObject({
-      code: 'conflict',
-    })
+    await expect(
+      mfg.master.applyRouteTemplate(masterPermit('mfgBoms', 'update'), bom.id, tpl.id),
+    ).rejects.toMatchObject({ code: 'conflict' })
 
-    const active = await mfg.master.activateBom(actor, bom.id)
+    const active = await mfg.master.activateBom(masterPermit('mfgBoms', 'update'), bom.id)
     expect(active.status).toBe('active')
-    const inactive = await mfg.master.deactivateBom(actor, bom.id)
+    const inactive = await mfg.master.deactivateBom(masterPermit('mfgBoms', 'update'), bom.id)
     expect(inactive.status).toBe('inactive')
-    await expect(mfg.master.deleteBom(actor, bom.id)).rejects.toMatchObject({ code: 'conflict' })
-    await mfg.master.activateBom(actor, bom.id)
+    await expect(
+      mfg.master.deleteBom(masterPermit('mfgBoms', 'delete'), bom.id),
+    ).rejects.toMatchObject({ code: 'conflict' })
+    await mfg.master.activateBom(masterPermit('mfgBoms', 'update'), bom.id)
 
-    const draftOnly = await mfg.master.createBom(actor, {
+    const draftOnly = await mfg.master.createBom(masterPermit('mfgBoms', 'create'), {
       code: `BD${suffix}`,
       materialId,
       planName: '可删草稿',
     })
-    await mfg.master.deleteBom(actor, draftOnly.id)
+    await mfg.master.deleteBom(masterPermit('mfgBoms', 'delete'), draftOnly.id)
 
     // 工单选 BOM 快照
-    const d = await mfg.demands.createDemand(actor, {
+    const d = await mfg.demands.createDemand(permit, {
       companyId,
       demandNo: `DBOM${suffix}`,
     })
     cleanupIds.demands.push(d.id)
-    const li = await mfg.demands.createDemandItem(actor, {
+    const li = await mfg.demands.createDemandItem(permit, {
       demandId: d.id,
       idx: 1,
       materialId,
       unitId,
       qty: '2',
     })
-    await mfg.demands.confirmDemand(actor, d.id)
-    const woBom = await mfg.workOrders.createWorkOrder(actor, {
+    await mfg.demands.confirmDemand(permit, d.id)
+    const woBom = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: li.id,
       workOrderNo: `WOB${suffix}`,
     })
     cleanupIds.workOrders.push(woBom.id)
-    const applied = await mfg.workOrders.applyBom(actor, woBom.id, bom.id)
+    const applied = await mfg.workOrders.applyBom(permit, woBom.id, bom.id)
     expect(applied.bomId).toBe(bom.id)
-    const snap = await mfg.workOrders.getBomSnapshot(actor, woBom.id)
+    const snap = await mfg.workOrders.getBomSnapshot(permit, woBom.id)
     expect(snap.components).toHaveLength(1)
     expect(snap.routes).toHaveLength(1)
-    await mfg.workOrders.applyBom(actor, woBom.id, null)
-    expect((await mfg.workOrders.getBomSnapshot(actor, woBom.id)).components).toHaveLength(0)
+    await mfg.workOrders.applyBom(permit, woBom.id, null)
+    expect((await mfg.workOrders.getBomSnapshot(permit, woBom.id)).components).toHaveLength(0)
   })
 
   test('库存/关闭安排与双投影', async () => {
-    const demand = await mfg.demands.createDemand(actor, {
+    const demand = await mfg.demands.createDemand(permit, {
       companyId,
       demandNo: `DST${suffix}`,
       demandDate: '2026-07-20',
     })
     cleanupIds.demands.push(demand.id)
-    const line = await mfg.demands.createDemandItem(actor, {
+    const line = await mfg.demands.createDemandItem(permit, {
       demandId: demand.id,
       idx: 1,
       materialId,
@@ -298,8 +317,8 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       qty: '100',
       needDate: '2026-07-25',
     })
-    await mfg.demands.confirmDemand(actor, demand.id)
-    const afterStock = await mfg.demands.createArrangement(actor, {
+    await mfg.demands.confirmDemand(permit, demand.id)
+    const afterStock = await mfg.demands.createArrangement(permit, {
       demandItemId: line.id,
       arrangementType: 'stock',
       qty: '40',
@@ -307,7 +326,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     expect(afterStock.arrangedQty).toBe('40')
     expect(afterStock.completedQty).toBe('40')
     expect(afterStock.status).toBe('scheduled')
-    const afterClose = await mfg.demands.createArrangement(actor, {
+    const afterClose = await mfg.demands.createArrangement(permit, {
       demandItemId: line.id,
       arrangementType: 'close',
       qty: '60',
@@ -316,7 +335,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     expect(afterClose.completedQty).toBe('100')
     expect(afterClose.status).toBe('completed')
     await expect(
-      mfg.demands.createArrangement(actor, {
+      mfg.demands.createArrangement(permit, {
         demandItemId: line.id,
         arrangementType: 'close',
         qty: '1',
@@ -325,7 +344,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
   })
 
   test('履约需求确认/自制工单/生产入库完工联动', async () => {
-    const demand = await mfg.demands.createDemand(actor, {
+    const demand = await mfg.demands.createDemand(permit, {
       companyId,
       demandNo: `D${suffix}`,
       remarks: '集成测试',
@@ -333,7 +352,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     cleanupIds.demands.push(demand.id)
     expect(demand.status).toBe('draft')
 
-    const line = await mfg.demands.createDemandItem(actor, {
+    const line = await mfg.demands.createDemandItem(permit, {
       demandId: demand.id,
       idx: 1,
       materialId,
@@ -345,11 +364,11 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     expect(line.status).toBe('pending')
     expect(line.fulfillmentMethod).toBeNull()
 
-    const confirmed = await mfg.demands.confirmDemand(actor, demand.id)
+    const confirmed = await mfg.demands.confirmDemand(permit, demand.id)
     expect(confirmed.status).toBe('confirmed')
 
     // 分批：先开 40，再开 60；满量后不可再开
-    const wo = await mfg.workOrders.createWorkOrder(actor, {
+    const wo = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line.id,
       workOrderNo: `WO${suffix}`,
       qty: '40',
@@ -360,7 +379,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     expect(wo.receivedBaseQty).toBe('0')
     expect(wo.remainingBaseQty).toBe('40')
 
-    const wo2 = await mfg.workOrders.createWorkOrder(actor, {
+    const wo2 = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line.id,
       workOrderNo: `WO2${suffix}`,
       qty: '60',
@@ -369,18 +388,18 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     expect(wo2.baseQty).toBe('60')
 
     await expect(
-      mfg.workOrders.createWorkOrder(actor, {
+      mfg.workOrders.createWorkOrder(permit, {
         demandItemId: line.id,
         workOrderNo: `WO3${suffix}`,
         qty: '1',
       }),
     ).rejects.toMatchObject({ code: 'conflict' })
 
-    const scheduled = await mfg.demands.getDemandItem(actor, line.id)
+    const scheduled = await mfg.demands.getDemandItem(permit, line.id)
     expect(scheduled.status).toBe('scheduled')
     expect(scheduled.arrangedQty).toBe('100')
 
-    const output = await mfg.outputs.createOutput(actor, {
+    const output = await mfg.outputs.createOutput(permit, {
       companyId,
       outputNo: `O${suffix}`,
       warehouseId,
@@ -389,7 +408,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     cleanupIds.outputs.push(output.id)
 
     // 工单1(40) 分两次入库：30 + 10
-    await mfg.outputs.createOutputItem(actor, {
+    await mfg.outputs.createOutputItem(permit, {
       outputId: output.id,
       idx: 1,
       workOrderId: wo.id,
@@ -398,21 +417,34 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       qty: '30',
     })
 
-    const audited1 = await mfg.outputs.auditOutput(actor, output.id)
+    // 子行列表（via 链编译成宿主 EXISTS，别名须与投影子查询一致）
+    const itemsPage = await mfg.outputs.listOutputItems(permit, { outputId: output.id })
+    expect(itemsPage.count).toBe(1)
+    expect(itemsPage.results[0]!.outputNo).toBe(`O${suffix}`)
+    const demandItemsPage = await mfg.demands.listDemandItems(permit, { demandId: demand.id })
+    expect(demandItemsPage.count).toBe(1)
+    const woPage = await mfg.workOrders.listWorkOrders(permit, { companyId })
+    expect(woPage.results.some((r) => r.id === wo.id)).toBe(true)
+    const outputsPage = await mfg.outputs.listOutputs(permit, { companyId })
+    expect(outputsPage.results.some((r) => r.id === output.id)).toBe(true)
+    const demandsPage = await mfg.demands.listDemands(permit, { companyId })
+    expect(demandsPage.results.some((r) => r.id === demand.id)).toBe(true)
+
+    const audited1 = await mfg.outputs.auditOutput(permit, output.id)
     expect(audited1.status).toBe('audited')
 
-    const woMid = await mfg.workOrders.getWorkOrder(actor, wo.id)
+    const woMid = await mfg.workOrders.getWorkOrder(permit, wo.id)
     expect(woMid.receivedBaseQty).toBe('30')
     expect(woMid.remainingBaseQty).toBe('10')
     expect(woMid.status).toBe('in_progress')
 
-    const output2 = await mfg.outputs.createOutput(actor, {
+    const output2 = await mfg.outputs.createOutput(permit, {
       companyId,
       outputNo: `O2${suffix}`,
       warehouseId,
     })
     cleanupIds.outputs.push(output2.id)
-    await mfg.outputs.createOutputItem(actor, {
+    await mfg.outputs.createOutputItem(permit, {
       outputId: output2.id,
       idx: 1,
       workOrderId: wo.id,
@@ -420,20 +452,20 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       warehouseId,
       qty: '10',
     })
-    await mfg.outputs.auditOutput(actor, output2.id)
+    await mfg.outputs.auditOutput(permit, output2.id)
 
-    const woDone = await mfg.workOrders.getWorkOrder(actor, wo.id)
+    const woDone = await mfg.workOrders.getWorkOrder(permit, wo.id)
     expect(woDone.status).toBe('completed')
     expect(woDone.receivedBaseQty).toBe('40')
 
     // 工单2(60) 一次入满 → 需求行双投影完成
-    const output3 = await mfg.outputs.createOutput(actor, {
+    const output3 = await mfg.outputs.createOutput(permit, {
       companyId,
       outputNo: `O3${suffix}`,
       warehouseId,
     })
     cleanupIds.outputs.push(output3.id)
-    await mfg.outputs.createOutputItem(actor, {
+    await mfg.outputs.createOutputItem(permit, {
       outputId: output3.id,
       idx: 1,
       workOrderId: wo2.id,
@@ -441,50 +473,50 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       warehouseId,
       qty: '60',
     })
-    await mfg.outputs.auditOutput(actor, output3.id)
+    await mfg.outputs.auditOutput(permit, output3.id)
 
-    const lineDone = await mfg.demands.getDemandItem(actor, line.id)
+    const lineDone = await mfg.demands.getDemandItem(permit, line.id)
     expect(lineDone.completedQty).toBe('100')
     expect(lineDone.status).toBe('completed')
 
     // 作废工单2入库 → 需求行回已安排
-    await mfg.outputs.voidOutput(actor, output3.id)
-    const wo2Reopen = await mfg.workOrders.getWorkOrder(actor, wo2.id)
+    await mfg.outputs.voidOutput(permit, output3.id)
+    const wo2Reopen = await mfg.workOrders.getWorkOrder(permit, wo2.id)
     expect(wo2Reopen.status).toBe('in_progress')
     expect(wo2Reopen.receivedBaseQty).toBe('0')
-    const lineReopen = await mfg.demands.getDemandItem(actor, line.id)
+    const lineReopen = await mfg.demands.getDemandItem(permit, line.id)
     expect(lineReopen.status).toBe('scheduled')
     expect(lineReopen.completedQty).toBe('40')
   })
 
   test('生产入库超入容差硬拦', async () => {
-    const demand = await mfg.demands.createDemand(actor, {
+    const demand = await mfg.demands.createDemand(permit, {
       companyId,
       demandNo: `DT${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
-    const line = await mfg.demands.createDemandItem(actor, {
+    const line = await mfg.demands.createDemandItem(permit, {
       demandId: demand.id,
       idx: 1,
       materialId,
       unitId,
       qty: '10',
     })
-    await mfg.demands.confirmDemand(actor, demand.id)
-    const wo = await mfg.workOrders.createWorkOrder(actor, {
+    await mfg.demands.confirmDemand(permit, demand.id)
+    const wo = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line.id,
       workOrderNo: `WOT${suffix}`,
     })
     cleanupIds.workOrders.push(wo.id)
 
     // 默认容差 0：超入 1 应失败
-    const output = await mfg.outputs.createOutput(actor, {
+    const output = await mfg.outputs.createOutput(permit, {
       companyId,
       outputNo: `OX${suffix}`,
       warehouseId,
     })
     cleanupIds.outputs.push(output.id)
-    await mfg.outputs.createOutputItem(actor, {
+    await mfg.outputs.createOutputItem(permit, {
       outputId: output.id,
       idx: 1,
       workOrderId: wo.id,
@@ -492,7 +524,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       warehouseId,
       qty: '11',
     })
-    await expect(mfg.outputs.auditOutput(actor, output.id)).rejects.toMatchObject({
+    await expect(mfg.outputs.auditOutput(permit, output.id)).rejects.toMatchObject({
       code: 'conflict',
     })
   })
@@ -510,31 +542,31 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
         default_unit_id: unitId,
       })
       .execute()
-    const demand = await mfg.demands.createDemand(actor, {
+    const demand = await mfg.demands.createDemand(permit, {
       companyId,
       demandNo: `DTM${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
-    const line = await mfg.demands.createDemandItem(actor, {
+    const line = await mfg.demands.createDemandItem(permit, {
       demandId: demand.id,
       idx: 1,
       materialId: matId,
       unitId,
       qty: '5',
     })
-    await mfg.demands.confirmDemand(actor, demand.id)
-    const wo = await mfg.workOrders.createWorkOrder(actor, {
+    await mfg.demands.confirmDemand(permit, demand.id)
+    const wo = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line.id,
       workOrderNo: `WOTM${suffix}`,
     })
     cleanupIds.workOrders.push(wo.id)
-    const output = await mfg.outputs.createOutput(actor, {
+    const output = await mfg.outputs.createOutput(permit, {
       companyId,
       outputNo: `OXM${suffix}`,
       warehouseId,
     })
     cleanupIds.outputs.push(output.id)
-    await mfg.outputs.createOutputItem(actor, {
+    await mfg.outputs.createOutputItem(permit, {
       outputId: output.id,
       idx: 1,
       workOrderId: wo.id,
@@ -548,7 +580,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       .set({ material_type: 'VIRTUAL' })
       .where('id', '=', matId)
       .execute()
-    await expect(mfg.outputs.auditOutput(actor, output.id)).rejects.toMatchObject({
+    await expect(mfg.outputs.auditOutput(permit, output.id)).rejects.toMatchObject({
       code: 'conflict',
       message: '工单物料类型已变更为非库存类,不能生产入库',
     })
@@ -563,38 +595,38 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
   })
 
   test('兼容点完成→库存安排；改履约方式已取消', async () => {
-    const demand = await mfg.demands.createDemand(actor, {
+    const demand = await mfg.demands.createDemand(permit, {
       companyId,
       demandNo: `DS${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
-    const stockLine = await mfg.demands.createDemandItem(actor, {
+    const stockLine = await mfg.demands.createDemandItem(permit, {
       demandId: demand.id,
       idx: 1,
       materialId,
       unitId,
       qty: '5',
     })
-    await mfg.demands.confirmDemand(actor, demand.id)
-    const done = await mfg.demands.completeDemandItem(actor, stockLine.id)
+    await mfg.demands.confirmDemand(permit, demand.id)
+    const done = await mfg.demands.completeDemandItem(permit, stockLine.id)
     expect(done.status).toBe('completed')
     expect(done.arrangedQty).toBe('5')
     expect(done.completedQty).toBe('5')
 
-    const demand2 = await mfg.demands.createDemand(actor, {
+    const demand2 = await mfg.demands.createDemand(permit, {
       companyId,
       demandNo: `DC${suffix}`,
     })
     cleanupIds.demands.push(demand2.id)
-    const buyLine = await mfg.demands.createDemandItem(actor, {
+    const buyLine = await mfg.demands.createDemandItem(permit, {
       demandId: demand2.id,
       idx: 1,
       materialId,
       unitId,
       qty: '3',
     })
-    await mfg.demands.confirmDemand(actor, demand2.id)
-    await expect(mfg.demands.changeFulfillment(actor, buyLine.id, 'MAKE')).rejects.toMatchObject({
+    await mfg.demands.confirmDemand(permit, demand2.id)
+    await expect(mfg.demands.changeFulfillment(permit, buyLine.id, 'MAKE')).rejects.toMatchObject({
       code: 'conflict',
     })
   })
@@ -625,20 +657,20 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       })
       .execute()
 
-    const demand = await mfg.demands.createDemand(actor, {
+    const demand = await mfg.demands.createDemand(permit, {
       companyId,
       demandNo: `DDRAW${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
-    const line = await mfg.demands.createDemandItem(actor, {
+    const line = await mfg.demands.createDemandItem(permit, {
       demandId: demand.id,
       idx: 1,
       materialId,
       unitId,
       qty: '8',
     })
-    await mfg.demands.confirmDemand(actor, demand.id)
-    const wo = await mfg.workOrders.createWorkOrder(actor, {
+    await mfg.demands.confirmDemand(permit, demand.id)
+    const wo = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line.id,
       workOrderNo: `WODRAW${suffix}`,
       qty: '8',
@@ -662,20 +694,20 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       .where('owner_type', '=', 'inv_material')
       .where('owner_id', '=', materialId)
       .execute()
-    const demand2 = await mfg.demands.createDemand(actor, {
+    const demand2 = await mfg.demands.createDemand(permit, {
       companyId,
       demandNo: `DNODRAW${suffix}`,
     })
     cleanupIds.demands.push(demand2.id)
-    const line2 = await mfg.demands.createDemandItem(actor, {
+    const line2 = await mfg.demands.createDemandItem(permit, {
       demandId: demand2.id,
       idx: 1,
       materialId,
       unitId,
       qty: '1',
     })
-    await mfg.demands.confirmDemand(actor, demand2.id)
-    const wo2 = await mfg.workOrders.createWorkOrder(actor, {
+    await mfg.demands.confirmDemand(permit, demand2.id)
+    const wo2 = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line2.id,
       workOrderNo: `WONODRAW${suffix}`,
       qty: '1',
@@ -691,33 +723,33 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
   })
 
   test('创建工单可直接挂启用中 BOM 并快照', async () => {
-    const bom = await mfg.master.createBom(actor, {
+    const bom = await mfg.master.createBom(masterPermit('mfgBoms', 'create'), {
       code: `BCR${suffix}`,
       materialId,
       planName: '创建时挂',
       status: 'active',
     })
     cleanupIds.boms.push(bom.id)
-    await mfg.master.createComponent(actor, {
+    await mfg.master.createComponent(masterPermit('mfgBomComponents', 'update'), {
       bomId: bom.id,
       materialId: componentId,
       unitId,
       quantity: '1.5',
     })
-    const demand = await mfg.demands.createDemand(actor, {
+    const demand = await mfg.demands.createDemand(permit, {
       companyId,
       demandNo: `DCR${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
-    const line = await mfg.demands.createDemandItem(actor, {
+    const line = await mfg.demands.createDemandItem(permit, {
       demandId: demand.id,
       idx: 1,
       materialId,
       unitId,
       qty: '6',
     })
-    await mfg.demands.confirmDemand(actor, demand.id)
-    const wo = await mfg.workOrders.createWorkOrder(actor, {
+    await mfg.demands.confirmDemand(permit, demand.id)
+    const wo = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line.id,
       workOrderNo: `WOCR${suffix}`,
       qty: '6',
@@ -725,33 +757,33 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     })
     cleanupIds.workOrders.push(wo.id)
     expect(wo.bomId).toBe(bom.id)
-    const snap = await mfg.workOrders.getBomSnapshot(actor, wo.id)
+    const snap = await mfg.workOrders.getBomSnapshot(permit, wo.id)
     expect(snap.components).toHaveLength(1)
     expect(snap.components[0]!.quantity).toBe('1.5')
   })
 
   test('工单内嵌创建 BOM：启用态 + 立即选入快照', async () => {
-    const demand = await mfg.demands.createDemand(actor, {
+    const demand = await mfg.demands.createDemand(permit, {
       companyId,
       demandNo: `DINL${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
-    const line = await mfg.demands.createDemandItem(actor, {
+    const line = await mfg.demands.createDemandItem(permit, {
       demandId: demand.id,
       idx: 1,
       materialId,
       unitId,
       qty: '12',
     })
-    await mfg.demands.confirmDemand(actor, demand.id)
-    const wo = await mfg.workOrders.createWorkOrder(actor, {
+    await mfg.demands.confirmDemand(permit, demand.id)
+    const wo = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line.id,
       workOrderNo: `WOINL${suffix}`,
       qty: '12',
     })
     cleanupIds.workOrders.push(wo.id)
 
-    const { workOrder, bom } = await mfg.workOrders.createInlineBom(actor, wo.id, {
+    const { workOrder, bom } = await mfg.workOrders.createInlineBom(permit, wo.id, {
       code: `BINL${suffix}`,
       planName: '工单内嵌',
       components: [
@@ -767,7 +799,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     expect(bom.status).toBe('active')
     expect(bom.materialId).toBe(materialId)
     expect(workOrder.bomId).toBe(bom.id)
-    const snap = await mfg.workOrders.getBomSnapshot(actor, wo.id)
+    const snap = await mfg.workOrders.getBomSnapshot(permit, wo.id)
     expect(snap.components).toHaveLength(1)
     expect(snap.components[0]!.quantity).toBe('3')
     expect(snap.components[0]!.lossRate).toBe('0.1')
@@ -776,21 +808,21 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
   test('混排矩阵：40 工单 + 30 采购 + 30 关闭 + 入库', async () => {
     // 完整路径：生产安排 + 采购安排（审核倒写语义）+ 关闭 + 生产入库完成判定
     const { recomputeDemandItemProjections } = await import('./arrangement.ts')
-    const demand = await mfg.demands.createDemand(actor, {
+    const demand = await mfg.demands.createDemand(permit, {
       companyId,
       demandNo: `DMX${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
-    const line = await mfg.demands.createDemandItem(actor, {
+    const line = await mfg.demands.createDemandItem(permit, {
       demandId: demand.id,
       idx: 1,
       materialId,
       unitId,
       qty: '100',
     })
-    await mfg.demands.confirmDemand(actor, demand.id)
+    await mfg.demands.confirmDemand(permit, demand.id)
 
-    const wo = await mfg.workOrders.createWorkOrder(actor, {
+    const wo = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line.id,
       workOrderNo: `WOMX${suffix}`,
       qty: '40',
@@ -817,24 +849,24 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       .execute()
     await recomputeDemandItemProjections(db, line.id)
 
-    await mfg.demands.createArrangement(actor, {
+    await mfg.demands.createArrangement(permit, {
       demandItemId: line.id,
       arrangementType: 'close',
       qty: '30',
     })
 
-    let item = await mfg.demands.getDemandItem(actor, line.id)
+    let item = await mfg.demands.getDemandItem(permit, line.id)
     expect(item.arrangedQty).toBe('100')
     expect(item.completedQty).toBe('30') // 仅关闭完成；工单未入、采购未收
     expect(item.status).toBe('scheduled')
 
-    const output = await mfg.outputs.createOutput(actor, {
+    const output = await mfg.outputs.createOutput(permit, {
       companyId,
       outputNo: `OMX${suffix}`,
       warehouseId,
     })
     cleanupIds.outputs.push(output.id)
-    await mfg.outputs.createOutputItem(actor, {
+    await mfg.outputs.createOutputItem(permit, {
       outputId: output.id,
       idx: 1,
       workOrderId: wo.id,
@@ -842,9 +874,9 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       warehouseId,
       qty: '40',
     })
-    await mfg.outputs.auditOutput(actor, output.id)
+    await mfg.outputs.auditOutput(permit, output.id)
 
-    item = await mfg.demands.getDemandItem(actor, line.id)
+    item = await mfg.demands.getDemandItem(permit, line.id)
     expect(item.completedQty).toBe('70') // 关闭 30 + 生产入 40
     expect(item.status).toBe('scheduled')
 
@@ -855,12 +887,12 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       .where('id', '=', line.id)
       .execute()
     await recomputeDemandItemProjections(db, line.id)
-    item = await mfg.demands.getDemandItem(actor, line.id)
+    item = await mfg.demands.getDemandItem(permit, line.id)
     expect(item.arrangedQty).toBe('100')
     expect(item.completedQty).toBe('100')
     expect(item.status).toBe('completed')
 
-    const arrangements = await mfg.demands.listArrangements(actor, line.id)
+    const arrangements = await mfg.demands.listArrangements(permit, line.id)
     const types = arrangements.map((a) => a.arrangementType).sort()
     expect(types).toEqual(['close', 'make', 'purchase'])
   })
@@ -890,7 +922,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
 
     // BOM 母物料/配料行/副产品行均限库存类
     await expect(
-      mfg.master.createBom(actor, {
+      mfg.master.createBom(masterPermit('mfgBoms', 'create'), {
         code: `BV${suffix}`,
         materialId: virtualMaterialId,
       }),
@@ -898,13 +930,13 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       code: 'validation',
       fields: { materialId: ['仅库存类物料可进该单据'] },
     })
-    const bom = await mfg.master.createBom(actor, {
+    const bom = await mfg.master.createBom(masterPermit('mfgBoms', 'create'), {
       code: `BS${suffix}`,
       materialId,
     })
     cleanupIds.boms.push(bom.id)
     await expect(
-      mfg.master.createComponent(actor, {
+      mfg.master.createComponent(masterPermit('mfgBomComponents', 'update'), {
         bomId: bom.id,
         materialId: virtualMaterialId,
         unitId,
@@ -915,7 +947,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       fields: { materialId: ['仅库存类物料可进该单据'] },
     })
     await expect(
-      mfg.master.createByproduct(actor, {
+      mfg.master.createByproduct(masterPermit('mfgBomByproducts', 'update'), {
         bomId: bom.id,
         materialId: assetMaterialId,
         unitId,
@@ -927,27 +959,27 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     })
 
     // 需求行不限类型；但生成工单与库存安排限库存类
-    const demand = await mfg.demands.createDemand(actor, {
+    const demand = await mfg.demands.createDemand(permit, {
       companyId,
       demandNo: `DMT${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
-    const line = await mfg.demands.createDemandItem(actor, {
+    const line = await mfg.demands.createDemandItem(permit, {
       demandId: demand.id,
       idx: 1,
       materialId: virtualMaterialId,
       unitId,
       qty: '10',
     })
-    await mfg.demands.confirmDemand(actor, demand.id)
+    await mfg.demands.confirmDemand(permit, demand.id)
     await expect(
-      mfg.workOrders.createWorkOrder(actor, { demandItemId: line.id }),
+      mfg.workOrders.createWorkOrder(permit, { demandItemId: line.id }),
     ).rejects.toMatchObject({
       code: 'validation',
       fields: { materialId: ['仅库存类物料可进该单据'] },
     })
     await expect(
-      mfg.demands.createArrangement(actor, {
+      mfg.demands.createArrangement(permit, {
         demandItemId: line.id,
         arrangementType: 'stock',
         qty: '5',
@@ -957,7 +989,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       fields: { materialId: ['仅库存类物料可做库存安排'] },
     })
     // 关闭安排不受物料类型限制
-    const closed = await mfg.demands.createArrangement(actor, {
+    const closed = await mfg.demands.createArrangement(permit, {
       demandItemId: line.id,
       arrangementType: 'close',
       qty: '5',

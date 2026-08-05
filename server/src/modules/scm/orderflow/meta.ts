@@ -37,7 +37,7 @@ export function orderFlowItemMeta(): ResourceMeta {
     permissionPrefix: 'base.order_flow',
     permissionLabel: '订单收发货历史',
     table: 'scm_order_flow_item',
-    readPermissionsAny: [...ORDER_FLOW_SOURCE_READ_PERMISSIONS],
+    authz: { kind: 'company', readAnyOf: [...ORDER_FLOW_SOURCE_READ_PERMISSIONS] },
     fields: [
       f('id', 'id', 'string', '行标识(单据类型:来源行 id)', {
         filterable: true,

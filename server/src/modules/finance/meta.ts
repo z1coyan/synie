@@ -62,11 +62,12 @@ export function vatInvoiceResourceMeta(): ResourceMeta {
   return {
     name: VAT_INVOICE_RESOURCE_NAME,
     classification: { presentation: 'extension', interactive: true, note: 'OCR Presentation Extension' },
-    attachments: { companyScoped: true },
+    attachments: {},
     permissionPrefix: 'acc.vat_invoice',
     numbering: true,
     permissionLabel: '增值税发票',
     table: 'acc_vat_invoice',
+    authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('doc_no', 'docNo', 'string', '内部单据编号', { filterable: true, sortable: true }),
@@ -370,10 +371,11 @@ export function bankAccountResourceMeta(): ResourceMeta {
   return {
     name: 'accBankAccounts',
     classification: { presentation: 'basic', interactive: true },
-    attachments: { companyScoped: true },
+    attachments: {},
     permissionPrefix: 'acc.bank_account',
     permissionLabel: '银行账户',
     table: 'acc_bank_account',
+    authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('alias', 'alias', 'string', '账户别名', { filterable: true, sortable: true }),
@@ -416,10 +418,11 @@ export function bankTransactionResourceMeta(): ResourceMeta {
   return {
     name: 'accBankTransactions',
     classification: { presentation: 'extension', interactive: true, note: '对账 reconcile 命令 + 导入' },
-    attachments: { companyScoped: true },
+    attachments: {},
     permissionPrefix: ACC_BANK_TRANSACTION.prefix,
     permissionLabel: '银行流水',
     table: 'acc_bank_transaction',
+    authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('occurred_at', 'occurredAt', 'datetime', '交易时间', { filterable: true, sortable: true }),
@@ -473,6 +476,7 @@ export function bankImportTemplateResourceMeta(): ResourceMeta {
     permissionPrefix: 'acc.bank_import_template',
     permissionLabel: '流水导入模板',
     table: 'acc_bank_import_template',
+    authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('name', 'name', 'string', '模板名称', {
@@ -546,6 +550,12 @@ export function bankImportResourceMeta(): ResourceMeta {
     permissionPrefix: 'acc.bank_transaction',
     permissionLabel: '银行流水',
     table: 'acc_bank_import',
+    /**
+     * import-as-read 重载：导入批次没有独立权限点，读写一律由单码
+     * `acc.bank_transaction:import` 门控（迁移前服务里就是这一个码）。
+     * readAnyOf 让 read 也解析到该码；批次因此不进权限目录（码归银行流水资源）。
+     */
+    authz: { kind: 'company', readAnyOf: [ACC_BANK_TRANSACTION.import] },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('status', 'status', 'enum', '状态', {
@@ -582,7 +592,12 @@ export function bankImportResourceMeta(): ResourceMeta {
       field('item_count', 'itemCount', 'integer', '行数', { readonly: true }),
       field('error_count', 'errorCount', 'integer', '错误行数', { readonly: true }),
     ],
-    actions: [{ key: 'read', label: '查看', scope: 'both' }],
+    // read 由 readAnyOf 给出；import 必须显式声明，否则 guard 的 assertActionDeclared 会 500。
+    // 本资源因 readAnyOf 不进权限目录，故两个动作都不新增权限码（码归 acc.bank_transaction）
+    actions: [
+      { key: 'read', label: '查看', scope: 'both' },
+      { key: 'import', label: '导入', scope: 'both' },
+    ],
     // exclude 保留历史审计面：聚合计数列不进审计 diff
     audit: { enabled: true, exclude: ['item_count', 'error_count'] },
 
@@ -596,6 +611,7 @@ export function bankImportItemResourceMeta(): ResourceMeta {
     permissionPrefix: 'acc.bank_transaction',
     permissionLabel: '银行流水',
     table: 'acc_bank_import_item',
+    authz: { kind: 'via', parent: 'accBankImports', fk: 'import_id' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('row_no', 'rowNo', 'integer', '行号', { filterable: true, sortable: true }),
@@ -636,6 +652,7 @@ export function bankReconciliationResourceMeta(): ResourceMeta {
     permissionPrefix: 'acc.bank_transaction',
     permissionLabel: '银行流水',
     table: 'acc_bank_reconciliation',
+    authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('amount', 'amount', 'decimal', '对账金额', { filterable: true, sortable: true, decimalScale: 2 }),
@@ -668,6 +685,7 @@ export function expenseReportResourceMeta(): ResourceMeta {
     numbering: true,
     permissionLabel: '费用报销单',
     table: 'acc_expense_report',
+    authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('doc_no', 'docNo', 'string', '单据编号(留空自动取号)', { filterable: true, sortable: true }),
@@ -725,6 +743,7 @@ export function expenseReportItemResourceMeta(): ResourceMeta {
     permissionPrefix: 'acc.expense_report',
     permissionLabel: '费用报销单',
     table: 'acc_expense_report_item',
+    authz: { kind: 'via', parent: 'accExpenseReports', fk: 'report_id' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('idx', 'idx', 'integer', '行号', { filterable: true, sortable: true }),
@@ -766,10 +785,11 @@ export function billResourceMeta(): ResourceMeta {
     name: 'accBills',
     classification: { presentation: 'extension', interactive: true, note: '票面影像附件' },
     /** 票面影像宿主：acc_bill 无 company_id（全局宿主） */
-    attachments: { companyScoped: false },
+    attachments: {},
     permissionPrefix: 'acc.bill',
     permissionLabel: '承兑票据',
     table: 'acc_bill',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('bill_no', 'billNo', 'string', '票据号码', { filterable: true, sortable: true }),
@@ -831,11 +851,12 @@ export function billTransactionResourceMeta(): ResourceMeta {
   return {
     name: 'accBillTransactions',
     classification: { presentation: 'extension', interactive: true },
-    attachments: { companyScoped: true },
+    attachments: {},
     permissionPrefix: 'acc.bill_transaction',
     numbering: true,
     permissionLabel: '承兑交易',
     table: 'acc_bill_transaction',
+    authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('doc_no', 'docNo', 'string', '单据编号', { filterable: true, sortable: true }),
@@ -927,6 +948,7 @@ export function billHoldingResourceMeta(): ResourceMeta {
     permissionPrefix: 'acc.bill_holding',
     permissionLabel: '持有承兑',
     table: 'acc_bill_holding',
+    authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('bill_no', 'billNo', 'string', '票据号码(冗余自票据主档)', { filterable: true, sortable: true }),

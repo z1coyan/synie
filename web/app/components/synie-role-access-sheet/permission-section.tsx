@@ -1,12 +1,17 @@
 // 功能权限区：自原 SyniePermissionSheet 平移（搜索/域导航/权限矩阵/三态全选），
 // 新增资源行锚点 id 与跳转高亮（供菜单区注解点击定位）。
-import { Button, Checkbox, Chip, SearchField, Table } from '@heroui/react'
+// 三元组授权（工单 13）：已勾选码旁渲染数据范围下拉（选项由该资源 supportedScopes 驱动，
+// 无 owner/dept 声明的资源整行不出现范围控件）。
+import { Button, Checkbox, Chip, ListBox, SearchField, Select, Table } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
+import type { DataScope } from '@synie/shared'
 import { QueryState } from '../synie-query-state/QueryState'
 import {
   CANONICAL_ACTIONS,
+  SCOPE_LABELS,
   groupByDomain,
   groupCodes,
+  scopeOptionsOf,
   searchGroups,
   splitActions,
   triState,
@@ -20,7 +25,8 @@ export interface PermissionSectionProps {
   loaded: { catalog: CatalogGroup[]; rows: GrantedRow[] } | null
   error: string | null
   onRetry: () => void
-  checked: Set<string>
+  /** 勾选态：码 → 数据范围 */
+  checked: Map<string, DataScope>
   /** 交互禁用（只读或保存中） */
   disabled: boolean
   keyword: string
@@ -30,6 +36,7 @@ export interface PermissionSectionProps {
   expanded: Set<string>
   onToggle: (code: string, selected: boolean) => void
   onToggleMany: (codes: string[], selected: boolean) => void
+  onSetScope: (code: string, scope: DataScope) => void
   onToggleExpand: (prefix: string) => void
   /** 跳转高亮的资源行（短时闪现后由容器清空） */
   highlightPrefix: string | null
@@ -37,35 +44,88 @@ export interface PermissionSectionProps {
 
 /** MatrixTable 需要的外部状态与回调，由本组件持有（搜索视图与域视图共用） */
 interface MatrixCtx {
-  checked: Set<string>
+  checked: Map<string, DataScope>
   disabled: boolean
   expanded: Set<string>
   highlightPrefix: string | null
   toggle: (code: string, selected: boolean) => void
   toggleMany: (codes: string[], selected: boolean) => void
+  setScope: (code: string, scope: DataScope) => void
   toggleExpand: (prefix: string) => void
+}
+
+/** 已勾选码的紧凑数据范围下拉（首版从简：每码一个 Select，表达力优先） */
+function ScopeSelect(props: {
+  code: string
+  scope: DataScope
+  options: DataScope[]
+  disabled: boolean
+  onChange: (scope: DataScope) => void
+}) {
+  return (
+    <Select
+      aria-label={`${props.code} 数据范围`}
+      className="w-32"
+      value={props.scope}
+      isDisabled={props.disabled}
+      onChange={(v) => {
+        if (v != null) props.onChange(v as DataScope)
+      }}
+    >
+      <Select.Trigger>
+        <Select.Value />
+        <Select.Indicator />
+      </Select.Trigger>
+      <Select.Popover>
+        <ListBox>
+          {props.options.map((s) => (
+            <ListBox.Item key={s} id={s} textValue={SCOPE_LABELS[s] ?? s}>
+              {SCOPE_LABELS[s] ?? s}
+              <ListBox.ItemIndicator />
+            </ListBox.Item>
+          ))}
+        </ListBox>
+      </Select.Popover>
+    </Select>
+  )
 }
 
 /** 某域/某搜索结果分组的一张权限矩阵：行=资源，列=固定 10 动作 + 行尾"更多" */
 function MatrixTable(props: { ariaLabel: string; groups: CatalogGroup[]; ctx: MatrixCtx }) {
   const { groups, ctx } = props
 
-  const check = (code: string) => (
-    <Checkbox
-      aria-label={code}
-      // 表格树内 Table 的 CheckboxContext 只认 slot="selection";slot={null} 退出,否则渲染抛错
-      slot={null}
-      isSelected={ctx.checked.has(code)}
-      isDisabled={ctx.disabled}
-      onChange={(selected: boolean) => ctx.toggle(code, selected)}
-    >
-      <Checkbox.Content>
-        <Checkbox.Control>
-          <Checkbox.Indicator />
-        </Checkbox.Control>
-      </Checkbox.Content>
-    </Checkbox>
-  )
+  // 勾选单元格：复选框 +（已勾选且资源支持范围维度时）范围下拉
+  const check = (g: CatalogGroup, code: string) => {
+    const scopeOptions = scopeOptionsOf(g)
+    const scope = ctx.checked.get(code)
+    return (
+      <div className="flex flex-col items-start gap-1">
+        <Checkbox
+          aria-label={code}
+          // 表格树内 Table 的 CheckboxContext 只认 slot="selection";slot={null} 退出,否则渲染抛错
+          slot={null}
+          isSelected={scope !== undefined}
+          isDisabled={ctx.disabled}
+          onChange={(selected: boolean) => ctx.toggle(code, selected)}
+        >
+          <Checkbox.Content>
+            <Checkbox.Control>
+              <Checkbox.Indicator />
+            </Checkbox.Control>
+          </Checkbox.Content>
+        </Checkbox>
+        {scope !== undefined && scopeOptions !== null && (
+          <ScopeSelect
+            code={code}
+            scope={scopeOptions.includes(scope) ? scope : 'all'}
+            options={scopeOptions}
+            disabled={ctx.disabled}
+            onChange={(s) => ctx.setScope(code, s)}
+          />
+        )}
+      </div>
+    )
+  }
 
   // 三级全选共用:全勾/半选/未勾;无适用码时禁用(如某列在当前组无资源支持)
   const triCheck = (label: string, codes: string[]) => {
@@ -131,7 +191,7 @@ function MatrixTable(props: { ariaLabel: string; groups: CatalogGroup[]; ctx: Ma
                   </Table.Cell>
                   {CANONICAL_ACTIONS.map((a) => (
                     <Table.Cell key={a}>
-                      {fixed.includes(a) ? check(`${g.prefix}:${a}`) : <span className="text-ink-500">—</span>}
+                      {fixed.includes(a) ? check(g, `${g.prefix}:${a}`) : <span className="text-ink-500">—</span>}
                     </Table.Cell>
                   ))}
                   <Table.Cell>
@@ -144,27 +204,39 @@ function MatrixTable(props: { ariaLabel: string; groups: CatalogGroup[]; ctx: Ma
                 </Table.Row>
               )
               if (!isExpanded) return [mainRow]
+              const scopeOptions = scopeOptionsOf(g)
               const moreRow = (
                 <Table.Row key={`${g.prefix}:more`}>
                   <Table.Cell colSpan={CANONICAL_ACTIONS.length + 2}>
                     <div className="flex flex-wrap gap-x-4 gap-y-2 py-1">
                       {extra.map((a) => {
                         const code = `${g.prefix}:${a}`
+                        const scope = ctx.checked.get(code)
                         return (
-                          <Checkbox
-                            key={a}
-                            slot={null}
-                            isSelected={ctx.checked.has(code)}
-                            isDisabled={ctx.disabled}
-                            onChange={(selected: boolean) => ctx.toggle(code, selected)}
-                          >
-                            <Checkbox.Content>
-                              <Checkbox.Control>
-                                <Checkbox.Indicator />
-                              </Checkbox.Control>
-                              {actionLabel(a)}
-                            </Checkbox.Content>
-                          </Checkbox>
+                          <div key={a} className="flex flex-col items-start gap-1">
+                            <Checkbox
+                              slot={null}
+                              isSelected={scope !== undefined}
+                              isDisabled={ctx.disabled}
+                              onChange={(selected: boolean) => ctx.toggle(code, selected)}
+                            >
+                              <Checkbox.Content>
+                                <Checkbox.Control>
+                                  <Checkbox.Indicator />
+                                </Checkbox.Control>
+                                {actionLabel(a)}
+                              </Checkbox.Content>
+                            </Checkbox>
+                            {scope !== undefined && scopeOptions !== null && (
+                              <ScopeSelect
+                                code={code}
+                                scope={scopeOptions.includes(scope) ? scope : 'all'}
+                                options={scopeOptions}
+                                disabled={ctx.disabled}
+                                onChange={(s) => ctx.setScope(code, s)}
+                              />
+                            )}
+                          </div>
                         )
                       })}
                     </div>
@@ -198,6 +270,7 @@ export function PermissionSection(props: PermissionSectionProps) {
     highlightPrefix: props.highlightPrefix,
     toggle: props.onToggle,
     toggleMany: props.onToggleMany,
+    setScope: props.onSetScope,
     toggleExpand: props.onToggleExpand,
   }
 

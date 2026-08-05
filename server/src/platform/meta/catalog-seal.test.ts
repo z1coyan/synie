@@ -4,8 +4,9 @@ import { createSealedResourceRegistry, registerAllResources } from './register-a
 import { currencyResourceMeta, companyResourceMeta } from '~/modules/base/meta.ts'
 import type { Actor } from '../authz/actor.ts'
 import { decodeResourceDocument } from '@synie/shared'
+import { testActor } from '~/platform/authz/testing.ts'
 
-const superAdmin: Actor = {
+const superAdmin: Actor = testActor({
   userId: 'u',
   username: 'admin',
   name: null,
@@ -13,17 +14,17 @@ const superAdmin: Actor = {
   allCompanies: true,
   permissions: new Set(),
   companyIds: [],
-}
+})
 
-describe('Resource Catalog seal 与 v2 投影', () => {
+describe('Resource Catalog seal 与 v3 投影', () => {
   test('全部基线资源可规范化并 seal', () => {
     const registry = createRegistry()
     registerAllResources(registry)
     expect(registry.isSealed()).toBe(false)
     const report = registry.seal()
     expect(registry.isSealed()).toBe(true)
-    expect(report.total).toBe(103)
-    expect(report.normalized).toBe(103)
+    expect(report.total).toBe(105)
+    expect(report.normalized).toBe(105)
   })
 
   test('seal 后禁止继续注册', () => {
@@ -31,17 +32,21 @@ describe('Resource Catalog seal 与 v2 投影', () => {
     expect(() => registry.register(currencyResourceMeta())).toThrow(/已 seal/)
   })
 
-  test('Meta 响应仅为 ResourceDocument v2 envelope', () => {
+  test('Meta 响应仅为 ResourceDocument v3 envelope', () => {
     const registry = createSealedResourceRegistry()
     const doc = registry.buildDocument('basCurrencies', superAdmin)
-    expect(doc.schemaVersion).toBe(2)
+    expect(doc.schemaVersion).toBe(3)
     expect(doc.name).toBe('basCurrencies')
     const catalog = decodeResourceDocument(doc)
     expect(catalog.label).toBe('货币')
     expect(catalog.permissionPrefix).toBe('base.currency')
     expect(catalog.form.kind).toBe('basic')
     expect(catalog.capabilities).toEqual(
-      expect.arrayContaining(['create', 'update', 'delete']),
+      expect.arrayContaining([
+        { action: 'create', scope: 'all' },
+        { action: 'update', scope: 'all' },
+        { action: 'delete', scope: 'all' },
+      ]),
     )
     // 无 v1 grid/form sibling
     expect(!('grid' in doc)).toBe(true)
@@ -50,7 +55,7 @@ describe('Resource Catalog seal 与 v2 投影', () => {
 
   test('无目标读取权：reference targetUnavailable，basic 布局剔除可编辑外键', () => {
     const registry = createSealedResourceRegistry()
-    const actor: Actor = {
+    const actor: Actor = testActor({
       userId: 'u',
       username: 'co',
       name: null,
@@ -58,7 +63,7 @@ describe('Resource Catalog seal 与 v2 投影', () => {
       allCompanies: true,
       permissions: new Set(['base.company:read', 'base.company:create', 'base.company:update']),
       companyIds: [],
-    }
+    })
     const doc = registry.buildDocument('basCompanies', actor)
     const catField = doc.fields.find((f) => f.name === 'baseCurrencyId')
     expect(catField?.kind).toBe('reference')
@@ -118,7 +123,13 @@ describe('Resource Catalog seal 与 v2 投影', () => {
     const registry = createSealedResourceRegistry()
     const doc = registry.buildDocument('basCurrencies', superAdmin)
     expect(doc.commands).toEqual([])
-    expect(doc.capabilities).toEqual(expect.arrayContaining(['create', 'update', 'delete']))
+    expect(doc.capabilities).toEqual(
+      expect.arrayContaining([
+        { action: 'create', scope: 'all' },
+        { action: 'update', scope: 'all' },
+        { action: 'delete', scope: 'all' },
+      ]),
+    )
   })
 
   test('basic FormMeta 不得重复 required/edit/label 字段事实', () => {
@@ -265,7 +276,7 @@ describe('Resource Catalog seal 与 v2 投影', () => {
     registerAllResources(registry)
     registry.seal()
     const all = registry.list()
-    expect(all.length).toBe(103)
+    expect(all.length).toBe(105)
     for (const resource of all) {
       expect(resource.classification, resource.name).toBeDefined()
     }

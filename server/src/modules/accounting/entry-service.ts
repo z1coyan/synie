@@ -1,19 +1,27 @@
 /**
  * 总账分录只读面 + 应收应付报表。
  * 分录写入只经 engines/gl；本模块不写 acc_gl_entry。
+ *
+ * 授权全由平台承担：路由挂 `guard(accGlEntries, 'read')`，本服务只收 Permit。
+ * 分录声明 `company` 而非 via：来源单据是多态的（voucher_type/voucher_id 跨资源），
+ * 无法静态声明单一 parent——与 `invStockEntries` 同判据（见工单 08）。
+ * 应收应付报表是单公司跨资源聚合：只做码级门控 + `companyInPermitScope` 的单公司边界，
+ * 不套行过滤（会把 dept/self 谓词编到聚合投影里不存在的列上）。
  */
 import { decimal, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import type { DB as Database } from '~/db/types.ts'
-import {
-  canAccessCompany,
-  hasPermission,
-  type Actor,
-} from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
-import { glEntryResourceMeta } from './meta.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { companyInPermitScope, loadAuthorized } from '~/db/load.ts'
+import { GL_ENTRY_RESOURCE_NAME, glEntryResourceMeta } from './meta.ts'
+
+export { GL_ENTRY_RESOURCE_NAME } from './meta.ts'
+
+const GL_ENTRY_TABLE = 'acc_gl_entry'
 
 export interface GlEntry {
   id: string
@@ -75,29 +83,30 @@ const DEBIT_ROLES = new Set([
 
 export type EntryService = ReturnType<typeof createEntryService>
 
-export function createEntryService(db: Kysely<Database>) {
-  async function get(actor: Actor, id: string): Promise<GlEntry> {
-    requireRead(actor)
-    const row = await db
-      .selectFrom('acc_gl_entry')
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst()
-    if (!row || !canAccessCompany(actor, row.company_id)) {
-      throw new ApiError('not_found', '总账分录不存在')
-    }
-    return mapEntry(row)
+export function createEntryService(db: Kysely<Database>, registry: Registry) {
+  const entryTarget = registry.authzTarget(GL_ENTRY_RESOURCE_NAME)
+
+  async function get(permit: Permit, id: string): Promise<GlEntry> {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target: entryTarget,
+      table: GL_ENTRY_TABLE,
+      id,
+      notFoundMessage: '总账分录不存在',
+    })
+    return mapEntry(row as never)
   }
 
   async function list(
-    actor: Actor,
+    permit: Permit,
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: GlEntry[] }> {
-    requireRead(actor)
-    const scope = companyScopeWhere(actor, 'company_id')
-    if (scope.empty) return { count: 0, results: [] }
-    return listFromSource({
+    return listAuthorized({
       db,
+      permit,
+      target: entryTarget,
+      alias: GL_ENTRY_TABLE,
       resource: glEntryResourceMeta(),
       source: sql` FROM acc_gl_entry`,
       select: sql`SELECT id, seq, posting_date, debit, credit, party_type, party_id,
@@ -105,26 +114,25 @@ voucher_type, voucher_id, voucher_no, is_cancelled, remarks, inserted_at, compan
 account_id, currency_id, is_reversed, is_reversal`,
       defaultOrder: sql`"seq" ASC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapEntry(r as never),
     })
   }
 
   async function report(
-    actor: Actor,
+    permit: Permit,
     query: { companyId: string; asOf: string },
   ): Promise<ArApReport> {
-    requireRead(actor)
     if (!query.companyId || !query.asOf) {
       throw ApiError.validation('应收应付报表参数不合法', {
         companyId: ['必填'],
         asOf: ['必填'],
       })
     }
-    if (!canAccessCompany(actor, query.companyId)) {
-      throw new ApiError('forbidden', '无权查看该公司数据')
-    }
     const asOf = query.asOf.trim().slice(0, 10)
+    // 单公司聚合：公司未授权即空结果（不泄露存在性），不套逐行过滤
+    if (!companyInPermitScope(permit, query.companyId)) {
+      return { asOf, roleAccounts: {}, rows: [] }
+    }
 
     const accounts = await db
       .selectFrom('bas_account')
@@ -251,12 +259,6 @@ account_id, currency_id, is_reversed, is_reversal`,
   }
 
   return { get, list, report }
-}
-
-function requireRead(actor: Actor | null): asserts actor is Actor {
-  if (!hasPermission(actor, 'acc.gl_entry:read')) {
-    throw new ApiError('forbidden', '无权查看总账分录')
-  }
 }
 
 function mapEntry(row: {

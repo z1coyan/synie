@@ -1,6 +1,9 @@
 /**
  * 库存域单据 REST：挂载于 /inventory（对齐 OpenAPI / server-go）。
  * 主数据（物料/分类/单位转换/仓库）已迁至 master-routes.ts，挂载于 /base。
+ *
+ * 逐端点挂 `guard(资源, 动作)`（requireAuth 之后），handler 用 `permitOf(c)` 取凭证。
+ * 动作码唯一事实源是 meta：盘点的 refresh 未声明独立动作，沿用 update 门控。
  */
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
@@ -8,13 +11,23 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
+import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
+import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
 import { dateIso, datetimeIso } from './helpers.ts'
-import type { StockDocService } from './stock-doc-service.ts'
-import type { StockTransferService } from './stock-transfer-service.ts'
-import type { StockCountService } from './stock-count-service.ts'
-import type { StockEntryService } from './stock-entry-service.ts'
+import { DOC_ITEM_RESOURCE, DOC_RESOURCE, type StockDocService } from './stock-doc-service.ts'
+import {
+  TRANSFER_ITEM_RESOURCE,
+  TRANSFER_RESOURCE,
+  type StockTransferService,
+} from './stock-transfer-service.ts'
+import {
+  COUNT_ITEM_RESOURCE,
+  COUNT_RESOURCE,
+  type StockCountService,
+} from './stock-count-service.ts'
+import { ENTRY_RESOURCE, type StockEntryService } from './stock-entry-service.ts'
 
 const idParam = z.object({ id: z.string().uuid() })
 
@@ -30,6 +43,7 @@ function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
 
 export interface InventoryRouteDeps {
   auth: AuthService
+  authz: AuthzEnforcer
   stockDocs: StockDocService
   stockTransfers: StockTransferService
   stockCounts: StockCountService
@@ -37,7 +51,14 @@ export interface InventoryRouteDeps {
 }
 
 export function inventoryRoutes(deps: InventoryRouteDeps) {
-  const { auth, stockDocs, stockTransfers, stockCounts, stockEntries } = deps
+  const { auth, authz, stockDocs, stockTransfers, stockCounts, stockEntries } = deps
+  const entryGuard = (action: string) => authz.guard(ENTRY_RESOURCE, action)
+  const docGuard = (action: string) => authz.guard(DOC_RESOURCE, action)
+  const docItemGuard = (action: string) => authz.guard(DOC_ITEM_RESOURCE, action)
+  const transferGuard = (action: string) => authz.guard(TRANSFER_RESOURCE, action)
+  const transferItemGuard = (action: string) => authz.guard(TRANSFER_ITEM_RESOURCE, action)
+  const countGuard = (action: string) => authz.guard(COUNT_RESOURCE, action)
+  const countItemGuard = (action: string) => authz.guard(COUNT_ITEM_RESOURCE, action)
 
   return (
     new Hono<AppEnv>()
@@ -45,22 +66,25 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       // —— 库存分录 / 余额 ——
       .post(
         '/stock-entries/query',
+        entryGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await stockEntries.list(c.get('actor')!, toList(c.req.valid('json')))
+          const result = await stockEntries.list(permitOf(c), toList(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(entryDto) })
         },
       )
       .get(
         '/stock-entries/:id',
+        entryGuard('read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await stockEntries.get(c.get('actor')!, c.req.valid('param').id)
+          const item = await stockEntries.get(permitOf(c), c.req.valid('param').id)
           return c.json(entryDto(item))
         },
       )
       .post(
         '/stock-balance/query',
+        entryGuard('read'),
         zValidator(
           'json',
           z
@@ -75,21 +99,23 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
           validationHook,
         ),
         async (c) => {
-          const results = await stockEntries.balance(c.get('actor')!, c.req.valid('json'))
+          const results = await stockEntries.balance(permitOf(c), c.req.valid('json'))
           return c.json({ results })
         },
       )
       // —— 手工出入库单 ——
       .post(
         '/stock-docs/query',
+        docGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await stockDocs.list(c.get('actor')!, toList(c.req.valid('json')))
+          const result = await stockDocs.list(permitOf(c), toList(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(stockDocDto) })
         },
       )
       .post(
         '/stock-docs',
+        docGuard('create'),
         zValidator(
           'json',
           z
@@ -106,20 +132,22 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
           validationHook,
         ),
         async (c) => {
-          const item = await stockDocs.create(c.get('actor')!, c.req.valid('json'))
+          const item = await stockDocs.create(permitOf(c), c.req.valid('json'))
           return c.json(stockDocDto(item), 201)
         },
       )
       .get(
         '/stock-docs/:id',
+        docGuard('read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await stockDocs.get(c.get('actor')!, c.req.valid('param').id)
+          const item = await stockDocs.get(permitOf(c), c.req.valid('param').id)
           return c.json(stockDocDto(item))
         },
       )
       .patch(
         '/stock-docs/:id',
+        docGuard('update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -138,7 +166,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
         async (c) => {
           const body = c.req.valid('json')
           const raw = (await c.req.json()) as Record<string, unknown>
-          const item = await stockDocs.update(c.get('actor')!, c.req.valid('param').id, {
+          const item = await stockDocs.update(permitOf(c), c.req.valid('param').id, {
             ...body,
             summaryPresent: Object.prototype.hasOwnProperty.call(raw, 'summary'),
             remarksPresent: Object.prototype.hasOwnProperty.call(raw, 'remarks'),
@@ -148,38 +176,43 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .delete(
         '/stock-docs/:id',
+        docGuard('delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          await stockDocs.remove(c.get('actor')!, c.req.valid('param').id)
+          await stockDocs.remove(permitOf(c), c.req.valid('param').id)
           return c.body(null, 204)
         },
       )
       .post(
         '/stock-docs/:id/audit',
+        docGuard('audit'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await stockDocs.audit(c.get('actor')!, c.req.valid('param').id)
+          const item = await stockDocs.audit(permitOf(c), c.req.valid('param').id)
           return c.json(stockDocDto(item))
         },
       )
       .post(
         '/stock-docs/:id/void',
+        docGuard('void'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await stockDocs.void(c.get('actor')!, c.req.valid('param').id)
+          const item = await stockDocs.void(permitOf(c), c.req.valid('param').id)
           return c.json(stockDocDto(item))
         },
       )
       .post(
         '/stock-doc-items/query',
+        docItemGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await stockDocs.queryItems(c.get('actor')!, toList(c.req.valid('json')))
+          const result = await stockDocs.queryItems(permitOf(c), toList(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(stockDocItemDto) })
         },
       )
       .post(
         '/stock-doc-items',
+        docItemGuard('create'),
         zValidator(
           'json',
           z
@@ -195,20 +228,22 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
           validationHook,
         ),
         async (c) => {
-          const item = await stockDocs.createItem(c.get('actor')!, c.req.valid('json'))
+          const item = await stockDocs.createItem(permitOf(c), c.req.valid('json'))
           return c.json(stockDocItemDto(item), 201)
         },
       )
       .get(
         '/stock-doc-items/:id',
+        docItemGuard('read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await stockDocs.getItem(c.get('actor')!, c.req.valid('param').id)
+          const item = await stockDocs.getItem(permitOf(c), c.req.valid('param').id)
           return c.json(stockDocItemDto(item))
         },
       )
       .patch(
         '/stock-doc-items/:id',
+        docItemGuard('update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -226,7 +261,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
         async (c) => {
           const body = c.req.valid('json')
           const raw = (await c.req.json()) as Record<string, unknown>
-          const item = await stockDocs.updateItem(c.get('actor')!, c.req.valid('param').id, {
+          const item = await stockDocs.updateItem(permitOf(c), c.req.valid('param').id, {
             ...body,
             remarkPresent: Object.prototype.hasOwnProperty.call(raw, 'remark'),
           })
@@ -235,23 +270,26 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .delete(
         '/stock-doc-items/:id',
+        docItemGuard('delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          await stockDocs.removeItem(c.get('actor')!, c.req.valid('param').id)
+          await stockDocs.removeItem(permitOf(c), c.req.valid('param').id)
           return c.body(null, 204)
         },
       )
       // —— 调拨单 ——
       .post(
         '/stock-transfers/query',
+        transferGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await stockTransfers.list(c.get('actor')!, toList(c.req.valid('json')))
+          const result = await stockTransfers.list(permitOf(c), toList(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(transferDto) })
         },
       )
       .post(
         '/stock-transfers',
+        transferGuard('create'),
         zValidator(
           'json',
           z
@@ -269,20 +307,22 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
           validationHook,
         ),
         async (c) => {
-          const item = await stockTransfers.create(c.get('actor')!, c.req.valid('json'))
+          const item = await stockTransfers.create(permitOf(c), c.req.valid('json'))
           return c.json(transferDto(item), 201)
         },
       )
       .get(
         '/stock-transfers/:id',
+        transferGuard('read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await stockTransfers.get(c.get('actor')!, c.req.valid('param').id)
+          const item = await stockTransfers.get(permitOf(c), c.req.valid('param').id)
           return c.json(transferDto(item))
         },
       )
       .patch(
         '/stock-transfers/:id',
+        transferGuard('update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -302,7 +342,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
         async (c) => {
           const body = c.req.valid('json')
           const raw = (await c.req.json()) as Record<string, unknown>
-          const item = await stockTransfers.update(c.get('actor')!, c.req.valid('param').id, {
+          const item = await stockTransfers.update(permitOf(c), c.req.valid('param').id, {
             ...body,
             summaryPresent: Object.prototype.hasOwnProperty.call(raw, 'summary'),
             remarksPresent: Object.prototype.hasOwnProperty.call(raw, 'remarks'),
@@ -312,22 +352,25 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .delete(
         '/stock-transfers/:id',
+        transferGuard('delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          await stockTransfers.remove(c.get('actor')!, c.req.valid('param').id)
+          await stockTransfers.remove(permitOf(c), c.req.valid('param').id)
           return c.body(null, 204)
         },
       )
       .post(
         '/stock-transfers/:id/ship',
+        transferGuard('ship'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await stockTransfers.ship(c.get('actor')!, c.req.valid('param').id)
+          const item = await stockTransfers.ship(permitOf(c), c.req.valid('param').id)
           return c.json(transferDto(item))
         },
       )
       .post(
         '/stock-transfers/:id/receive',
+        transferGuard('receive'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -352,16 +395,17 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
         ),
         async (c) => {
           const body = c.req.valid('json') ?? {}
-          const item = await stockTransfers.receive(c.get('actor')!, c.req.valid('param').id, body)
+          const item = await stockTransfers.receive(permitOf(c), c.req.valid('param').id, body)
           return c.json(transferDto(item))
         },
       )
       .post(
         '/stock-transfer-items/query',
+        transferItemGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const result = await stockTransfers.queryItems(
-            c.get('actor')!,
+            permitOf(c),
             toList(c.req.valid('json')),
           )
           return c.json({ count: result.count, results: result.results.map(transferItemDto) })
@@ -369,6 +413,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-transfer-items',
+        transferItemGuard('create'),
         zValidator(
           'json',
           z
@@ -384,20 +429,22 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
           validationHook,
         ),
         async (c) => {
-          const item = await stockTransfers.createItem(c.get('actor')!, c.req.valid('json'))
+          const item = await stockTransfers.createItem(permitOf(c), c.req.valid('json'))
           return c.json(transferItemDto(item), 201)
         },
       )
       .get(
         '/stock-transfer-items/:id',
+        transferItemGuard('read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await stockTransfers.getItem(c.get('actor')!, c.req.valid('param').id)
+          const item = await stockTransfers.getItem(permitOf(c), c.req.valid('param').id)
           return c.json(transferItemDto(item))
         },
       )
       .patch(
         '/stock-transfer-items/:id',
+        transferItemGuard('update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -415,7 +462,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
         async (c) => {
           const body = c.req.valid('json')
           const raw = (await c.req.json()) as Record<string, unknown>
-          const item = await stockTransfers.updateItem(c.get('actor')!, c.req.valid('param').id, {
+          const item = await stockTransfers.updateItem(permitOf(c), c.req.valid('param').id, {
             ...body,
             remarkPresent: Object.prototype.hasOwnProperty.call(raw, 'remark'),
           })
@@ -424,23 +471,26 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .delete(
         '/stock-transfer-items/:id',
+        transferItemGuard('delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          await stockTransfers.removeItem(c.get('actor')!, c.req.valid('param').id)
+          await stockTransfers.removeItem(permitOf(c), c.req.valid('param').id)
           return c.body(null, 204)
         },
       )
       // —— 盘点单 ——
       .post(
         '/stock-counts/query',
+        countGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await stockCounts.list(c.get('actor')!, toList(c.req.valid('json')))
+          const result = await stockCounts.list(permitOf(c), toList(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(countDto) })
         },
       )
       .post(
         '/stock-counts',
+        countGuard('create'),
         zValidator(
           'json',
           z
@@ -469,20 +519,22 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
           validationHook,
         ),
         async (c) => {
-          const item = await stockCounts.create(c.get('actor')!, c.req.valid('json'))
+          const item = await stockCounts.create(permitOf(c), c.req.valid('json'))
           return c.json(countDto(item), 201)
         },
       )
       .get(
         '/stock-counts/:id',
+        countGuard('read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await stockCounts.get(c.get('actor')!, c.req.valid('param').id)
+          const item = await stockCounts.get(permitOf(c), c.req.valid('param').id)
           return c.json(countDto(item))
         },
       )
       .patch(
         '/stock-counts/:id',
+        countGuard('update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -500,7 +552,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
         async (c) => {
           const body = c.req.valid('json')
           const raw = (await c.req.json()) as Record<string, unknown>
-          const item = await stockCounts.update(c.get('actor')!, c.req.valid('param').id, {
+          const item = await stockCounts.update(permitOf(c), c.req.valid('param').id, {
             ...body,
             summaryPresent: Object.prototype.hasOwnProperty.call(raw, 'summary'),
             remarksPresent: Object.prototype.hasOwnProperty.call(raw, 'remarks'),
@@ -510,46 +562,52 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .delete(
         '/stock-counts/:id',
+        countGuard('delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          await stockCounts.remove(c.get('actor')!, c.req.valid('param').id)
+          await stockCounts.remove(permitOf(c), c.req.valid('param').id)
           return c.body(null, 204)
         },
       )
       .post(
         '/stock-counts/:id/refresh',
+        countGuard('update'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await stockCounts.refresh(c.get('actor')!, c.req.valid('param').id)
+          const item = await stockCounts.refresh(permitOf(c), c.req.valid('param').id)
           return c.json(countDto(item))
         },
       )
       .post(
         '/stock-counts/:id/approve',
+        countGuard('approve'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await stockCounts.approve(c.get('actor')!, c.req.valid('param').id)
+          const item = await stockCounts.approve(permitOf(c), c.req.valid('param').id)
           return c.json(countDto(item))
         },
       )
       .post(
         '/stock-counts/:id/cancel',
+        countGuard('cancel'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await stockCounts.cancel(c.get('actor')!, c.req.valid('param').id)
+          const item = await stockCounts.cancel(permitOf(c), c.req.valid('param').id)
           return c.json(countDto(item))
         },
       )
       .post(
         '/stock-count-items/query',
+        countItemGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await stockCounts.queryItems(c.get('actor')!, toList(c.req.valid('json')))
+          const result = await stockCounts.queryItems(permitOf(c), toList(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(countItemDto) })
         },
       )
       .post(
         '/stock-count-items',
+        countItemGuard('create'),
         zValidator(
           'json',
           z
@@ -564,20 +622,22 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
           validationHook,
         ),
         async (c) => {
-          const item = await stockCounts.createItem(c.get('actor')!, c.req.valid('json'))
+          const item = await stockCounts.createItem(permitOf(c), c.req.valid('json'))
           return c.json(countItemDto(item), 201)
         },
       )
       .get(
         '/stock-count-items/:id',
+        countItemGuard('read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await stockCounts.getItem(c.get('actor')!, c.req.valid('param').id)
+          const item = await stockCounts.getItem(permitOf(c), c.req.valid('param').id)
           return c.json(countItemDto(item))
         },
       )
       .patch(
         '/stock-count-items/:id',
+        countItemGuard('update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -594,7 +654,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
         async (c) => {
           const body = c.req.valid('json')
           const raw = (await c.req.json()) as Record<string, unknown>
-          const item = await stockCounts.updateItem(c.get('actor')!, c.req.valid('param').id, {
+          const item = await stockCounts.updateItem(permitOf(c), c.req.valid('param').id, {
             ...body,
             countedQuantityPresent: Object.prototype.hasOwnProperty.call(raw, 'countedQuantity'),
             remarkPresent: Object.prototype.hasOwnProperty.call(raw, 'remark'),
@@ -604,9 +664,10 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .delete(
         '/stock-count-items/:id',
+        countItemGuard('delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          await stockCounts.removeItem(c.get('actor')!, c.req.valid('param').id)
+          await stockCounts.removeItem(permitOf(c), c.req.valid('param').id)
           return c.body(null, 204)
         },
       )

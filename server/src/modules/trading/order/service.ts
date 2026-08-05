@@ -2,6 +2,13 @@
  * 销售/采购订单：头/条目/状态机/报价套档/样品限量。
  * 采购委外配置（发料/副产物/需求池/BOM）见 outsourced-config.ts；
  * 履约投影见 projection.ts（fulfillment/outsourced 直依赖）。
+ *
+ * 授权全由平台承担（工单 10）：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、写前取行 `loadAuthorized`（不命中一律 not_found）、
+ * create 走 `assertCompanyWritable`。双边对称保持不变：`side` 只决定表/域差异，
+ * 权限差异由路由按 side 选的资源名（`orderSpec(side).headResource/itemResource`）承载，
+ * 动作码事实源回 meta（不再由 `orderSpec(side).prefix` 动态拼）。
+ * 状态前置条件（草稿才能改等）是领域不变量，留在本文件抛 conflict。
  */
 import type { ListQuery } from '@synie/shared'
 import { decimal, type Decimal } from '@synie/shared'
@@ -16,10 +23,13 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf, mergeAuditFields } from '~/platform/audit/spec.ts'
-import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
+import type { AuthzTarget } from '~/platform/meta/resource-authz.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import {
   asDate,
@@ -34,7 +44,6 @@ import {
   lowerParty,
   namedRef,
   partyExists,
-  requirePerm,
   runeLen,
   syncDrawingAttachments,
   toDateOnly,
@@ -233,16 +242,65 @@ export function createOrderService(
   db: Kysely<Database>,
   numberer: Numberer,
   quotations: QuotationService,
-  outsourcedDraft: OutsourcedDraftPort = createOutsourcedConfigService(db).draft,
+  registry: Registry,
+  outsourcedDraft: OutsourcedDraftPort = createOutsourcedConfigService(db, registry).draft,
 ) {
-  async function listHeads(actor: Actor, side: TradingSide, query: Partial<ListQuery>) {
+  /** 判定归宿按 side 解析（Registry 内已记忆化）：头与条目各一份 */
+  const headTarget = (side: TradingSide): AuthzTarget =>
+    registry.authzTarget(orderSpec(side).headResource)
+  const itemTarget = (side: TradingSide): AuthzTarget =>
+    registry.authzTarget(orderSpec(side).itemResource)
+
+  /** 按 Permit 取单头（可锁）+ 取 join 投影：投影行锁只能落在裸表上 */
+  async function lockOrder(
+    handle: DbHandle,
+    permit: Permit,
+    spec: OrderSideSpec,
+    id: string,
+  ): Promise<Record<string, unknown>> {
+    await loadAuthorized({
+      db: handle,
+      permit,
+      target: headTarget(spec.side),
+      table: spec.headTable,
+      id,
+      forUpdate: true,
+      notFoundMessage: `${spec.label}不存在`,
+    })
+    const row = await loadHead(handle, spec, id)
+    if (!row) throw new ApiError('not_found', `${spec.label}不存在`)
+    return row
+  }
+
+  /** 已授权的单头投影（读路径）：不命中一律 not_found */
+  async function authorizedHead(
+    handle: DbHandle,
+    permit: Permit,
+    spec: OrderSideSpec,
+    id: string,
+  ): Promise<Record<string, unknown>> {
+    await loadAuthorized({
+      db: handle,
+      permit,
+      target: headTarget(spec.side),
+      table: spec.headTable,
+      id,
+      notFoundMessage: `${spec.label}不存在`,
+    })
+    const row = await loadHead(handle, spec, id)
+    if (!row) throw new ApiError('not_found', `${spec.label}不存在`)
+    return row
+  }
+
+  async function listHeads(permit: Permit, side: TradingSide, query: Partial<ListQuery>) {
     const spec = orderSpec(side)
-    requirePerm(actor, spec.prefix, 'read', '无权限执行该订单操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Order[] }
     const outsourcedCol = side === 'purchase' ? 'o.is_outsourced' : 'false'
-    return listFromSource({
+    return listAuthorized({
       db,
+      permit,
+      target: headTarget(side),
+      // alias 必须与下方子查询别名 `) order_heads` 逐字一致
+      alias: 'order_heads',
       resource: orderHeadMeta(side),
       source: sql` FROM (
         SELECT o.id,o.order_no,o.order_date,o.order_type,${sql.raw(outsourcedCol)} AS is_outsourced,
@@ -264,37 +322,26 @@ export function createOrderService(
         created_by_name,audited_by_name`,
       defaultOrder: sql`"order_date" DESC, "id" ASC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapHead(r),
     })
   }
 
-  async function getHead(actor: Actor, side: TradingSide, id: string): Promise<Order> {
-    const spec = orderSpec(side)
-    requirePerm(actor, spec.prefix, 'read', '无权限执行该订单操作')
-    const row = await loadHead(db, spec, id)
-    if (!row || !canAccessCompany(actor, String(row.company_id))) {
-      throw new ApiError('not_found', `${spec.label}不存在`)
-    }
-    return mapHead(row)
+  async function getHead(permit: Permit, side: TradingSide, id: string): Promise<Order> {
+    return mapHead(await authorizedHead(db, permit, orderSpec(side), id))
   }
 
   async function createHead(
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     input: OrderHeadCreateInput,
   ): Promise<Order> {
-    const spec = orderSpec(side)
-    requirePerm(actor, spec.prefix, 'create', '无权限执行该订单操作')
-    if (!canAccessCompany(actor, input.companyId)) {
-      throw new ApiError('forbidden', '无权在该公司下操作数据')
-    }
-    return withTx(db, (trx) => createHeadInTx(trx, actor, side, input))
+    assertCompanyWritable(permit, input.companyId, '公司不存在')
+    return withTx(db, (trx) => createHeadInTx(trx, permit, side, input))
   }
 
   async function createHeadInTx(
     trx: TrxHandle,
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     input: OrderHeadCreateInput,
   ): Promise<Order> {
@@ -329,7 +376,7 @@ export function createOrderService(
     if (!(await partyExists(trx, partyType, input.partyId))) {
       throw ApiError.validation('订单参数不合法', { partyId: ['对手不存在'] })
     }
-    const createdById = actor.userId || null
+    const createdById = permit.actor.userId || null
     const isOutsourced = side === 'purchase' ? Boolean(input.isOutsourced) : false
     try {
       let id: string
@@ -362,7 +409,7 @@ export function createOrderService(
       }
       const row = await loadHead(trx, spec, id)
       const item = mapHead(row!)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: spec.headTable,
         recordId: id,
         recordLabel: item.orderNo,
@@ -378,25 +425,23 @@ export function createOrderService(
   }
 
   async function updateHead(
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     id: string,
     input: OrderHeadUpdateInput,
   ): Promise<Order> {
-    const spec = orderSpec(side)
-    requirePerm(actor, spec.prefix, 'update', '无权限执行该订单操作')
-    return withTx(db, (trx) => updateHeadInTx(trx, actor, side, id, input))
+    return withTx(db, (trx) => updateHeadInTx(trx, permit, side, id, input))
   }
 
   async function updateHeadInTx(
     trx: TrxHandle,
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     id: string,
     input: OrderHeadUpdateInput,
   ): Promise<Order> {
     const spec = orderSpec(side)
-    const locked = await lockOrder(trx, actor, spec, id)
+    const locked = await lockOrder(trx, permit, spec, id)
     if (String(locked.status).toLowerCase() !== 'draft') {
       throw new ApiError('conflict', '仅草稿订单可修改')
     }
@@ -480,7 +525,7 @@ export function createOrderService(
       }
       const row = await loadHead(trx, spec, id)
       const item = mapHead(row!)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: spec.headTable,
         recordId: id,
         recordLabel: item.orderNo,
@@ -495,11 +540,10 @@ export function createOrderService(
     }
   }
 
-  async function deleteHead(actor: Actor, side: TradingSide, id: string): Promise<void> {
+  async function deleteHead(permit: Permit, side: TradingSide, id: string): Promise<void> {
     const spec = orderSpec(side)
-    requirePerm(actor, spec.prefix, 'delete', '无权限执行该订单操作')
     await withTx(db, async (trx) => {
-      const locked = await lockOrder(trx, actor, spec, id)
+      const locked = await lockOrder(trx, permit, spec, id)
       if (String(locked.status).toLowerCase() !== 'draft') {
         throw new ApiError('conflict', '仅草稿订单可删除')
       }
@@ -508,7 +552,7 @@ export function createOrderService(
         DELETE FROM sys_attachment WHERE owner_type=${spec.itemOwnerType}
           AND owner_id IN (SELECT id FROM ${ident(spec.itemTable)} WHERE order_id=${id}::uuid)
       `.execute(trx)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: spec.headTable,
         recordId: id,
         recordLabel: before.orderNo,
@@ -526,15 +570,14 @@ export function createOrderService(
   }
 
   async function transition(
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     id: string,
     action: 'audit' | 'close' | 'void',
   ): Promise<Order> {
     const spec = orderSpec(side)
-    requirePerm(actor, spec.prefix, action, '无权限执行该订单操作')
     return withTx(db, async (trx) => {
-      const locked = await lockOrder(trx, actor, spec, id)
+      const locked = await lockOrder(trx, permit, spec, id)
       const before = mapHead(locked)
       let target = ''
       if (action === 'audit') {
@@ -551,7 +594,7 @@ export function createOrderService(
         if (side === 'purchase') await adjustDemandOnAudit(trx, id, false)
         target = 'voided'
       }
-      const auditedById = action === 'audit' ? actor.userId || null : before.auditedById
+      const auditedById = action === 'audit' ? permit.actor.userId || null : before.auditedById
       try {
         if (action === 'audit') {
           await sql`
@@ -572,7 +615,7 @@ export function createOrderService(
         }
         const row = await loadHead(trx, spec, id)
         const item = mapHead(row!)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: spec.headTable,
           recordId: id,
           recordLabel: item.orderNo,
@@ -588,11 +631,8 @@ export function createOrderService(
     })
   }
 
-  async function listItems(actor: Actor, side: TradingSide, query: Partial<ListQuery>) {
+  async function listItems(permit: Permit, side: TradingSide, query: Partial<ListQuery>) {
     const spec = orderSpec(side)
-    requirePerm(actor, spec.prefix, 'read', '无权限执行该订单操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as OrderItem[] }
     const proj = spec.projectionColumn
     const extraCols =
       side === 'purchase'
@@ -605,8 +645,12 @@ export function createOrderService(
            LEFT JOIN mfg_demand_item dl ON dl.id=i.demand_line_id
            LEFT JOIN mfg_demand d ON d.id=dl.demand_id`
         : ''
-    return listFromSource({
+    return listAuthorized({
       db,
+      permit,
+      target: itemTarget(side),
+      // alias 必须与下方子查询别名 `) order_items` 逐字一致；via 链的 EXISTS 落在该别名上
+      alias: 'order_items',
       resource: orderItemMeta(side),
       source: sql` FROM (
         SELECT i.id,i.idx,i.qty,i.base_qty,i.${sql.raw(proj)} AS projection_qty,
@@ -630,39 +674,42 @@ export function createOrderService(
       select: sql`SELECT *`,
       defaultOrder: sql`"order_date" DESC, "idx" ASC, "id" ASC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapItem(side, r),
     })
   }
 
-  async function getItem(actor: Actor, side: TradingSide, id: string): Promise<OrderItem> {
+  async function getItem(permit: Permit, side: TradingSide, id: string): Promise<OrderItem> {
     const spec = orderSpec(side)
-    requirePerm(actor, spec.prefix, 'read', '无权限执行该订单操作')
+    // 行的可达性经 via 链递归到母单自身的行谓词
+    await loadAuthorized({
+      db,
+      permit,
+      target: itemTarget(side),
+      table: spec.itemTable,
+      id,
+      notFoundMessage: '订单条目不存在',
+    })
     const row = await loadItem(db, spec, side, id)
-    if (!row || !canAccessCompany(actor, String(row.company_id))) {
-      throw new ApiError('not_found', '订单条目不存在')
-    }
+    if (!row) throw new ApiError('not_found', '订单条目不存在')
     return mapItem(side, row)
   }
 
   async function createItem(
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     input: OrderItemCreateInput,
   ): Promise<OrderItem> {
-    const spec = orderSpec(side)
-    requirePerm(actor, spec.prefix, 'create', '无权限执行该订单操作')
-    return withTx(db, (trx) => createItemInTx(trx, actor, side, input))
+    return withTx(db, (trx) => createItemInTx(trx, permit, side, input))
   }
 
   async function createItemInTx(
     trx: TrxHandle,
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     input: OrderItemCreateInput,
   ): Promise<OrderItem> {
     const spec = orderSpec(side)
-    const parent = await lockOrder(trx, actor, spec, input.orderId)
+    const parent = await lockOrder(trx, permit, spec, input.orderId)
     if (String(parent.status).toLowerCase() !== 'draft') {
       throw new ApiError('conflict', '仅草稿订单可编辑条目')
     }
@@ -724,7 +771,7 @@ export function createOrderService(
       await syncDrawingAttachments(trx, spec.itemOwnerType, id, derived.materialId, String(parent.company_id))
       const row = await loadItem(trx, spec, side, id)
       const item = mapItem(side, row!)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: spec.itemTable,
         recordId: id,
         recordLabel: String(item.idx),
@@ -740,19 +787,17 @@ export function createOrderService(
   }
 
   async function updateItem(
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     id: string,
     input: OrderItemUpdateInput,
   ): Promise<OrderItem> {
-    const spec = orderSpec(side)
-    requirePerm(actor, spec.prefix, 'update', '无权限执行该订单操作')
-    return withTx(db, (trx) => updateItemInTx(trx, actor, side, id, input))
+    return withTx(db, (trx) => updateItemInTx(trx, permit, side, id, input))
   }
 
   async function updateItemInTx(
     trx: TrxHandle,
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     id: string,
     input: OrderItemUpdateInput,
@@ -762,7 +807,8 @@ export function createOrderService(
       SELECT order_id FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid
     `.execute(trx)
     if (!existing.rows[0]) throw new ApiError('not_found', '订单条目不存在')
-    const parent = await lockOrder(trx, actor, spec, existing.rows[0].order_id)
+    // 母单先锁（授权 + 草稿门），再改行：与并发路径的加锁顺序一致
+    const parent = await lockOrder(trx, permit, spec, existing.rows[0].order_id)
     if (String(parent.status).toLowerCase() !== 'draft') {
       throw new ApiError('conflict', '仅草稿订单可编辑条目')
     }
@@ -851,7 +897,7 @@ export function createOrderService(
       )
       const row = await loadItem(trx, spec, side, id)
       const item = mapItem(side, row!)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: spec.itemTable,
         recordId: id,
         recordLabel: String(item.idx),
@@ -866,15 +912,13 @@ export function createOrderService(
     }
   }
 
-  async function deleteItem(actor: Actor, side: TradingSide, id: string): Promise<void> {
-    const spec = orderSpec(side)
-    requirePerm(actor, spec.prefix, 'delete', '无权限执行该订单操作')
-    await withTx(db, (trx) => deleteItemInTx(trx, actor, side, id))
+  async function deleteItem(permit: Permit, side: TradingSide, id: string): Promise<void> {
+    await withTx(db, (trx) => deleteItemInTx(trx, permit, side, id))
   }
 
   async function deleteItemInTx(
     trx: TrxHandle,
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     id: string,
   ): Promise<void> {
@@ -883,14 +927,14 @@ export function createOrderService(
       SELECT order_id FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid
     `.execute(trx)
     if (!existing.rows[0]) throw new ApiError('not_found', '订单条目不存在')
-    const parent = await lockOrder(trx, actor, spec, existing.rows[0].order_id)
+    const parent = await lockOrder(trx, permit, spec, existing.rows[0].order_id)
     if (String(parent.status).toLowerCase() !== 'draft') {
       throw new ApiError('conflict', '仅草稿订单可编辑条目')
     }
     const row = await loadItem(trx, spec, side, id)
     if (!row) throw new ApiError('not_found', '订单条目不存在')
     const item = mapItem(side, row)
-    await writeAudit(trx, actor, {
+    await writeAudit(trx, permit.actor, {
       resource: spec.itemTable,
       recordId: id,
       recordLabel: String(item.idx),
@@ -911,19 +955,16 @@ export function createOrderService(
 
   async function loadDraft(
     handle: DbHandle,
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     id: string,
   ): Promise<OrderSavedDraft> {
     const spec = orderSpec(side)
-    const headRow = await loadHead(handle, spec, id)
-    if (!headRow || !canAccessCompany(actor, String(headRow.company_id))) {
-      throw new ApiError('not_found', `${spec.label}不存在`)
-    }
+    const headRow = await authorizedHead(handle, permit, spec, id)
     const itemRows = await loadItemsForOrder(handle, spec, side, id)
     const outsourcedLines =
       side === 'purchase'
-        ? await outsourcedDraft.loadOrderLines(handle, actor, id)
+        ? await outsourcedDraft.loadOrderLines(handle, permit, id)
         : { issueLines: [], byproductLines: [] }
     const issueByItem = groupDraftLinesByItem(outsourcedLines.issueLines)
     const byproductByItem = groupDraftLinesByItem(outsourcedLines.byproductLines)
@@ -942,62 +983,55 @@ export function createOrderService(
 
   /** 领域专用完整订单草稿读取：表头、全部条目及采购委外配置。 */
   async function getDraft(
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     id: string,
   ): Promise<OrderSavedDraft> {
-    const spec = orderSpec(side)
-    requirePerm(actor, spec.prefix, 'read', '无权限执行该订单操作')
-    return withReadSnapshot(db, (snapshot) => loadDraft(snapshot, actor, side, id))
+    return withReadSnapshot(db, (snapshot) => loadDraft(snapshot, permit, side, id))
   }
 
   async function createDraft(
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     input: OrderDraftInput,
   ): Promise<OrderSavedDraft> {
-    const spec = orderSpec(side)
-    requirePerm(actor, spec.prefix, 'create', '无权限执行该订单操作')
-    if (!canAccessCompany(actor, input.companyId)) {
-      throw new ApiError('forbidden', '无权在该公司下操作数据')
-    }
+    assertCompanyWritable(permit, input.companyId, '公司不存在')
     validateNewOrderDraftIdentities(side, input)
     return withTx(db, async (trx) => {
       const head = await withIndexedFields('header', () =>
-        createHeadInTx(trx, actor, side, input),
+        createHeadInTx(trx, permit, side, input),
       )
       for (let itemIndex = 0; itemIndex < input.items.length; itemIndex++) {
         const inputItem = input.items[itemIndex]!
         const item = await withIndexedFields(`items[${itemIndex}]`, () =>
-          createItemInTx(trx, actor, side, {
+          createItemInTx(trx, permit, side, {
             ...inputItem,
             orderId: head.id,
           }),
         )
         if (side === 'purchase') {
           await withIndexedFields(`items[${itemIndex}]`, () =>
-            outsourcedDraft.replaceItemLines(trx, actor, item.id, {
+            outsourcedDraft.replaceItemLines(trx, permit, item.id, {
               issueLines: inputItem.issueLines,
               byproductLines: inputItem.byproductLines,
             }),
           )
         }
       }
-      return loadDraft(trx, actor, side, head.id)
+      return loadDraft(trx, permit, side, head.id)
     })
   }
 
   async function replaceDraft(
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     id: string,
     input: OrderDraftInput,
   ): Promise<OrderSavedDraft> {
     const spec = orderSpec(side)
-    requirePerm(actor, spec.prefix, 'update', '无权限执行该订单操作')
     validateSalesOrderDraftHasNoOutsourcedLines(side, input)
     return withTx(db, async (trx) => {
-      const before = mapHead(await lockOrder(trx, actor, spec, id))
+      const before = mapHead(await lockOrder(trx, permit, spec, id))
       if (input.companyId !== before.companyId) {
         throw ApiError.validation('订单草稿参数不合法', {
           'header.companyId': ['创建后不可修改公司'],
@@ -1008,7 +1042,7 @@ export function createOrderService(
       `.execute(trx)
       const existingItemIds = new Set(existingItems.rows.map((item) => item.id))
       const existingOutsourcedLines = side === 'purchase'
-        ? await outsourcedDraft.loadOrderLines(trx, actor, id)
+        ? await outsourcedDraft.loadOrderLines(trx, permit, id)
         : { issueLines: [], byproductLines: [] }
       const issueLineOwner = new Map(
         existingOutsourcedLines.issueLines.map((line) => [line.id, line.orderItemId]),
@@ -1023,29 +1057,25 @@ export function createOrderService(
         byproductLineOwner,
       )
 
+      // 子树增删的码级要求由路由声明式承担（PUT 整单 = update ∧ create ∧ delete），
+      // 服务层不再按差异动态判定、也不再抛 forbidden。
       const effects = orderDraftChildEffects(
         input,
         existingItemIds,
         issueLineOwner,
         byproductLineOwner,
       )
-      if (effects.creates) {
-        requirePerm(actor, spec.prefix, 'create', '无权限执行该订单操作')
-      }
-      if (effects.deletes) {
-        requirePerm(actor, spec.prefix, 'delete', '无权限执行该订单操作')
-      }
 
       // 先移除完整草稿中已不存在的旧行；这样头部派生维度变化时，调用者可在同一
       // transaction 中清空旧行并重建，而不会被单记录 update 的“先删条目”闸门误挡。
       for (const oldId of existingItemIds) {
         if (!effects.requestedItems.has(oldId)) {
-          await deleteItemInTx(trx, actor, side, oldId)
+          await deleteItemInTx(trx, permit, side, oldId)
         }
       }
 
       await withIndexedFields('header', () =>
-        updateHeadInTx(trx, actor, side, id, {
+        updateHeadInTx(trx, permit, side, id, {
           orderNo: input.orderNo ?? before.orderNo,
           orderDate: input.orderDate ?? before.orderDate,
           orderType: input.orderType ?? before.orderType,
@@ -1065,13 +1095,13 @@ export function createOrderService(
         const inputItem = input.items[itemIndex]!
         const savedItem = inputItem.id === undefined
           ? await withIndexedFields(`items[${itemIndex}]`, () =>
-              createItemInTx(trx, actor, side, {
+              createItemInTx(trx, permit, side, {
                 ...inputItem,
                 orderId: id,
               }),
             )
           : await withIndexedFields(`items[${itemIndex}]`, () =>
-              updateItemInTx(trx, actor, side, inputItem.id!, {
+              updateItemInTx(trx, permit, side, inputItem.id!, {
                 idx: inputItem.idx,
                 qty: inputItem.qty,
                 materialId: inputItem.materialId,
@@ -1092,22 +1122,20 @@ export function createOrderService(
             )
         if (side === 'purchase') {
           await withIndexedFields(`items[${itemIndex}]`, () =>
-            outsourcedDraft.replaceItemLines(trx, actor, savedItem.id, {
+            outsourcedDraft.replaceItemLines(trx, permit, savedItem.id, {
               issueLines: inputItem.issueLines,
               byproductLines: inputItem.byproductLines,
             }),
           )
         }
       }
-      return loadDraft(trx, actor, side, id)
+      return loadDraft(trx, permit, side, id)
     })
   }
 
-  async function history(actor: Actor, side: TradingSide, orderId: string) {
-    const spec = orderSpec(side)
-    requirePerm(actor, spec.prefix, 'read', '无权限执行该订单操作')
-    const head = await getHead(actor, side, orderId)
-    void head
+  async function history(permit: Permit, side: TradingSide, orderId: string) {
+    // 单据可达性先行：母单不可达即 not_found，下游流水不泄露
+    await authorizedHead(db, permit, orderSpec(side), orderId)
     // 收发货历史：销售读 sal_delivery_item；采购读 pur_receipt_item（标准段）
     if (side === 'sales') {
       const rows = await sql<Record<string, unknown>>`
@@ -1174,9 +1202,9 @@ export function createOrderService(
     createHead,
     updateHead,
     deleteHead,
-    audit: (a: Actor, s: TradingSide, id: string) => transition(a, s, id, 'audit'),
-    close: (a: Actor, s: TradingSide, id: string) => transition(a, s, id, 'close'),
-    void: (a: Actor, s: TradingSide, id: string) => transition(a, s, id, 'void'),
+    audit: (p: Permit, s: TradingSide, id: string) => transition(p, s, id, 'audit'),
+    close: (p: Permit, s: TradingSide, id: string) => transition(p, s, id, 'close'),
+    void: (p: Permit, s: TradingSide, id: string) => transition(p, s, id, 'void'),
     listItems,
     getItem,
     createItem,
@@ -1396,36 +1424,7 @@ async function normalizeCurrency(
   return { currencyId: chosen, exchangeRate: rate }
 }
 
-async function lockOrder(
-  db: DbHandle,
-  actor: Actor,
-  spec: OrderSideSpec,
-  id: string,
-): Promise<Record<string, unknown>> {
-  const outsourcedCol = spec.side === 'purchase' ? 'o.is_outsourced' : 'false'
-  const rows = await sql<Record<string, unknown>>`
-    SELECT o.id,o.order_no,o.order_date,o.order_type,${sql.raw(outsourcedCol)} AS is_outsourced,
-      o.party_type,o.party_id,o.exchange_rate,o.terms,o.remarks,o.status,o.audited_at,
-      o.inserted_at,o.updated_at,o.company_id,o.currency_id,o.created_by_id,o.audited_by_id,
-      coalesce((SELECT sum(i.amount) FROM ${ident(spec.itemTable)} i WHERE i.order_id=o.id),0) AS gross_total,
-      coalesce((SELECT sum(i.base_amount) FROM ${ident(spec.itemTable)} i WHERE i.order_id=o.id),0) AS base_gross_total,
-      c.name AS company_name,cur.iso_code AS currency_code,cur.name AS currency_name,
-      creator.name AS created_by_name,auditor.name AS audited_by_name
-    FROM ${ident(spec.headTable)} o
-    JOIN bas_company c ON c.id=o.company_id
-    JOIN bas_currency cur ON cur.id=o.currency_id
-    LEFT JOIN sys_user creator ON creator.id=o.created_by_id
-    LEFT JOIN sys_user auditor ON auditor.id=o.audited_by_id
-    WHERE o.id=${id}::uuid
-    FOR UPDATE OF o
-  `.execute(db)
-  const row = rows.rows[0]
-  if (!row || !canAccessCompany(actor, String(row.company_id))) {
-    throw new ApiError('not_found', `${spec.label}不存在`)
-  }
-  return row
-}
-
+/** 事务内权威投影重读（授权由平台执行点完成）：写路径 before/after 快照共用 */
 async function loadHead(db: DbHandle, spec: OrderSideSpec, id: string) {
   const outsourcedCol = spec.side === 'purchase' ? 'o.is_outsourced' : 'false'
   const rows = await sql<Record<string, unknown>>`

@@ -124,6 +124,7 @@ export function demandWire(item: Demand) {
     remarks: item.remarks,
     status: upper(item.status),
     companyId: item.companyId,
+    assignedDeptId: item.assignedDeptId,
     createdById: item.createdById,
     insertedAt: item.insertedAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
@@ -182,6 +183,7 @@ export function workOrderWire(item: WorkOrder) {
     unitId: item.unitId,
     bomId: item.bomId,
     createdById: item.createdById,
+    ownerDeptId: item.ownerDeptId,
     insertedAt: item.insertedAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
   }

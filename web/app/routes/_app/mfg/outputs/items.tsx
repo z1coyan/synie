@@ -84,9 +84,6 @@ function OutputItemsTab() {
           'materialName',
           'materialSpec',
         ]}
-        // mfgOutputItems 复用 mfg.output 权限码,meta capabilities 为空:显式声明本视图
-        // 可用动作(整单「新建入库单」+ 草稿单「编辑/审核整单」),不声明 delete
-        capabilities={['create', 'update', 'audit']}
         createLabel="新建入库单"
         onCreate={() => openDrawer('create', null)}
         onView={(row) => {

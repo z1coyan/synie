@@ -104,6 +104,8 @@ export interface Demand {
   remarks: string | null
   status: DemandStatus
   companyId: string
+  /** 下发车间（指派部门）：草稿态随表单改，已确认后走 dispatch 动作 */
+  assignedDeptId: string | null
   createdById: string | null
   insertedAt: Date
   updatedAt: Date
@@ -159,6 +161,8 @@ export interface WorkOrder {
   unitId: string
   bomId: string | null
   createdById: string | null
+  /** 归属部门：创建时按创建人部门盖章，无部门用户创建即 null */
+  ownerDeptId: string | null
   insertedAt: Date
   updatedAt: Date
 }

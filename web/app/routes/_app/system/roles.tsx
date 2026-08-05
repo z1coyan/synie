@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Chip, toast } from '@heroui/react'
 import { roleClient } from '~/lib/resources/iam'
-import { useMyPerms } from '~/lib/use-my-perms'
+import { useResourceCapabilities } from '~/lib/use-resource-capabilities'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { ensureDefaultGridPage } from '~/lib/route-prefetch'
 import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
@@ -45,16 +45,16 @@ function RolesPage() {
   const { drawer, open, setMode, close, row: drawerRow } = useRecordDrawerUrl(RESOURCE)
   const queryClient = useQueryClient()
   const [accessRole, setAccessRole] = useState<Row | null>(null)
-  // 「权限与菜单」入口按当前用户权限门控;拉取失败按无权限处理(fail-closed)并提示
-  const { myPerms, isSuperAdmin } = useMyPerms()
+  // 「权限与菜单」入口按角色权限/角色菜单两资源文档投影门控(fail-closed:文档 403 即不可见)
+  const rolePermCaps = useResourceCapabilities('sysRolePermissions')
+  const roleMenuCaps = useResourceCapabilities('sysRoleMenus')
 
-  // 两区门控刻意分离(ADR 2026-08-01 第 10 条):功能权限要 read、编辑要 create+delete;
-  // 菜单白名单要 read/update——合并抽屉只合容器,不合门控,任一 read 命中即见入口
-  const canViewPerms = isSuperAdmin || myPerms.has('sys.role_permission:read')
-  const canWritePerms =
-    isSuperAdmin || (myPerms.has('sys.role_permission:create') && myPerms.has('sys.role_permission:delete'))
-  const canViewMenus = isSuperAdmin || myPerms.has('sys.role_menu:read')
-  const canWriteMenus = isSuperAdmin || myPerms.has('sys.role_menu:update')
+  // 两区门控刻意分离(ADR 2026-08-01 第 10 条):功能权限要可读、编辑要 create+delete;
+  // 菜单白名单要可读/update——合并抽屉只合容器,不合门控,任一可读即见入口
+  const canViewPerms = rolePermCaps.readable
+  const canWritePerms = rolePermCaps.has('create') && rolePermCaps.has('delete')
+  const canViewMenus = roleMenuCaps.readable
+  const canWriteMenus = roleMenuCaps.has('update')
 
   // 关闭动画期间冻结 builtin:accessRole 置空后不能当场翻回 false(同 lastOpenRef 模式)
   const builtinRef = useRef(false)

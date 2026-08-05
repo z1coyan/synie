@@ -9,6 +9,7 @@ export function auditLogResourceMeta(): ResourceMeta {
     permissionPrefix: 'sys.audit_log',
     permissionLabel: '审计日志',
     table: 'sys_audit_log',
+    authz: { kind: 'company', nullable: true },
     audit: { enabled: false },
     fields: [
       { name: 'id', apiName: 'id', dbColumn: 'id', type: 'uuid', label: 'id', readonly: true, sortable: true },

@@ -1,6 +1,10 @@
 import type { TradingSide } from '../common.ts'
 import type { ResourceMeta } from '~/platform/meta/types.ts'
 
+/** 装箱箱/装箱行资源名：路由与服务的 guard/authzTarget 从此取，不写裸字面量 */
+export const PACK_BOX_RESOURCE = 'salDeliveryPackBoxes'
+export const PACK_LINE_RESOURCE = 'salDeliveryPackLines'
+
 export interface FulfillmentSideSpec {
   side: TradingSide
   label: string
@@ -153,7 +157,7 @@ export function fulfillmentHeadMeta(side: TradingSide): ResourceMeta {
     )
   }
   const printLoops: ResourceMeta['printLoops'] = [{ name: 'items', resource: spec.itemResource }]
-  if (sales) printLoops.push({ name: 'pack_lines', resource: 'salDeliveryPackLines' })
+  if (sales) printLoops.push({ name: 'pack_lines', resource: PACK_LINE_RESOURCE })
   return {
     name: spec.headResource,
     // salDeliveries 侧走 AggregateDraftAdapter + 装箱（Presentation Extension）
@@ -162,6 +166,7 @@ export function fulfillmentHeadMeta(side: TradingSide): ResourceMeta {
     numbering: true,
     permissionLabel: spec.label,
     table: spec.headTable,
+    authz: { kind: 'company' },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f(spec.numberCol, spec.numberApi, 'string', sales ? '发货单号' : '入库单号', {
@@ -240,6 +245,7 @@ export function fulfillmentItemMeta(side: TradingSide): ResourceMeta {
     permissionPrefix: spec.prefix,
     permissionLabel: spec.label,
     table: spec.itemTable,
+    authz: { kind: 'via', parent: spec.headResource, fk: spec.parentCol },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('idx', 'idx', 'integer', '行号', { required: true, filterable: true, sortable: true }),
@@ -344,11 +350,12 @@ export function fulfillmentItemListMeta(side: TradingSide): ResourceMeta {
 
 export function packBoxMeta(): ResourceMeta {
   return {
-    name: 'salDeliveryPackBoxes',
+    name: PACK_BOX_RESOURCE,
     classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'sales.delivery',
     permissionLabel: '销售发货单',
     table: 'sal_delivery_pack_box',
+    authz: { kind: 'via', parent: 'salDeliveries', fk: 'delivery_id' },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('box_no', 'boxNo', 'integer', '箱号(系统生成)', { readonly: true, filterable: true, sortable: true }),
@@ -370,17 +377,19 @@ export function packBoxMeta(): ResourceMeta {
 
 export function packLineMeta(): ResourceMeta {
   return {
-    name: 'salDeliveryPackLines',
+    name: PACK_LINE_RESOURCE,
     classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'sales.delivery',
     permissionLabel: '销售发货单',
     table: 'sal_delivery_pack_line',
+    // 两级 via：装箱行 → 装箱箱 → 销售发货单（判定递归到发货单自身的行谓词）
+    authz: { kind: 'via', parent: PACK_BOX_RESOURCE, fk: 'pack_box_id' },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('idx', 'idx', 'integer', '行号', { required: true, filterable: true, sortable: true }),
       f('pack_box_id', 'packBoxId', 'fk', '装箱箱', {
         required: true, filterable: true,
-        ref: { resource: 'salDeliveryPackBoxes', relation: 'box', labelField: 'boxNo' },
+        ref: { resource: PACK_BOX_RESOURCE, relation: 'box', labelField: 'boxNo' },
       }),
       f('qty', 'qty', 'decimal', '数量', { required: true, filterable: true, sortable: true }),
       f('base_qty', 'baseQty', 'decimal', '折算数量(默认单位)', { readonly: true, filterable: true, sortable: true }),

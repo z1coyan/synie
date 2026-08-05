@@ -16,7 +16,6 @@ import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { todayLocal } from '~/lib/form-defaults'
-import { hasPermission } from '~/lib/permissions'
 import {
   demandClient,
   demandItemClient,
@@ -28,11 +27,8 @@ import {
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { useDocumentDrawer } from '~/lib/use-document-drawer'
 import { SalesItemPicker } from './-sales-item-picker'
-import {
-  canGenerateWorkOrder,
-  useDemandItemActions,
-  useMyPermissions,
-} from './-item-actions'
+import { useResourceCapabilities } from '~/lib/use-resource-capabilities'
+import { canGenerateWorkOrder, useDemandItemActions } from './-item-actions'
 
 /**
  * 需求单共享抽屉：需求单与需求行两个列表共用同一份整单录入界面。
@@ -161,7 +157,7 @@ export function DemandDrawerProvider({
   const [items, setItems] = useState<Row[]>([])
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const queryClient = useQueryClient()
-  const perms = useMyPermissions()
+  const workOrderCaps = useResourceCapabilities('mfgWorkOrders')
   // 行级操作后重拉的竞态守卫:世代随开/关抽屉自增,过期回填丢弃(同骨架语义)
   const generationRef = useRef(0)
   generationRef.current = drawer.generation
@@ -233,10 +229,7 @@ export function DemandDrawerProvider({
     )
   })
 
-  const canCreateWorkOrder = hasPermission(
-    perms.data,
-    'mfg.work_order:create',
-  )
+  const canCreateWorkOrder = workOrderCaps.has('create')
 
   const openDrawer: OpenDemandDrawer = (nextMode, demand) => {
     drawer.open(nextMode, demand)

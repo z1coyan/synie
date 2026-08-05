@@ -1,15 +1,20 @@
-// 权限矩阵纯函数层:通配匹配、勾选初态、三态、搜索过滤、sync 提交集构造。
-// 通配语义与后端 SynieCore.Authz.Permission 对齐:`前缀:*`(资源全部动作)、`域.*`(域全部码)、`*`(全域)。
+// 权限矩阵纯函数层：勾选初态、三态、搜索过滤、sync 提交集构造。
+// 授权为 (role, code, scope) 三元组（spec §3）：通配符已取消，授权行恒为精确码；
+// scope 取 DataScope 名（all/deptTree/dept/self），只在资源 supportedScopes 内可授。
+import type { DataScope } from '@synie/shared'
 
 export interface CatalogGroup {
   prefix: string // 如 "sys.role"
   label?: string // 后端下发的资源中文名;缺失时前端回落 permission-labels 静态映射
   actions: string[] // 如 ["create", "read"]
+  /** 该资源支持的数据范围（目录 wire 携带）；空或仅 all 时不渲染范围控件 */
+  supportedScopes: DataScope[]
 }
 
 export interface GrantedRow {
   id: string
-  permission: string // 具体码或通配码
+  permission: string // 精确码
+  scope: DataScope
 }
 
 export type TriState = 'all' | 'some' | 'none'
@@ -19,6 +24,24 @@ export const CANONICAL_ACTIONS = [
   'create', 'read', 'update', 'delete', 'print', 'import',
   'export', 'batch_delete', 'batch_update', 'batch_print',
 ]
+
+/** 数据范围标签（封闭集，与 DataScope 一一对应；granted 第一期不开放） */
+export const SCOPE_LABELS: Record<DataScope, string> = {
+  all: '全部',
+  deptTree: '本部门及以下',
+  dept: '本部门',
+  self: '仅本人',
+}
+
+/**
+ * 该资源的范围选项（按 supportedScopes 过滤，恒含 all）；
+ * supportedScopes 为空或仅 all 时返回 null——调用方据此不渲染范围控件（恒 all 无选择空间）。
+ */
+export function scopeOptionsOf(group: CatalogGroup): DataScope[] | null {
+  const options = group.supportedScopes.filter((s) => s in SCOPE_LABELS)
+  if (!options.includes('all')) options.unshift('all')
+  return options.length > 1 ? options : null
+}
 
 /** 按 prefix 首段分域,保持 catalog 原有顺序 */
 export function groupByDomain(catalog: CatalogGroup[]): { domain: string; groups: CatalogGroup[] }[] {
@@ -56,46 +79,38 @@ export function searchGroups(
   return catalog.filter((g) => labelOf(g).toLowerCase().includes(kw) || g.prefix.toLowerCase().includes(kw))
 }
 
-/** 三态:codes 全勾/部分勾/全未勾;空集按未勾(调用方据此禁用该全选框) */
-export function triState(codes: string[], checked: Set<string>): TriState {
+/** 三态:codes 全勾/部分勾/全未勾;空集按未勾(调用方据此禁用该全选框)。checked 只需能回答 has(code)（Set 与 Map 均可） */
+export function triState(codes: string[], checked: { has(code: string): boolean }): TriState {
   const n = codes.filter((c) => checked.has(c)).length
   return n === 0 ? 'none' : n === codes.length ? 'all' : 'some'
 }
 
-// "sales.order:audit" 的候选:自身、"sales.order:*"、"sales.*"、"*"(对齐后端 Permission.candidates/1)
-function candidates(code: string): string[] {
-  const i = code.indexOf(':')
-  if (i < 0) return [code, '*']
-  const prefix = code.slice(0, i)
-  const j = prefix.indexOf('.')
-  return j < 0 ? [code, `${prefix}:*`, '*'] : [code, `${prefix}:*`, `${prefix.slice(0, j)}.*`, '*']
-}
-
-/** granted(具体码或通配码集合)是否覆盖给定具体码 */
-export function coveredBy(code: string, granted: Set<string>): boolean {
-  return candidates(code).some((c) => granted.has(c))
-}
-
-/** 勾选初态:catalog 每个码,granted 行有精确码或通配覆盖即勾上 */
-export function initialChecked(catalog: CatalogGroup[], rows: GrantedRow[]): Set<string> {
-  const granted = new Set(rows.map((r) => r.permission))
-  const checked = new Set<string>()
-  for (const g of catalog) {
-    for (const a of g.actions) {
-      const code = `${g.prefix}:${a}`
-      if (coveredBy(code, granted)) checked.add(code)
-    }
+/** 勾选初态:目录内精确码 → scope（Map）；目录外码不收（后端 sync 也保留不动,前端不展示） */
+export function initialGrants(catalog: CatalogGroup[], rows: GrantedRow[]): Map<string, DataScope> {
+  const inCatalog = new Set(catalog.flatMap(groupCodes))
+  const grants = new Map<string, DataScope>()
+  for (const row of rows) {
+    if (inCatalog.has(row.permission)) grants.set(row.permission, row.scope)
   }
-  return checked
+  return grants
 }
 
 /**
- * syncSysRolePermissions 提交集:当前勾选的具体码,按 catalog 序,剔除两类——
- * - 被任一存量通配行覆盖的码:通配行后端保留,若再提交会被重复落成具体行;
- * - 初态/勾选本只含 catalog 码,此处 flatMap catalog 构造天然不含目录外码(fail-safe)。
- * 语义注意:取消勾选通配覆盖的码不会生效(通配行仍在,后端保留),与"通配行与目录外码后端保留"契约一致。
+ * sync 提交集:勾选码按 catalog 序展开为 { permission, scope }[]（与勾选插入顺序无关,快照可比对）。
+ * scope 必须在该组 supportedScopes 内——不在则钳回 'all'（fail-safe：
+ * 服务端 assertGrantable 会拒授目录不支持的范围,前端先兜住不产出必败请求）。
+ * flatMap catalog 构造天然不含目录外码。
  */
-export function buildSubmit(catalog: CatalogGroup[], rows: GrantedRow[], checked: Set<string>): string[] {
-  const wildcards = new Set(rows.map((r) => r.permission).filter((p) => p.endsWith('*')))
-  return catalog.flatMap(groupCodes).filter((c) => checked.has(c) && !coveredBy(c, wildcards))
+export function buildSubmit(
+  catalog: CatalogGroup[],
+  grants: Map<string, DataScope>,
+): { permission: string; scope: DataScope }[] {
+  return catalog.flatMap((g) =>
+    groupCodes(g)
+      .filter((code) => grants.has(code))
+      .map((code) => {
+        const scope = grants.get(code)!
+        return { permission: code, scope: g.supportedScopes.includes(scope) ? scope : 'all' }
+      }),
+  )
 }

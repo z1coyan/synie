@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertDialog, Button, Tabs, toast } from '@heroui/react'
 import { EmptyState, Sheet } from '@heroui-pro/react'
+import type { DataScope } from '@synie/shared'
 import {
   fetchPermissionCatalog,
   fetchRoleMenus,
@@ -13,12 +14,12 @@ import {
 } from '~/lib/resources/iam'
 import {
   buildSubmit,
-  initialChecked,
+  initialGrants,
 } from '../synie-permission-sheet/matrix'
 import type { CatalogGroup, GrantedRow } from '../synie-permission-sheet/matrix'
 import { serializeChecked, withoutOrphans } from '../synie-menu-sheet/menu-tree'
 import { menuModules } from '~/lib/menu'
-import { SECTION_LABELS, domainOfPrefix, permRowId, savePlan, setsEqual } from './access-sheet'
+import { SECTION_LABELS, domainOfPrefix, grantsEqual, permRowId, savePlan, setsEqual } from './access-sheet'
 import type { SaveSection } from './access-sheet'
 import { MenuSection } from './menu-section'
 import { PermissionSection } from './permission-section'
@@ -72,8 +73,9 @@ export function SynieRoleAccessSheet(props: SynieRoleAccessSheetProps) {
   const [permsError, setPermsError] = useState<string | null>(null)
   const [menusData, setMenusData] = useState<MenusLoaded | null>(null)
   const [menusError, setMenusError] = useState<string | null>(null)
-  const [permChecked, setPermChecked] = useState<Set<string>>(new Set())
-  const [permBaseline, setPermBaseline] = useState<Set<string>>(new Set())
+  // 功能权限区勾选态：码 → 数据范围（三元组授权的 wire 形态；勾选即授予，范围可再调）
+  const [permChecked, setPermChecked] = useState<Map<string, DataScope>>(new Map())
+  const [permBaseline, setPermBaseline] = useState<Map<string, DataScope>>(new Map())
   const [menuChecked, setMenuChecked] = useState<Set<string>>(new Set())
   const [menuBaseline, setMenuBaseline] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
@@ -110,10 +112,10 @@ export function SynieRoleAccessSheet(props: SynieRoleAccessSheetProps) {
           if (cancelled) return
           const catalog = catalogResponse.groups as CatalogGroup[]
           const rows = permissionResponse.rows as unknown as GrantedRow[]
-          const initial = initialChecked(catalog, rows)
+          const initial = initialGrants(catalog, rows)
           setPermsData({ roleId, catalog, rows })
           setPermChecked(initial)
-          setPermBaseline(new Set(initial))
+          setPermBaseline(new Map(initial))
         })
         .catch((e) => {
           if (!cancelled) setPermsError((e as Error).message)
@@ -156,7 +158,7 @@ export function SynieRoleAccessSheet(props: SynieRoleAccessSheetProps) {
   const permsReadOnly = props.builtin || !props.perms.canWrite
   const menusReadOnly = props.builtin || !props.menus.canWrite
 
-  const permsDirty = !setsEqual(permChecked, permBaseline)
+  const permsDirty = !grantsEqual(permChecked, permBaseline)
   const menusDirty = !setsEqual(menuChecked, menuBaseline)
   const plan = savePlan({
     menusDirty,
@@ -185,8 +187,34 @@ export function SynieRoleAccessSheet(props: SynieRoleAccessSheetProps) {
         return next
       })
 
-  const togglePerm = toggleIn(setPermChecked)
-  const togglePermMany = toggleManyIn(setPermChecked)
+  // 功能权限区：勾选新增码默认范围 'all'；取消勾选连范围一起移除
+  const togglePerm = (code: string, selected: boolean) =>
+    setPermChecked((prev) => {
+      const next = new Map(prev)
+      if (selected) next.set(code, 'all')
+      else next.delete(code)
+      return next
+    })
+  const togglePermMany = (codes: string[], selected: boolean) =>
+    setPermChecked((prev) => {
+      const next = new Map(prev)
+      for (const c of codes) {
+        if (selected) {
+          // 全选只补未勾的码（默认 all），不动已有码的范围设置
+          if (!next.has(c)) next.set(c, 'all')
+        } else next.delete(c)
+      }
+      return next
+    })
+  /** 调整已勾选码的数据范围；未勾选的码忽略（范围控件只对已勾选码渲染） */
+  const setPermScope = (code: string, scope: DataScope) =>
+    setPermChecked((prev) => {
+      if (!prev.has(code)) return prev
+      const next = new Map(prev)
+      next.set(code, scope)
+      return next
+    })
+
   const toggleMenu = toggleIn(setMenuChecked)
   const toggleMenuMany = toggleManyIn(setMenuChecked)
 
@@ -228,9 +256,9 @@ export function SynieRoleAccessSheet(props: SynieRoleAccessSheetProps) {
         } else {
           await syncRolePermissions(
             roleId,
-            buildSubmit(permsLoaded!.catalog, permsLoaded!.rows, permChecked),
+            buildSubmit(permsLoaded!.catalog, permChecked),
           )
-          setPermBaseline(new Set(permChecked))
+          setPermBaseline(new Map(permChecked))
         }
       } catch (e) {
         // 目录外菜单码等字段级错误逐个点名（APIError.fields），其余落通用 message
@@ -343,6 +371,7 @@ export function SynieRoleAccessSheet(props: SynieRoleAccessSheetProps) {
                         expanded={expanded}
                         onToggle={togglePerm}
                         onToggleMany={togglePermMany}
+                        onSetScope={setPermScope}
                         onToggleExpand={toggleExpand}
                         highlightPrefix={jump?.prefix ?? null}
                       />

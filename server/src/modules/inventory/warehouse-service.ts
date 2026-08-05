@@ -1,3 +1,10 @@
+/**
+ * 仓库（公司域主数据，自带 `company_id`）。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、单条 `loadAuthorizedFrom`、写前取行 `loadAuthorized(forUpdate)`、
+ * create/初始化默认仓走 `assertCompanyWritable`。树结构与库存引用保护是领域不变量，留在本文件。
+ */
 import type { ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
@@ -10,13 +17,14 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
-import { canAccessCompany } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { assertCompanyWritable, loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
 import { seedCompanyDefaultWarehouses } from '../base/warehouse-seed.ts'
-import {requirePermission,  runeLen, toDate } from './helpers.ts'
+import { runeLen, toDate } from './helpers.ts'
 import { warehouseResourceMeta } from './meta.ts'
 
 export interface Warehouse {
@@ -43,6 +51,11 @@ const AUDIT = auditFieldsOf(warehouseResourceMeta())
 
 const META = warehouseResourceMeta()
 
+export const WAREHOUSE_RESOURCE = 'invWarehouses'
+
+const TABLE = META.table
+/** 列表与单条共用同一份投影（别名与 listAuthorized 的 alias 必须逐字一致） */
+const ALIAS = 'warehouse'
 const SOURCE = sql`
   FROM (
     SELECT w.id,w.name,w.is_leaf,w.active,w.is_outsourced,w.party_type,w.party_id,
@@ -56,49 +69,49 @@ const SOURCE = sql`
     LEFT JOIN bas_account account ON account.id=w.account_id
   ) warehouse
 `
+const SELECT = sql`SELECT id,name,is_leaf,active,is_outsourced,party_type,party_id,
+  allow_negative,inserted_at,updated_at,company_id,parent_id,account_id,
+  company_code,company_name,parent_name,account_code,account_name,has_children`
 
-export function createWarehouseService(db: Kysely<Database>) {
-  async function get(actor: Actor, id: string): Promise<Warehouse> {
-    requirePermission(actor, 'base.warehouse:read')
-    const scope = companyScopeWhere(actor, 'company_id')
-    if (scope.empty) throw new ApiError('not_found', '仓库不存在')
-    const whereExtra = scope.where ? sql` AND ${scope.where}` : sql``
-    const rows = await sql<Record<string, unknown>>`
-      SELECT id,name,is_leaf,active,is_outsourced,party_type,party_id,
-             allow_negative,inserted_at,updated_at,company_id,parent_id,account_id,
-             company_code,company_name,parent_name,account_code,account_name,has_children
-      ${SOURCE} WHERE id = ${id}::uuid ${whereExtra}
-    `.execute(db)
-    if (rows.rows.length === 0) throw new ApiError('not_found', '仓库不存在')
-    return mapRow(rows.rows[0]!)
+export function createWarehouseService(db: Kysely<Database>, registry: Registry) {
+  const target = registry.authzTarget(WAREHOUSE_RESOURCE)
+
+  async function get(permit: Permit, id: string): Promise<Warehouse> {
+    return loadAuthorizedFrom({
+      db,
+      permit,
+      target,
+      alias: ALIAS,
+      source: SOURCE,
+      select: SELECT,
+      id,
+      mapRow,
+      notFoundMessage: '仓库不存在',
+    })
   }
 
-  async function list(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'base.warehouse:read')
-    const scope = companyScopeWhere(actor, 'company_id')
-    if (scope.empty) return { count: 0, results: [] as Warehouse[] }
-    return listFromSource({
+  async function list(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target,
+      alias: ALIAS,
       resource: META,
       source: SOURCE,
-      select: sql`SELECT id,name,is_leaf,active,is_outsourced,party_type,party_id,
-        allow_negative,inserted_at,updated_at,company_id,parent_id,account_id,
-        company_code,company_name,parent_name,account_code,account_name,has_children`,
+      select: SELECT,
       defaultOrder: sql`"name" ASC, "id" ASC`,
       query,
-      extraWhere: scope.where,
       mapRow,
     })
   }
 
   /** 指定协作方的外协仓列表（对齐 Go ListOutsourced） */
   async function listOutsourced(
-    actor: Actor,
+    permit: Permit,
     partyType: string,
     partyId: string,
     query: Partial<ListQuery>,
   ) {
-    requirePermission(actor, 'base.warehouse:read')
     const normalized = partyType.trim().toLowerCase()
     if (normalized !== 'supplier' && normalized !== 'company') {
       throw ApiError.validation('外协仓查询参数不合法', {
@@ -110,30 +123,25 @@ export function createWarehouseService(db: Kysely<Database>) {
         partyId: ['不能为空'],
       })
     }
-    const scope = companyScopeWhere(actor, 'company_id')
-    if (scope.empty) return { count: 0, results: [] as Warehouse[] }
-    const partyWhere = sql`is_outsourced = true AND party_type = ${normalized} AND party_id = ${partyId}::uuid`
-    const extraWhere = scope.where ? sql`${scope.where} AND ${partyWhere}` : partyWhere
-    return listFromSource({
+    return listAuthorized({
       db,
+      permit,
+      target,
+      alias: ALIAS,
       resource: META,
       source: SOURCE,
-      select: sql`SELECT id,name,is_leaf,active,is_outsourced,party_type,party_id,
-        allow_negative,inserted_at,updated_at,company_id,parent_id,account_id,
-        company_code,company_name,parent_name,account_code,account_name,has_children`,
+      select: SELECT,
       defaultOrder: sql`"name" ASC, "id" ASC`,
       query,
-      extraWhere,
+      // 领域筛选（协作方），授权谓词由 listAuthorized 自动 AND
+      extraWhere: sql`is_outsourced = true AND party_type = ${normalized} AND party_id = ${partyId}::uuid`,
       mapRow,
     })
   }
 
   /** 幂等初始化公司默认三仓（对齐 Go SeedDefaults） */
-  async function seedDefaults(actor: Actor, companyId: string): Promise<number> {
-    requirePermission(actor, 'base.warehouse:create')
-    if (!canAccessCompany(actor, companyId)) {
-      throw new ApiError('forbidden', '无权在该公司下操作数据')
-    }
+  async function seedDefaults(permit: Permit, companyId: string): Promise<number> {
+    assertCompanyWritable(permit, companyId, '公司不存在')
     return withTx(db, async (trx) => {
       const company = await trx
         .selectFrom('bas_company')
@@ -145,12 +153,12 @@ export function createWarehouseService(db: Kysely<Database>) {
           companyId: ['公司不存在'],
         })
       }
-      return seedCompanyDefaultWarehouses(trx, actor, companyId, company.code)
+      return seedCompanyDefaultWarehouses(trx, permit.actor, companyId, company.code)
     })
   }
 
   async function create(
-    actor: Actor,
+    permit: Permit,
     input: {
       name: string
       isLeaf?: boolean
@@ -164,11 +172,9 @@ export function createWarehouseService(db: Kysely<Database>) {
       accountId?: string | null
     },
   ): Promise<Warehouse> {
-    requirePermission(actor, 'base.warehouse:create')
+    // 入参校验（400）先于公司边界（404）：companyId 为空要报「必填」而不是「公司不存在」
     const normalized = normalizeCreate(input)
-    if (!canAccessCompany(actor, normalized.companyId)) {
-      throw new ApiError('forbidden', '无权在该公司下操作数据')
-    }
+    assertCompanyWritable(permit, normalized.companyId, '公司不存在')
     return withTx(db, async (trx) => {
       await lockTree(trx, normalized.companyId)
       await validateRelations(trx, null, normalized)
@@ -190,7 +196,7 @@ export function createWarehouseService(db: Kysely<Database>) {
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = await getInTx(trx, row.id)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'inv_warehouse',
           recordId: item.id,
           recordLabel: item.name,
@@ -214,7 +220,7 @@ export function createWarehouseService(db: Kysely<Database>) {
   }
 
   async function update(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       name?: string
@@ -232,18 +238,18 @@ export function createWarehouseService(db: Kysely<Database>) {
       accountIdPresent?: boolean
     },
   ): Promise<Warehouse> {
-    requirePermission(actor, 'base.warehouse:update')
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('inv_warehouse')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked || !canAccessCompany(actor, locked.company_id)) {
-        throw new ApiError('not_found', '仓库不存在')
-      }
-      await lockTree(trx, locked.company_id)
+      const locked = await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '仓库不存在',
+      })
+      await lockTree(trx, String(locked.company_id))
+      // 锁行后按投影重读（before 即锁定行的映射，改前值一律取自它）
       const before = await getInTx(trx, id)
       const draft = {
         name: input.name ?? before.name,
@@ -259,7 +265,7 @@ export function createWarehouseService(db: Kysely<Database>) {
       }
       const normalized = normalizeCreate(draft)
       await validateRelations(trx, id, normalized)
-      if (normalized.isLeaf !== locked.is_leaf) {
+      if (normalized.isLeaf !== Boolean(locked.is_leaf)) {
         if (normalized.isLeaf) {
           const child = await trx
             .selectFrom('inv_warehouse')
@@ -314,7 +320,7 @@ export function createWarehouseService(db: Kysely<Database>) {
         ])
       }
       const updated = await getInTx(trx, id)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_warehouse',
         recordId: id,
         recordLabel: updated.name,
@@ -327,19 +333,18 @@ export function createWarehouseService(db: Kysely<Database>) {
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'base.warehouse:delete')
+  async function remove(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('inv_warehouse')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked || !canAccessCompany(actor, locked.company_id)) {
-        throw new ApiError('not_found', '仓库不存在')
-      }
-      await lockTree(trx, locked.company_id)
+      const locked = await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '仓库不存在',
+      })
+      await lockTree(trx, String(locked.company_id))
       const child = await trx
         .selectFrom('inv_warehouse')
         .select('id')
@@ -354,7 +359,7 @@ export function createWarehouseService(db: Kysely<Database>) {
       if (stock) throw new ApiError('conflict', '仓库已有库存分录,不能删除')
       const item = await getInTx(trx, id)
       await trx.deleteFrom('inv_warehouse').where('id', '=', id).execute()
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_warehouse',
         recordId: id,
         recordLabel: item.name,
@@ -373,10 +378,7 @@ export type WarehouseService = ReturnType<typeof createWarehouseService>
 
 async function getInTx(db: DbHandle, id: string): Promise<Warehouse> {
   const rows = await sql<Record<string, unknown>>`
-    SELECT id,name,is_leaf,active,is_outsourced,party_type,party_id,
-           allow_negative,inserted_at,updated_at,company_id,parent_id,account_id,
-           company_code,company_name,parent_name,account_code,account_name,has_children
-    ${SOURCE} WHERE id = ${id}::uuid
+    ${SELECT}${SOURCE} WHERE id = ${id}::uuid
   `.execute(db)
   if (rows.rows.length === 0) throw new ApiError('not_found', '仓库不存在')
   return mapRow(rows.rows[0]!)

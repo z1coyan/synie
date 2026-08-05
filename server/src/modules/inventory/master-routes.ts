@@ -1,6 +1,10 @@
 /**
  * 库存域主数据 REST：物料分类/物料/物料单位转换/仓库。
  * 挂载于 /base（供应链主数据归入基础资料前缀；库存单据仍挂 /inventory）。
+ *
+ * 逐端点挂 `guard(资源, 动作)`（requireAuth 之后），handler 用 `permitOf(c)` 取凭证。
+ * 单位转换无独立权限点（via 物料）：写路径按「持 create 或 update 均可」用 guard 的 `anyOf`，
+ * 码从 `authz.targetOf(资源).prefix` 拼，不写字面量。
  */
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
@@ -8,12 +12,14 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
+import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
+import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
-import type { MaterialCategoryService } from './category-service.ts'
-import type { MaterialService } from './material-service.ts'
-import type { MaterialUnitService } from './material-unit-service.ts'
-import type { WarehouseService } from './warehouse-service.ts'
+import { CATEGORY_RESOURCE, type MaterialCategoryService } from './category-service.ts'
+import { MATERIAL_RESOURCE, type MaterialService } from './material-service.ts'
+import { MATERIAL_UNIT_RESOURCE, type MaterialUnitService } from './material-unit-service.ts'
+import { WAREHOUSE_RESOURCE, type WarehouseService } from './warehouse-service.ts'
 
 const idParam = z.object({ id: z.string().uuid() })
 
@@ -29,6 +35,7 @@ function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
 
 export interface InventoryMasterRouteDeps {
   auth: AuthService
+  authz: AuthzEnforcer
   categories: MaterialCategoryService
   materials: MaterialService
   materialUnits: MaterialUnitService
@@ -36,7 +43,20 @@ export interface InventoryMasterRouteDeps {
 }
 
 export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
-  const { auth, categories, materials, materialUnits, warehouses } = deps
+  const { auth, authz, categories, materials, materialUnits, warehouses } = deps
+  const categoryGuard = (action: string) => authz.guard(CATEGORY_RESOURCE, action)
+  const materialGuard = (action: string) => authz.guard(MATERIAL_RESOURCE, action)
+  const warehouseGuard = (action: string) => authz.guard(WAREHOUSE_RESOURCE, action)
+  /** 附加码从 meta 解析的前缀拼，不写字面量权限码 */
+  const codeOf = (resource: string, action: string) =>
+    `${authz.targetOf(resource).prefix}:${action}`
+  const materialUnitGuard = (action: string, anyOf?: readonly string[]) =>
+    authz.guard(MATERIAL_UNIT_RESOURCE, action, anyOf ? { anyOf } : undefined)
+  /** 单位转换写路径：物料 update ∨ create（删除是 update ∨ delete），与迁移前逐字一致 */
+  const unitWriteAnyOf = (second: 'create' | 'delete') => [
+    codeOf(MATERIAL_UNIT_RESOURCE, 'update'),
+    codeOf(MATERIAL_UNIT_RESOURCE, second),
+  ]
 
   return (
     new Hono<AppEnv>()
@@ -44,14 +64,16 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
       // —— 物料分类 ——
       .post(
         '/material-categories/query',
+        categoryGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await categories.list(c.get('actor')!, toList(c.req.valid('json')))
+          const result = await categories.list(permitOf(c), toList(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(categoryDto) })
         },
       )
       .post(
         '/material-categories',
+        categoryGuard('create'),
         zValidator(
           'json',
           z
@@ -66,20 +88,22 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
           validationHook,
         ),
         async (c) => {
-          const item = await categories.create(c.get('actor')!, c.req.valid('json'))
+          const item = await categories.create(permitOf(c), c.req.valid('json'))
           return c.json(categoryDto(item), 201)
         },
       )
       .get(
         '/material-categories/:id',
+        categoryGuard('read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await categories.get(c.get('actor')!, c.req.valid('param').id)
+          const item = await categories.get(permitOf(c), c.req.valid('param').id)
           return c.json(categoryDto(item))
         },
       )
       .patch(
         '/material-categories/:id',
+        categoryGuard('update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -97,7 +121,7 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
         async (c) => {
           const body = c.req.valid('json')
           const raw = (await c.req.json()) as Record<string, unknown>
-          const item = await categories.update(c.get('actor')!, c.req.valid('param').id, {
+          const item = await categories.update(permitOf(c), c.req.valid('param').id, {
             ...body,
             parentIdPresent: Object.prototype.hasOwnProperty.call(raw, 'parentId'),
           })
@@ -106,23 +130,26 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
       )
       .delete(
         '/material-categories/:id',
+        categoryGuard('delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          await categories.remove(c.get('actor')!, c.req.valid('param').id)
+          await categories.remove(permitOf(c), c.req.valid('param').id)
           return c.body(null, 204)
         },
       )
       // —— 物料 ——
       .post(
         '/materials/query',
+        materialGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await materials.list(c.get('actor')!, toList(c.req.valid('json')))
+          const result = await materials.list(permitOf(c), toList(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(materialDto) })
         },
       )
       .post(
         '/materials',
+        materialGuard('create'),
         zValidator(
           'json',
           z
@@ -141,20 +168,22 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
           validationHook,
         ),
         async (c) => {
-          const item = await materials.create(c.get('actor')!, c.req.valid('json'))
+          const item = await materials.create(permitOf(c), c.req.valid('json'))
           return c.json(materialDto(item), 201)
         },
       )
       .get(
         '/materials/:id',
+        materialGuard('read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await materials.get(c.get('actor')!, c.req.valid('param').id)
+          const item = await materials.get(permitOf(c), c.req.valid('param').id)
           return c.json(materialDto(item))
         },
       )
       .patch(
         '/materials/:id',
+        materialGuard('update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -176,7 +205,7 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
         async (c) => {
           const body = c.req.valid('json')
           const raw = (await c.req.json()) as Record<string, unknown>
-          const item = await materials.update(c.get('actor')!, c.req.valid('param').id, {
+          const item = await materials.update(permitOf(c), c.req.valid('param').id, {
             ...body,
             specPresent: Object.prototype.hasOwnProperty.call(raw, 'spec'),
             customerPartNoPresent: Object.prototype.hasOwnProperty.call(raw, 'customerPartNo'),
@@ -187,23 +216,26 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
       )
       .delete(
         '/materials/:id',
+        materialGuard('delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          await materials.remove(c.get('actor')!, c.req.valid('param').id)
+          await materials.remove(permitOf(c), c.req.valid('param').id)
           return c.body(null, 204)
         },
       )
       // —— 物料单位转换 ——
       .post(
         '/material-units/query',
+        materialUnitGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await materialUnits.list(c.get('actor')!, toList(c.req.valid('json')))
+          const result = await materialUnits.list(permitOf(c), toList(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(materialUnitDto) })
         },
       )
       .post(
         '/material-units',
+        materialUnitGuard('update', unitWriteAnyOf('create')),
         zValidator(
           'json',
           z
@@ -216,20 +248,22 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
           validationHook,
         ),
         async (c) => {
-          const item = await materialUnits.create(c.get('actor')!, c.req.valid('json'))
+          const item = await materialUnits.create(permitOf(c), c.req.valid('json'))
           return c.json(materialUnitDto(item), 201)
         },
       )
       .get(
         '/material-units/:id',
+        materialUnitGuard('read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await materialUnits.get(c.get('actor')!, c.req.valid('param').id)
+          const item = await materialUnits.get(permitOf(c), c.req.valid('param').id)
           return c.json(materialUnitDto(item))
         },
       )
       .patch(
         '/material-units/:id',
+        materialUnitGuard('update', unitWriteAnyOf('create')),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -243,7 +277,7 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
         ),
         async (c) => {
           const item = await materialUnits.update(
-            c.get('actor')!,
+            permitOf(c),
             c.req.valid('param').id,
             c.req.valid('json'),
           )
@@ -252,24 +286,27 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
       )
       .delete(
         '/material-units/:id',
+        materialUnitGuard('update', unitWriteAnyOf('delete')),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          await materialUnits.remove(c.get('actor')!, c.req.valid('param').id)
+          await materialUnits.remove(permitOf(c), c.req.valid('param').id)
           return c.body(null, 204)
         },
       )
       // —— 仓库 ——
       .post(
         '/warehouses/query',
+        warehouseGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await warehouses.list(c.get('actor')!, toList(c.req.valid('json')))
+          const result = await warehouses.list(permitOf(c), toList(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(warehouseDto) })
         },
       )
       // 静态路径须先于 /warehouses/:id
       .post(
         '/warehouses/outsourced/query',
+        warehouseGuard('read'),
         zValidator(
           'json',
           z
@@ -293,7 +330,7 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
         async (c) => {
           const body = c.req.valid('json')
           const result = await warehouses.listOutsourced(
-            c.get('actor')!,
+            permitOf(c),
             body.partyType,
             body.partyId,
             toList(body),
@@ -303,6 +340,7 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
       )
       .post(
         '/warehouses/seed-defaults',
+        warehouseGuard('create'),
         zValidator(
           'json',
           z.object({ companyId: z.string().uuid() }).strict(),
@@ -310,7 +348,7 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
         ),
         async (c) => {
           const count = await warehouses.seedDefaults(
-            c.get('actor')!,
+            permitOf(c),
             c.req.valid('json').companyId,
           )
           return c.json({ count })
@@ -318,6 +356,7 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
       )
       .post(
         '/warehouses',
+        warehouseGuard('create'),
         zValidator(
           'json',
           z
@@ -337,20 +376,22 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
           validationHook,
         ),
         async (c) => {
-          const item = await warehouses.create(c.get('actor')!, c.req.valid('json'))
+          const item = await warehouses.create(permitOf(c), c.req.valid('json'))
           return c.json(warehouseDto(item), 201)
         },
       )
       .get(
         '/warehouses/:id',
+        warehouseGuard('read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await warehouses.get(c.get('actor')!, c.req.valid('param').id)
+          const item = await warehouses.get(permitOf(c), c.req.valid('param').id)
           return c.json(warehouseDto(item))
         },
       )
       .patch(
         '/warehouses/:id',
+        warehouseGuard('update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -372,7 +413,7 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
         async (c) => {
           const body = c.req.valid('json')
           const raw = (await c.req.json()) as Record<string, unknown>
-          const item = await warehouses.update(c.get('actor')!, c.req.valid('param').id, {
+          const item = await warehouses.update(permitOf(c), c.req.valid('param').id, {
             ...body,
             partyTypePresent: Object.prototype.hasOwnProperty.call(raw, 'partyType'),
             partyIdPresent: Object.prototype.hasOwnProperty.call(raw, 'partyId'),
@@ -384,9 +425,10 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
       )
       .delete(
         '/warehouses/:id',
+        warehouseGuard('delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          await warehouses.remove(c.get('actor')!, c.req.valid('param').id)
+          await warehouses.remove(permitOf(c), c.req.valid('param').id)
           return c.body(null, 204)
         },
       )

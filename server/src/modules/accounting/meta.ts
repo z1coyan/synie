@@ -45,6 +45,7 @@ export function journalResourceMeta(): ResourceMeta {
     numbering: true,
     permissionLabel: '会计凭证',
     table: 'acc_gl_journal',
+    authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('voucher_no', 'voucherNo', 'string', '凭证编号', {
@@ -130,6 +131,7 @@ export function journalLineResourceMeta(): ResourceMeta {
     permissionPrefix: 'acc.gl_journal',
     permissionLabel: '会计凭证',
     table: 'acc_gl_journal_line',
+    authz: { kind: 'via', parent: 'accGlJournals', fk: 'journal_id' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('idx', 'idx', 'integer', '行号', { required: true, filterable: true, sortable: true }),
@@ -208,6 +210,7 @@ export function glEntryResourceMeta(): ResourceMeta {
     permissionPrefix: 'acc.gl_entry',
     permissionLabel: '总账分录',
     table: 'acc_gl_entry',
+    authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('seq', 'seq', 'integer', '序号', { readonly: true, filterable: true, sortable: true }),

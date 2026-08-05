@@ -29,6 +29,7 @@ export function systemResourceMeta(): ResourceMeta {
     permissionPrefix: 'sys.setting',
     permissionLabel: '系统设置',
     table: 'sys_setting',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', true, false),
       field(

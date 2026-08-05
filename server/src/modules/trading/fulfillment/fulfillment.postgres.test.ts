@@ -10,6 +10,7 @@ import { createGlEngine } from '~/engines/gl/index.ts'
 import { createInventoryEngine } from '~/engines/inventory/index.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { onError } from '~/platform/http/errors.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
@@ -28,18 +29,34 @@ import {
   type SalesDraftDto,
   type SalesDraftInput,
 } from './service.ts'
-import { fulfillmentItemMeta, packBoxMeta, packLineMeta } from './spec.ts'
+import {
+  fulfillmentItemMeta,
+  fulfillmentSpec,
+  packBoxMeta,
+  packLineMeta,
+  PACK_BOX_RESOURCE,
+  PACK_LINE_RESOURCE,
+} from './spec.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
+
+/** 编号服务与授权判定共用同一份 sealed registry（授权归宿解析） */
+const registry = createSealedResourceRegistry()
+const SAL_HEAD = fulfillmentSpec('sales').headResource
+const SAL_ITEM = fulfillmentSpec('sales').itemResource
+const PUR_HEAD = fulfillmentSpec('purchase').headResource
+const PUR_ITEM = fulfillmentSpec('purchase').itemResource
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
 
 run('PG 集成（履约聚合草稿）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
+  const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
+  const authz = createAuthzEnforcer(registry)
   const fulfillment = createFulfillmentService(db, numbering, {
     inventory: createInventoryEngine(),
     gl: createGlEngine(),
-  })
+  }, registry)
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `PB${suffix}`
 
@@ -67,7 +84,7 @@ run('PG 集成（履约聚合草稿）', () => {
   const purchaseOrder2Id = crypto.randomUUID()
   const purchaseOrder2ItemId = crypto.randomUUID()
 
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId: '',
     username: 'packbox-test',
     name: '装箱箱测试',
@@ -75,32 +92,67 @@ run('PG 集成（履约聚合草稿）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
-  const readOnlyActor: Actor = {
+  })
+  const readOnlyActor: Actor = testActor({
     ...actor,
     username: 'packbox-read-only',
     superAdmin: false,
     permissions: new Set(['sales.delivery:read']),
-  }
-  const noReadActor: Actor = {
+  })
+  const noReadActor: Actor = testActor({
     ...actor,
     username: 'packbox-no-read',
     superAdmin: false,
     permissions: new Set(),
-  }
-  function limitedActor(prefix: string, actions: Array<'read' | 'update' | 'create' | 'delete'>): Actor {
-    return {
+  })
+  type LimitedAction = 'read' | 'update' | 'create' | 'delete' | 'audit' | 'void'
+  function limitedActor(prefix: string, actions: LimitedAction[]): Actor {
+    return testActor({
       ...actor,
       username: `${prefix}-${actions.join('-')}`,
       superAdmin: false,
       permissions: new Set(actions.map((action) => `${prefix}:${action}`)),
+    })
+  }
+  /**
+   * 别名回归专用：非 superAdmin 的公司域 actor。superAdmin 的 rowFilter 是 bypass，
+   * 编译成 `true`，listAuthorized 的 alias 写错测不出来。
+   */
+  const scopedActor: Actor = testActor({
+    userId: '',
+    username: 'packbox-scoped',
+    superAdmin: false,
+    allCompanies: false,
+    companyIds: [companyId],
+    permissions: new Set(['sales.delivery:read', 'purchase.receipt:read']),
+  })
+  /** 跨公司：授权公司集合不含本单公司 → 单条一律 not_found，列表空集 */
+  const foreignActor: Actor = testActor({
+    userId: '',
+    username: 'packbox-foreign',
+    superAdmin: false,
+    allCompanies: false,
+    companyIds: [crypto.randomUUID()],
+    permissions: new Set(['sales.delivery:read', 'purchase.receipt:read']),
+  })
+  /** 服务级凭证每次现取（actor 在夹具间可换；缺码 403 一律在 HTTP 层验） */
+  function p(resource: string, action: string, who: Actor = actor) {
+    const decision = authz.decideFor(who, resource, action)
+    if (decision.outcome !== 'permit') {
+      throw new Error(`夹具应当 permit: ${resource}:${action}`)
     }
+    return decision.permit
   }
-  const byToken = (token: string | null) => {
-    if (token === 'read-only') return readOnlyActor
-    if (token === 'no-read') return noReadActor
-    return actor
+  const tokens: Record<string, Actor> = {
+    'read-only': readOnlyActor,
+    'no-read': noReadActor,
+    'sal-update-only': limitedActor('sales.delivery', ['read', 'update']),
+    'sal-replace': limitedActor('sales.delivery', ['read', 'update', 'create', 'delete']),
+    'pur-update-only': limitedActor('purchase.receipt', ['read', 'update']),
+    'pur-replace': limitedActor('purchase.receipt', ['read', 'update', 'create', 'delete']),
+    foreign: foreignActor,
   }
+  const byToken = (token: string | null) => (token ? tokens[token] ?? actor : actor)
   const auth = {
     authenticate: async (token: string) => byToken(token),
     authenticateRequest: async (headers: Headers) => {
@@ -110,13 +162,13 @@ run('PG 集成（履约聚合草稿）', () => {
     },
   } as unknown as AuthService
   const http = new Hono<AppEnv>()
-    .route('/api/v1/sales/deliveries', salesFulfillmentHeadRoutes({ auth, fulfillment }))
-    .route('/api/v1/sales/delivery-items', salesFulfillmentItemRoutes({ auth, fulfillment }))
-    .route('/api/v1/sales/delivery-pack-boxes', packBoxRoutes({ auth, fulfillment }))
-    .route('/api/v1/sales/delivery-pack-lines', packLineRoutes({ auth, fulfillment }))
+    .route('/api/v1/sales/deliveries', salesFulfillmentHeadRoutes({ auth, authz, fulfillment }))
+    .route('/api/v1/sales/delivery-items', salesFulfillmentItemRoutes({ auth, authz, fulfillment }))
+    .route('/api/v1/sales/delivery-pack-boxes', packBoxRoutes({ auth, authz, fulfillment }))
+    .route('/api/v1/sales/delivery-pack-lines', packLineRoutes({ auth, authz, fulfillment }))
     .route(
       '/api/v1/purchase/receipts',
-      purchaseFulfillmentHeadRoutes({ auth, fulfillment }),
+      purchaseFulfillmentHeadRoutes({ auth, authz, fulfillment }),
     )
   http.onError(onError)
 
@@ -344,7 +396,7 @@ run('PG 集成（履约聚合草稿）', () => {
 
   test('整单创建在一个事务中返回完整权威草稿', async () => {
     const no = `${prefix}-ATOMIC-CREATE`
-    const draft = await fulfillment.createSalesDraft(actor, draftInput(no))
+    const draft = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), draftInput(no))
 
     expect(draft.deliveryNo).toBe(no)
     expect(draft.status).toBe('DRAFT')
@@ -360,7 +412,7 @@ run('PG 集成（履约聚合草稿）', () => {
 
   test('装箱箱/装箱行写路径落审计：创建、改行、删行删箱', async () => {
     const no = `${prefix}-PACK-AUDIT`
-    const draft = await fulfillment.createSalesDraft(actor, draftInput(no))
+    const draft = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), draftInput(no))
     const box = draft.packBoxes[0]!
     const line = box.lines[0]!
 
@@ -391,14 +443,14 @@ run('PG 集成（履约聚合草稿）', () => {
     expect(createChanges.pack_box_id?.to).toBe(box.id)
 
     // 全量替换但快照未变：不追加装箱审计
-    const unchanged = salesReplaceInput(await fulfillment.getSalesDraft(actor, draft.id))
-    await fulfillment.replaceSalesDraft(actor, draft.id, unchanged)
+    const unchanged = salesReplaceInput(await fulfillment.getSalesDraft(p(SAL_HEAD, 'read'), draft.id))
+    await fulfillment.replaceSalesDraft(p(SAL_HEAD, 'update'), draft.id, unchanged)
     expect((await packAudit(line.id)).rows).toHaveLength(1)
 
     // 替换改行数量：update 留 diff
-    const modified = salesReplaceInput(await fulfillment.getSalesDraft(actor, draft.id))
+    const modified = salesReplaceInput(await fulfillment.getSalesDraft(p(SAL_HEAD, 'read'), draft.id))
     modified.packBoxes[0]!.lines[0]!.qty = '6'
-    await fulfillment.replaceSalesDraft(actor, draft.id, modified)
+    await fulfillment.replaceSalesDraft(p(SAL_HEAD, 'update'), draft.id, modified)
     const lineUpdated = await packAudit(line.id)
     expect(lineUpdated.rows.map((r) => r.action_name)).toEqual(['create', 'update'])
     const updateChanges = JSON.parse(lineUpdated.rows[1]!.changes) as Record<
@@ -408,9 +460,9 @@ run('PG 集成（履约聚合草稿）', () => {
     expect(updateChanges.qty).toEqual({ from: '10', to: '6' })
 
     // 替换清空装箱：行与箱各留 destroy
-    const cleared = salesReplaceInput(await fulfillment.getSalesDraft(actor, draft.id))
+    const cleared = salesReplaceInput(await fulfillment.getSalesDraft(p(SAL_HEAD, 'read'), draft.id))
     cleared.packBoxes = []
-    await fulfillment.replaceSalesDraft(actor, draft.id, cleared)
+    await fulfillment.replaceSalesDraft(p(SAL_HEAD, 'update'), draft.id, cleared)
     const lineFinal = await packAudit(line.id)
     expect(lineFinal.rows.map((r) => r.action_name)).toEqual(['create', 'update', 'destroy'])
     const destroyChanges = JSON.parse(lineFinal.rows[2]!.changes) as Record<
@@ -480,7 +532,7 @@ run('PG 集成（履约聚合草稿）', () => {
     const no = `${prefix}-PUR-ROLLBACK`
     await expect(
       fulfillment.createPurchaseReceiptDraft(
-        actor,
+        p(PUR_HEAD, 'create'),
         purchaseReceiptDraftInput(no, [
           {
             idx: 1,
@@ -513,7 +565,7 @@ run('PG 集成（履约聚合草稿）', () => {
 
   test('完整草稿读取覆盖超过默认分页的子记录且无静默截断', async () => {
     const no = `${prefix}-FULL-DRAFT`
-    const created = await fulfillment.createSalesDraft(actor, draftInput(no))
+    const created = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), draftInput(no))
     // 默认 list 上限 200；直接插入超过分页数量的条目，证明 getSalesDraft 不走分页
     const extra = 210
     for (let i = 0; i < extra; i++) {
@@ -534,13 +586,13 @@ run('PG 集成（履约聚合草稿）', () => {
     }
     const expectedItems = 1 + extra
 
-    const full = await fulfillment.getSalesDraft(actor, created.id)
+    const full = await fulfillment.getSalesDraft(p(SAL_HEAD, 'read'), created.id)
     expect(full.items).toHaveLength(expectedItems)
     expect(full.packBoxes).toHaveLength(1)
     expect(full.packBoxes[0]?.lines).toHaveLength(1)
 
     // 对照：列表分页会截断
-    const paged = await fulfillment.listItems(actor, 'sales', {
+    const paged = await fulfillment.listItems(p(SAL_ITEM, 'read'), 'sales', {
       limit: 50,
       offset: 0,
       filter: {
@@ -570,7 +622,7 @@ run('PG 集成（履约聚合草稿）', () => {
   test('整单创建的嵌套行失败时不残留表头、子记录或操作日志', async () => {
     const no = `${prefix}-ATOMIC-ROLLBACK`
     await expect(
-      fulfillment.createSalesDraft(actor, draftInput(no, '10', '0')),
+      fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), draftInput(no, '10', '0')),
     ).rejects.toThrow(/装箱行参数不合法/)
 
     const heads = await sql<{ n: string }>`
@@ -719,7 +771,7 @@ run('PG 集成（履约聚合草稿）', () => {
     expect(deniedCreate.status).toBe(403)
 
     const created = await fulfillment.createSalesDraft(
-      actor,
+      p(SAL_HEAD, 'create'),
       draftInput(`${prefix}-DENIED-UPDATE`),
     )
     const deniedReplace = await http.request(`/api/v1/sales/deliveries/${created.id}`, {
@@ -735,7 +787,7 @@ run('PG 集成（履约聚合草稿）', () => {
 
   test('销售发货子资源只保留 query/get，Meta 不再声明细粒度写能力', async () => {
     const created = await fulfillment.createSalesDraft(
-      actor,
+      p(SAL_HEAD, 'create'),
       draftInput(`${prefix}-READ-ONLY`),
     )
     const tokenHeaders = { authorization: 'Bearer test' }
@@ -786,7 +838,7 @@ run('PG 集成（履约聚合草稿）', () => {
 
   test('整单替换以完整快照同时新增、修改和删除子记录', async () => {
     const no = `${prefix}-ATOMIC-REPLACE`
-    const created = await fulfillment.createSalesDraft(actor, {
+    const created = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), {
       ...draftInput(no),
       items: [
         { idx: 1, qty: '10', orderItemId, warehouseId },
@@ -804,7 +856,7 @@ run('PG 集成（履约聚合草稿）', () => {
     const keptLine = keptBox.lines[0]!
     const removedLine = removedBox.lines[0]!
 
-    const replaced = await fulfillment.replaceSalesDraft(actor, created.id, {
+    const replaced = await fulfillment.replaceSalesDraft(p(SAL_HEAD, 'update'), created.id, {
       ...draftInput(no),
       remarks: '完整快照已替换',
       items: [
@@ -832,10 +884,10 @@ run('PG 集成（履约聚合草稿）', () => {
     expect(replaced.packBoxes.map((box) => box.id)).not.toContain(removedBox.id)
     expect(replaced.packBoxes).toHaveLength(2)
     expect(replaced.packBoxes[0]?.lines.map((line) => line.id)).toContain(keptLine.id)
-    await expect(fulfillment.getItem(actor, 'sales', removedItem.id)).rejects.toThrow(/不存在/)
-    await expect(fulfillment.getPackLine(actor, removedLine.id)).rejects.toThrow(/不存在/)
+    await expect(fulfillment.getItem(p(SAL_ITEM, 'read'), 'sales', removedItem.id)).rejects.toThrow(/不存在/)
+    await expect(fulfillment.getPackLine(p(PACK_LINE_RESOURCE, 'read'), removedLine.id)).rejects.toThrow(/不存在/)
 
-    const cleared = await fulfillment.replaceSalesDraft(actor, created.id, {
+    const cleared = await fulfillment.replaceSalesDraft(p(SAL_HEAD, 'update'), created.id, {
       ...draftInput(no),
       items: [],
       packBoxes: [],
@@ -846,10 +898,10 @@ run('PG 集成（履约聚合草稿）', () => {
 
   test('整单替换先移除旧来源条目，允许同步切换往来方与新来源', async () => {
     const sales = await fulfillment.createSalesDraft(
-      actor,
+      p(SAL_HEAD, 'create'),
       draftInput(`${prefix}-SALES-PARTY-SWITCH`),
     )
-    const replacedSales = await fulfillment.replaceSalesDraft(actor, sales.id, {
+    const replacedSales = await fulfillment.replaceSalesDraft(p(SAL_HEAD, 'update'), sales.id, {
       ...salesReplaceInput(sales),
       partyId: customer2Id,
       items: [{ idx: 1, qty: '5', orderItemId: order2ItemId, warehouseId }],
@@ -861,11 +913,11 @@ run('PG 集成（履约聚合草稿）', () => {
     expect(replacedSales.items[0]?.orderItemId).toBe(order2ItemId)
 
     const purchase = await fulfillment.createPurchaseReceiptDraft(
-      actor,
+      p(PUR_HEAD, 'create'),
       purchaseReceiptDraftInput(`${prefix}-PUR-PARTY-SWITCH`),
     )
     const replacedPurchase = await fulfillment.replacePurchaseReceiptDraft(
-      actor,
+      p(PUR_HEAD, 'update'),
       purchase.id,
       {
         ...purchaseReplaceInput(purchase),
@@ -881,12 +933,12 @@ run('PG 集成（履约聚合草稿）', () => {
 
   test('切换往来方后若新子项失败，销售与采购完整草稿均回滚', async () => {
     const sales = await fulfillment.createSalesDraft(
-      actor,
+      p(SAL_HEAD, 'create'),
       draftInput(`${prefix}-S-PTY-RB`),
     )
-    const salesBefore = await fulfillment.getSalesDraft(actor, sales.id)
+    const salesBefore = await fulfillment.getSalesDraft(p(SAL_HEAD, 'read'), sales.id)
     await expect(
-      fulfillment.replaceSalesDraft(actor, sales.id, {
+      fulfillment.replaceSalesDraft(p(SAL_HEAD, 'update'), sales.id, {
         ...salesReplaceInput(salesBefore),
         partyId: customer2Id,
         items: [
@@ -896,15 +948,15 @@ run('PG 集成（履约聚合草稿）', () => {
         packBoxes: [],
       }),
     ).rejects.toThrow(/发货条目参数不合法/)
-    expect(await fulfillment.getSalesDraft(actor, sales.id)).toEqual(salesBefore)
+    expect(await fulfillment.getSalesDraft(p(SAL_HEAD, 'read'), sales.id)).toEqual(salesBefore)
 
     const purchase = await fulfillment.createPurchaseReceiptDraft(
-      actor,
+      p(PUR_HEAD, 'create'),
       purchaseReceiptDraftInput(`${prefix}-PUR-PARTY-ROLLBACK`),
     )
-    const purchaseBefore = await fulfillment.getPurchaseReceiptDraft(actor, purchase.id)
+    const purchaseBefore = await fulfillment.getPurchaseReceiptDraft(p(PUR_HEAD, 'read'), purchase.id)
     await expect(
-      fulfillment.replacePurchaseReceiptDraft(actor, purchase.id, {
+      fulfillment.replacePurchaseReceiptDraft(p(PUR_HEAD, 'update'), purchase.id, {
         ...purchaseReplaceInput(purchaseBefore),
         partyId: supplier2Id,
         items: [
@@ -913,86 +965,123 @@ run('PG 集成（履约聚合草稿）', () => {
         ],
       }),
     ).rejects.toThrow(/入库条目参数不合法/)
-    expect(await fulfillment.getPurchaseReceiptDraft(actor, purchase.id)).toEqual(purchaseBefore)
+    expect(await fulfillment.getPurchaseReceiptDraft(p(PUR_HEAD, 'read'), purchase.id)).toEqual(purchaseBefore)
   })
 
-  test('销售发货保持既有 Aggregate Draft 授权：update 可同时增删子树', async () => {
-    const created = await fulfillment.createSalesDraft(
-      actor,
+  test('整单替换的子树增删不再在服务层判权（服务层零 forbidden）', async () => {
+    // 语义变化：旧实现按子项差异动态 requirePerm 并抛 forbidden；
+    // 新形态由路由 guard(update, allOf[create, delete]) 承担，服务层只收 Permit。
+    const sales = await fulfillment.createSalesDraft(
+      p(SAL_HEAD, 'create'),
       draftInput(`${prefix}-SALES-UPDATE-ONLY`),
     )
-    const replaced = await fulfillment.replaceSalesDraft(
-      limitedActor('sales.delivery', ['update']),
-      created.id,
+    const replacedSales = await fulfillment.replaceSalesDraft(
+      p(SAL_HEAD, 'update'),
+      sales.id,
       {
-        ...salesReplaceInput(created),
+        ...salesReplaceInput(sales),
         items: [{ idx: 1, qty: '3', orderItemId: orderItem2Id, warehouseId }],
         packBoxes: [],
       },
     )
-    expect(replaced.items).toHaveLength(1)
-    expect(replaced.items[0]?.id).not.toBe(created.items[0]?.id)
-    expect(replaced.packBoxes).toEqual([])
-  })
+    expect(replacedSales.items).toHaveLength(1)
+    expect(replacedSales.items[0]?.id).not.toBe(sales.items[0]?.id)
+    expect(replacedSales.packBoxes).toEqual([])
 
-  test('采购入库替换按子项差异追加 create/delete 权限', async () => {
-    const created = await fulfillment.createPurchaseReceiptDraft(
-      actor,
+    const purchase = await fulfillment.createPurchaseReceiptDraft(
+      p(PUR_HEAD, 'create'),
       purchaseReceiptDraftInput(`${prefix}-PUR-DIFF-RBAC`),
     )
-    const updateOnly = limitedActor('purchase.receipt', ['update'])
-    const pureUpdate = await fulfillment.replacePurchaseReceiptDraft(
-      updateOnly,
-      created.id,
-      { ...purchaseReplaceInput(created), remarks: '只改现有内容' },
-    )
-    expect(pureUpdate.remarks).toBe('只改现有内容')
-
-    const addItem = {
-      ...purchaseReplaceInput(pureUpdate),
+    // 只带 update 码的主体也能拿到凭证（allOf 由路由声明，不在服务层）
+    const updateOnlyPermit = p(PUR_HEAD, 'update', limitedActor('purchase.receipt', ['update']))
+    const added = await fulfillment.replacePurchaseReceiptDraft(updateOnlyPermit, purchase.id, {
+      ...purchaseReplaceInput(purchase),
       items: [
-        ...purchaseReplaceInput(pureUpdate).items,
+        ...purchaseReplaceInput(purchase).items,
         { idx: 2, qty: '2', orderItemId: purchaseOrderItemId, warehouseId },
       ],
-    }
-    await expect(
-      fulfillment.replacePurchaseReceiptDraft(updateOnly, created.id, addItem),
-    ).rejects.toMatchObject({ code: 'forbidden' })
+    })
+    expect(added.items).toHaveLength(2)
 
-    const withAdded = await fulfillment.replacePurchaseReceiptDraft(
-      limitedActor('purchase.receipt', ['update', 'create']),
-      created.id,
-      addItem,
+    const removed = await fulfillment.replacePurchaseReceiptDraft(updateOnlyPermit, purchase.id, {
+      ...purchaseReplaceInput(added),
+      items: purchaseReplaceInput(added).items.filter((item) => item.id === purchase.items[0]?.id),
+    })
+    expect(removed.items.map((item) => item.id)).toEqual([purchase.items[0]!.id])
+  })
+
+  test('缺码 403：整单 PUT 要求 update ∧ create ∧ delete（HTTP 层）', async () => {
+    const jsonHeaders = (token: string) => ({
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    })
+
+    const sales = await fulfillment.createSalesDraft(
+      p(SAL_HEAD, 'create'),
+      draftInput(`${prefix}-PUT-CODES-S`),
     )
-    expect(withAdded.items).toHaveLength(2)
+    const salesBody = JSON.stringify({
+      ...httpDraftInput(sales.deliveryNo),
+      items: [],
+      packBoxes: [],
+    })
+    expect(
+      (await http.request(`/api/v1/sales/deliveries/${sales.id}`, {
+        method: 'PUT',
+        headers: jsonHeaders('sal-update-only'),
+        body: salesBody,
+      })).status,
+    ).toBe(403)
+    expect(
+      (await http.request(`/api/v1/sales/deliveries/${sales.id}`, {
+        method: 'PUT',
+        headers: jsonHeaders('sal-replace'),
+        body: salesBody,
+      })).status,
+    ).toBe(200)
 
-    const removeAdded = {
-      ...purchaseReplaceInput(withAdded),
-      items: purchaseReplaceInput(withAdded).items.filter(
-        (item) => item.id === created.items[0]?.id,
-      ),
-    }
-    await expect(
-      fulfillment.replacePurchaseReceiptDraft(updateOnly, created.id, removeAdded),
-    ).rejects.toMatchObject({ code: 'forbidden' })
-
-    const withoutAdded = await fulfillment.replacePurchaseReceiptDraft(
-      limitedActor('purchase.receipt', ['update', 'delete']),
-      created.id,
-      removeAdded,
+    const purchase = await fulfillment.createPurchaseReceiptDraft(
+      p(PUR_HEAD, 'create'),
+      purchaseReceiptDraftInput(`${prefix}-PUT-CODES-P`),
     )
-    expect(withoutAdded.items.map((item) => item.id)).toEqual([created.items[0]!.id])
+    const purchaseWire = purchaseReceiptDraftInput(purchase.receiptNo)
+    const purchaseBody = JSON.stringify({
+      companyId: purchaseWire.companyId,
+      receiptNo: purchase.receiptNo,
+      receiptDate: purchase.receiptDate,
+      postingDate: purchase.postingDate,
+      partyType: purchaseWire.partyType,
+      partyId: purchaseWire.partyId,
+      warehouseId: purchaseWire.warehouseId,
+      debitAccountId: purchaseWire.debitAccountId,
+      creditAccountId: purchaseWire.creditAccountId,
+      items: [],
+    })
+    expect(
+      (await http.request(`/api/v1/purchase/receipts/${purchase.id}`, {
+        method: 'PUT',
+        headers: jsonHeaders('pur-update-only'),
+        body: purchaseBody,
+      })).status,
+    ).toBe(403)
+    expect(
+      (await http.request(`/api/v1/purchase/receipts/${purchase.id}`, {
+        method: 'PUT',
+        headers: jsonHeaders('pur-replace'),
+        body: purchaseBody,
+      })).status,
+    ).toBe(200)
   })
 
   test('整单替换的嵌套行失败时保持保存前的完整草稿', async () => {
     const no = `${prefix}-ARR`
-    const created = await fulfillment.createSalesDraft(actor, draftInput(no))
+    const created = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), draftInput(no))
     const item = created.items[0]!
     const box = created.packBoxes[0]!
     const line = box.lines[0]!
 
     await expect(
-      fulfillment.replaceSalesDraft(actor, created.id, {
+      fulfillment.replaceSalesDraft(p(SAL_HEAD, 'update'), created.id, {
         ...draftInput(no),
         remarks: '不应落库',
         items: [{ id: item.id, idx: 1, qty: '99', orderItemId, warehouseId }],
@@ -1003,18 +1092,18 @@ run('PG 集成（履约聚合草稿）', () => {
       }),
     ).rejects.toThrow(/装箱行参数不合法/)
 
-    expect((await fulfillment.getHead(actor, 'sales', created.id)).remarks).toBeNull()
-    expect((await fulfillment.getItem(actor, 'sales', item.id)).qty).toBe('10')
-    expect((await fulfillment.getPackLine(actor, line.id)).qty).toBe('10')
+    expect((await fulfillment.getHead(p(SAL_HEAD, 'read'), 'sales', created.id)).remarks).toBeNull()
+    expect((await fulfillment.getItem(p(SAL_ITEM, 'read'), 'sales', item.id)).qty).toBe('10')
+    expect((await fulfillment.getPackLine(p(PACK_LINE_RESOURCE, 'read'), line.id)).qty).toBe('10')
   })
 
   test('整单替换拒绝未知、跨单和重复的子记录身份并返回索引路径', async () => {
     const first = await fulfillment.createSalesDraft(
-      actor,
+      p(SAL_HEAD, 'create'),
       draftInput(`${prefix}-ATOMIC-ID-A`),
     )
     const second = await fulfillment.createSalesDraft(
-      actor,
+      p(SAL_HEAD, 'create'),
       draftInput(`${prefix}-ATOMIC-ID-B`),
     )
     const firstItem = first.items[0]!
@@ -1084,7 +1173,7 @@ run('PG 集成（履约聚合草稿）', () => {
 
     for (const invalid of invalidDrafts) {
       const error = await fulfillment
-        .replaceSalesDraft(actor, first.id, invalid.input)
+        .replaceSalesDraft(p(SAL_HEAD, 'update'), first.id, invalid.input)
         .then(
           () => null,
           (caught) => caught as { fields?: Record<string, string[]> },
@@ -1095,45 +1184,54 @@ run('PG 集成（履约聚合草稿）', () => {
 
   test('发货单删除级联删除箱与装箱行', async () => {
     const draft = await fulfillment.createSalesDraft(
-      actor,
+      p(SAL_HEAD, 'create'),
       draftInput(`${prefix}-CASCADE`),
     )
     const box = draft.packBoxes[0]!
     const line = box.lines[0]!
-    await fulfillment.deleteHead(actor, 'sales', draft.id)
-    await expect(fulfillment.getPackBox(actor, box.id)).rejects.toThrow(/不存在/)
-    await expect(fulfillment.getPackLine(actor, line.id)).rejects.toThrow(/不存在/)
+    await fulfillment.deleteHead(p(SAL_HEAD, 'delete'), 'sales', draft.id)
+    await expect(fulfillment.getPackBox(p(PACK_BOX_RESOURCE, 'read'), box.id)).rejects.toThrow(/不存在/)
+    await expect(fulfillment.getPackLine(p(PACK_LINE_RESOURCE, 'read'), line.id)).rejects.toThrow(/不存在/)
   })
 
-  test('审核后整单替换锁死', async () => {
+  test('状态守卫 409：审核后整单替换锁死（领域不变量不进权限系统）', async () => {
     const input = draftInput(`${prefix}-LOCKED`)
-    const draft = await fulfillment.createSalesDraft(actor, input)
-    const audited = await fulfillment.auditHead(actor, 'sales', draft.id)
+    const draft = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), input)
+    const audited = await fulfillment.auditHead(p(SAL_HEAD, 'audit'), 'sales', draft.id)
     expect(audited.status).toBe('AUDITED')
-    await expect(fulfillment.replaceSalesDraft(actor, draft.id, input)).rejects.toThrow(
-      /仅草稿销售发货单可编辑/,
-    )
+    const conflict = await fulfillment
+      .replaceSalesDraft(p(SAL_HEAD, 'update'), draft.id, input)
+      .then(() => null, (caught) => caught as { code?: string; message?: string })
+    expect(conflict?.code).toBe('conflict')
+    expect(conflict?.message).toMatch(/仅草稿销售发货单可编辑/)
+
+    const replaceResponse = await http.request(`/api/v1/sales/deliveries/${draft.id}`, {
+      method: 'PUT',
+      headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+      body: JSON.stringify(httpDraftInput(draft.deliveryNo)),
+    })
+    expect(replaceResponse.status).toBe(409)
   })
 
   test('全有或全无回归：装箱与发货不一致拒审、一致放行', async () => {
     const bad = await fulfillment.createSalesDraft(
-      actor,
+      p(SAL_HEAD, 'create'),
       draftInput(`${prefix}-BAD-PACK`, '10', '8'),
     )
-    await expect(fulfillment.auditHead(actor, 'sales', bad.id)).rejects.toThrow(
+    await expect(fulfillment.auditHead(p(SAL_HEAD, 'audit'), 'sales', bad.id)).rejects.toThrow(
       /装箱清单与发货量不一致/,
     )
 
     const good = await fulfillment.createSalesDraft(
-      actor,
+      p(SAL_HEAD, 'create'),
       draftInput(`${prefix}-GOOD-PACK`),
     )
-    const audited = await fulfillment.auditHead(actor, 'sales', good.id)
+    const audited = await fulfillment.auditHead(p(SAL_HEAD, 'audit'), 'sales', good.id)
     expect(audited.status).toBe('AUDITED')
   })
 
   test('可先装箱后补条目：装箱行物料不强制属于本单发货条目', async () => {
-    const draft = await fulfillment.createSalesDraft(actor, {
+    const draft = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), {
       ...draftInput(`${prefix}-PACK-FIRST`),
       items: [],
       packBoxes: [{
@@ -1141,5 +1239,161 @@ run('PG 集成（履约聚合草稿）', () => {
       }],
     })
     expect(draft.packBoxes[0]?.lines[0]?.materialId).toBe(material2Id)
+  })
+
+  /**
+   * 别名回归：六条列表路径各一条，正负成对。
+   * 必须用非 superAdmin 的公司域 actor——superAdmin 的 rowFilter 是 bypass，
+   * 编译成 `true`，alias / via 链写错测不出来。正向断言「本公司的行在结果里」
+   * （只断言别人不在对空集永真），反向断言跨公司主体拿不到同一行。
+   */
+  test('别名回归：六条列表路径正负成对（本公司可见 / 跨公司空集）', async () => {
+    const sales = await fulfillment.createSalesDraft(
+      p(SAL_HEAD, 'create'),
+      draftInput(`${prefix}-ALIAS-S`),
+    )
+    const purchase = await fulfillment.createPurchaseReceiptDraft(
+      p(PUR_HEAD, 'create'),
+      purchaseReceiptDraftInput(`${prefix}-ALIAS-P`),
+    )
+    // 前提自检：本用例必须跑在非 bypass 的行过滤上
+    expect(p(SAL_HEAD, 'read', scopedActor).rowFilter.company).not.toBe('bypass')
+
+    const companyFilter = {
+      companyId: { kind: 'fk' as const, op: 'in' as const, values: [companyId], labels: [] },
+    }
+    const deliveryFilter = {
+      deliveryId: { kind: 'fk' as const, op: 'in' as const, values: [sales.id], labels: [] },
+    }
+    const receiptFilter = {
+      receiptId: { kind: 'fk' as const, op: 'in' as const, values: [purchase.id], labels: [] },
+    }
+    type Listed = { results: Array<{ id: string }> }
+    const probes: Array<{ label: string; rowId: string; list: (who: Actor) => Promise<Listed> }> = [
+      {
+        // company 形态，alias = sal_delivery
+        label: '销售发货头',
+        rowId: sales.id,
+        list: (who) =>
+          fulfillment.listHeads(p(SAL_HEAD, 'read', who), 'sales', {
+            limit: 200,
+            filter: companyFilter,
+          }),
+      },
+      {
+        // via salDeliveries，alias = fulfillment_items（子查询别名）
+        label: '销售发货条目',
+        rowId: sales.items[0]!.id,
+        list: (who) =>
+          fulfillment.listItems(p(SAL_ITEM, 'read', who), 'sales', {
+            limit: 200,
+            filter: deliveryFilter,
+          }),
+      },
+      {
+        // via salDeliveries，alias = sal_delivery_pack_box
+        label: '装箱箱',
+        rowId: sales.packBoxes[0]!.id,
+        list: (who) =>
+          fulfillment.listPackBoxes(p(PACK_BOX_RESOURCE, 'read', who), {
+            limit: 200,
+            filter: deliveryFilter,
+          }),
+      },
+      {
+        // 两级 via：pack_box → sal_delivery，alias = sal_delivery_pack_line
+        label: '装箱行',
+        rowId: sales.packBoxes[0]!.lines[0]!.id,
+        list: (who) =>
+          fulfillment.listPackLines(p(PACK_LINE_RESOURCE, 'read', who), {
+            limit: 200,
+            filter: deliveryFilter,
+          }),
+      },
+      {
+        // company 形态，alias = pur_receipt
+        label: '采购入库头',
+        rowId: purchase.id,
+        list: (who) =>
+          fulfillment.listHeads(p(PUR_HEAD, 'read', who), 'purchase', {
+            limit: 200,
+            filter: companyFilter,
+          }),
+      },
+      {
+        // via purReceipts，同一份 fulfillment_items 投影
+        label: '采购入库条目',
+        rowId: purchase.items[0]!.id,
+        list: (who) =>
+          fulfillment.listItems(p(PUR_ITEM, 'read', who), 'purchase', {
+            limit: 200,
+            filter: receiptFilter,
+          }),
+      },
+    ]
+
+    for (const probe of probes) {
+      const mine = await probe.list(scopedActor)
+      const theirs = await probe.list(foreignActor)
+      expect({
+        path: probe.label,
+        visibleToOwner: mine.results.some((row) => row.id === probe.rowId),
+        visibleToForeign: theirs.results.some((row) => row.id === probe.rowId),
+      }).toEqual({ path: probe.label, visibleToOwner: true, visibleToForeign: false })
+    }
+  })
+
+  test('跨公司：单条一律 not_found，列表为空集', async () => {
+    const sales = await fulfillment.createSalesDraft(
+      p(SAL_HEAD, 'create'),
+      draftInput(`${prefix}-XCOMPANY-S`),
+    )
+    const purchase = await fulfillment.createPurchaseReceiptDraft(
+      p(PUR_HEAD, 'create'),
+      purchaseReceiptDraftInput(`${prefix}-XCOMPANY-P`),
+    )
+    const notFound = { code: 'not_found' }
+
+    await expect(
+      fulfillment.getHead(p(SAL_HEAD, 'read', foreignActor), 'sales', sales.id),
+    ).rejects.toMatchObject(notFound)
+    await expect(
+      fulfillment.getSalesDraft(p(SAL_HEAD, 'read', foreignActor), sales.id),
+    ).rejects.toMatchObject(notFound)
+    await expect(
+      fulfillment.getItem(p(SAL_ITEM, 'read', foreignActor), 'sales', sales.items[0]!.id),
+    ).rejects.toMatchObject(notFound)
+    await expect(
+      fulfillment.getPackBox(p(PACK_BOX_RESOURCE, 'read', foreignActor), sales.packBoxes[0]!.id),
+    ).rejects.toMatchObject(notFound)
+    await expect(
+      fulfillment.getPackLine(
+        p(PACK_LINE_RESOURCE, 'read', foreignActor),
+        sales.packBoxes[0]!.lines[0]!.id,
+      ),
+    ).rejects.toMatchObject(notFound)
+    await expect(
+      fulfillment.getHead(p(PUR_HEAD, 'read', foreignActor), 'purchase', purchase.id),
+    ).rejects.toMatchObject(notFound)
+    await expect(
+      fulfillment.getPurchaseReceiptDraft(p(PUR_HEAD, 'read', foreignActor), purchase.id),
+    ).rejects.toMatchObject(notFound)
+    await expect(
+      fulfillment.getItem(p(PUR_ITEM, 'read', foreignActor), 'purchase', purchase.items[0]!.id),
+    ).rejects.toMatchObject(notFound)
+
+    // HTTP 层同语义：码满足但行不可达 → 404（403 只剩「码不满足」一种成因）
+    for (const path of [
+      `/api/v1/sales/deliveries/${sales.id}`,
+      `/api/v1/sales/deliveries/${sales.id}/draft`,
+      `/api/v1/sales/delivery-items/${sales.items[0]!.id}`,
+      `/api/v1/sales/delivery-pack-boxes/${sales.packBoxes[0]!.id}`,
+      `/api/v1/sales/delivery-pack-lines/${sales.packBoxes[0]!.lines[0]!.id}`,
+      `/api/v1/purchase/receipts/${purchase.id}`,
+      `/api/v1/purchase/receipts/${purchase.id}/draft`,
+    ]) {
+      const res = await http.request(path, { headers: { authorization: 'Bearer foreign' } })
+      expect({ path, status: res.status }).toEqual({ path, status: 404 })
+    }
   })
 })

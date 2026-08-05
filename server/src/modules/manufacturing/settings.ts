@@ -35,6 +35,7 @@ export function manufacturingSettingResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.setting',
     permissionLabel: '生产设置',
     table: 'mfg_setting',
+    authz: { kind: 'global' },
     fields: [
       {
         name: 'id',
@@ -102,7 +103,6 @@ export function createManufacturingSettingService(db: Kysely<Database>) {
     table: 'mfg_setting',
     resource: 'mfg_setting',
     notFoundMessage: '生产设置不存在',
-    permissionPrefix: 'mfg.setting',
     mapRow: mapMfg,
     auditFields: MFG_AUDIT,
     merge(before, input) {
@@ -131,11 +131,11 @@ export function createManufacturingSettingService(db: Kysely<Database>) {
     },
   })
   return {
-    getManufacturing: (actor: Parameters<typeof inner.get>[0]) => inner.get(actor),
+    getManufacturing: (permit: Parameters<typeof inner.get>[0]) => inner.get(permit),
     updateManufacturing: (
-      actor: Parameters<typeof inner.update>[0],
+      permit: Parameters<typeof inner.update>[0],
       input: ManufacturingUpdate,
-    ) => inner.update(actor, input),
+    ) => inner.update(permit, input),
   }
 }
 

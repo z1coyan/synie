@@ -1,5 +1,8 @@
 /**
  * 银行账户 + 银行流水。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、写前取行 `loadAuthorized`、create 走 `assertCompanyWritable`。
  */
 import { type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -10,12 +13,14 @@ import {
   auditCreated, auditDestroyed, auditDiff, writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { requireCompanyAccess, requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import {
-  asIso, conflict, lower, notFound, requireCompanyWrite,
+  asIso, conflict, lower, notFound,
   upper, validateOptionalText, validateRequiredText, validation,
 } from './common.ts'
 import { bankAccountResourceMeta, bankTransactionResourceMeta } from './meta.ts'
@@ -52,6 +57,18 @@ export interface BankAccount {
   insertedAt: string; updatedAt: string; companyId: string; currencyId: string
   accountId: string | null
 }
+
+export const BANK_ACCOUNT_RESOURCE = 'accBankAccounts'
+export const BANK_TRANSACTION_RESOURCE = 'accBankTransactions'
+
+const ACCOUNT_TABLE = 'acc_bank_account'
+const TXN_TABLE = 'acc_bank_transaction'
+const ACCOUNT_SELECT = sql`SELECT id,alias,bank_name,branch_name,holder_name,account_no,active,note,
+  inserted_at,updated_at,company_id,currency_id,account_id`
+const ACCOUNT_SOURCE = sql` FROM acc_bank_account`
+const TXN_SELECT = sql`SELECT id,occurred_at,income,expense,balance,counterparty_name,counterparty_account,
+  summary,note,reconciled_amount,unreconciled_amount,reconcile_status,inserted_at,updated_at,company_id,bank_account_id`
+const TXN_SOURCE = sql` FROM acc_bank_transaction`
 
 const ACCOUNT_AUDIT = auditFieldsOf(bankAccountResourceMeta())
 const TXN_AUDIT = auditFieldsOf(bankTransactionResourceMeta())
@@ -134,34 +151,52 @@ export async function validateAccountRefs(
   }
 }
 
-export function createAccountAndTxnOps(db: Kysely<Database>) {
-  async function listAccounts(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'acc.bank_account:read', '无权限执行银行业务操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as BankAccount[] }
-    return listFromSource({
-      db, resource: bankAccountResourceMeta(),
-      source: sql` FROM acc_bank_account`,
-      select: sql`SELECT id,alias,bank_name,branch_name,holder_name,account_no,active,note,
-        inserted_at,updated_at,company_id,currency_id,account_id`,
-      defaultOrder: sql`"id"`, query, extraWhere: scope.where, mapRow: mapAccount,
+export function createAccountAndTxnOps(db: Kysely<Database>, registry: Registry) {
+  const accountTarget = registry.authzTarget(BANK_ACCOUNT_RESOURCE)
+  const txnTarget = registry.authzTarget(BANK_TRANSACTION_RESOURCE)
+
+  /** 按 Permit 取账户（可锁）；不命中一律 not_found */
+  async function authorizedAccount(
+    handle: DbHandle, permit: Permit, id: string, forUpdate: boolean,
+  ): Promise<BankAccount> {
+    const row = await loadAuthorized({
+      db: handle, permit, target: accountTarget, table: ACCOUNT_TABLE, id, forUpdate,
+      notFoundMessage: '银行账户不存在',
+    })
+    return mapAccount(row)
+  }
+
+  /** 按 Permit 取流水（可锁）；不命中一律 not_found */
+  async function authorizedTransaction(
+    handle: DbHandle, permit: Permit, id: string, forUpdate: boolean,
+  ): Promise<BankTransaction> {
+    const row = await loadAuthorized({
+      db: handle, permit, target: txnTarget, table: TXN_TABLE, id, forUpdate,
+      notFoundMessage: '银行流水不存在',
+    })
+    return mapTransaction(row)
+  }
+
+  async function listAccounts(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
+      db, permit, target: accountTarget, alias: ACCOUNT_TABLE,
+      resource: bankAccountResourceMeta(),
+      source: ACCOUNT_SOURCE,
+      select: ACCOUNT_SELECT,
+      defaultOrder: sql`"id"`, query, mapRow: mapAccount,
     })
   }
 
-  async function getAccount(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.bank_account:read', '无权限执行银行业务操作')
-    const item = await loadAccount(db, id, false)
-    requireCompanyAccess(actor, item.companyId, '银行账户不存在')
-    return item
+  async function getAccount(permit: Permit, id: string) {
+    return authorizedAccount(db, permit, id, false)
   }
 
-  async function createAccount(actor: Actor, input: {
+  async function createAccount(permit: Permit, input: {
     alias: string; bankName: string; holderName: string; accountNo: string
     branchName?: string | null; note?: string | null; active?: boolean | null
     companyId: string; currencyId: string; accountId?: string | null
   }) {
-    requirePermission(actor, 'acc.bank_account:create', '无权限执行银行业务操作')
-    requireCompanyWrite(actor, input.companyId)
+    const actor = permit.actor
     const fields: Record<string, string[]> = {}
     const alias = validateRequiredText(fields, 'alias', input.alias, 64)
     const bankName = validateRequiredText(fields, 'bankName', input.bankName, 128)
@@ -172,6 +207,8 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
     if (!input.companyId) fields.companyId = ['必填']
     if (!input.currencyId) fields.currencyId = ['必填']
     if (Object.keys(fields).length) throw validation('银行账户', fields)
+    // 入参校验（400）先于公司边界（404）
+    assertCompanyWritable(permit, input.companyId)
     const active = input.active ?? true
     return withTx(db, async (trx) => {
       await validateAccountRefs(trx, input.companyId, input.currencyId, input.accountId ?? null)
@@ -196,17 +233,16 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
     })
   }
 
-  async function updateAccount(actor: Actor, id: string, input: {
+  async function updateAccount(permit: Permit, id: string, input: {
     alias?: string; bankName?: string; holderName?: string; accountNo?: string
     branchName?: string | null; branchNamePresent?: boolean
     note?: string | null; notePresent?: boolean
     active?: boolean; currencyId?: string
     accountId?: string | null; accountIdPresent?: boolean
   }) {
-    requirePermission(actor, 'acc.bank_account:update', '无权限执行银行业务操作')
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await loadAccount(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '银行账户不存在')
+      const before = await authorizedAccount(trx, permit, id, true)
       const after = { ...before }
       if (input.alias !== undefined) after.alias = input.alias
       if (input.bankName !== undefined) after.bankName = input.bankName
@@ -255,11 +291,10 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
     })
   }
 
-  async function deleteAccount(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.bank_account:delete', '无权限执行银行业务操作')
+  async function deleteAccount(permit: Permit, id: string) {
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const item = await loadAccount(trx, id, true)
-      requireCompanyAccess(actor, item.companyId, '银行账户不存在')
+      const item = await authorizedAccount(trx, permit, id, true)
       try {
         await sql`DELETE FROM acc_bank_account WHERE id=${id}::uuid`.execute(trx)
         await writeAudit(trx, actor, {
@@ -274,28 +309,22 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
     })
   }
 
-  async function listTransactions(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'acc.bank_transaction:read', '无权限执行银行业务操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as BankTransaction[] }
-    return listFromSource({
-      db, resource: bankTransactionResourceMeta(),
-      source: sql` FROM acc_bank_transaction`,
-      select: sql`SELECT id,occurred_at,income,expense,balance,counterparty_name,counterparty_account,
-        summary,note,reconciled_amount,unreconciled_amount,reconcile_status,inserted_at,updated_at,company_id,bank_account_id`,
-      defaultOrder: sql`"id"`, query, extraWhere: scope.where, mapRow: mapTransaction,
+  async function listTransactions(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
+      db, permit, target: txnTarget, alias: TXN_TABLE,
+      resource: bankTransactionResourceMeta(),
+      source: TXN_SOURCE,
+      select: TXN_SELECT,
+      defaultOrder: sql`"id"`, query, mapRow: mapTransaction,
     })
   }
 
-  async function getTransaction(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.bank_transaction:read', '无权限执行银行业务操作')
-    const item = await loadTransaction(db, id, false)
-    requireCompanyAccess(actor, item.companyId, '银行流水不存在')
-    return item
+  async function getTransaction(permit: Permit, id: string) {
+    return authorizedTransaction(db, permit, id, false)
   }
 
   async function createTransactionInTx(
-    trx: DbHandle, actor: Actor,
+    trx: DbHandle, permit: Permit,
     input: {
       occurredAt: string; income?: string | null; expense?: string | null; balance?: string | null
       counterpartyName?: string | null; counterpartyAccount?: string | null
@@ -303,6 +332,7 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
     },
     requireActive: boolean,
   ) {
+    const actor = permit.actor
     validateTxnShape(
       input.occurredAt, input.income ?? null, input.expense ?? null,
       input.counterpartyName ?? null, input.counterpartyAccount ?? null,
@@ -335,13 +365,18 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
     }
   }
 
-  async function createTransaction(actor: Actor, input: Parameters<typeof createTransactionInTx>[2]) {
-    requirePermission(actor, 'acc.bank_transaction:create', '无权限执行银行业务操作')
-    requireCompanyWrite(actor, input.companyId)
-    return withTx(db, (trx) => createTransactionInTx(trx, actor, input, true))
+  async function createTransaction(permit: Permit, input: Parameters<typeof createTransactionInTx>[2]) {
+    // 形状校验（400）先于公司边界（404）
+    validateTxnShape(
+      input.occurredAt, input.income ?? null, input.expense ?? null,
+      input.counterpartyName ?? null, input.counterpartyAccount ?? null,
+      input.summary ?? null, input.note ?? null,
+    )
+    assertCompanyWritable(permit, input.companyId)
+    return withTx(db, (trx) => createTransactionInTx(trx, permit, input, true))
   }
 
-  async function updateTransaction(actor: Actor, id: string, input: {
+  async function updateTransaction(permit: Permit, id: string, input: {
     occurredAt?: string
     income?: string | null; incomePresent?: boolean
     expense?: string | null; expensePresent?: boolean
@@ -352,10 +387,9 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
     note?: string | null; notePresent?: boolean
     bankAccountId?: string
   }) {
-    requirePermission(actor, 'acc.bank_transaction:update', '无权限执行银行业务操作')
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await loadTransaction(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '银行流水不存在')
+      const before = await authorizedTransaction(trx, permit, id, true)
       const after = { ...before }
       if (input.occurredAt !== undefined) after.occurredAt = new Date(input.occurredAt).toISOString()
       if (input.incomePresent) after.income = input.income ?? null
@@ -402,11 +436,10 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
     })
   }
 
-  async function deleteTransaction(actor: Actor, id: string) {
-    requirePermission(actor, 'acc.bank_transaction:delete', '无权限执行银行业务操作')
+  async function deleteTransaction(permit: Permit, id: string) {
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const item = await loadTransaction(trx, id, true)
-      requireCompanyAccess(actor, item.companyId, '银行流水不存在')
+      const item = await authorizedTransaction(trx, permit, id, true)
       if (await hasReconForTransaction(trx, id)) {
         throw conflict('流水已有对账记录,请先解除对账后再删除')
       }
@@ -427,6 +460,6 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
   return {
     listAccounts, getAccount, createAccount, updateAccount, deleteAccount,
     listTransactions, getTransaction, createTransaction, updateTransaction, deleteTransaction,
-    createTransactionInTx,
+    createTransactionInTx, authorizedTransaction,
   }
 }

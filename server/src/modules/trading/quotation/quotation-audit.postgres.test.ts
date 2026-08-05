@@ -9,15 +9,26 @@ import { createDb } from '~/db/index.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import type { TradingSide } from '../common.ts'
 import { createQuotationService, type QuotationDraftInput } from './service.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
+
+/** sealed registry 同时供编号（授权归宿解析）与 authz 执行面消费 */
+const registry = createSealedResourceRegistry()
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
 
 run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
   const db = createDb(url!)
-  const quotations = createQuotationService(db, createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry())))
+  const authz = createAuthzEnforcer(registry)
+  const quotations = createQuotationService(
+    db,
+    createNumberingService(db, buildNumberingCatalog(registry), registry),
+    registry,
+  )
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `QA${suffix}`
 
@@ -29,7 +40,7 @@ run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
   const categoryId = crypto.randomUUID()
   const materialId = crypto.randomUUID()
 
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId: '',
     username: 'quotation-audit-test',
     name: '报价审核测试',
@@ -37,6 +48,15 @@ run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
+  })
+  /**
+   * 本文件只验领域行为（草稿门/条目校验/落章/回翻），superAdmin 凭证的 rowFilter 恒全集；
+   * 逐动作码门控与公司边界见 quotation-draft.postgres.test.ts。凭证每次现取。
+   */
+  const permit = (): Permit => {
+    const decision = authz.decideFor(actor, 'salQuotations', 'read')
+    if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+    return decision.permit
   }
 
   function input(side: TradingSide, quotationNo: string): QuotationDraftInput {
@@ -84,7 +104,7 @@ run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
     `.execute(db)
     await sql`
       INSERT INTO bas_unit(id,unit_type,is_base,name,symbol,ratio)
-      VALUES (${unitId}::uuid, ${'qa-' + suffix}, true, ${prefix + '件'}, 'u', 1)
+      VALUES (${unitId}::uuid, ${'qa-' + suffix}, true, ${prefix + '件'}, ${'ua' + suffix}, 1)
     `.execute(db)
     await sql`
       INSERT INTO inv_material_category(id,code,name,is_leaf,active)
@@ -112,25 +132,25 @@ run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
 
   test('销售/采购均走完 草稿→已审核→已作废，审核落章且留审计', async () => {
     for (const side of ['sales', 'purchase'] as const) {
-      const created = await quotations.createDraft(actor, side, input(side, `${prefix}-${side}`))
+      const created = await quotations.createDraft(permit(), side, input(side, `${prefix}-${side}`))
       expect(created.status).toBe('DRAFT')
 
-      const audited = await quotations.auditHead(actor, side, created.id)
+      const audited = await quotations.auditHead(permit(), side, created.id)
       expect(audited.status).toBe('AUDITED')
       expect(audited.auditedAt).not.toBeNull()
 
-      // 重复审核被草稿门拦截
-      await expect(quotations.auditHead(actor, side, created.id)).rejects.toThrow(
-        /仅草稿报价单可审核/,
-      )
+      // 重复审核被草稿门拦截：状态前置条件是领域不变量，仍留服务层抛 409
+      await expect(
+        quotations.auditHead(permit(), side, created.id),
+      ).rejects.toMatchObject({ code: 'conflict', message: '仅草稿报价单可审核' })
 
-      const voided = await quotations.voidHead(actor, side, created.id)
+      const voided = await quotations.voidHead(permit(), side, created.id)
       expect(voided.status).toBe('VOIDED')
 
       // 重复作废被已审核门拦截
-      await expect(quotations.voidHead(actor, side, created.id)).rejects.toThrow(
-        /仅已审核报价单可作废/,
-      )
+      await expect(
+        quotations.voidHead(permit(), side, created.id),
+      ).rejects.toMatchObject({ code: 'conflict', message: '仅已审核报价单可作废' })
 
       const auditRows = await sql<{ action_name: string }>`
         SELECT action_name FROM sys_audit_log
@@ -142,11 +162,11 @@ run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
   })
 
   test('空条目报价单不可审核', async () => {
-    const created = await quotations.createDraft(actor, 'sales', {
+    const created = await quotations.createDraft(permit(), 'sales', {
       ...input('sales', `${prefix}-EMPTY`),
       items: [],
     })
-    await expect(quotations.auditHead(actor, 'sales', created.id)).rejects.toThrow(
+    await expect(quotations.auditHead(permit(), 'sales', created.id)).rejects.toThrow(
       /审核前必须至少填写一行条目/,
     )
     // 审核失败状态保持草稿
@@ -157,7 +177,7 @@ run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
   })
 
   test('数量梯度条目缺价格档不可审核', async () => {
-    const created = await quotations.createDraft(actor, 'sales', {
+    const created = await quotations.createDraft(permit(), 'sales', {
       ...input('sales', `${prefix}-TIERLESS`),
       items: [
         {
@@ -172,7 +192,7 @@ run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
         },
       ],
     })
-    await expect(quotations.auditHead(actor, 'sales', created.id)).rejects.toThrow(
+    await expect(quotations.auditHead(permit(), 'sales', created.id)).rejects.toThrow(
       /数量梯度条目必须至少填写一个价格档/,
     )
   })

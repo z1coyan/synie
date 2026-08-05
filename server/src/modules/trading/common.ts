@@ -1,11 +1,13 @@
 /**
- * 销售/采购交易链共用工具（金额 wire、日期、对手校验、权限）。
+ * 销售/采购交易链共用工具（金额 wire、日期、对手校验）。
+ *
+ * 鉴权不在本文件：路由挂 `guard(资源, 动作)`，服务收 Permit，
+ * 三个执行点由平台拥有（工单 10 删除了本模块自造的 requirePerm 包装）。
  */
 import { decimal, toDecimalString, type Decimal } from '@synie/shared'
 import { sql } from 'kysely'
 import { toDateOnly } from '~/db/dates.ts'
 import type { DbHandle } from '~/db/tx.ts'
-import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 
 export { ident } from '~/db/ident.ts'
@@ -51,10 +53,6 @@ export function upperStatus(value: string): string {
 
 export function lowerParty(value: string): string {
   return value.trim().toLowerCase()
-}
-
-export function requirePerm(actor: Actor, prefix: string, action: string, message: string): void {
-  requirePermission(actor, `${prefix}:${action}`, message)
 }
 
 export async function partyExists(

@@ -14,6 +14,8 @@ export function createFieldCatalog(registry: Registry) {
   if (!registry) throw new Error('打印字段目录需要 meta.Registry')
 
   const byResource = new Map<string, PrintResourceCatalog>()
+  /** 打印前缀 → 打印头的 Meta 资源名：路由据此把客户端 prefix 收敛到 sealed registry */
+  const metaNameByPrefix = new Map<string, string>()
   const resourceNames: string[] = []
 
   for (const head of printHeads(registry)) {
@@ -39,12 +41,22 @@ export function createFieldCatalog(registry: Registry) {
     }
     definition.loops.sort((a, b) => a.name.localeCompare(b.name))
     byResource.set(definition.resource, definition)
+    metaNameByPrefix.set(definition.resource, head.name)
     resourceNames.push(definition.resource)
   }
   resourceNames.sort()
 
   function resources(): string[] {
     return [...resourceNames]
+  }
+
+  /**
+   * 打印前缀 → sealed registry 的资源名（未收录返回 undefined）。
+   * 打印是「请求形态派生动作码」（spec S9）：路由先经此把客户端 prefix 解析成
+   * 目录内资源，再派生动作走 guard——杜绝客户端提供任意 prefix 的路径。
+   */
+  function resourceNameOf(prefix: string): string | undefined {
+    return metaNameByPrefix.get(prefix)
   }
 
   function get(resource: string): PrintResourceCatalog | undefined {
@@ -105,7 +117,7 @@ export function createFieldCatalog(registry: Registry) {
     throw ApiError.validation(message, { fileId: [message] })
   }
 
-  return { resources, get, validatePlaceholders }
+  return { resources, resourceNameOf, get, validatePlaceholders }
 }
 
 export type FieldCatalog = ReturnType<typeof createFieldCatalog>
@@ -114,7 +126,7 @@ function printHeads(registry: Registry): ResourceMeta[] {
   const candidates = new Map<string, ResourceMeta[]>()
   const marked = new Map<string, ResourceMeta[]>()
   for (const resource of registry.list()) {
-    if (resource.readPermissionsAny && resource.readPermissionsAny.length > 0) continue
+    if (resource.authz?.readAnyOf && resource.authz.readAnyOf.length > 0) continue
     const group = candidates.get(resource.permissionPrefix) ?? []
     group.push(resource)
     candidates.set(resource.permissionPrefix, group)

@@ -1,5 +1,10 @@
 /**
- * 生产工单：由已确认需求行生成；完工回写在生产入库服务中
+ * 生产工单：由已确认需求行生成；完工回写在生产入库服务中。
+ *
+ * 授权全由平台承担（工单 07）：服务只收 Permit，行谓词由 `loadAuthorized`/`listAuthorized` 编译。
+ * 归属部门形态（stamped）：创建时由平台写侧 `withOwnershipStamp` 按创建人部门盖 `owner_dept_id`，
+ * 不可手填；无部门用户创建即 NULL（只有 all 范围看得见）。
+ * 从需求行建单的路由额外要求 `mfg.demand:read`（guard allOf），故来源单据的行级可达性同样成立。
  */
 import { decimal, isDecimalString, toDecimalString } from '@synie/shared'
 import { sql } from 'kysely'
@@ -13,16 +18,21 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { requireCompanyAccess, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { loadAuthorized, withOwnershipStamp } from '~/db/load.ts'
 import { utcToday } from '~/db/dates.ts'
 import { syncDrawingAttachments } from '~/modules/trading/common.ts'
-import { loadDemand, loadDemandItem } from './demand-service.ts'
 import {
-  requirePermission,
-  actorUserId,
+  DEMAND_ITEM_RESOURCE,
+  DEMAND_RESOURCE,
+  loadDemandAuthorized,
+  loadDemandItemAuthorized,
+} from './demand-service.ts'
+import {
   asDateOrNull,
   ensureMaterial,
   ensureUnitAllowed,
@@ -39,14 +49,28 @@ import {
   removeMakeArrangementByWorkOrder,
   upsertMakeArrangement,
 } from './arrangement.ts'
+import type { AuthzTarget } from '~/platform/meta/resource-authz.ts'
 import { workOrderResourceMeta } from './meta.ts'
 import type { Bom, ListQueryInput, WorkOrder, WorkOrderStatus } from './types.ts'
 
+export const WORK_ORDER_RESOURCE = 'mfgWorkOrders'
+const WORK_ORDER_TABLE = 'mfg_work_order'
 const WO_AUDIT = auditFieldsOf(workOrderResourceMeta())
 
-export function createWorkOrderService(db: Kysely<Database>, numbering: NumberingService) {
+export function createWorkOrderService(
+  db: Kysely<Database>,
+  numbering: NumberingService,
+  registry: Registry,
+) {
+  const target = registry.authzTarget(WORK_ORDER_RESOURCE)
+  const demandTarget = registry.authzTarget(DEMAND_RESOURCE)
+  const demandItemTarget = registry.authzTarget(DEMAND_ITEM_RESOURCE)
+
+  const lockWorkOrder = (trx: DbHandle, permit: Permit, id: string) =>
+    loadWorkOrderAuthorized(trx, permit, target, id, true)
+
   async function createWorkOrder(
-    actor: Actor,
+    permit: Permit,
     input: {
       demandItemId: string
       workOrderNo?: string | null
@@ -56,17 +80,15 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
       bomId?: string | null
     },
   ): Promise<WorkOrder> {
-    requirePermission(actor, 'mfg.work_order:create')
     return withTx(db, async (trx) => {
-      const demandItemRow = await trx
-        .selectFrom('mfg_demand_item')
-        .select('demand_id')
-        .where('id', '=', input.demandItemId)
-        .executeTakeFirst()
-      if (!demandItemRow) throw new ApiError('not_found', '需求行不存在')
-      const parent = await loadDemand(trx, demandItemRow.demand_id, true)
-      const item = await loadDemandItem(trx, input.demandItemId, true)
-      requireCompanyAccess(actor, item.companyId)
+      const item = await loadDemandItemAuthorized(
+        trx,
+        permit,
+        demandItemTarget,
+        input.demandItemId,
+        true,
+      )
+      const parent = await loadDemandAuthorized(trx, permit, demandTarget, item.demandId, true)
       if (parent.status !== 'confirmed') {
         throw new ApiError('conflict', '仅已确认未关闭需求单的行可生成工单')
       }
@@ -100,25 +122,32 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
       try {
         const row = await trx
           .insertInto('mfg_work_order')
-          .values({
-            work_order_no: no,
-            qty,
-            base_qty: baseQty,
-            received_base_qty: '0',
-            need_date: item.needDate,
-            material_code: item.materialCode,
-            material_name: item.materialName,
-            material_spec: item.materialSpec,
-            unit_name: item.unitName,
-            status: 'in_progress',
-            company_id: item.companyId,
-            demand_id: item.demandId,
-            demand_item_id: item.id,
-            material_id: item.materialId,
-            unit_id: item.unitId,
-            bom_id: null,
-            created_by_id: actorUserId(actor),
-          })
+          // 归属部门盖章由平台按 meta 声明并入（列名不在模块里写死）
+          .values(
+            withOwnershipStamp(
+              {
+                work_order_no: no,
+                qty,
+                base_qty: baseQty,
+                received_base_qty: '0',
+                need_date: item.needDate,
+                material_code: item.materialCode,
+                material_name: item.materialName,
+                material_spec: item.materialSpec,
+                unit_name: item.unitName,
+                status: 'in_progress',
+                company_id: item.companyId,
+                demand_id: item.demandId,
+                demand_item_id: item.id,
+                material_id: item.materialId,
+                unit_id: item.unitId,
+                bom_id: null,
+                created_by_id: permit.actor.userId || null,
+              },
+              permit,
+              target,
+            ),
+          )
           .returningAll()
           .executeTakeFirstOrThrow()
         await upsertMakeArrangement(trx, {
@@ -139,8 +168,8 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
         if (input.bomId) {
           await copyBomSnapshotToWorkOrder(trx, row.id, input.bomId, item.materialId)
         }
-        const result = await loadWorkOrder(trx, row.id, false)
-        await writeAudit(trx, actor, {
+        const result = await loadWorkOrderAuthorized(trx, permit, target, row.id, false)
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_work_order',
           recordId: result.id,
           recordLabel: result.workOrderNo,
@@ -156,23 +185,17 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
     })
   }
 
-  async function getWorkOrder(actor: Actor, id: string): Promise<WorkOrder> {
-    requirePermission(actor, 'mfg.work_order:read')
-    const item = await loadWorkOrder(db, id, false)
-    requireCompanyAccess(actor, item.companyId)
-    return item
+  async function getWorkOrder(permit: Permit, id: string): Promise<WorkOrder> {
+    return loadWorkOrderAuthorized(db, permit, target, id, false)
   }
 
-  async function listWorkOrders(actor: Actor, query: ListQueryInput) {
-    requirePermission(actor, 'mfg.work_order:read')
+  async function listWorkOrders(permit: Permit, query: ListQueryInput) {
     const q = normalizeList(query)
-    if (q.companyId) requireCompanyAccess(actor, q.companyId)
-    const scope = q.companyId
-      ? { empty: false as const, where: sql`company_id = ${q.companyId}` }
-      : companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as WorkOrder[] }
-    return listFromSource({
+    return listAuthorized({
       db,
+      permit,
+      target,
+      alias: WORK_ORDER_TABLE,
       resource: workOrderResourceMeta(),
       source: sql` FROM (
         SELECT w.*,
@@ -182,22 +205,20 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
       select: sql`SELECT *`,
       defaultOrder: sql`"inserted_at" DESC, "id" DESC`,
       query: q,
-      extraWhere: scope.where,
-      mapRow: mapWorkOrderRow,
+      extraWhere: q.companyId ? sql`company_id = ${q.companyId}` : null,
+      mapRow: mapWorkOrderRecord,
     })
   }
 
   async function updateWorkOrder(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: { workOrderNo: string },
   ): Promise<WorkOrder> {
-    requirePermission(actor, 'mfg.work_order:update')
     const no = input.workOrderNo.trim()
     validateNo(no, 'workOrderNo')
     return withTx(db, async (trx) => {
-      const before = await loadWorkOrder(trx, id, true)
-      requireCompanyAccess(actor, before.companyId)
+      const before = await lockWorkOrder(trx, permit, id)
       if (before.status !== 'in_progress') {
         throw new ApiError('conflict', '仅进行中的生产工单可修改')
       }
@@ -213,7 +234,7 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
         } catch (err) {
           throw mfgWriteError('更新生产工单失败', err)
         }
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'mfg_work_order',
           recordId: id,
           recordLabel: no,
@@ -227,11 +248,9 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
     })
   }
 
-  async function deleteWorkOrder(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'mfg.work_order:delete')
+  async function deleteWorkOrder(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const item = await loadWorkOrder(trx, id, true)
-      requireCompanyAccess(actor, item.companyId)
+      const item = await lockWorkOrder(trx, permit, id)
       if (item.status !== 'in_progress' && item.status !== 'voided') {
         throw new ApiError('conflict', '仅进行中的生产工单可删除')
       }
@@ -248,7 +267,7 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
       } catch (err) {
         throw mfgWriteError('删除生产工单失败', err)
       }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'mfg_work_order',
         recordId: id,
         recordLabel: item.workOrderNo,
@@ -260,11 +279,9 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
     })
   }
 
-  async function voidWorkOrder(actor: Actor, id: string): Promise<WorkOrder> {
-    requirePermission(actor, 'mfg.work_order:void')
+  async function voidWorkOrder(permit: Permit, id: string): Promise<WorkOrder> {
     return withTx(db, async (trx) => {
-      const before = await loadWorkOrder(trx, id, true)
-      requireCompanyAccess(actor, before.companyId)
+      const before = await lockWorkOrder(trx, permit, id)
       if (before.status !== 'in_progress') {
         throw new ApiError('conflict', '仅进行中的生产工单可作废')
       }
@@ -278,7 +295,7 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
         .execute()
       await removeMakeArrangementByWorkOrder(trx, id)
       const after = { ...before, status: 'voided' as WorkOrderStatus }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'mfg_work_order',
         recordId: id,
         recordLabel: after.workOrderNo,
@@ -292,11 +309,9 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
   }
 
   /** 选 BOM：校验启用+本物料，快照复制；有已审核入库则拒 */
-  async function applyBom(actor: Actor, workOrderId: string, bomId: string | null): Promise<WorkOrder> {
-    requirePermission(actor, 'mfg.work_order:update')
+  async function applyBom(permit: Permit, workOrderId: string, bomId: string | null): Promise<WorkOrder> {
     return withTx(db, async (trx) => {
-      const before = await loadWorkOrder(trx, workOrderId, true)
-      requireCompanyAccess(actor, before.companyId)
+      const before = await lockWorkOrder(trx, permit, workOrderId)
       if (before.status !== 'in_progress') {
         throw new ApiError('conflict', '仅进行中的生产工单可改 BOM')
       }
@@ -310,11 +325,11 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
           .set({ bom_id: null, updated_at: sql`(now() AT TIME ZONE 'utc')` })
           .where('id', '=', workOrderId)
           .execute()
-        return loadWorkOrder(trx, workOrderId, false)
+        return loadWorkOrderAuthorized(trx, permit, target, workOrderId, false)
       }
       await copyBomSnapshotToWorkOrder(trx, workOrderId, bomId, before.materialId)
-      const after = await loadWorkOrder(trx, workOrderId, false)
-      await writeAudit(trx, actor, {
+      const after = await loadWorkOrderAuthorized(trx, permit, target, workOrderId, false)
+      await writeAudit(trx, permit.actor, {
         resource: 'mfg_work_order',
         recordId: workOrderId,
         recordLabel: after.workOrderNo,
@@ -327,10 +342,8 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
     })
   }
 
-  async function getBomSnapshot(actor: Actor, workOrderId: string) {
-    requirePermission(actor, 'mfg.work_order:read')
-    const wo = await loadWorkOrder(db, workOrderId, false)
-    requireCompanyAccess(actor, wo.companyId)
+  async function getBomSnapshot(permit: Permit, workOrderId: string) {
+    const wo = await loadWorkOrderAuthorized(db, permit, target, workOrderId, false)
     const components = await db
       .selectFrom('mfg_work_order_component')
       .selectAll()
@@ -378,10 +391,10 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
 
   /**
    * 工单内嵌创建 BOM：母物料锁=工单物料，保存即启用并快照到本工单。
-   * 需同时具备 mfg.bom:create 与 mfg.work_order:update。
+   * 需同时具备 mfg.bom:create 与 mfg.work_order:update（路由 guard allOf 一次判定）。
    */
   async function createInlineBom(
-    actor: Actor,
+    permit: Permit,
     workOrderId: string,
     input: {
       code?: string | null
@@ -408,11 +421,8 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
       }>
     },
   ): Promise<{ workOrder: WorkOrder; bom: Bom }> {
-    requirePermission(actor, 'mfg.work_order:update')
-    requirePermission(actor, 'mfg.bom:create')
     return withTx(db, async (trx) => {
-      const wo = await loadWorkOrder(trx, workOrderId, true)
-      requireCompanyAccess(actor, wo.companyId)
+      const wo = await lockWorkOrder(trx, permit, workOrderId)
       if (wo.status !== 'in_progress') {
         throw new ApiError('conflict', '仅进行中的生产工单可内嵌创建 BOM')
       }
@@ -466,7 +476,7 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
         insertedAt: new Date(bomRow.inserted_at),
         updatedAt: new Date(bomRow.updated_at),
       }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'mfg_bom',
         recordId: bom.id,
         recordLabel: bom.code,
@@ -626,8 +636,8 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
         .set({ bom_id: bom.id, updated_at: sql`(now() AT TIME ZONE 'utc')` })
         .where('id', '=', workOrderId)
         .execute()
-      const after = await loadWorkOrder(trx, workOrderId, false)
-      await writeAudit(trx, actor, {
+      const after = await loadWorkOrderAuthorized(trx, permit, target, workOrderId, false)
+      await writeAudit(trx, permit.actor, {
         resource: 'mfg_work_order',
         recordId: workOrderId,
         recordLabel: after.workOrderNo,
@@ -655,14 +665,40 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
 
 export type WorkOrderService = ReturnType<typeof createWorkOrderService>
 
-export async function loadWorkOrder(
+/** 按 Permit 取工单行（可锁）；不命中一律 not_found。生产入库服务共用 */
+export async function loadWorkOrderAuthorized(
+  db: DbHandle,
+  permit: Permit,
+  target: AuthzTarget,
+  id: string,
+  forUpdate: boolean,
+): Promise<WorkOrder> {
+  const row = await loadAuthorized({
+    db,
+    permit,
+    target,
+    table: WORK_ORDER_TABLE,
+    id,
+    forUpdate,
+    notFoundMessage: '生产工单不存在',
+  })
+  return mapWorkOrderRecord(row)
+}
+
+/**
+ * 受信任读：审核/作废的投影锁（已入数量回写）按工单 id 取行，
+ * 授权已在入口对**单据**完成，投影是同事务内的系统写。
+ */
+export async function loadWorkOrderForProjection(
   db: DbHandle,
   id: string,
-  lock: boolean,
 ): Promise<WorkOrder> {
-  let q = db.selectFrom('mfg_work_order').selectAll().where('id', '=', id)
-  if (lock) q = q.forUpdate()
-  const row = await q.executeTakeFirst()
+  const row = await db
+    .selectFrom('mfg_work_order')
+    .selectAll()
+    .where('id', '=', id)
+    .forUpdate()
+    .executeTakeFirst()
   if (!row) throw new ApiError('not_found', '生产工单不存在')
   return mapWorkOrder(row)
 }
@@ -794,6 +830,7 @@ export function mapWorkOrder(row: {
   unit_id: string
   bom_id?: string | null
   created_by_id: string | null
+  owner_dept_id: string | null
   inserted_at: Date
   updated_at: Date
 }): WorkOrder {
@@ -819,12 +856,13 @@ export function mapWorkOrder(row: {
     unitId: row.unit_id,
     bomId: row.bom_id ?? null,
     createdById: row.created_by_id,
+    ownerDeptId: row.owner_dept_id,
     insertedAt: new Date(row.inserted_at),
     updatedAt: new Date(row.updated_at),
   }
 }
 
-function mapWorkOrderRow(r: Record<string, unknown>): WorkOrder {
+export function mapWorkOrderRecord(r: Record<string, unknown>): WorkOrder {
   const item = mapWorkOrder({
     id: String(r.id),
     work_order_no: String(r.work_order_no),
@@ -844,6 +882,7 @@ function mapWorkOrderRow(r: Record<string, unknown>): WorkOrder {
     unit_id: String(r.unit_id),
     bom_id: r.bom_id == null ? null : String(r.bom_id),
     created_by_id: r.created_by_id == null ? null : String(r.created_by_id),
+    owner_dept_id: r.owner_dept_id == null ? null : String(r.owner_dept_id),
     inserted_at: r.inserted_at as Date,
     updated_at: r.updated_at as Date,
   })
@@ -871,5 +910,6 @@ function woSnap(item: WorkOrder) {
     material_id: item.materialId,
     unit_id: item.unitId,
     created_by_id: item.createdById,
+    owner_dept_id: item.ownerDeptId,
   }
 }

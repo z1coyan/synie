@@ -1,3 +1,4 @@
+import { hasCapability } from '@synie/shared'
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -69,8 +70,8 @@ function BillHoldingsPage() {
   // 票面修正看 accBills:update(挂在持有 meta 的 capability 字段上会查错资源,fail-closed 隐藏)
   const txMeta = useGridMeta('accBillTransactions', true)
   const billMeta = useGridMeta('accBills', true)
-  const canCreateTx = (txMeta.data?.capabilities ?? []).includes('create')
-  const canEditBill = (billMeta.data?.capabilities ?? []).includes('update')
+  const canCreateTx = hasCapability(txMeta.data?.capabilities ?? [], 'create')
+  const canEditBill = hasCapability(billMeta.data?.capabilities ?? [], 'update')
 
   const rowActions: RowAction[] = [
     ...(canCreateTx

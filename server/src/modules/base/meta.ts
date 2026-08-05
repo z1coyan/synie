@@ -38,6 +38,7 @@ export function currencyResourceMeta(): ResourceMeta {
     /** 界面显示「货币」，与历史 drawer 标签一致；权限组仍为「币种」 */
     label: '货币',
     table: 'bas_currency',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('name', 'name', 'string', '货币名称', { required: true, filterable: true, sortable: true }),
@@ -93,6 +94,7 @@ export function companyResourceMeta(): ResourceMeta {
     permissionLabel: '公司',
     label: '公司',
     table: 'bas_company',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', '公司编号', {
@@ -153,6 +155,7 @@ export function unitResourceMeta(): ResourceMeta {
     /** 界面显示「单位」，与历史 drawer 标签一致；权限组仍为「计量单位」 */
     label: '单位',
     table: 'bas_unit',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('unit_type', 'unitType', 'enum', '单位类型', {
@@ -242,6 +245,7 @@ export function accountResourceMeta(): ResourceMeta {
     permissionPrefix: 'base.account',
     permissionLabel: '会计科目',
     table: 'bas_account',
+    authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', '科目编码', {

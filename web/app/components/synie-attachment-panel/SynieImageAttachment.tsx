@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, Spinner, toast } from '@heroui/react'
-import { fetchMyPermissions, hasPermission } from '~/lib/permissions'
+import { useResourceCapabilities } from '~/lib/use-resource-capabilities'
 import { deleteAttachment, fileClient } from '~/lib/resources/files'
 import { blobUrl, fetchFileBlob, uploadFile } from '~/lib/files'
 import { attachmentListKey, fetchAttachmentList, type AttachmentRow } from './attachments'
@@ -33,15 +33,10 @@ export function SynieImageAttachment({ ownerType, ownerId, category, label, read
   const [deleting, setDeleting] = useState(false)
   const [zoomed, setZoomed] = useState(false)
 
-  // 与 SynieAttachmentPanel 同一套权限自查,queryKey 共享只发一次
-  const perms = useQuery({
-    queryKey: ['myPermissions'],
-    queryFn: fetchMyPermissions,
-  })
-  const canCreate =
-    hasPermission(perms.data, 'sys.file:create') && !readonly
-  const canDelete =
-    hasPermission(perms.data, 'sys.file:delete') && !readonly
+  // 与 SynieAttachmentPanel 同一套门控:sysFiles 文档投影(fail-closed)
+  const fileCaps = useResourceCapabilities('sysFiles')
+  const canCreate = fileCaps.has('create') && !readonly
+  const canDelete = fileCaps.has('delete') && !readonly
 
   // listKey 与 SynieAttachmentPanel 同构,同宿主的失效互相可见
   const listKey = attachmentListKey(ownerType, ownerId, category)

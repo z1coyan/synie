@@ -1,3 +1,11 @@
+/**
+ * 会计科目（公司域主数据）。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、单条 `loadAuthorizedFrom`（与列表共用投影）、
+ * 写前取行 `loadAuthorized`、create/模板 `assertCompanyWritable`。
+ * 树形成环/父子同公司/删父冲突是领域不变量，留在本文件。
+ */
 import type { ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
@@ -10,11 +18,13 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { canAccessCompany, requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
-import { accountResourceMeta } from './meta.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { assertCompanyWritable, loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
+import { ACCOUNT_RESOURCE_NAME, accountResourceMeta } from './meta.ts'
 import templateData from './templates.json'
 
 export interface Reference {
@@ -86,7 +96,9 @@ const ROLES = new Set([
   'other_expense',
 ])
 
-const AUDIT = auditFieldsOf(accountResourceMeta())
+const META = accountResourceMeta()
+const AUDIT = auditFieldsOf(META)
+const TABLE = META.table
 
 const ACCOUNT_SOURCE = sql`
  FROM (
@@ -99,6 +111,11 @@ const ACCOUNT_SOURCE = sql`
 	JOIN bas_company c ON c.id = a.company_id
 	LEFT JOIN bas_currency currency ON currency.id = a.currency_id
 ) account`
+/** listAuthorized/loadAuthorizedFrom 的别名必须与 ACCOUNT_SOURCE 的 `) account` 逐字一致 */
+const ACCOUNT_ALIAS = 'account'
+const ACCOUNT_SELECT = sql`SELECT id, code, name, direction, is_group, active, role,
+parent_id, company_id, currency_id, inserted_at, updated_at,
+parent_name, company_name, currency_name, has_children`
 
 type TemplateEntry = {
   code: string
@@ -111,53 +128,46 @@ type TemplateEntry = {
 
 const templates = templateData as Record<string, TemplateEntry[]>
 
-export function createAccountService(db: Kysely<Database>) {
-  async function get(actor: Actor, id: string): Promise<Account> {
-    requirePermission(actor, 'base.account:read')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) throw new ApiError('not_found', '会计科目不存在')
-    const whereParts = [sql`id = ${id}`]
-    if (scope.where) whereParts.push(scope.where)
-    const result = await sql<AccountRow>`
-      SELECT id, code, name, direction, is_group, active, role,
-        parent_id, company_id, currency_id, inserted_at, updated_at,
-        parent_name, company_name, currency_name, has_children
-      ${ACCOUNT_SOURCE}
-      WHERE ${sql.join(whereParts, sql` AND `)}
-    `.execute(db)
-    const row = result.rows[0]
-    if (!row) throw new ApiError('not_found', '会计科目不存在')
-    return mapJoined(row)
+export function createAccountService(db: Kysely<Database>, registry: Registry) {
+  const target = registry.authzTarget(ACCOUNT_RESOURCE_NAME)
+
+  async function get(permit: Permit, id: string): Promise<Account> {
+    return loadAuthorizedFrom({
+      db,
+      permit,
+      target,
+      alias: ACCOUNT_ALIAS,
+      source: ACCOUNT_SOURCE,
+      select: ACCOUNT_SELECT,
+      id,
+      mapRow: (r) => mapJoined(r as unknown as AccountRow),
+      notFoundMessage: '会计科目不存在',
+    })
   }
 
   async function list(
-    actor: Actor,
+    permit: Permit,
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: Account[] }> {
-    requirePermission(actor, 'base.account:read')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] }
-    return listFromSource({
+    return listAuthorized({
       db,
-      resource: accountResourceMeta(),
+      permit,
+      target,
+      alias: ACCOUNT_ALIAS,
+      resource: META,
       source: ACCOUNT_SOURCE,
-      select: sql`SELECT id, code, name, direction, is_group, active, role,
-parent_id, company_id, currency_id, inserted_at, updated_at,
-parent_name, company_name, currency_name, has_children`,
+      select: ACCOUNT_SELECT,
       defaultOrder: sql`code ASC, id ASC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapJoined(r as unknown as AccountRow),
     })
   }
 
-  async function create(actor: Actor, input: CreateAccountInput): Promise<Account> {
-    requirePermission(actor, 'base.account:create')
+  async function create(permit: Permit, input: CreateAccountInput): Promise<Account> {
     const normalized = normalizeCreate(input)
     validateInput(normalized)
-    if (!canAccessCompany(actor, normalized.companyId)) {
-      throw new ApiError('forbidden', '无权访问该公司')
-    }
+    // 入参校验（400）先于公司边界（404）：错误语义唯一规则只管后者
+    assertCompanyWritable(permit, normalized.companyId, '公司不存在')
     return withTx(db, async (trx) => {
       await lockTree(trx, normalized.companyId)
       await validateRelations(trx, normalized)
@@ -179,7 +189,7 @@ parent_name, company_name, currency_name, has_children`,
           .returning('id')
           .executeTakeFirstOrThrow()
         const item = await getAccount(trx, inserted.id)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'bas_account',
           recordId: item.id,
           recordLabel: item.name,
@@ -198,19 +208,19 @@ parent_name, company_name, currency_name, has_children`,
     })
   }
 
-  async function update(actor: Actor, id: string, input: UpdateAccountInput): Promise<Account> {
-    requirePermission(actor, 'base.account:update')
+  async function update(permit: Permit, id: string, input: UpdateAccountInput): Promise<Account> {
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('bas_account')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '会计科目不存在')
-      if (!canAccessCompany(actor, locked.company_id)) {
-        throw new ApiError('forbidden', '无权访问该公司')
-      }
+      const locked = lockedRow(
+        await loadAuthorized({
+          db: trx,
+          permit,
+          target,
+          table: TABLE,
+          id,
+          forUpdate: true,
+          notFoundMessage: '会计科目不存在',
+        }),
+      )
       await lockTree(trx, locked.company_id)
 
       const afterInput: CreateAccountInput = {
@@ -250,7 +260,7 @@ parent_name, company_name, currency_name, has_children`,
         const updated = await getAccount(trx, id)
         const changes = auditDiff(snapshot(before), snapshot(updated), AUDIT)
         if (Object.keys(changes).length > 0) {
-          await writeAudit(trx, actor, {
+          await writeAudit(trx, permit.actor, {
             resource: 'bas_account',
             recordId: id,
             recordLabel: updated.name,
@@ -270,19 +280,19 @@ parent_name, company_name, currency_name, has_children`,
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'base.account:delete')
+  async function remove(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('bas_account')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '会计科目不存在')
-      if (!canAccessCompany(actor, locked.company_id)) {
-        throw new ApiError('forbidden', '无权访问该公司')
-      }
+      const locked = lockedRow(
+        await loadAuthorized({
+          db: trx,
+          permit,
+          target,
+          table: TABLE,
+          id,
+          forUpdate: true,
+          notFoundMessage: '会计科目不存在',
+        }),
+      )
       await lockTree(trx, locked.company_id)
       const child = await trx
         .selectFrom('bas_account')
@@ -298,7 +308,7 @@ parent_name, company_name, currency_name, has_children`,
           { code: '23503', message: '会计科目已被引用，不能删除' },
         ])
       }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'bas_account',
         recordId: id,
         recordLabel: item.name,
@@ -311,11 +321,10 @@ parent_name, company_name, currency_name, has_children`,
   }
 
   async function initializeTemplate(
-    actor: Actor,
+    permit: Permit,
     companyId: string,
     template: string,
   ): Promise<TemplateResult> {
-    requirePermission(actor, 'base.account:create')
     const key = template.trim().toLowerCase()
     const entries = templates[key]
     if (!entries) {
@@ -323,9 +332,7 @@ parent_name, company_name, currency_name, has_children`,
         template: ['仅支持 CAS/SMALL/INTL'],
       })
     }
-    if (!canAccessCompany(actor, companyId)) {
-      throw new ApiError('forbidden', '无权访问该公司')
-    }
+    assertCompanyWritable(permit, companyId, '公司不存在')
     return withTx(db, async (trx) => {
       await lockTree(trx, companyId)
       const company = await trx
@@ -373,7 +380,7 @@ parent_name, company_name, currency_name, has_children`,
             .executeTakeFirstOrThrow()
           parentIds.set(inserted.code, inserted.id)
           const item = mapLocked(inserted)
-          await writeAudit(trx, actor, {
+          await writeAudit(trx, permit.actor, {
             resource: 'bas_account',
             recordId: item.id,
             recordLabel: item.name,
@@ -455,6 +462,24 @@ export function validateInput(input: {
   if (Object.keys(fields).length > 0) {
     throw ApiError.validation('会计科目参数不合法', fields)
   }
+}
+
+/** loadAuthorized 返回裸行（平台层不承担领域投影）；写路径按需收窄列类型 */
+function lockedRow(row: Record<string, unknown>): {
+  id: string
+  code: string
+  name: string
+  direction: string
+  is_group: boolean
+  active: boolean
+  role: string | null
+  parent_id: string | null
+  company_id: string
+  currency_id: string | null
+  inserted_at: Date | string
+  updated_at: Date | string
+} {
+  return row as never
 }
 
 async function lockTree(trx: DbHandle, companyId: string): Promise<void> {

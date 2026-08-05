@@ -1,5 +1,6 @@
 import type { Kysely } from 'kysely'
 import type { DB as Database } from '~/db/types.ts'
+import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import type { JournalService } from '~/modules/accounting/journal-service.ts'
 import type { AccountService } from '~/modules/base/account-service.ts'
 import type { BankingService } from '~/modules/finance/banking-service.ts'
@@ -26,6 +27,8 @@ import type { TradingServices } from '~/modules/trading/index.ts'
 /** 示例种子所需领域服务（各服务自开事务） */
 export interface SampleDataDeps {
   db: Kysely<Database>
+  /** 已迁 Permit 的服务按种子 actor 现取凭证（种子不绕过判定） */
+  authz: AuthzEnforcer
   accounts: AccountService
   companyAccountDefaults: CompanyAccountDefaultService
   warehouses: WarehouseService

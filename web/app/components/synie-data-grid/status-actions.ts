@@ -12,6 +12,8 @@ interface StatusToggleBase {
   rowLabel?: (row: Row) => string
   /** 成功后的额外刷新(组件自身 refetch 之外,如树页 remount、失效 rowById 缓存) */
   onDone?: () => void
+  /** 翻转成功后的补充说明(如「停用后不能再挂新用户,已挂接的保留不变」),作 toast description */
+  hint?: { enable?: string; disable?: string }
 }
 
 export type StatusToggleOptions = StatusToggleBase & {
@@ -29,7 +31,8 @@ export function statusToggleActions(opts: StatusToggleOptions): RowAction[] {
     }
     try {
       await opts.update(row.id, { [opts.field]: target })
-      toast.success(`已${verb}「${label(row)}」`)
+      const hint = target ? opts.hint?.enable : opts.hint?.disable
+      toast.success(`已${verb}「${label(row)}」`, hint ? { description: hint } : undefined)
       ctx.refetch()
       opts.onDone?.()
     } catch (e) {

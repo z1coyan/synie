@@ -15,11 +15,15 @@ import { currencyClient } from '../currencies'
 
 function sampleDocument(name = 'basCurrencies'): ResourceDocument {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     name,
     label: '货币',
     permissionPrefix: 'base.currency',
-    capabilities: ['create', 'update', 'delete'],
+    capabilities: [
+      { action: 'create', scope: 'all' },
+      { action: 'update', scope: 'all' },
+      { action: 'delete', scope: 'all' },
+    ],
     fields: [
       {
         kind: 'scalar',
@@ -262,10 +266,12 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
 
     setCachedDocument('basCurrencies', {
       ...sampleDocument(),
-      capabilities: ['update'],
+      capabilities: [{ action: 'update', scope: 'all' }],
       label: '货币-b',
     })
-    expect(getCachedDocument('basCurrencies')?.capabilities).toEqual(['update'])
+    expect(getCachedDocument('basCurrencies')?.capabilities).toEqual([
+      { action: 'update', scope: 'all' },
+    ])
 
     // 回到 A 不复用 B 的缓存
     setCatalogActor('user-a')

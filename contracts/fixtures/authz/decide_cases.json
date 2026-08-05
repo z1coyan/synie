@@ -1,0 +1,182 @@
+{
+  "version": 1,
+  "note": "封闭谓词代数 decide() 前后端对拍夹具（ADR 2026-08-04）。服务端消费见 server/src/platform/authz/core/fixtures.test.ts；前端行级本地判定在工单 14 消费同一份。grants 值为范围原子名数组（等价于 ScopeSet 位集）。",
+  "cases": [
+    {
+      "name": "超管：绕过一切，公司 bypass + all",
+      "actor": { "superAdmin": true, "companies": { "all": false, "ids": [] }, "grants": {} },
+      "requirement": { "kind": "one", "codes": ["sales.order:read"] },
+      "expect": { "outcome": "permit", "rowFilter": { "company": "bypass", "atoms": ["all"] } }
+    },
+    {
+      "name": "system 主体：绕过一切",
+      "actor": { "kind": "system", "companies": { "all": false, "ids": [] }, "grants": {} },
+      "requirement": { "kind": "one", "codes": ["sales.order:read"] },
+      "expect": { "outcome": "permit", "rowFilter": { "company": "bypass", "atoms": ["all"] } }
+    },
+    {
+      "name": "码不命中：deny(code) → forbidden",
+      "actor": { "companies": { "all": false, "ids": ["c1"] }, "grants": { "sales.order:read": ["all"] } },
+      "requirement": { "kind": "one", "codes": ["sales.order:audit"] },
+      "expect": { "outcome": "deny", "reason": "code", "missing": ["sales.order:audit"] }
+    },
+    {
+      "name": "无任何授权：deny(code)",
+      "actor": { "companies": { "all": true, "ids": [] }, "grants": {} },
+      "requirement": { "kind": "one", "codes": ["sales.order:read"] },
+      "expect": { "outcome": "deny", "reason": "code", "missing": ["sales.order:read"] }
+    },
+    {
+      "name": "全公司授权：公司 bypass",
+      "actor": { "companies": { "all": true, "ids": [] }, "grants": { "sales.order:read": ["all"] } },
+      "requirement": { "kind": "one", "codes": ["sales.order:read"] },
+      "expect": { "outcome": "permit", "rowFilter": { "company": "bypass", "atoms": ["all"] } }
+    },
+    {
+      "name": "有授权公司：ids 边界",
+      "actor": { "companies": { "all": false, "ids": ["c1", "c2"] }, "grants": { "sales.order:read": ["all"] } },
+      "requirement": { "kind": "one", "codes": ["sales.order:read"] },
+      "expect": {
+        "outcome": "permit",
+        "rowFilter": { "company": { "ids": ["c1", "c2"] }, "atoms": ["all"] }
+      }
+    },
+    {
+      "name": "零公司授权：permit + company none（空行集，语义 not_found）",
+      "actor": { "companies": { "all": false, "ids": [] }, "grants": { "sales.order:read": ["all"] } },
+      "requirement": { "kind": "one", "codes": ["sales.order:read"] },
+      "expect": { "outcome": "permit", "rowFilter": { "company": "none", "atoms": ["all"] } }
+    },
+    {
+      "name": "范围格：self ⊆ dept，多角色并集取 dept",
+      "actor": {
+        "companies": { "all": false, "ids": ["c1"] },
+        "deptId": "d1",
+        "deptSubtreeIds": ["d1", "d1a"],
+        "grants": { "mfg.demand:read": ["self", "dept"] }
+      },
+      "requirement": { "kind": "one", "codes": ["mfg.demand:read"] },
+      "expect": {
+        "outcome": "permit",
+        "rowFilter": { "company": { "ids": ["c1"] }, "atoms": ["dept"] }
+      }
+    },
+    {
+      "name": "范围格：dept ⊆ deptTree",
+      "actor": {
+        "companies": { "all": false, "ids": ["c1"] },
+        "deptId": "d1",
+        "deptSubtreeIds": ["d1", "d1a"],
+        "grants": { "mfg.demand:read": ["dept", "deptTree"] }
+      },
+      "requirement": { "kind": "one", "codes": ["mfg.demand:read"] },
+      "expect": {
+        "outcome": "permit",
+        "rowFilter": { "company": { "ids": ["c1"] }, "atoms": ["deptTree"] }
+      }
+    },
+    {
+      "name": "范围格：四原子并集折叠为 all",
+      "actor": {
+        "companies": { "all": false, "ids": ["c1"] },
+        "deptId": "d1",
+        "deptSubtreeIds": ["d1"],
+        "grants": { "mfg.demand:read": ["self", "dept", "deptTree", "all"] }
+      },
+      "requirement": { "kind": "one", "codes": ["mfg.demand:read"] },
+      "expect": {
+        "outcome": "permit",
+        "rowFilter": { "company": { "ids": ["c1"] }, "atoms": ["all"] }
+      }
+    },
+    {
+      "name": "仅本人范围",
+      "actor": {
+        "companies": { "all": false, "ids": ["c1"] },
+        "grants": { "sys.file:read": ["self"] }
+      },
+      "requirement": { "kind": "one", "codes": ["sys.file:read"] },
+      "expect": {
+        "outcome": "permit",
+        "rowFilter": { "company": { "ids": ["c1"] }, "atoms": ["self"] }
+      }
+    },
+    {
+      "name": "无部门用户 + dept 范围：atoms 保留 dept（编译期为空集，不是 forbidden）",
+      "actor": {
+        "companies": { "all": false, "ids": ["c1"] },
+        "deptId": null,
+        "deptSubtreeIds": [],
+        "grants": { "mfg.demand:read": ["dept"] }
+      },
+      "requirement": { "kind": "one", "codes": ["mfg.demand:read"] },
+      "expect": {
+        "outcome": "permit",
+        "rowFilter": { "company": { "ids": ["c1"] }, "atoms": ["dept"] }
+      }
+    },
+    {
+      "name": "空范围位集：permit 但 atoms 空（fail-closed）",
+      "actor": { "companies": { "all": false, "ids": ["c1"] }, "grants": { "sales.order:read": [] } },
+      "requirement": { "kind": "one", "codes": ["sales.order:read"] },
+      "expect": {
+        "outcome": "permit",
+        "rowFilter": { "company": { "ids": ["c1"] }, "atoms": [] }
+      }
+    },
+    {
+      "name": "anyOf：任一命中，范围取格上最大",
+      "actor": {
+        "companies": { "all": true, "ids": [] },
+        "grants": { "sales.order:read": ["dept"], "sales.delivery:read": ["all"] }
+      },
+      "requirement": { "kind": "anyOf", "codes": ["sales.order:read", "sales.delivery:read"] },
+      "expect": { "outcome": "permit", "rowFilter": { "company": "bypass", "atoms": ["all"] } }
+    },
+    {
+      "name": "anyOf：全不命中 → deny 列全部候选",
+      "actor": { "companies": { "all": true, "ids": [] }, "grants": {} },
+      "requirement": { "kind": "anyOf", "codes": ["sales.order:read", "sales.delivery:read"] },
+      "expect": {
+        "outcome": "deny",
+        "reason": "code",
+        "missing": ["sales.order:read", "sales.delivery:read"]
+      }
+    },
+    {
+      "name": "allOf：全命中，范围取格上最小（保守）",
+      "actor": {
+        "companies": { "all": true, "ids": [] },
+        "deptId": "d1",
+        "deptSubtreeIds": ["d1"],
+        "grants": { "sales.reconciliation:create": ["all"], "sales.delivery:read": ["dept"] }
+      },
+      "requirement": {
+        "kind": "allOf",
+        "codes": ["sales.reconciliation:create", "sales.delivery:read"]
+      },
+      "expect": { "outcome": "permit", "rowFilter": { "company": "bypass", "atoms": ["dept"] } }
+    },
+    {
+      "name": "allOf：缺一即 deny，missing 只列缺失项",
+      "actor": {
+        "companies": { "all": true, "ids": [] },
+        "grants": { "sales.reconciliation:create": ["all"] }
+      },
+      "requirement": {
+        "kind": "allOf",
+        "codes": ["sales.reconciliation:create", "sales.delivery:read"]
+      },
+      "expect": { "outcome": "deny", "reason": "code", "missing": ["sales.delivery:read"] }
+    },
+    {
+      "name": "granted 预留：装配层拒写，内核兜底剥离",
+      "actor": {
+        "companies": { "all": true, "ids": [] },
+        "grants": { "sales.order:read": ["self", "granted"] }
+      },
+      "requirement": { "kind": "one", "codes": ["sales.order:read"] },
+      "expect": { "outcome": "permit", "rowFilter": { "company": "bypass", "atoms": ["self"] } }
+    }
+  ]
+}

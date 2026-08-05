@@ -1,5 +1,6 @@
 import { ApiError } from '../http/errors.ts'
-import type { Actor } from '../authz/actor.ts'
+import type { Actor } from '../authz/core/index.ts'
+import type { ActorAssembler } from '../authz/build-actor.ts'
 import type { SynieBetterAuth } from './better-auth.ts'
 import type { RateLimiter } from './limiter.ts'
 import { hashPassword, verifyPassword } from './password.ts'
@@ -20,12 +21,14 @@ export interface LoginResult {
  */
 export async function createAuthService(deps: {
   store: AuthStore
+  /** Actor 装配（platform/authz 拥有；含 30s TTL 缓存与部门子树物化） */
+  actors: ActorAssembler
   tokens: TokenManager
   limiter: RateLimiter
   /** 缺省时 cookie 轨关闭，仅 Bearer（存量单测基座兼容） */
   betterAuth?: SynieBetterAuth
 }) {
-  const { store, tokens, limiter, betterAuth } = deps
+  const { store, actors, tokens, limiter, betterAuth } = deps
   const dummyHash = await hashPassword('synie-invalid-credential-dummy')
 
   async function login(input: { username: string; password: string; bucket: string }): Promise<LoginResult> {
@@ -51,7 +54,7 @@ export async function createAuthService(deps: {
 
   async function authenticate(rawToken: string): Promise<Actor> {
     const userId = await tokens.verifyToken(rawToken)
-    const actor = userId ? await store.actorByUserId(userId) : null
+    const actor = userId ? await actors.buildActor(userId) : null
     if (!actor) {
       throw new ApiError('unauthorized', '登录状态已失效,请重新登录')
     }
@@ -67,7 +70,7 @@ export async function createAuthService(deps: {
       const session = await betterAuth.api.getSession({ headers }).catch(() => null)
       if (session) {
         const sysUserId = await store.userIdByAuthUserId(session.user.id)
-        const actor = sysUserId ? await store.actorByUserId(sysUserId) : null
+        const actor = sysUserId ? await actors.buildActor(sysUserId) : null
         if (actor) return actor
       }
     }

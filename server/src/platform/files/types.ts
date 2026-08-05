@@ -135,8 +135,12 @@ export interface StorageList {
   results: StorageEndpoint[]
 }
 
+/**
+ * 附件宿主：多态宿主可达性判定的解析入口。
+ * `resource` 是 sealed registry 键——码级与行级判定全部取宿主自己的 authz 声明，
+ * 故此处不再声明权限前缀与公司域（避免与 meta 出现第二份事实）。
+ */
 export interface OwnerSpec {
+  resource: string
   table: string
-  permissionPrefix: string
-  companyScoped?: boolean
 }

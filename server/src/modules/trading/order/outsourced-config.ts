@@ -1,6 +1,11 @@
 /**
  * 采购委外配置：发料清单 / 副产物 / 需求池 / BOM 展开。
  * 从 order/service 拆出，与订单主聚合弱关联、与 outsourced 天然同组。
+ *
+ * 授权全由平台承担（工单 10）：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、单条 `loadAuthorizedFrom`（与列表共用投影）、
+ * 母单锁 `loadAuthorized(forUpdate)`。两类清单是 `via(purOrderItems → purOrders)` 子资源，
+ * 判定递归到采购订单头自身的行谓词。状态守卫（仅草稿可编辑）留在本文件抛 conflict。
  */
 import type { ListQuery } from '@synie/shared'
 import { decimal } from '@synie/shared'
@@ -15,24 +20,54 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { companyInPermitScope, loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
 import {
   asDate,
   asDateTime,
   asOptionalString,
   guardMaterialType,
   loadMaterialSnap,
-  requirePerm,
   upperStatus,
   wireRequiredDecimal,
 } from '../common.ts'
-import { orderByproductMeta, orderMaterialMeta } from './spec.ts'
+import { orderByproductMeta, orderMaterialMeta, orderSpec } from './spec.ts'
 
 const MATERIAL_AUDIT = auditFieldsOf(orderMaterialMeta())
 
 const BYPRODUCT_AUDIT = auditFieldsOf(orderByproductMeta())
+
+/** 判定归宿资源名（路由 import 常量，不写裸字面量） */
+export const ORDER_MATERIAL_RESOURCE = 'purOrderItemMaterials'
+export const ORDER_BYPRODUCT_RESOURCE = 'purOrderItemByproducts'
+
+/** 列表与单条共用同一份投影；alias 必须与子查询别名逐字一致 */
+const MATERIAL_SOURCE = sql` FROM (
+      SELECT m.id,m.quantity,m.issued_qty,m.remarks,m.inserted_at,m.updated_at,m.order_item_id,
+        m.company_id,m.material_id,mat.code AS material_code,mat.name AS material_name,mat.spec AS material_spec,
+        m.unit_id,u.name AS unit_name,
+        o.order_no,o.status AS order_status,o.is_outsourced AS order_is_outsourced,o.party_type,o.party_id,
+        (m.quantity - m.issued_qty) AS remaining_issue_qty
+      FROM pur_order_item_material m
+      JOIN pur_order_item oi ON oi.id=m.order_item_id
+      JOIN pur_order o ON o.id=oi.order_id
+      JOIN inv_material mat ON mat.id=m.material_id
+      JOIN bas_unit u ON u.id=m.unit_id
+    ) order_item_materials`
+const MATERIAL_ALIAS = 'order_item_materials'
+const BYPRODUCT_SOURCE = sql` FROM (
+      SELECT b.id,b.quantity,b.remarks,b.inserted_at,b.updated_at,b.order_item_id,b.company_id,
+        b.material_id,mat.code AS material_code,mat.name AS material_name,mat.spec AS material_spec,
+        b.unit_id,u.name AS unit_name
+      FROM pur_order_item_byproduct b
+      JOIN inv_material mat ON mat.id=b.material_id
+      JOIN bas_unit u ON u.id=b.unit_id
+    ) order_item_byproducts`
+const BYPRODUCT_ALIAS = 'order_item_byproducts'
+const LINE_SELECT = sql`SELECT *`
 
 export interface OutsourcedDraftLineInput {
   id?: string
@@ -78,58 +113,86 @@ export interface OutsourcedDraftLines {
   byproductLines: OutsourcedSavedLine[]
 }
 
-export function createOutsourcedConfigService(db: Kysely<Database>) {
+export function createOutsourcedConfigService(db: Kysely<Database>, registry: Registry) {
+  const spec = orderSpec('purchase')
+  const materialTarget = registry.authzTarget(ORDER_MATERIAL_RESOURCE)
+  const byproductTarget = registry.authzTarget(ORDER_BYPRODUCT_RESOURCE)
+  const orderTarget = registry.authzTarget(spec.headResource)
 
-  async function listMaterials(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, 'purchase.order', 'read', '无权限执行该采购订单操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
-    return listFromSource({
+  /**
+   * 清单行的母单：先取订单头并加锁（授权递归归宿资源），再做草稿门。
+   * 加锁顺序母单先行，与并发路径一致。
+   */
+  async function lockOrderOfItem(
+    trx: DbHandle,
+    permit: Permit,
+    orderItemId: string,
+  ): Promise<{ companyId: string; isOutsourced: boolean; status: string }> {
+    const owner = await sql<{ order_id: string }>`
+      SELECT order_id FROM pur_order_item WHERE id=${orderItemId}::uuid
+    `.execute(trx)
+    if (!owner.rows[0]) throw new ApiError('not_found', '订单条目不存在')
+    const head = await loadAuthorized({
+      db: trx,
+      permit,
+      target: orderTarget,
+      table: spec.headTable,
+      id: owner.rows[0].order_id,
+      forUpdate: true,
+      notFoundMessage: '订单条目不存在',
+    })
+    if (String(head.status).toLowerCase() !== 'draft') {
+      throw new ApiError('conflict', '仅草稿订单可编辑条目')
+    }
+    return {
+      companyId: String(head.company_id),
+      isOutsourced: Boolean(head.is_outsourced),
+      status: String(head.status),
+    }
+  }
+
+  /** 单条读：与列表共用同一份投影，判定经 via 链递归到订单头 */
+  function loadLine<T>(
+    handle: DbHandle,
+    permit: Permit,
+    kind: DraftLineKind,
+    id: string,
+  ): Promise<T> {
+    const issue = kind === 'issue'
+    return loadAuthorizedFrom({
+      db: handle,
+      permit,
+      target: issue ? materialTarget : byproductTarget,
+      alias: issue ? MATERIAL_ALIAS : BYPRODUCT_ALIAS,
+      source: issue ? MATERIAL_SOURCE : BYPRODUCT_SOURCE,
+      select: LINE_SELECT,
+      id,
+      mapRow: (r) => (issue ? mapMaterial(r) : mapByproduct(r)) as unknown as T,
+      notFoundMessage: issue ? '发料清单行不存在' : '副产物清单行不存在',
+    })
+  }
+
+  async function listMaterials(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
     db,
+    permit,
+    target: materialTarget,
+    alias: MATERIAL_ALIAS,
     resource: orderMaterialMeta(),
-    source: sql` FROM (
-      SELECT m.id,m.quantity,m.issued_qty,m.remarks,m.inserted_at,m.updated_at,m.order_item_id,
-        m.company_id,m.material_id,mat.code AS material_code,mat.name AS material_name,mat.spec AS material_spec,
-        m.unit_id,u.name AS unit_name,
-        o.order_no,o.status AS order_status,o.is_outsourced AS order_is_outsourced,o.party_type,o.party_id,
-        (m.quantity - m.issued_qty) AS remaining_issue_qty
-      FROM pur_order_item_material m
-      JOIN pur_order_item oi ON oi.id=m.order_item_id
-      JOIN pur_order o ON o.id=oi.order_id
-      JOIN inv_material mat ON mat.id=m.material_id
-      JOIN bas_unit u ON u.id=m.unit_id
-    ) order_item_materials`,
-    select: sql`SELECT *`,
+    source: MATERIAL_SOURCE,
+    select: LINE_SELECT,
     defaultOrder: sql`"id" ASC`,
     query,
-    extraWhere: scope.where,
     mapRow: (r) => mapMaterial(r),
   })
 }
 
-  async function getMaterial(actor: Actor, id: string) {
-    requirePerm(actor, 'purchase.order', 'read', '无权限执行该采购订单操作')
-    const rows = await sql<Record<string, unknown>>`
-    SELECT m.id,m.quantity,m.issued_qty,m.remarks,m.inserted_at,m.updated_at,m.order_item_id,
-      m.company_id,m.material_id,mat.code AS material_code,mat.name AS material_name,mat.spec AS material_spec,
-      m.unit_id,u.name AS unit_name,
-      o.order_no,o.status AS order_status,o.is_outsourced AS order_is_outsourced,o.party_type,o.party_id,
-      (m.quantity - m.issued_qty) AS remaining_issue_qty
-    FROM pur_order_item_material m
-    JOIN pur_order_item oi ON oi.id=m.order_item_id
-    JOIN pur_order o ON o.id=oi.order_id
-    JOIN inv_material mat ON mat.id=m.material_id
-    JOIN bas_unit u ON u.id=m.unit_id
-    WHERE m.id=${id}::uuid
-    `.execute(db)
-    if (!rows.rows[0] || !canAccessCompany(actor, String(rows.rows[0].company_id))) {
-    throw new ApiError('not_found', '发料清单行不存在')
-  }
-    return mapMaterial(rows.rows[0])
+  async function getMaterial(permit: Permit, id: string): Promise<OutsourcedSavedIssueLine> {
+    return loadLine<OutsourcedSavedIssueLine>(db, permit, 'issue', id)
 }
 
   async function createMaterial(
-    actor: Actor,
+    permit: Permit,
     input: {
     orderItemId: string
     materialId: string
@@ -138,9 +201,8 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
     remarks?: string | null
   },
   ) {
-    requirePerm(actor, 'purchase.order', 'create', '无权限执行该采购订单操作')
     return withTx(db, async (trx) => {
-    const parent = await lockPurchaseItemParent(trx, actor, input.orderItemId)
+    const parent = await lockOrderOfItem(trx, permit, input.orderItemId)
     if (!parent.isOutsourced) {
       throw ApiError.validation('发料清单参数不合法', { orderItemId: ['仅委外订单可维护发料清单'] })
     }
@@ -159,21 +221,9 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
       ) RETURNING id
     `.execute(trx)
     const id = ins.rows[0]!.id
-    const rows = await sql<Record<string, unknown>>`
-      SELECT m.id,m.quantity,m.issued_qty,m.remarks,m.inserted_at,m.updated_at,m.order_item_id,
-        m.company_id,m.material_id,mat.code AS material_code,mat.name AS material_name,mat.spec AS material_spec,
-        m.unit_id,u.name AS unit_name,
-        o.order_no,o.status AS order_status,o.is_outsourced AS order_is_outsourced,o.party_type,o.party_id,
-        (m.quantity - m.issued_qty) AS remaining_issue_qty
-      FROM pur_order_item_material m
-      JOIN pur_order_item oi ON oi.id=m.order_item_id
-      JOIN pur_order o ON o.id=oi.order_id
-      JOIN inv_material mat ON mat.id=m.material_id
-      JOIN bas_unit u ON u.id=m.unit_id
-      WHERE m.id=${id}::uuid
-    `.execute(trx)
-    const dto = mapMaterial(rows.rows[0]!)
-    await writeAudit(trx, actor, {
+    // 事务内权威重读（已授权）：新建行的投影快照
+    const dto = (await loadIssueLines(trx, 'id', id))[0]!
+    await writeAudit(trx, permit.actor, {
       resource: 'pur_order_item_material',
       recordId: dto.id,
       recordLabel: dto.materialCode,
@@ -187,7 +237,7 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
 }
 
   async function updateMaterial(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
     materialId?: string
@@ -197,14 +247,13 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
     remarksPresent?: boolean
   },
   ) {
-    requirePerm(actor, 'purchase.order', 'update', '无权限执行该采购订单操作')
     return withTx(db, async (trx) => {
     const cur = await sql<{ order_item_id: string }>`
       SELECT order_item_id FROM pur_order_item_material WHERE id=${id}::uuid
     `.execute(trx)
     if (!cur.rows[0]) throw new ApiError('not_found', '发料清单行不存在')
-    await lockPurchaseItemParent(trx, actor, cur.rows[0].order_item_id)
-    const before = await getMaterial(actor, id)
+    await lockOrderOfItem(trx, permit, cur.rows[0].order_item_id)
+    const before = await loadLine<OutsourcedSavedIssueLine>(trx, permit, 'issue', id)
     const materialId = input.materialId ?? before.materialId
     const unitId = input.unitId ?? before.unitId
     const snap = await loadMaterialSnap(trx, materialId, unitId)
@@ -220,23 +269,11 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
         updated_at=(now() AT TIME ZONE 'utc')
       WHERE id=${id}::uuid
     `.execute(trx)
-    const rows = await sql<Record<string, unknown>>`
-      SELECT m.id,m.quantity,m.issued_qty,m.remarks,m.inserted_at,m.updated_at,m.order_item_id,
-        m.company_id,m.material_id,mat.code AS material_code,mat.name AS material_name,mat.spec AS material_spec,
-        m.unit_id,u.name AS unit_name,
-        o.order_no,o.status AS order_status,o.is_outsourced AS order_is_outsourced,o.party_type,o.party_id,
-        (m.quantity - m.issued_qty) AS remaining_issue_qty
-      FROM pur_order_item_material m
-      JOIN pur_order_item oi ON oi.id=m.order_item_id
-      JOIN pur_order o ON o.id=oi.order_id
-      JOIN inv_material mat ON mat.id=m.material_id
-      JOIN bas_unit u ON u.id=m.unit_id
-      WHERE m.id=${id}::uuid
-    `.execute(trx)
-    const dto = mapMaterial(rows.rows[0]!)
+    // 事务内权威重读（已授权）：审计 diff 与返回值都取更新后状态
+    const dto = (await loadIssueLines(trx, 'id', id))[0]!
     const changes = auditDiff(materialSnap(before), materialSnap(dto), MATERIAL_AUDIT)
     if (Object.keys(changes).length > 0) {
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'pur_order_item_material',
         recordId: dto.id,
         recordLabel: dto.materialCode,
@@ -250,17 +287,16 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
   })
 }
 
-  async function deleteMaterial(actor: Actor, id: string) {
-    requirePerm(actor, 'purchase.order', 'delete', '无权限执行该采购订单操作')
+  async function deleteMaterial(permit: Permit, id: string) {
     await withTx(db, async (trx) => {
     const cur = await sql<{ order_item_id: string }>`
       SELECT order_item_id FROM pur_order_item_material WHERE id=${id}::uuid
     `.execute(trx)
     if (!cur.rows[0]) throw new ApiError('not_found', '发料清单行不存在')
-    await lockPurchaseItemParent(trx, actor, cur.rows[0].order_item_id)
+    await lockOrderOfItem(trx, permit, cur.rows[0].order_item_id)
     const before = (await loadIssueLines(trx, 'id', id))[0]
     if (!before) throw new ApiError('not_found', '发料清单行不存在')
-    await writeAudit(trx, actor, {
+    await writeAudit(trx, permit.actor, {
       resource: 'pur_order_item_material',
       recordId: before.id,
       recordLabel: before.materialCode,
@@ -273,48 +309,27 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
   })
 }
 
-  async function listByproducts(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, 'purchase.order', 'read', '无权限执行该采购订单操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
-    return listFromSource({
+  async function listByproducts(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
     db,
+    permit,
+    target: byproductTarget,
+    alias: BYPRODUCT_ALIAS,
     resource: orderByproductMeta(),
-    source: sql` FROM (
-      SELECT b.id,b.quantity,b.remarks,b.inserted_at,b.updated_at,b.order_item_id,b.company_id,
-        b.material_id,mat.code AS material_code,mat.name AS material_name,mat.spec AS material_spec,
-        b.unit_id,u.name AS unit_name
-      FROM pur_order_item_byproduct b
-      JOIN inv_material mat ON mat.id=b.material_id
-      JOIN bas_unit u ON u.id=b.unit_id
-    ) order_item_byproducts`,
-    select: sql`SELECT *`,
+    source: BYPRODUCT_SOURCE,
+    select: LINE_SELECT,
     defaultOrder: sql`"id" ASC`,
     query,
-    extraWhere: scope.where,
     mapRow: (r) => mapByproduct(r),
   })
 }
 
-  async function getByproduct(actor: Actor, id: string) {
-    requirePerm(actor, 'purchase.order', 'read', '无权限执行该采购订单操作')
-    const rows = await sql<Record<string, unknown>>`
-    SELECT b.id,b.quantity,b.remarks,b.inserted_at,b.updated_at,b.order_item_id,b.company_id,
-      b.material_id,mat.code AS material_code,mat.name AS material_name,mat.spec AS material_spec,
-      b.unit_id,u.name AS unit_name
-    FROM pur_order_item_byproduct b
-    JOIN inv_material mat ON mat.id=b.material_id
-    JOIN bas_unit u ON u.id=b.unit_id
-    WHERE b.id=${id}::uuid
-    `.execute(db)
-    if (!rows.rows[0] || !canAccessCompany(actor, String(rows.rows[0].company_id))) {
-    throw new ApiError('not_found', '副产物清单行不存在')
-  }
-    return mapByproduct(rows.rows[0])
+  async function getByproduct(permit: Permit, id: string): Promise<OutsourcedSavedLine> {
+    return loadLine<OutsourcedSavedLine>(db, permit, 'byproduct', id)
 }
 
   async function createByproduct(
-    actor: Actor,
+    permit: Permit,
     input: {
     orderItemId: string
     materialId: string
@@ -323,9 +338,8 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
     remarks?: string | null
   },
   ) {
-    requirePerm(actor, 'purchase.order', 'create', '无权限执行该采购订单操作')
     return withTx(db, async (trx) => {
-    const parent = await lockPurchaseItemParent(trx, actor, input.orderItemId)
+    const parent = await lockOrderOfItem(trx, permit, input.orderItemId)
     if (!parent.isOutsourced) {
       throw ApiError.validation('副产物清单参数不合法', {
         orderItemId: ['仅委外订单可维护副产物清单'],
@@ -346,17 +360,9 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
       ) RETURNING id
     `.execute(trx)
     const id = ins.rows[0]!.id
-    const rows = await sql<Record<string, unknown>>`
-      SELECT b.id,b.quantity,b.remarks,b.inserted_at,b.updated_at,b.order_item_id,b.company_id,
-        b.material_id,mat.code AS material_code,mat.name AS material_name,mat.spec AS material_spec,
-        b.unit_id,u.name AS unit_name
-      FROM pur_order_item_byproduct b
-      JOIN inv_material mat ON mat.id=b.material_id
-      JOIN bas_unit u ON u.id=b.unit_id
-      WHERE b.id=${id}::uuid
-    `.execute(trx)
-    const dto = mapByproduct(rows.rows[0]!)
-    await writeAudit(trx, actor, {
+    // 事务内权威重读（已授权）：新建行的投影快照
+    const dto = (await loadByproductLines(trx, 'id', id))[0]!
+    await writeAudit(trx, permit.actor, {
       resource: 'pur_order_item_byproduct',
       recordId: dto.id,
       recordLabel: dto.materialCode,
@@ -370,7 +376,7 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
 }
 
   async function updateByproduct(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
     materialId?: string
@@ -380,14 +386,13 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
     remarksPresent?: boolean
   },
   ) {
-    requirePerm(actor, 'purchase.order', 'update', '无权限执行该采购订单操作')
     return withTx(db, async (trx) => {
     const cur = await sql<{ order_item_id: string }>`
       SELECT order_item_id FROM pur_order_item_byproduct WHERE id=${id}::uuid
     `.execute(trx)
     if (!cur.rows[0]) throw new ApiError('not_found', '副产物清单行不存在')
-    await lockPurchaseItemParent(trx, actor, cur.rows[0].order_item_id)
-    const before = await getByproduct(actor, id)
+    await lockOrderOfItem(trx, permit, cur.rows[0].order_item_id)
+    const before = await loadLine<OutsourcedSavedLine>(trx, permit, 'byproduct', id)
     const materialId = input.materialId ?? before.materialId
     const unitId = input.unitId ?? before.unitId
     const snap = await loadMaterialSnap(trx, materialId, unitId)
@@ -405,7 +410,7 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
     if (!dto) throw new ApiError('not_found', '副产物清单行不存在')
     const changes = auditDiff(byproductSnap(before), byproductSnap(dto), BYPRODUCT_AUDIT)
     if (Object.keys(changes).length > 0) {
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'pur_order_item_byproduct',
         recordId: dto.id,
         recordLabel: dto.materialCode,
@@ -419,17 +424,16 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
   })
 }
 
-  async function deleteByproduct(actor: Actor, id: string) {
-    requirePerm(actor, 'purchase.order', 'delete', '无权限执行该采购订单操作')
+  async function deleteByproduct(permit: Permit, id: string) {
     await withTx(db, async (trx) => {
     const cur = await sql<{ order_item_id: string }>`
       SELECT order_item_id FROM pur_order_item_byproduct WHERE id=${id}::uuid
     `.execute(trx)
     if (!cur.rows[0]) throw new ApiError('not_found', '副产物清单行不存在')
-    await lockPurchaseItemParent(trx, actor, cur.rows[0].order_item_id)
+    await lockOrderOfItem(trx, permit, cur.rows[0].order_item_id)
     const before = (await loadByproductLines(trx, 'id', id))[0]
     if (!before) throw new ApiError('not_found', '副产物清单行不存在')
-    await writeAudit(trx, actor, {
+    await writeAudit(trx, permit.actor, {
       resource: 'pur_order_item_byproduct',
       recordId: before.id,
       recordLabel: before.materialCode,
@@ -443,12 +447,13 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
 }
 
   async function queryDemandPool(
-    actor: Actor,
+    permit: Permit,
     input: { companyId: string; isOutsourced?: boolean; limit?: number },
   ) {
-    requirePerm(actor, 'purchase.order', 'read', '无权限执行该采购订单操作')
-    if (!canAccessCompany(actor, input.companyId)) {
-    throw new ApiError('not_found', '公司不存在')
+    // 跨资源单公司聚合（需求池取 mfg_demand 行）：只做码级门控 + 单公司边界，
+    // 不套本资源行过滤（谓词会编到别的表上）；公司未授权即空结果，不泄露存在性。
+    if (!companyInPermitScope(permit, input.companyId)) {
+    return { results: [] as Record<string, unknown>[] }
   }
     const limit = input.limit && input.limit > 0 ? Math.min(input.limit, 200) : 50
     const rows = await sql<Record<string, unknown>>`
@@ -492,10 +497,11 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
 }
 
   async function expandBom(
-    actor: Actor,
+    permit: Permit,
     input: { bomId: string; quantity: string },
   ) {
-    requirePerm(actor, 'purchase.order', 'read', '无权限执行该采购订单操作')
+    // BOM 展开是纯计算读（全局主数据，无公司列）：码级门控由路由 guard 承担
+    void permit
     const qty = decimal(input.quantity)
     if (!qty.isPositive()) {
     throw ApiError.validation('BOM 展开参数不合法', { quantity: ['必须大于 0'] })
@@ -542,19 +548,21 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
 
   /**
    * 订单聚合专用 seam：完整读取全部委外清单，不经过分页列表。
-   * 权限由订单 Aggregate Draft 入口负责；这里仍执行公司范围 fail-closed。
+   * 母单可达性由平台执行点判定（不命中 not_found），不再手写公司闸。
    */
   async function loadOrderDraftLines(
     handle: DbHandle,
-    actor: Actor,
+    permit: Permit,
     orderId: string,
   ): Promise<OutsourcedDraftLines> {
-    const head = await sql<{ company_id: string }>`
-      SELECT company_id FROM pur_order WHERE id=${orderId}::uuid
-    `.execute(handle)
-    if (!head.rows[0] || !canAccessCompany(actor, head.rows[0].company_id)) {
-      throw new ApiError('not_found', '采购订单不存在')
-    }
+    await loadAuthorized({
+      db: handle,
+      permit,
+      target: orderTarget,
+      table: spec.headTable,
+      id: orderId,
+      notFoundMessage: '采购订单不存在',
+    })
     const issueRows = await sql<Record<string, unknown>>`
       SELECT m.id,m.quantity,m.issued_qty,m.remarks,m.inserted_at,m.updated_at,m.order_item_id,
         m.company_id,m.material_id,mat.code AS material_code,mat.name AS material_name,
@@ -567,7 +575,7 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
       JOIN inv_material mat ON mat.id=m.material_id
       JOIN bas_unit u ON u.id=m.unit_id
       WHERE oi.order_id=${orderId}::uuid
-      ORDER BY oi.idx,m.id
+      ORDER BY oi.idx,m.inserted_at,m.id
     `.execute(handle)
     const byproductRows = await sql<Record<string, unknown>>`
       SELECT b.id,b.quantity,b.remarks,b.inserted_at,b.updated_at,b.order_item_id,b.company_id,
@@ -578,7 +586,7 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
       JOIN inv_material mat ON mat.id=b.material_id
       JOIN bas_unit u ON u.id=b.unit_id
       WHERE oi.order_id=${orderId}::uuid
-      ORDER BY oi.idx,b.id
+      ORDER BY oi.idx,b.inserted_at,b.id
     `.execute(handle)
     return {
       issueLines: issueRows.rows.map(mapMaterial),
@@ -592,11 +600,11 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
    */
   async function replaceItemDraftLines(
     trx: TrxHandle,
-    actor: Actor,
+    permit: Permit,
     orderItemId: string,
     input: OutsourcedDraftItemInput,
   ): Promise<void> {
-    const parent = await lockPurchaseItemParent(trx, actor, orderItemId)
+    const parent = await lockOrderOfItem(trx, permit, orderItemId)
     if (!parent.isOutsourced && (input.issueLines.length > 0 || input.byproductLines.length > 0)) {
       throw ApiError.validation('委外配置参数不合法', {
         issueLines: ['仅委外订单可维护发料清单'],
@@ -606,7 +614,7 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
 
     await replaceDraftLineKind(
       trx,
-      actor,
+      permit,
       'issue',
       orderItemId,
       parent.companyId,
@@ -614,7 +622,7 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
     )
     await replaceDraftLineKind(
       trx,
-      actor,
+      permit,
       'byproduct',
       orderItemId,
       parent.companyId,
@@ -648,7 +656,7 @@ type DraftLineKind = 'issue' | 'byproduct'
 
 async function replaceDraftLineKind(
   trx: TrxHandle,
-  actor: Actor,
+  permit: Permit,
   kind: DraftLineKind,
   orderItemId: string,
   companyId: string,
@@ -709,7 +717,7 @@ async function replaceDraftLineKind(
   )
   for (const line of existingLines) {
     if (requestedIds.has(line.id)) continue
-    await writeAudit(trx, actor, {
+    await writeAudit(trx, permit.actor, {
       resource,
       recordId: line.id,
       recordLabel: line.materialCode,
@@ -753,7 +761,7 @@ async function replaceDraftLineKind(
       const created = kind === 'issue'
         ? (await loadIssueLines(trx, 'id', createdId))[0]!
         : (await loadByproductLines(trx, 'id', createdId))[0]!
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource,
         recordId: created.id,
         recordLabel: created.materialCode,
@@ -787,7 +795,7 @@ async function replaceDraftLineKind(
       : (await loadByproductLines(trx, 'id', line.id))[0]!
     const changes = auditDiff(lineSnap(kind, before), lineSnap(kind, after), allowed)
     if (Object.keys(changes).length > 0) {
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource,
         recordId: after.id,
         recordLabel: after.materialCode,
@@ -801,37 +809,7 @@ async function replaceDraftLineKind(
 
 }
 
-async function lockPurchaseItemParent(
-  db: DbHandle,
-  actor: Actor,
-  orderItemId: string,
-): Promise<{ companyId: string; isOutsourced: boolean; status: string }> {
-  const rows = await sql<{
-    company_id: string
-    is_outsourced: boolean
-    status: string
-    order_id: string
-  }>`
-    SELECT o.company_id, o.is_outsourced, o.status, o.id AS order_id
-    FROM pur_order_item oi
-    JOIN pur_order o ON o.id=oi.order_id
-    WHERE oi.id=${orderItemId}::uuid
-    FOR UPDATE OF o
-  `.execute(db)
-  const row = rows.rows[0]
-  if (!row || !canAccessCompany(actor, row.company_id)) {
-    throw new ApiError('not_found', '订单条目不存在')
-  }
-  if (row.status.toLowerCase() !== 'draft') {
-    throw new ApiError('conflict', '仅草稿订单可编辑条目')
-  }
-  return {
-    companyId: row.company_id,
-    isOutsourced: row.is_outsourced,
-    status: row.status,
-  }
-}
-/** 事务内权威重读（无权限门）：审计 before/after 快照与 delete 留痕共用 */
+/** 事务内权威重读（授权已由母单执行点完成）：审计 before/after 快照与 delete 留痕共用 */
 async function loadIssueLines(
   handle: DbHandle,
   col: 'id' | 'order_item_id',

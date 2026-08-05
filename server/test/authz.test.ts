@@ -1,51 +1,44 @@
 import { describe, expect, test } from 'bun:test'
-import { canAccessCompany, companyFilter, hasPermission, type Actor } from '~/platform/authz/actor.ts'
-import { candidates, matches } from '~/platform/authz/permission.ts'
+import {
+  canAccessCompany,
+  companyFilter,
+  hasPermission,
+  type Actor,
+} from '~/platform/authz/actor.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
-describe('权限码匹配', () => {
-  test('Candidates 逐级通配', () => {
-    expect(candidates('sales.order:audit')).toEqual([
-      'sales.order:audit',
-      'sales.order:*',
-      'sales.*',
-      '*',
-    ])
-    expect(candidates('sys.setting:read')).toEqual(['sys.setting:read', 'sys.setting:*', 'sys.*', '*'])
-    expect(candidates('noColon')).toEqual(['noColon', '*'])
-  })
-
-  test('matches 按候选命中', () => {
-    const perms = new Set(['sales.*'])
-    expect(matches(perms, 'sales.order:audit')).toBe(true)
-    expect(matches(perms, 'sales.delivery:read')).toBe(true)
-    expect(matches(perms, 'purchase.order:read')).toBe(false)
-    expect(matches(new Set(['*']), 'anything:at:all')).toBe(true)
-    expect(matches(new Set(['sales.order:*']), 'sales.order:audit')).toBe(true)
-    expect(matches(new Set(['sales.order:audit']), 'sales.order:read')).toBe(false)
-    expect(matches(new Set(), 'sales.order:read')).toBe(false)
+/**
+ * 扫荡期过渡层（platform/authz/actor.ts）在 Actor v2 之上的行为契约。
+ * 判定内核本体的穷举单测在 src/platform/authz/core/decide.test.ts。
+ */
+describe('过渡层：码级判定', () => {
+  test('精确码命中，无通配展开', () => {
+    const actor = testActor({ permissions: ['sales.order:read'], companyIds: ['c1'] })
+    expect(hasPermission(actor, 'sales.order:read')).toBe(true)
+    expect(hasPermission(actor, 'sales.order:audit')).toBe(false)
+    expect(hasPermission(testActor({ permissions: ['sales.order:*'] }), 'sales.order:audit')).toBe(
+      false,
+    )
   })
 })
 
-describe('Actor', () => {
-  const base: Actor = {
+describe('过渡层：Actor', () => {
+  const base: Actor = testActor({
     userId: 'u1',
     username: 'zhang',
-    name: null,
-    superAdmin: false,
-    allCompanies: false,
-    permissions: new Set(['sales.order:read']),
+    permissions: ['sales.order:read'],
     companyIds: ['c1', 'c2'],
-  }
+  })
 
   test('超管绕过一切检查', () => {
-    const admin = { ...base, superAdmin: true, permissions: new Set<string>() }
+    const admin = testActor({ superAdmin: true })
     expect(hasPermission(admin, 'whatever:code')).toBe(true)
     expect(companyFilter(admin).bypass).toBe(true)
     expect(canAccessCompany(admin, 'cX')).toBe(true)
   })
 
   test('全公司授权绕过公司过滤但不绕过功能权限', () => {
-    const all = { ...base, allCompanies: true }
+    const all = testActor({ allCompanies: true, permissions: ['sales.order:read'] })
     expect(companyFilter(all).bypass).toBe(true)
     expect(canAccessCompany(all, 'cX')).toBe(true)
     expect(hasPermission(all, 'sales.order:audit')).toBe(false)

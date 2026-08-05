@@ -73,6 +73,7 @@ import {
   reconciliationItemRoutes,
 } from './reconciliation/routes.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
+import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { registerTradingSettingResources } from './settings.ts'
 
 export {
@@ -82,6 +83,7 @@ export {
   type SalesSettingService,
   type SalesSetting,
   type SalesUpdate,
+  SALES_RESOURCE_NAME,
 } from './settings.ts'
 
 export function registerTradingResources(registry: Registry): void {
@@ -109,16 +111,20 @@ export function registerTradingResources(registry: Registry): void {
   registry.register(outsourcedReceiptItemByproductMeta())
 }
 
-export function createTradingServices(db: Kysely<Database>, numbering: NumberingService) {
+export function createTradingServices(
+  db: Kysely<Database>,
+  numbering: NumberingService,
+  registry: Registry,
+) {
   const gl = createGlEngine()
   const inventory = createInventoryEngine()
   const engines = { inventory, gl }
-  const quotations = createQuotationService(db, numbering)
-  const outsourcedConfig = createOutsourcedConfigService(db)
-  const orders = createOrderService(db, numbering, quotations, outsourcedConfig.draft)
-  const fulfillment = createFulfillmentService(db, numbering, engines)
-  const outsourced = createOutsourcedService(db, numbering, engines)
-  const reconciliations = createReconciliationService(db, numbering, gl)
+  const quotations = createQuotationService(db, numbering, registry)
+  const outsourcedConfig = createOutsourcedConfigService(db, registry)
+  const orders = createOrderService(db, numbering, quotations, registry, outsourcedConfig.draft)
+  const fulfillment = createFulfillmentService(db, numbering, engines, registry)
+  const outsourced = createOutsourcedService(db, numbering, engines, registry)
+  const reconciliations = createReconciliationService(db, numbering, gl, registry)
   return { quotations, orders, outsourcedConfig, fulfillment, outsourced, reconciliations }
 }
 
@@ -126,56 +132,61 @@ export type TradingServices = ReturnType<typeof createTradingServices>
 
 export function tradingRouteMounts(deps: {
   auth: AuthService
+  authz: AuthzEnforcer
   trading: TradingServices
 }) {
-  const { auth, trading } = deps
+  const { auth, authz, trading } = deps
   const { quotations, orders, outsourcedConfig, fulfillment, outsourced, reconciliations } =
     trading
-  const purchaseExtra = purchaseOrderExtraRoutes({ auth, outsourcedConfig })
+  const purchaseExtra = purchaseOrderExtraRoutes({ auth, authz, outsourcedConfig })
   return {
-    salesQuotations: quotationHeadRoutes({ auth, quotations, side: 'sales' }),
-    salesQuotationItems: quotationItemRoutes({ auth, quotations, side: 'sales' }),
-    salesQuotationTiers: quotationTierRoutes({ auth, quotations, side: 'sales' }),
-    purchaseQuotations: quotationHeadRoutes({ auth, quotations, side: 'purchase' }),
-    purchaseQuotationItems: quotationItemRoutes({ auth, quotations, side: 'purchase' }),
-    purchaseQuotationTiers: quotationTierRoutes({ auth, quotations, side: 'purchase' }),
-    salesOrders: orderHeadRoutes({ auth, orders, side: 'sales' }),
-    salesOrderItems: orderItemRoutes({ auth, orders, side: 'sales' }),
-    purchaseOrders: orderHeadRoutes({ auth, orders, side: 'purchase' }),
-    purchaseOrderItems: orderItemRoutes({ auth, orders, side: 'purchase' }),
+    salesQuotations: quotationHeadRoutes({ auth, authz, quotations, side: 'sales' }),
+    salesQuotationItems: quotationItemRoutes({ auth, authz, quotations, side: 'sales' }),
+    salesQuotationTiers: quotationTierRoutes({ auth, authz, quotations, side: 'sales' }),
+    purchaseQuotations: quotationHeadRoutes({ auth, authz, quotations, side: 'purchase' }),
+    purchaseQuotationItems: quotationItemRoutes({ auth, authz, quotations, side: 'purchase' }),
+    purchaseQuotationTiers: quotationTierRoutes({ auth, authz, quotations, side: 'purchase' }),
+    salesOrders: orderHeadRoutes({ auth, authz, orders, side: 'sales' }),
+    salesOrderItems: orderItemRoutes({ auth, authz, orders, side: 'sales' }),
+    purchaseOrders: orderHeadRoutes({ auth, authz, orders, side: 'purchase' }),
+    purchaseOrderItems: orderItemRoutes({ auth, authz, orders, side: 'purchase' }),
     purchaseOrderItemMaterials: purchaseExtra.material,
     purchaseOrderItemByproducts: purchaseExtra.byproduct,
     purchaseOrderDemandLines: purchaseExtra.demand,
     purchaseOrderBom: purchaseExtra.bom,
-    salesDeliveries: salesFulfillmentHeadRoutes({ auth, fulfillment }),
-    salesDeliveryItems: salesFulfillmentItemRoutes({ auth, fulfillment }),
-    salesDeliveryPackBoxes: packBoxRoutes({ auth, fulfillment }),
-    salesDeliveryPackLines: packLineRoutes({ auth, fulfillment }),
-    purchaseReceipts: purchaseFulfillmentHeadRoutes({ auth, fulfillment }),
-    purchaseReceiptItems: purchaseFulfillmentItemRoutes({ auth, fulfillment }),
-    outsourcedIssues: outsourcedIssueRoutes({ auth, outsourced }),
-    outsourcedIssueItems: outsourcedIssueItemRoutes({ auth, outsourced }),
-    outsourcedReceipts: outsourcedReceiptRoutes({ auth, outsourced }),
-    outsourcedReceiptItems: outsourcedReceiptItemRoutes({ auth, outsourced }),
-    outsourcedReceiptItemMaterials: outsourcedReceiptMaterialRoutes({ auth, outsourced }),
-    outsourcedReceiptItemByproducts: outsourcedReceiptByproductRoutes({ auth, outsourced }),
+    salesDeliveries: salesFulfillmentHeadRoutes({ auth, authz, fulfillment }),
+    salesDeliveryItems: salesFulfillmentItemRoutes({ auth, authz, fulfillment }),
+    salesDeliveryPackBoxes: packBoxRoutes({ auth, authz, fulfillment }),
+    salesDeliveryPackLines: packLineRoutes({ auth, authz, fulfillment }),
+    purchaseReceipts: purchaseFulfillmentHeadRoutes({ auth, authz, fulfillment }),
+    purchaseReceiptItems: purchaseFulfillmentItemRoutes({ auth, authz, fulfillment }),
+    outsourcedIssues: outsourcedIssueRoutes({ auth, authz, outsourced }),
+    outsourcedIssueItems: outsourcedIssueItemRoutes({ auth, authz, outsourced }),
+    outsourcedReceipts: outsourcedReceiptRoutes({ auth, authz, outsourced }),
+    outsourcedReceiptItems: outsourcedReceiptItemRoutes({ auth, authz, outsourced }),
+    outsourcedReceiptItemMaterials: outsourcedReceiptMaterialRoutes({ auth, authz, outsourced }),
+    outsourcedReceiptItemByproducts: outsourcedReceiptByproductRoutes({ auth, authz, outsourced }),
     salesReconciliations: reconciliationHeadRoutes({
       auth,
+      authz,
       reconciliations,
       side: 'sales',
     }),
     salesReconciliationItems: reconciliationItemRoutes({
       auth,
+      authz,
       reconciliations,
       side: 'sales',
     }),
     purchaseReconciliations: reconciliationHeadRoutes({
       auth,
+      authz,
       reconciliations,
       side: 'purchase',
     }),
     purchaseReconciliationItems: reconciliationItemRoutes({
       auth,
+      authz,
       reconciliations,
       side: 'purchase',
     }),

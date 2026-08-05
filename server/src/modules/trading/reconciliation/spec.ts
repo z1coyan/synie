@@ -124,6 +124,7 @@ export function reconciliationHeadMeta(side: TradingSide): ResourceMeta {
     numbering: true,
     permissionLabel: spec.label,
     table: spec.table,
+    authz: { kind: 'company' },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('reconciliation_no', 'reconciliationNo', 'string', '对账单号', {
@@ -296,6 +297,7 @@ export function reconciliationItemMeta(side: TradingSide): ResourceMeta {
     permissionPrefix: spec.prefix,
     permissionLabel: spec.label,
     table: spec.itemTable,
+    authz: { kind: 'via', parent: spec.headResource, fk: 'reconciliation_id' },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('idx', 'idx', 'integer', '行号', { filterable: true, sortable: true }),

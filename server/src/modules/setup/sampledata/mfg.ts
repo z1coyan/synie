@@ -1,5 +1,6 @@
 import type { Actor } from '~/platform/authz/actor.ts'
 import type { MasterData } from './helpers.ts'
+import { permitFor } from './permit.ts'
 import type { MfgResult, SampleDataDeps } from './types.ts'
 
 export async function seedMfg(
@@ -10,19 +11,19 @@ export async function seedMfg(
   const opsByName: Record<string, string> = {}
   const opIDs: string[] = []
   for (const name of ['下料', '冲压', '折弯', '喷涂', '装配']) {
-    const op = await deps.manufacturingMaster.createOperation(actor, { name })
+    const op = await deps.manufacturingMaster.createOperation(permitFor(deps, actor, 'mfgOperations', 'create'), { name })
     opsByName[name] = op.id
     opIDs.push(op.id)
   }
 
-  const t1 = await deps.manufacturingMaster.createTemplate(actor, { name: '钣金件标准工艺' })
+  const t1 = await deps.manufacturingMaster.createTemplate(permitFor(deps, actor, 'mfgProcessTemplates', 'create'), { name: '钣金件标准工艺' })
   for (const row of [
     { op: '下料', seq: 10, req: '按图下料,去毛刺', isOutsourced: false },
     { op: '冲压', seq: 20, req: '冲孔/落料一次成型', isOutsourced: false },
     { op: '折弯', seq: 30, req: '按图折弯,角度±1°', isOutsourced: false },
     { op: '喷涂', seq: 40, req: '外协喷涂,RAL7035', isOutsourced: true },
   ] as const) {
-    await deps.manufacturingMaster.createTemplateItem(actor, {
+    await deps.manufacturingMaster.createTemplateItem(permitFor(deps, actor, 'mfgProcessTemplateItems', 'update'), {
       templateId: t1.id,
       operationId: opsByName[row.op]!,
       seq: row.seq,
@@ -31,13 +32,13 @@ export async function seedMfg(
     })
   }
 
-  const t2 = await deps.manufacturingMaster.createTemplate(actor, { name: '铜排组件工艺' })
+  const t2 = await deps.manufacturingMaster.createTemplate(permitFor(deps, actor, 'mfgProcessTemplates', 'create'), { name: '铜排组件工艺' })
   for (const row of [
     { op: '下料', seq: 10, req: '铜排定尺下料' },
     { op: '冲压', seq: 20, req: '冲安装孔,去毛刺' },
     { op: '装配', seq: 30, req: '端子压接,扭力按规范' },
   ] as const) {
-    await deps.manufacturingMaster.createTemplateItem(actor, {
+    await deps.manufacturingMaster.createTemplateItem(permitFor(deps, actor, 'mfgProcessTemplateItems', 'update'), {
       templateId: t2.id,
       operationId: opsByName[row.op]!,
       seq: row.seq,
@@ -45,7 +46,7 @@ export async function seedMfg(
     })
   }
 
-  const bom1 = await deps.manufacturingMaster.createBom(actor, {
+  const bom1 = await deps.manufacturingMaster.createBom(permitFor(deps, actor, 'mfgBoms', 'create'), {
     materialId: md.materials.box_shell!.id,
     note: '示例 BOM',
   })
@@ -56,9 +57,9 @@ export async function seedMfg(
   ]) {
     await createBOMComponent(deps, actor, bom1.id, md, row.key, row.qty, row.loss, row.note)
   }
-  await deps.manufacturingMaster.applyRouteTemplate(actor, bom1.id, t1.id)
+  await deps.manufacturingMaster.applyRouteTemplate(permitFor(deps, actor, 'mfgBoms', 'update'), bom1.id, t1.id)
 
-  const bom2 = await deps.manufacturingMaster.createBom(actor, {
+  const bom2 = await deps.manufacturingMaster.createBom(permitFor(deps, actor, 'mfgBoms', 'create'), {
     materialId: md.materials.busbar!.id,
     note: '示例 BOM',
   })
@@ -73,7 +74,7 @@ export async function seedMfg(
     { op: '下料', seq: 10, req: '铜排定尺下料' },
     { op: '装配', seq: 20, req: '端子压接' },
   ] as const) {
-    await deps.manufacturingMaster.createRoute(actor, {
+    await deps.manufacturingMaster.createRoute(permitFor(deps, actor, 'mfgBomRoutes', 'update'), {
       bomId: bom2.id,
       operationId: opsByName[row.op]!,
       seq: row.seq,
@@ -81,7 +82,7 @@ export async function seedMfg(
     })
   }
   const scrap = md.materials.scrap_copper!
-  await deps.manufacturingMaster.createByproduct(actor, {
+  await deps.manufacturingMaster.createByproduct(permitFor(deps, actor, 'mfgBomByproducts', 'update'), {
     bomId: bom2.id,
     quantity: '0.05',
     note: '下料边角料',
@@ -109,7 +110,7 @@ export async function createBOMComponent(
 ): Promise<void> {
   const mat = md.materials[key]
   if (!mat) throw new Error(`示例物料缺失: ${key}`)
-  await deps.manufacturingMaster.createComponent(actor, {
+  await deps.manufacturingMaster.createComponent(permitFor(deps, actor, 'mfgBomComponents', 'update'), {
     bomId,
     materialId: mat.id,
     unitId: mat.defaultUnitId,

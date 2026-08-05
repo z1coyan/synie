@@ -1,6 +1,11 @@
 /**
  * 增值税发票：销项/进项/费用报销票生命周期。
  * 审核/作废/红冲走总账过账骨架；对账结单/重开经 after* 钩子（reconciliations 接缝）。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、写前取行 `loadAuthorized`（不命中一律 not_found）、
+ * create 走 `assertCompanyWritable`。模块内零鉴权代码。
+ * 状态前置条件（仅草稿可改等）是领域不变量，留在本文件抛 conflict。
  */
 import { decimal, isDecimalString, toDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -15,21 +20,21 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import {
-  canAccessCompany,
-  hasPermission,
-  type Actor,
-} from '~/platform/authz/actor.ts'
+import type { Actor, Permit } from '~/platform/authz/core/index.ts'
 import type { FileService } from '~/platform/files/service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import type { ReconciliationService } from '~/modules/trading/reconciliation/service.ts'
 import type { TradingSide } from '~/modules/trading/common.ts'
 import { auditGlDocInTx, voidGlDocInTx } from '~/platform/posting/skeleton.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { assertCompanyWritable, loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { vatInvoiceResourceMeta } from './meta.ts'
+import { VAT_INVOICE_RESOURCE_NAME, vatInvoiceResourceMeta } from './meta.ts'
 import { recognizeVatInvoice, type OcrDeps, type OcrPrefill } from './ocr.ts'
+
+export { VAT_INVOICE_RESOURCE_NAME } from './meta.ts'
 
 export type InvoiceStatus = 'DRAFT' | 'AUDITED' | 'VOIDED' | 'REVERSED'
 export type InvoiceDirection = 'INBOUND' | 'OUTBOUND'
@@ -173,7 +178,9 @@ export interface VatInvoiceUpdateInput {
 }
 
 const VOUCHER_TYPE = 'acc.vat_invoice'
-const PERM = 'acc.vat_invoice'
+const INVOICE_TABLE = 'acc_vat_invoice'
+/** 列表/单条共用同一份投影，别名只有一处可写错 */
+const INVOICE_ALIAS = 'acc_vat_invoice'
 
 const KINDS = new Set([
   'SPECIAL',
@@ -211,8 +218,10 @@ export interface VatInvoiceServiceDeps {
     ReconciliationService,
     'closeFromInvoice' | 'reopenFromInvoice' | 'existsForInvoice' | 'loadForInvoiceAudit'
   >
-  files?: Pick<FileService, 'readStoredFile'> | null
+  files?: Pick<FileService, 'readReachableFile'> | null
   ocr?: OcrDeps
+  /** 判定归宿解析（列表/单条/写侧三个执行点共用） */
+  registry: Registry
 }
 
 export function createVatInvoiceService(
@@ -223,37 +232,59 @@ export function createVatInvoiceService(
   const gl = deps.gl
   const reconciliations = deps.reconciliations
   const files = deps.files ?? null
+  const invoiceTarget = deps.registry.authzTarget(VAT_INVOICE_RESOURCE_NAME)
 
   async function list(
-    actor: Actor,
+    permit: Permit,
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: VatInvoice[] }> {
-    requireAction(actor, 'read')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] }
-    return listFromSource({
+    return listAuthorized({
       db,
+      permit,
+      target: invoiceTarget,
+      alias: INVOICE_ALIAS,
       resource: vatInvoiceResourceMeta(),
       source: INVOICE_SOURCE,
       select: INVOICE_SELECT,
       defaultOrder: sql`"inserted_at" DESC, "id" DESC`,
       query,
-      extraWhere: scope.where,
       mapRow: mapInvoiceRow,
     })
   }
 
-  async function get(actor: Actor, id: string): Promise<VatInvoice> {
-    requireAction(actor, 'read')
-    const item = await loadInvoice(db, id)
-    if (!canAccessCompany(actor, item.companyId)) throw notFound()
-    return item
+  async function get(permit: Permit, id: string): Promise<VatInvoice> {
+    return loadAuthorizedFrom({
+      db,
+      permit,
+      target: invoiceTarget,
+      alias: INVOICE_ALIAS,
+      source: INVOICE_SOURCE,
+      select: INVOICE_SELECT,
+      id,
+      mapRow: mapInvoiceRow,
+      notFoundMessage: '增值税发票不存在',
+    })
   }
 
-  async function create(actor: Actor, input: VatInvoiceInput): Promise<VatInvoice> {
-    requireAction(actor, 'create')
-    if (!canAccessCompany(actor, input.companyId)) throw notFound()
+  /** 按 Permit 锁单（授权 + 行锁）后重读投影：子查询不能 FOR UPDATE，故两段 */
+  async function lockInvoice(handle: DbHandle, permit: Permit, id: string): Promise<VatInvoice> {
+    await loadAuthorized({
+      db: handle,
+      permit,
+      target: invoiceTarget,
+      table: INVOICE_TABLE,
+      id,
+      forUpdate: true,
+      notFoundMessage: '增值税发票不存在',
+    })
+    return loadInvoice(handle, id)
+  }
+
+  async function create(permit: Permit, input: VatInvoiceInput): Promise<VatInvoice> {
+    const actor = permit.actor
+    // 入参校验（400）先于公司边界（404）
     const normalized = normalizeInput(input)
+    assertCompanyWritable(permit, normalized.companyId, '增值税发票不存在')
     return withTx(db, async (trx) => {
       await validateReferences(trx, reconciliations, normalized, null, false)
       let docNo = (normalized.docNo ?? '').trim()
@@ -315,13 +346,13 @@ export function createVatInvoiceService(
   }
 
   async function update(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: VatInvoiceUpdateInput,
   ): Promise<VatInvoice> {
-    requireAction(actor, 'update')
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const before = await lockInvoice(trx, actor, id)
+      const before = await lockInvoice(trx, permit, id)
       if (before.status !== 'DRAFT') {
         throw new ApiError('conflict', '仅草稿发票可修改或删除')
       }
@@ -372,10 +403,10 @@ export function createVatInvoiceService(
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requireAction(actor, 'delete')
+  async function remove(permit: Permit, id: string): Promise<void> {
+    const actor = permit.actor
     await withTx(db, async (trx) => {
-      const before = await lockInvoice(trx, actor, id)
+      const before = await lockInvoice(trx, permit, id)
       if (before.status !== 'DRAFT') {
         throw new ApiError('conflict', '仅草稿发票可修改或删除')
       }
@@ -398,11 +429,11 @@ export function createVatInvoiceService(
   }
 
   async function audit(
-    actor: Actor,
+    permit: Permit,
     id: string,
     postingDate: string,
   ): Promise<VatInvoice> {
-    requireAction(actor, 'audit')
+    const actor = permit.actor
     const posting = requireDate(postingDate, 'postingDate')
     return withTx(db, async (trx) => {
       let reconSide: TradingSide | null = null
@@ -412,7 +443,7 @@ export function createVatInvoiceService(
         headTable: 'acc_vat_invoice',
         conflictMessage: '发票已被并发处理',
         lockDraft: async (t) => {
-          const before = await lockInvoice(t, actor, id)
+          const before = await lockInvoice(t, permit, id)
           if (before.status !== 'DRAFT') {
             throw new ApiError('conflict', '仅草稿发票可审核')
           }
@@ -445,26 +476,30 @@ export function createVatInvoiceService(
     })
   }
 
-    async function voidInvoice(actor: Actor, id: string): Promise<VatInvoice> {
-    return endInvoice(actor, id, false, {})
+  async function voidInvoice(permit: Permit, id: string): Promise<VatInvoice> {
+    return endInvoice(permit, id, false, {})
   }
 
   async function reverse(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: { postingDate: string; redInvoiceNo?: string | null },
   ): Promise<VatInvoice> {
-    return endInvoice(actor, id, true, input)
+    return endInvoice(permit, id, true, input)
   }
 
+  /**
+   * 作废/红冲共用重放骨架。动作码由 `reverseMode` 派生，但派生发生在**路由**
+   * （`endInvoiceAction`，两码都已在 meta 声明），本函数只留领域分支。
+   */
   async function endInvoice(
-    actor: Actor,
+    permit: Permit,
     id: string,
     reverseMode: boolean,
     input: { postingDate?: string; redInvoiceNo?: string | null },
   ): Promise<VatInvoice> {
+    const actor = permit.actor
     const action = reverseMode ? 'reverse' : 'void'
-    requireAction(actor, action)
     let posting = ''
     if (reverseMode) {
       posting = requireDate(input.postingDate ?? '', 'postingDate')
@@ -476,7 +511,7 @@ export function createVatInvoiceService(
         actionName: action,
         voidStatus: reverseMode ? 'reversed' : 'voided',
         lockAudited: async (t) => {
-          const before = await lockInvoice(t, actor, id)
+          const before = await lockInvoice(t, permit, id)
           if (before.status !== 'AUDITED') {
             throw new ApiError('conflict', '仅已审核发票可作废或红冲')
           }
@@ -537,13 +572,12 @@ export function createVatInvoiceService(
     )
   }
 
-  async function ocr(actor: Actor, fileId: string): Promise<OcrPrefill> {
-    requireAction(actor, 'create')
+  async function ocr(permit: Permit, fileId: string): Promise<OcrPrefill> {
     if (!files) {
       throw new ApiError('internal', 'OCR 服务未配置')
     }
-    await requireAccessibleFile(db, actor, fileId)
-    const { file, content } = await files.readStoredFile(fileId)
+    // 文件可达性归平台判定（码 forbidden / 行级 not_found），本域不再自造闸
+    const { file, content } = await files.readReachableFile(permit.actor, fileId)
     return recognizeVatInvoice(db, file, content, deps.ocr)
   }
 
@@ -558,20 +592,6 @@ async function loadInvoice(db: DbHandle, id: string): Promise<VatInvoice> {
   `.execute(db)
   if (rows.rows.length === 0) throw notFound()
   return mapInvoiceRow(rows.rows[0]!)
-}
-
-async function lockInvoice(
-  db: DbHandle,
-  actor: Actor,
-  id: string,
-): Promise<VatInvoice> {
-  const rows = await sql<Record<string, unknown>>`
-    ${INVOICE_SELECT} FROM acc_vat_invoice WHERE id=${id}::uuid FOR UPDATE
-  `.execute(db)
-  if (rows.rows.length === 0) throw notFound()
-  const item = mapInvoiceRow(rows.rows[0]!)
-  if (!canAccessCompany(actor, item.companyId)) throw notFound()
-  return item
 }
 
 function mapInvoiceRow(row: Record<string, unknown>): VatInvoice {
@@ -1090,38 +1110,8 @@ async function reconciliationGLEntries(
   }
 }
 
-async function requireAccessibleFile(
-  db: DbHandle,
-  actor: Actor,
-  fileId: string,
-): Promise<void> {
-  if (actor.superAdmin || actor.allCompanies) {
-    const exists = await sql<{ e: boolean }>`
-      SELECT EXISTS(SELECT 1 FROM sys_file WHERE id=${fileId}::uuid) AS e
-    `.execute(db)
-    if (!exists.rows[0]?.e) throw new ApiError('not_found', '文件不存在')
-    return
-  }
-  const accessible = await sql<{ e: boolean }>`
-    SELECT EXISTS(
-      SELECT 1 FROM sys_file f WHERE f.id=${fileId}::uuid AND (
-        f.uploaded_by_id=${actor.userId}::uuid OR EXISTS(
-          SELECT 1 FROM sys_attachment a WHERE a.file_id=f.id
-            AND a.company_id=ANY(${[...actor.companyIds]}::uuid[])
-        )
-      )
-    ) AS e
-  `.execute(db)
-  if (!accessible.rows[0]?.e) throw new ApiError('not_found', '文件不存在')
-}
 
 // ---- helpers ----
-
-function requireAction(actor: Actor, action: string): void {
-  if (!hasPermission(actor, `${PERM}:${action}`)) {
-    throw new ApiError('forbidden', '无权限执行此操作')
-  }
-}
 
 function notFound(): ApiError {
   return new ApiError('not_found', '增值税发票不存在')

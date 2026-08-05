@@ -1,3 +1,4 @@
+import { hasCapability } from '@synie/shared'
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -102,7 +103,7 @@ function AttendanceDaysPage() {
   const queryClient = useQueryClient()
   const binding = resourceBindingFor('hrAttendanceDays')
   const meta = useGridMeta('hrAttendanceDays', true)
-  const canRecalc = (meta.data?.capabilities ?? []).includes('recalc')
+  const canRecalc = hasCapability(meta.data?.capabilities ?? [], 'recalc')
 
   const runRecalc = async () => {
     if (!dateFrom || !dateTo) return

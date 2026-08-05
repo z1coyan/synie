@@ -2,6 +2,7 @@
  * 销售/采购订单 Aggregate Draft PG 集成：完整 HTTP seam、采购委外子树与回滚。
  * 门控 SYNIE_TEST_DATABASE_URL。
  */
+import { testActor } from '~/platform/authz/testing.ts'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { sql } from 'kysely'
@@ -21,21 +22,29 @@ import {
   type OrderDraftInput,
   type OrderSavedDraft,
 } from './service.ts'
+import { ORDER_MATERIAL_RESOURCE } from './outsourced-config.ts'
+import { orderSpec } from './spec.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 
+
+/** 编号服务需要 sealed registry（授权归宿解析） */
+const numberingRegistry = createSealedResourceRegistry()
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
 
 run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
-  const quotations = createQuotationService(db, numbering)
-  const outsourcedConfig = createOutsourcedConfigService(db)
+  const numbering = createNumberingService(db, buildNumberingCatalog(numberingRegistry), numberingRegistry)
+  const quotations = createQuotationService(db, numbering, numberingRegistry)
+  const outsourcedConfig = createOutsourcedConfigService(db, numberingRegistry)
   const orders = createOrderService(
     db,
     numbering,
     quotations,
+    numberingRegistry,
     outsourcedConfig.draft,
   )
+  const authz = createAuthzEnforcer(numberingRegistry)
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `OD${suffix}`
 
@@ -50,7 +59,7 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
   const rawMaterialId = crypto.randomUUID()
   const byproductId = crypto.randomUUID()
 
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId: '',
     username: 'order-draft-test',
     name: '订单聚合草稿测试',
@@ -58,19 +67,34 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
+  })
+  /** 凭证一律现取（actor 会随用例切换）：superAdmin 的 rowFilter 恒全集 */
+  const permit = (resource: string, action: string, who: Actor = actor) => {
+    const decision = authz.decideFor(who, resource, action)
+    if (decision.outcome !== 'permit') throw new Error(`夹具应当 permit: ${resource}:${action}`)
+    return decision.permit
   }
+  const headPermit = (side: TradingSide, action: string, who?: Actor) =>
+    permit(orderSpec(side).headResource, action, who)
+  const itemPermit = (side: TradingSide, action: string, who?: Actor) =>
+    permit(orderSpec(side).itemResource, action, who)
+  /** HTTP 层按 Bearer token 切 actor：缺码 403 用例的唯一入口 */
+  const httpActors: Record<string, Actor> = { test: actor }
   const auth = {
     authenticate: async () => actor,
-    authenticateRequest: async () => actor,
+    authenticateRequest: async (headers: Headers) => {
+      const token = (headers.get('authorization') ?? '').replace('Bearer ', '')
+      return httpActors[token] ?? actor
+    },
   } as unknown as AuthService
   const http = new Hono<AppEnv>()
     .route(
       '/api/v1/sales/orders',
-      orderHeadRoutes({ auth, orders, side: 'sales' }),
+      orderHeadRoutes({ auth, authz, orders, side: 'sales' }),
     )
     .route(
       '/api/v1/purchase/orders',
-      orderHeadRoutes({ auth, orders, side: 'purchase' }),
+      orderHeadRoutes({ auth, authz, orders, side: 'purchase' }),
     )
   http.onError(onError)
 
@@ -141,12 +165,12 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
   }
 
   function limitedActor(...actions: Array<'update' | 'create' | 'delete'>): Actor {
-    return {
+    return testActor({
       ...actor,
       username: `order-${actions.join('-')}`,
       superAdmin: false,
       permissions: new Set(actions.map((action) => `purchase.order:${action}`)),
-    }
+    })
   }
 
   function replaceInputFromSaved(saved: OrderSavedDraft): OrderDraftInput {
@@ -380,7 +404,7 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
         byproductLines: [],
       })
       await expect(
-        orders.createDraft(actor, side, input),
+        orders.createDraft(headPermit(side, 'create'), side, input),
       ).rejects.toThrow(/订单条目参数不合法/)
 
       const count = side === 'sales'
@@ -406,17 +430,17 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
 
   test('第二个副产物失败时头、条目、发料与副产物修改全部回滚', async () => {
     const created = await orders.createDraft(
-      actor,
+      headPermit('purchase', 'create'),
       'purchase',
       draftInput('purchase', `${prefix}-P-RB`),
     )
-    const before = await orders.getDraft(actor, 'purchase', created.id)
+    const before = await orders.getDraft(headPermit('purchase', 'read'), 'purchase', created.id)
     const item = created.items[0]!
     const issue = item.issueLines[0]!
     const byproduct = item.byproductLines[0]!
 
     await expect(
-      orders.replaceDraft(actor, 'purchase', created.id, {
+      orders.replaceDraft(headPermit('purchase', 'update'), 'purchase', created.id, {
         ...draftInput('purchase', created.orderNo),
         terms: '失败后不可见',
         items: [{
@@ -449,40 +473,49 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
       }),
     ).rejects.toThrow(/副产物清单参数不合法/)
 
-    expect(await orders.getDraft(actor, 'purchase', created.id)).toEqual(before)
+    expect(await orders.getDraft(headPermit('purchase', 'read'), 'purchase', created.id)).toEqual(before)
   })
 
   test('订单 replace 仅在新增/删除子树时追加 create/delete 权限', async () => {
     const created = await orders.createDraft(
-      actor,
+      headPermit('purchase', 'create'),
       'purchase',
       draftInput('purchase', `${prefix}-PUR-RBAC`),
     )
-    const updateOnly = limitedActor('update')
+    // 整单替换的码级要求是端点级声明（update ∧ create ∧ delete），不再按请求形态动态追加：
+    // 缺码在 HTTP guard 上 403，服务层拿到凭证即可增删子树（零鉴权代码）。
+    httpActors['update-only'] = limitedActor('update')
+    httpActors['update-crud'] = limitedActor('update', 'create', 'delete')
+    const putBody = (input: OrderDraftInput) => JSON.stringify(input)
+    const put = (token: string, input: OrderDraftInput) =>
+      http.request(`/api/v1/purchase/orders/${created.id}`, {
+        method: 'PUT',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: putBody(input),
+      })
 
     const pureUpdate = replaceInputFromSaved(created)
     pureUpdate.terms = '仅修改已有快照'
-    const purelyUpdated = await orders.replaceDraft(
-      updateOnly,
-      'purchase',
-      created.id,
-      pureUpdate,
-    )
-    expect(purelyUpdated.terms).toBe('仅修改已有快照')
+    const deniedPure = await put('update-only', pureUpdate)
+    expect(deniedPure.status).toBe(403)
+    expect(((await deniedPure.json()) as { error: { code: string } }).error.code).toBe('forbidden')
 
-    const withNewOutsourcedLine = replaceInputFromSaved(purelyUpdated)
+    const allowedPure = await put('update-crud', pureUpdate)
+    expect(allowedPure.status).toBe(200)
+    expect(((await allowedPure.json()) as OrderSavedDraft).terms).toBe('仅修改已有快照')
+
+    // 服务层：持 update 凭证即可新增子树（判定已在 guard 完成）
+    const withNewOutsourcedLine = replaceInputFromSaved(
+      await orders.getDraft(headPermit('purchase', 'read'), 'purchase', created.id),
+    )
     withNewOutsourcedLine.items[0]!.issueLines.push({
       materialId,
       unitId,
       quantity: '3',
       remarks: '新增委外行',
     })
-    await expect(
-      orders.replaceDraft(updateOnly, 'purchase', created.id, withNewOutsourcedLine),
-    ).rejects.toMatchObject({ code: 'forbidden' })
-
     const withCreate = await orders.replaceDraft(
-      limitedActor('update', 'create'),
+      headPermit('purchase', 'update'),
       'purchase',
       created.id,
       withNewOutsourcedLine,
@@ -491,12 +524,8 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
 
     const withoutAddedLine = replaceInputFromSaved(withCreate)
     withoutAddedLine.items[0]!.issueLines = withoutAddedLine.items[0]!.issueLines.slice(0, 2)
-    await expect(
-      orders.replaceDraft(updateOnly, 'purchase', created.id, withoutAddedLine),
-    ).rejects.toMatchObject({ code: 'forbidden' })
-
     const withDelete = await orders.replaceDraft(
-      limitedActor('update', 'delete'),
+      headPermit('purchase', 'update'),
       'purchase',
       created.id,
       withoutAddedLine,
@@ -506,7 +535,7 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
 
   test('委外发料/副产物清单写路径落审计：独立增删改与聚合替换', async () => {
     const created = await orders.createDraft(
-      actor,
+      headPermit('purchase', 'create'),
       'purchase',
       draftInput('purchase', `${prefix}-OC-AUDIT`),
     )
@@ -538,8 +567,16 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
     expect(byproductCreated.rows[0]?.record_label).toBe('B' + suffix)
 
     // 独立更新留 diff；同值重放不追加
-    await outsourcedConfig.updateMaterial(actor, mainIssue.id, { quantity: '30' })
-    await outsourcedConfig.updateMaterial(actor, mainIssue.id, { quantity: '30' })
+    await outsourcedConfig.updateMaterial(
+      permit(ORDER_MATERIAL_RESOURCE, 'update'),
+      mainIssue.id,
+      { quantity: '30' },
+    )
+    await outsourcedConfig.updateMaterial(
+      permit(ORDER_MATERIAL_RESOURCE, 'update'),
+      mainIssue.id,
+      { quantity: '30' },
+    )
     const issueUpdated = await lineAudit('pur_order_item_material', mainIssue.id)
     expect(issueUpdated.rows.map((r) => r.action_name)).toEqual(['create', 'update'])
     const updateChanges = JSON.parse(issueUpdated.rows[1]!.changes) as Record<
@@ -549,7 +586,7 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
     expect(updateChanges.quantity).toEqual({ from: '20', to: '30' })
 
     // 独立删除留 destroy
-    await outsourcedConfig.deleteMaterial(actor, sideIssue.id)
+    await outsourcedConfig.deleteMaterial(permit(ORDER_MATERIAL_RESOURCE, 'delete'), sideIssue.id)
     const issueDeleted = await lineAudit('pur_order_item_material', sideIssue.id)
     expect(issueDeleted.rows.map((r) => r.action_name)).toEqual(['create', 'destroy'])
     const destroyChanges = JSON.parse(issueDeleted.rows[1]!.changes) as Record<
@@ -560,7 +597,7 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
 
     // 聚合替换：副产物改量/删行/新增行分别留 update/destroy/create
     const replaceInput = replaceInputFromSaved(
-      await orders.getDraft(actor, 'purchase', created.id),
+      await orders.getDraft(headPermit('purchase', 'read'), 'purchase', created.id),
     )
     const byproducts = replaceInput.items[0]!.byproductLines
     const keptInput = byproducts.find((line) => line.id === keptByproduct.id)!
@@ -569,7 +606,12 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
       keptInput,
       { materialId, unitId, quantity: '4', remarks: '新副产物' },
     ]
-    const replaced = await orders.replaceDraft(actor, 'purchase', created.id, replaceInput)
+    const replaced = await orders.replaceDraft(
+      headPermit('purchase', 'update'),
+      'purchase',
+      created.id,
+      replaceInput,
+    )
 
     const byproductUpdated = await lineAudit('pur_order_item_byproduct', keptByproduct.id)
     expect(byproductUpdated.rows.map((r) => r.action_name)).toEqual(['create', 'update'])

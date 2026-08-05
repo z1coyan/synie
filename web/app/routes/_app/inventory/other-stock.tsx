@@ -1,8 +1,7 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect } from 'react'
 import { Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
 import { Tabs } from '@heroui/react'
-import { fetchMyPermissions, hasPermission } from '~/lib/permissions'
+import { useResourceCapabilities } from '~/lib/use-resource-capabilities'
 
 export const Route = createFileRoute('/_app/inventory/other-stock')({
   component: OtherStockLayout,
@@ -10,13 +9,14 @@ export const Route = createFileRoute('/_app/inventory/other-stock')({
 
 /**
  * 其他库存单:无业务上游的库存来源单据入口(纯 IA 壳)。
- * 三 tab 对应三资源(权限码/状态机/编号不动);tab 即子路由,URL 可直达可后退。
- * 无对应 read 的 tab 隐藏;默认/直链无权限时落到第一个可访问 tab。
+ * 三 tab 对应三资源(状态机/编号不动);tab 即子路由,URL 可直达可后退。
+ * tab 可见性按资源文档可读性门控(文档 403 即不可见,fail-closed);
+ * 默认/直链无权限时落到第一个可访问 tab。
  */
 const ALL_TABS = [
-  { id: 'docs', label: '出入库', read: 'inv.stock_doc:read', path: '/inventory/other-stock/docs' },
-  { id: 'transfers', label: '调拨', read: 'inv.stock_transfer:read', path: '/inventory/other-stock/transfers' },
-  { id: 'counts', label: '盘点', read: 'inv.stock_count:read', path: '/inventory/other-stock/counts' },
+  { id: 'docs', label: '出入库', resource: 'invStockDocs', path: '/inventory/other-stock/docs' },
+  { id: 'transfers', label: '调拨', resource: 'invStockTransfers', path: '/inventory/other-stock/transfers' },
+  { id: 'counts', label: '盘点', resource: 'invStockCounts', path: '/inventory/other-stock/counts' },
 ] as const
 
 type TabId = (typeof ALL_TABS)[number]['id']
@@ -25,28 +25,28 @@ function OtherStockLayout() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
 
-  const perms = useQuery({
-    queryKey: ['myPermissions'],
-    queryFn: fetchMyPermissions,
-    staleTime: 60_000,
-  })
-
-  // 权限未到前 fail-open 展示全部 tab,避免首屏空白闪;落地后按 read 隐藏
-  const tabs = useMemo(() => {
-    if (!perms.data) return [...ALL_TABS]
-    return ALL_TABS.filter((t) => hasPermission(perms.data, t.read))
-  }, [perms.data])
+  const docsCaps = useResourceCapabilities('invStockDocs')
+  const transfersCaps = useResourceCapabilities('invStockTransfers')
+  const countsCaps = useResourceCapabilities('invStockCounts')
+  // 文档未解析期 fail-closed:先不渲染 tab(避免闪现后消失),解析后按可读性过滤
+  const pending = docsCaps.pending || transfersCaps.pending || countsCaps.pending
+  const readable: Record<(typeof ALL_TABS)[number]['resource'], boolean> = {
+    invStockDocs: docsCaps.readable,
+    invStockTransfers: transfersCaps.readable,
+    invStockCounts: countsCaps.readable,
+  }
+  const tabs = pending ? [] : ALL_TABS.filter((t) => readable[t.resource])
 
   const selected: TabId =
     ALL_TABS.find((t) => pathname.includes(`/inventory/other-stock/${t.id}`))?.id ?? 'docs'
 
   // 当前 tab 无权限(或权限落地后当前 tab 被藏):静默落到第一个可访问 tab
   useEffect(() => {
-    if (!perms.data || tabs.length === 0) return
+    if (pending || tabs.length === 0) return
     if (!tabs.some((t) => t.id === selected)) {
       navigate({ to: tabs[0].path, replace: true })
     }
-  }, [perms.data, tabs, selected, navigate])
+  }, [pending, tabs, selected, navigate])
 
   return (
     <>

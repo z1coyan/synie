@@ -1,14 +1,28 @@
+/**
+ * 会计域 REST：凭证 / 凭证行 / 总账分录 / 应收应付报表。
+ *
+ * 逐端点挂 `guard(资源, 动作)`（requireAuth 之后），handler 用 `permitOf(c)` 取凭证。
+ * 工作流 audit/cancel 各挂自己的码（meta 已声明）；凭证行是 via(凭证头)，动作码解析到母单前缀。
+ */
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
+import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
+import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
-import type { EntryService } from './entry-service.ts'
-import type { Journal, JournalLine, JournalService } from './journal-service.ts'
+import { GL_ENTRY_RESOURCE_NAME, type EntryService } from './entry-service.ts'
+import {
+  JOURNAL_LINE_RESOURCE_NAME,
+  JOURNAL_RESOURCE_NAME,
+  type Journal,
+  type JournalLine,
+  type JournalService,
+} from './journal-service.ts'
 
 const idParam = z.object({ id: z.string().uuid() })
 
@@ -145,27 +159,33 @@ function entryDto(item: Awaited<ReturnType<EntryService['get']>>) {
 
 export function accountingRoutes(deps: {
   auth: AuthService
+  authz: AuthzEnforcer
   journals: JournalService
   entries: EntryService
 }) {
-  const { auth, journals, entries } = deps
+  const { auth, authz, journals, entries } = deps
+  const journalGuard = (action: string) => authz.guard(JOURNAL_RESOURCE_NAME, action)
+  const lineGuard = (action: string) => authz.guard(JOURNAL_LINE_RESOURCE_NAME, action)
+  const entryGuard = (action: string) => authz.guard(GL_ENTRY_RESOURCE_NAME, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     // ── 凭证 ──────────────────────────────────────────
     .post(
       '/gl-journals/query',
+      journalGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await journals.list(c.get('actor'), toList(c.req.valid('json')))
+        const result = await journals.list(permitOf(c), toList(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(journalDto) })
       },
     )
     .post(
       '/gl-journals',
+      journalGuard('create'),
       zValidator('json', journalCreateSchema, validationHook),
       async (c) => {
         const body = c.req.valid('json')
-        const item = await journals.create(c.get('actor'), {
+        const item = await journals.create(permitOf(c), {
           voucherNo: body.voucherNo,
           date: body.date,
           postingDate: body.postingDate,
@@ -177,20 +197,22 @@ export function accountingRoutes(deps: {
     )
     .get(
       '/gl-journals/:id',
+      journalGuard('read'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        const item = await journals.get(c.get('actor'), c.req.valid('param').id)
+        const item = await journals.get(permitOf(c), c.req.valid('param').id)
         return c.json(journalDto(item))
       },
     )
     .patch(
       '/gl-journals/:id',
+      journalGuard('update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', journalUpdateSchema, validationHook),
       async (c) => {
         const raw = c.req.valid('json') as Record<string, unknown>
         const body = c.req.valid('json')
-        const item = await journals.update(c.get('actor'), c.req.valid('param').id, {
+        const item = await journals.update(permitOf(c), c.req.valid('param').id, {
           voucherNo: body.voucherNo,
           date: body.date,
           postingDate: body.postingDate,
@@ -203,19 +225,21 @@ export function accountingRoutes(deps: {
     )
     .delete(
       '/gl-journals/:id',
+      journalGuard('delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        await journals.remove(c.get('actor'), c.req.valid('param').id)
+        await journals.remove(permitOf(c), c.req.valid('param').id)
         return c.body(null, 204)
       },
     )
     .post(
       '/gl-journals/:id/audit',
+      journalGuard('audit'),
       zValidator('param', idParam, validationHook),
       zValidator('json', journalAuditSchema, validationHook),
       async (c) => {
         const item = await journals.audit(
-          c.get('actor'),
+          permitOf(c),
           c.req.valid('param').id,
           c.req.valid('json').postingDate,
         )
@@ -224,27 +248,30 @@ export function accountingRoutes(deps: {
     )
     .post(
       '/gl-journals/:id/cancel',
+      journalGuard('cancel'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        const item = await journals.cancel(c.get('actor'), c.req.valid('param').id)
+        const item = await journals.cancel(permitOf(c), c.req.valid('param').id)
         return c.json(journalDto(item))
       },
     )
     // ── 凭证行 ────────────────────────────────────────
     .post(
       '/gl-journal-lines/query',
+      lineGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await journals.listLines(c.get('actor'), toList(c.req.valid('json')))
+        const result = await journals.listLines(permitOf(c), toList(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(lineDto) })
       },
     )
     .post(
       '/gl-journal-lines',
+      lineGuard('create'),
       zValidator('json', lineCreateSchema, validationHook),
       async (c) => {
         const body = c.req.valid('json')
-        const item = await journals.createLine(c.get('actor'), {
+        const item = await journals.createLine(permitOf(c), {
           journalId: body.journalId,
           idx: body.idx,
           accountId: body.accountId,
@@ -259,20 +286,22 @@ export function accountingRoutes(deps: {
     )
     .get(
       '/gl-journal-lines/:id',
+      lineGuard('read'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        const item = await journals.getLine(c.get('actor'), c.req.valid('param').id)
+        const item = await journals.getLine(permitOf(c), c.req.valid('param').id)
         return c.json(lineDto(item))
       },
     )
     .patch(
       '/gl-journal-lines/:id',
+      lineGuard('update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', lineUpdateSchema, validationHook),
       async (c) => {
         const raw = c.req.valid('json') as Record<string, unknown>
         const body = c.req.valid('json')
-        const item = await journals.updateLine(c.get('actor'), c.req.valid('param').id, {
+        const item = await journals.updateLine(permitOf(c), c.req.valid('param').id, {
           idx: body.idx,
           accountId: body.accountId,
           debit: body.debit,
@@ -289,32 +318,36 @@ export function accountingRoutes(deps: {
     )
     .delete(
       '/gl-journal-lines/:id',
+      lineGuard('delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        await journals.removeLine(c.get('actor'), c.req.valid('param').id)
+        await journals.removeLine(permitOf(c), c.req.valid('param').id)
         return c.body(null, 204)
       },
     )
     // ── 总账分录 ──────────────────────────────────────
     .post(
       '/gl-entries/query',
+      entryGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await entries.list(c.get('actor'), toList(c.req.valid('json')))
+        const result = await entries.list(permitOf(c), toList(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(entryDto) })
       },
     )
     .get(
       '/gl-entries/:id',
+      entryGuard('read'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        const item = await entries.get(c.get('actor'), c.req.valid('param').id)
+        const item = await entries.get(permitOf(c), c.req.valid('param').id)
         return c.json(entryDto(item))
       },
     )
     // ── 应收应付报表 ──────────────────────────────────
     .get(
       '/ar-ap-report',
+      entryGuard('read'),
       async (c) => {
         const companyId = c.req.query('companyId')
         const asOf = c.req.query('asOf')
@@ -328,7 +361,7 @@ export function accountingRoutes(deps: {
         if (Object.keys(fields).length > 0) {
           throw ApiError.validation('应收应付报表参数不合法', fields)
         }
-        const result = await entries.report(c.get('actor'), {
+        const result = await entries.report(permitOf(c), {
           companyId: companyId!.trim(),
           asOf: asOf!.trim(),
         })

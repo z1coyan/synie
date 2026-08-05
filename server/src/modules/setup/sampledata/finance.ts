@@ -1,5 +1,6 @@
 import { decimal } from '@synie/shared'
 import type { Actor } from '~/platform/authz/actor.ts'
+import { permitFor } from './permit.ts'
 import { daysAgo, daysAgoAt, previousMonth, type MasterData, type SeedCtx } from './helpers.ts'
 import type { FinanceResult, PurchaseResult, SalesResult, SampleDataDeps } from './types.ts'
 
@@ -11,7 +12,7 @@ export async function seedFinance(
   sales: SalesResult,
   purchase: PurchaseResult,
 ): Promise<FinanceResult> {
-  const bankAccount = await deps.banking.createAccount(actor, {
+  const bankAccount = await deps.banking.createAccount(permitFor(deps, actor, 'accBankAccounts', 'create'), {
     alias: '基本户',
     bankName: '中国银行',
     branchName: '台州分行营业部',
@@ -88,7 +89,7 @@ export async function seedFinance(
   ]
   let txCount = 0
   for (const spec of txSpecs) {
-    await deps.banking.createTransaction(actor, {
+    await deps.banking.createTransaction(permitFor(deps, actor, 'accBankTransactions', 'create'), {
       occurredAt: daysAgoAt(spec.ago, spec.hour),
       balance: spec.balance,
       counterpartyName: spec.counterparty,
@@ -111,7 +112,7 @@ export async function seedFinance(
   ])
 
   const date = daysAgo(18)
-  const report = await deps.expenses.createReport(actor, {
+  const report = await deps.expenses.createReport(permitFor(deps, actor, 'accExpenseReports', 'create'), {
     companyId: sc.company.id,
     expenseDate: date,
     postingDate: date,
@@ -123,7 +124,7 @@ export async function seedFinance(
     { summary: '宁波客户拜访差旅费', amount: '860.00' },
     { summary: '办公用品采购', amount: '240.50' },
   ].entries()) {
-    await deps.expenses.createItem(actor, {
+    await deps.expenses.createItem(permitFor(deps, actor, 'accExpenseReportItems', 'create'), {
       reportId: report.id,
       idx: i + 1,
       kind: 'MANUAL',
@@ -132,10 +133,10 @@ export async function seedFinance(
       expenseAccountId: sc.accounts.expense,
     })
   }
-  await deps.expenses.auditReport(actor, report.id, date)
+  await deps.expenses.auditReport(permitFor(deps, actor, 'accExpenseReports', 'audit'), report.id, date)
 
   const month = previousMonth()
-  const p1 = await deps.hr.payroll.createPayroll(actor, {
+  const p1 = await deps.hr.payroll.createPayroll(permitFor(deps, actor, 'hrPayrolls', 'create'), {
     employeeId: md.employees['张伟强']!.id,
     month,
     workdays: '22',
@@ -149,13 +150,13 @@ export async function seedFinance(
     loanDeduction: '0',
     remarks: '初始化示例工资单',
   })
-  await deps.hr.payroll.createPayment(actor, {
+  await deps.hr.payroll.createPayment(permitFor(deps, actor, 'hrPayrollPayments', 'create'), {
     payrollId: p1.id,
     paidOn: daysAgo(10),
     amount: '6520.00',
     remarks: '银行代发',
   })
-  await deps.hr.payroll.createPayroll(actor, {
+  await deps.hr.payroll.createPayroll(permitFor(deps, actor, 'hrPayrolls', 'create'), {
     employeeId: md.employees['李秀英']!.id,
     month,
     workdays: '21',
@@ -236,7 +237,7 @@ async function createGLJournal(
   lines: Array<{ accountId: string; debit: string; credit: string }>,
 ): Promise<void> {
   const date = daysAgo(dateAgoN)
-  const journal = await deps.journals.create(actor, {
+  const journal = await deps.journals.create(permitFor(deps, actor, 'accGlJournals', 'create'), {
     date,
     postingDate: date,
     remarks,
@@ -244,7 +245,7 @@ async function createGLJournal(
   })
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!
-    await deps.journals.createLine(actor, {
+    await deps.journals.createLine(permitFor(deps, actor, 'accGlJournalLines', 'create'), {
       journalId: journal.id,
       idx: i + 1,
       accountId: line.accountId,
@@ -252,7 +253,7 @@ async function createGLJournal(
       credit: line.credit,
     })
   }
-  await deps.journals.audit(actor, journal.id)
+  await deps.journals.audit(permitFor(deps, actor, 'accGlJournals', 'audit'), journal.id)
 }
 
 interface InvoiceLine {
@@ -301,7 +302,7 @@ async function createVatInvoice(
     }
   })
   const date = daysAgo(dateAgoN)
-  const invoice = await deps.invoices.create(actor, {
+  const invoice = await deps.invoices.create(permitFor(deps, actor, 'accVatInvoices', 'create'), {
     companyId: sc.company.id,
     direction,
     invoiceDate: date,
@@ -323,7 +324,7 @@ async function createVatInvoice(
     purReconciliationId: purRecon,
     remarks,
   })
-  await deps.invoices.audit(actor, invoice.id, date)
+  await deps.invoices.audit(permitFor(deps, actor, 'accVatInvoices', 'audit'), invoice.id, date)
 }
 
 function splitVAT(gross: ReturnType<typeof decimal>): {

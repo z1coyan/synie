@@ -7,6 +7,7 @@ import type {
   BasicFormFieldPlacement,
   BasicFormSection,
   BasicFormTab,
+  CapabilityEntry,
   CommandDocument,
   CommandTarget,
   FieldDocument,
@@ -15,6 +16,7 @@ import type {
   FormDocument,
   ListLayoutMeta,
   ResourceDocument,
+  ResourceDocumentAuthz,
   ResourceLookupMeta,
 } from '@synie/shared'
 import { RESOURCE_DOCUMENT_SCHEMA_VERSION } from '@synie/shared'
@@ -402,8 +404,9 @@ export function buildNormalizedResource(meta: ResourceMeta): NormalizedResource 
 /** 按 Actor 能力裁剪 NormalizedResource 为完整 ResourceDocument */
 export function projectResourceDocument(
   normalized: NormalizedResource,
-  capabilities: string[],
+  capabilities: CapabilityEntry[],
   refAvailability: (field: FieldDocument) => FieldDocument,
+  authz?: ResourceDocumentAuthz,
 ): ResourceDocument {
   const fields = normalized.fields.map(refAvailability)
   return {
@@ -412,6 +415,7 @@ export function projectResourceDocument(
     label: normalized.label,
     permissionPrefix: normalized.meta.permissionPrefix,
     capabilities: [...capabilities],
+    ...(authz ? { authz } : {}),
     fields,
     lookup: normalized.lookup,
     list: {
@@ -421,7 +425,9 @@ export function projectResourceDocument(
       }),
     },
     form: projectFormForActor(normalized.form, fields),
-    commands: normalized.commands.filter((c) => capabilities.includes(c.requiredCapability)),
+    commands: normalized.commands.filter((c) =>
+      capabilities.some((entry) => entry.action === c.requiredCapability),
+    ),
   }
 }
 

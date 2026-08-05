@@ -27,6 +27,7 @@ function newTestCatalog() {
     classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'base.company',
     permissionLabel: '公司',
+    authz: { kind: 'global' },
     table: 'bas_company',
     fields: [
       scalar('id'),
@@ -43,6 +44,7 @@ function newTestCatalog() {
     classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'base.material',
     permissionLabel: '物料',
+    authz: { kind: 'global' },
     table: 'inv_material',
     fields: [scalar('id'), scalar('code'), scalar('name')],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
@@ -52,6 +54,7 @@ function newTestCatalog() {
     classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'sales.order',
     permissionLabel: '销售订单',
+    authz: { kind: 'global' },
     table: 'sal_order',
     fields: [
       scalar('id'),
@@ -108,6 +111,7 @@ function newTestCatalog() {
     classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'sales.order',
     permissionLabel: '销售订单',
+    authz: { kind: 'global' },
     table: 'sal_order_item',
     fields: [
       scalar('id'),
@@ -147,6 +151,7 @@ function newTestCatalog() {
     classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'sales.quotation',
     permissionLabel: '销售报价',
+    authz: { kind: 'company' },
     table: 'sal_quotation',
     fields: [
       scalar('id'),
@@ -169,6 +174,7 @@ function newTestCatalog() {
     classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'sales.quotation',
     permissionLabel: '销售报价',
+    authz: { kind: 'global' },
     table: 'sal_quotation_item',
     fields: [scalar('id'), scalar('qty')],
     printLoops: [{ name: 'tiers', resource: 'salQuotationTiers' }],
@@ -179,6 +185,7 @@ function newTestCatalog() {
     classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'sales.quotation',
     permissionLabel: '销售报价',
+    authz: { kind: 'global' },
     table: 'sal_quotation_tier',
     fields: [scalar('id'), scalar('price')],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
@@ -188,8 +195,8 @@ function newTestCatalog() {
     classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'x.projection',
     permissionLabel: '投影',
+    authz: { kind: 'global', readAnyOf: ['sales.order:read'] },
     table: 'x_projection',
-    readPermissionsAny: ['sales.order:read'],
     fields: [scalar('id'), scalar('note')],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
   })
@@ -308,11 +315,11 @@ describe('FieldCatalog', () => {
     const resources = catalog.resources()
     expect(resources).toContain('sales.order')
     expect(resources).toContain('sys.print_template')
-    // 与打印头规则对拍：无 readPermissionsAny 的资源按权限前缀去重，随注册表增减自动跟随
+    // 与打印头规则对拍：无 authz.readAnyOf 的资源按权限前缀去重，随注册表增减自动跟随
     const expectedHeads = new Set(
       registry
         .list()
-        .filter((r) => !(r.readPermissionsAny && r.readPermissionsAny.length > 0))
+        .filter((r) => !(r.authz?.readAnyOf && r.authz.readAnyOf.length > 0))
         .map((r) => r.permissionPrefix),
     )
     expect(new Set(resources)).toEqual(expectedHeads)

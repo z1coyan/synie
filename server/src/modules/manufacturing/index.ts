@@ -26,6 +26,7 @@ export {
   type ManufacturingSettingService,
   type ManufacturingSetting,
   type ManufacturingUpdate,
+  MFG_RESOURCE_NAME,
 } from './settings.ts'
 
 export function registerManufacturingResources(registry: Registry): void {
@@ -38,13 +39,14 @@ export function registerManufacturingResources(registry: Registry): void {
 export function createManufacturingServices(
   db: Kysely<Database>,
   numbering: NumberingService,
+  registry: Registry,
 ) {
   const inventory = createInventoryEngine()
-  const master = createMasterService(db, numbering)
-  const demands = createDemandService(db, numbering)
-  const workOrders = createWorkOrderService(db, numbering)
-  const outputs = createOutputService(db, numbering, inventory)
-  const moldDesigns = createMoldDesignService(db, numbering)
+  const master = createMasterService(db, numbering, registry)
+  const demands = createDemandService(db, numbering, registry)
+  const workOrders = createWorkOrderService(db, numbering, registry)
+  const outputs = createOutputService(db, numbering, inventory, registry)
+  const moldDesigns = createMoldDesignService(db, numbering, registry)
   return { master, demands, workOrders, outputs, moldDesigns }
 }
 

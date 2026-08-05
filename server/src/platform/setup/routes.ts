@@ -2,14 +2,17 @@
  * Setup 公开/受保护路由。
  * 公开：GET /status、POST /first-user
  * 需超管：currencies/seed-common、currencies/activate-base、complete
+ *
+ * 初始化向导没有权限点：门控是**主体判定**（Actor.superAdmin，封闭代数的主体种类），
+ * 由平台的 `requireSuperAdmin()` 中间件承担，不为它新增权限码（D13）。
  */
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { requireAuth } from '../auth/middleware.ts'
 import type { AuthService } from '../auth/service.ts'
+import { requireSuperAdmin } from '../authz/enforce.ts'
 import type { AppEnv } from '../http/context.ts'
-import { ApiError } from '../http/errors.ts'
 import { validationHook } from '../http/zod.ts'
 import type { SetupService } from './service.ts'
 
@@ -33,19 +36,6 @@ const completeSchema = z
     seedSampleData: z.boolean().optional().default(false),
   })
   .strict()
-
-function requireSuperAdmin() {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    const actor = c.get('actor')
-    if (!actor?.superAdmin) {
-      throw new ApiError('forbidden', '仅超级管理员可执行初始化')
-    }
-    await next()
-  }
-}
 
 export function setupRoutes(deps: {
   auth: AuthService

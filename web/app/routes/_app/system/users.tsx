@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, toast } from '@heroui/react'
 import { createUser, fetchUserAccess, resetUserPassword, userClient } from '~/lib/resources/iam'
 import { toastError } from '~/lib/toast'
-import { useMyPerms } from '~/lib/use-my-perms'
+import { useResourceCapabilities } from '~/lib/use-resource-capabilities'
 import { useRequestGuard } from '~/lib/use-request-guard'
 import { useCatalogBasicForm } from '~/lib/resources/catalog'
 import { ensureDefaultGridPage } from '~/lib/route-prefetch'
@@ -52,8 +52,8 @@ function UsersPage() {
   const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const queryClient = useQueryClient()
   const userForm = useCatalogBasicForm(RESOURCE, '用户')
-  // 重置密码入口按当前用户权限门控;拉取失败按无权限处理(fail-closed)并提示
-  const { myPerms, isSuperAdmin } = useMyPerms()
+  // 重置密码入口按 sysUsers 文档投影的 update 能力门控(fail-closed)
+  const userCaps = useResourceCapabilities(RESOURCE)
   // 一次性密码:仅存在于本次响应与此弹窗,关闭后无法再次查看
   const [oneTime, setOneTime] = useState<{ username: string; password: string } | null>(null)
   const [resetTarget, setResetTarget] = useState<Row | null>(null)
@@ -66,7 +66,7 @@ function UsersPage() {
   // 请求守卫:每次开抽屉自增,await 回来后比对最新序号——防止先发的慢请求(A)覆盖已切到 B 的关联/勾选
   const guard = useRequestGuard()
 
-  const canReset = isSuperAdmin || myPerms.has('sys.user:update')
+  const canReset = userCaps.has('update')
 
   const mergeNames = (rows: Row[]) =>
     setNames((prev) => {
@@ -178,7 +178,21 @@ function UsersPage() {
         exclude={userForm.formProps.exclude}
         // username/name 的 required/edit/placeholder 由 Catalog Basic Form 投影；
         // 角色/公司 multi-select 为 Presentation Extension（extraContent）
-        fields={userForm.formProps.fields}
+        fields={{
+          ...userForm.formProps.fields,
+          // 部门候选限「本表单已选公司」下未停用的部门：后端硬校验同一条不变量
+          // （部门所在公司须在该用户公司授权集内），此处只是把它前置到选择环节。
+          // 未选公司时公司维度不收窄（候选仍受操作者自身公司授权约束），保存时按后端校验报错
+          departmentId: {
+            ...userForm.formProps.fields.departmentId,
+            remote: {
+              filterState: {
+                companyId: { kind: 'fk', op: 'in', values: companySel, labels: [] },
+                enabled: { kind: 'bool', eq: true },
+              },
+            },
+          },
+        }}
         extraContent={(mode) =>
           joins && (
             <div className="grid grid-cols-1 gap-4">
@@ -223,11 +237,13 @@ function UsersPage() {
             emailRaw === undefined || emailRaw === null || String(emailRaw).trim() === ''
               ? null
               : String(emailRaw).trim()
+          const departmentId = values.departmentId ? String(values.departmentId) : null
           if (mode === 'create') {
             const data = await createUser({
               username: String(values.username),
               name: (values.name as string) || null,
               email,
+              departmentId,
               roleIds: roleSel,
               companyIds: companySel,
             })
@@ -239,6 +255,7 @@ function UsersPage() {
             await userClient.update(String(drawer!.recordId), {
               name: (values.name as string) || null,
               email,
+              departmentId,
               roleIds: roleSel,
               companyIds: companySel,
             })

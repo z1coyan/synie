@@ -1,5 +1,10 @@
 import type { ResourceMeta } from '~/platform/meta/types.ts'
 
+export const CUSTOMER_RESOURCE_NAME = 'salCustomers'
+export const SUPPLIER_RESOURCE_NAME = 'purSuppliers'
+export const EMPLOYEE_RESOURCE_NAME = 'hrEmployees'
+export const PARTY_ADDRESS_RESOURCE_NAME = 'basPartyAddresses'
+
 function field(
   dbName: string,
   apiName: string,
@@ -19,12 +24,13 @@ const crud = [
 
 export function customerResourceMeta(): ResourceMeta {
   return {
-    name: 'salCustomers',
+    name: CUSTOMER_RESOURCE_NAME,
     classification: { presentation: 'basic', interactive: true },
     permissionPrefix: 'base.customer',
     permissionLabel: '客户',
     label: '客户',
     table: 'sal_customers',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', '客户编号', { required: true, filterable: true, sortable: true }),
@@ -59,12 +65,13 @@ export function customerResourceMeta(): ResourceMeta {
 
 export function supplierResourceMeta(): ResourceMeta {
   return {
-    name: 'purSuppliers',
+    name: SUPPLIER_RESOURCE_NAME,
     classification: { presentation: 'basic', interactive: true },
     permissionPrefix: 'base.supplier',
     permissionLabel: '供应商',
     label: '供应商',
     table: 'pur_supplier',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', '供应商编号', {
@@ -118,7 +125,7 @@ const insuranceOptions = [
 
 export function employeeResourceMeta(): ResourceMeta {
   return {
-    name: 'hrEmployees',
+    name: EMPLOYEE_RESOURCE_NAME,
     classification: { presentation: 'extension', interactive: true, note: '身份证影像 extraContent' },
     /** 证件照等影像宿主；owner_type 历史取单数 hr_employee，表无 company_id（全局宿主） */
     attachments: { ownerType: 'hr_employee' },
@@ -126,6 +133,7 @@ export function employeeResourceMeta(): ResourceMeta {
     numbering: true,
     permissionLabel: '员工',
     table: 'hr_employees',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', '员工编号', { filterable: true, sortable: true }),
@@ -200,12 +208,13 @@ const partyAddressPurposes = [
 /** 对手地址：从属客户/供应商/内部公司；无独立菜单，主体抽屉维护 */
 export function partyAddressResourceMeta(): ResourceMeta {
   return {
-    name: 'basPartyAddresses',
+    name: PARTY_ADDRESS_RESOURCE_NAME,
     classification: { presentation: 'basic', interactive: true, note: '无独立菜单；嵌客户/供应商/公司抽屉维护' },
     permissionPrefix: 'base.party_address',
     permissionLabel: '地址',
     label: '地址',
     table: 'bas_party_address',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('party_type', 'partyType', 'enum', '主体类型', {

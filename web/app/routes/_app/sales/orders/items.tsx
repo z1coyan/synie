@@ -118,9 +118,6 @@ function SalesOrderItemsTab() {
         ]}
         // 默认订单日期倒序(新单在前);calc 列排序后端已验证支持
         defaultSort={{ column: 'orderDate', direction: 'descending' }}
-        // salOrderItems 复用 sales.order 权限码,meta capabilities 为空:显式声明本视图可用动作
-        // (整单「新建订单」+ 草稿单「编辑/审核整单」),不声明 delete,删除不进条目视图
-        capabilities={['create', 'update', 'audit']}
         createLabel="新建订单"
         onCreate={() => openDrawer('create', null)}
         onView={(row) => openDrawer('view', { id: String(row.orderId), status: row.orderStatus })}

@@ -1,5 +1,10 @@
 /**
  * 手工调拨单：发货/收货走 withTx + inventory engine。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、写前取行 `loadAuthorized`（不命中一律 not_found）、
+ * create 走 `assertCompanyWritable`。模块内零鉴权代码。
+ * 状态前置条件（草稿才能发货等）是领域不变量，留在本文件抛 conflict。
  */
 import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -14,14 +19,14 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
-import { canAccessCompany } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
 import {
-  requirePermission,
   dateWire,
   projectStockItem,
   runeLen,
@@ -83,32 +88,73 @@ const ITEM_AUDIT = auditFieldsOf(stockTransferItemResourceMeta())
 const DOC_META = stockTransferResourceMeta()
 const ITEM_META = stockTransferItemResourceMeta()
 const LABEL = '手工调拨单'
+const ITEM_LABEL = '手工调拨单行'
 const VOUCHER_TYPE = 'inv.stock_transfer'
+
+export const TRANSFER_RESOURCE = 'invStockTransfers'
+export const TRANSFER_ITEM_RESOURCE = 'invStockTransferItems'
+
+const DOC_TABLE = 'inv_stock_transfer'
+const ITEM_TABLE = 'inv_stock_transfer_item'
 
 export function createStockTransferService(
   db: Kysely<Database>,
   numbering: NumberingService,
   inventory: InventoryEngine,
+  registry: Registry,
 ) {
-  async function get(actor: Actor, id: string): Promise<StockTransfer> {
-    requirePermission(actor, 'inv.stock_transfer:read')
-    const row = await db
-      .selectFrom('inv_stock_transfer')
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst()
-    if (!row || !canAccessCompany(actor, row.company_id)) {
-      throw new ApiError('not_found', '手工调拨单不存在')
-    }
-    return mapDoc(row)
+  const docTarget = registry.authzTarget(TRANSFER_RESOURCE)
+  const itemTarget = registry.authzTarget(TRANSFER_ITEM_RESOURCE)
+
+  /** 按 Permit 取单头（可锁）；不命中一律 not_found */
+  async function loadDoc(
+    handle: DbHandle,
+    permit: Permit,
+    id: string,
+    forUpdate: boolean,
+  ): Promise<StockTransfer> {
+    const row = await loadAuthorized({
+      db: handle,
+      permit,
+      target: docTarget,
+      table: DOC_TABLE,
+      id,
+      forUpdate,
+      notFoundMessage: `${LABEL}不存在`,
+    })
+    return mapDoc(row as never)
   }
 
-  async function list(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'inv.stock_transfer:read')
-    const scope = companyScopeWhere(actor, 'company_id')
-    if (scope.empty) return { count: 0, results: [] as StockTransfer[] }
-    return listFromSource({
+  /** 锁草稿单头：行编辑的公共前置（授权 → 状态守卫） */
+  async function lockDraft(trx: DbHandle, permit: Permit, id: string): Promise<StockTransfer> {
+    const doc = await loadDoc(trx, permit, id, true)
+    if (doc.status !== 'DRAFT') {
+      throw new ApiError('conflict', '仅草稿调拨单可编辑单据行')
+    }
+    return doc
+  }
+
+  /** 单据行的母单：行不存在与母单不可达同为 not_found */
+  async function parentOf(trx: DbHandle, permit: Permit, itemId: string): Promise<StockTransfer> {
+    const row = await trx
+      .selectFrom('inv_stock_transfer_item')
+      .select('stock_transfer_id')
+      .where('id', '=', itemId)
+      .executeTakeFirst()
+    if (!row) throw new ApiError('not_found', `${ITEM_LABEL}不存在`)
+    return lockDraft(trx, permit, row.stock_transfer_id)
+  }
+
+  async function get(permit: Permit, id: string): Promise<StockTransfer> {
+    return loadDoc(db, permit, id, false)
+  }
+
+  async function list(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: docTarget,
+      alias: DOC_TABLE,
       resource: DOC_META,
       source: sql` FROM inv_stock_transfer`,
       select: sql`SELECT id,doc_no,doc_date,summary,remarks,status,shipped_at,received_at,
@@ -116,13 +162,12 @@ export function createStockTransferService(
         created_by_id,shipped_by_id,received_by_id`,
       defaultOrder: sql`"doc_no" ASC, "id" ASC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapDoc(r as never),
     })
   }
 
   async function create(
-    actor: Actor,
+    permit: Permit,
     input: {
       docNo?: string | null
       docDate?: string | null
@@ -134,10 +179,6 @@ export function createStockTransferService(
       transitWarehouseId: string
     },
   ): Promise<StockTransfer> {
-    requirePermission(actor, 'inv.stock_transfer:create')
-    if (input.companyId && !canAccessCompany(actor, input.companyId)) {
-      throw new ApiError('forbidden', '无权操作该公司数据')
-    }
     const fields: Record<string, string[]> = {}
     if (!input.companyId) fields.companyId = ['必填']
     if (!input.fromWarehouseId) fields.fromWarehouseId = ['必填']
@@ -149,6 +190,7 @@ export function createStockTransferService(
     if (Object.keys(fields).length > 0) {
       throw ApiError.validation(`${LABEL}参数不合法`, fields)
     }
+    assertCompanyWritable(permit, input.companyId, '公司不存在')
     validateDistinct(input.fromWarehouseId, input.toWarehouseId, input.transitWarehouseId)
     return withTx(db, async (trx) => {
       await validateWarehouses(
@@ -182,12 +224,12 @@ export function createStockTransferService(
             from_warehouse_id: input.fromWarehouseId,
             to_warehouse_id: input.toWarehouseId,
             transit_warehouse_id: input.transitWarehouseId,
-            created_by_id: actor.userId?.trim() ? actor.userId : null,
+            created_by_id: permit.actor.userId || null,
           })
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapDoc(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'inv_stock_transfer',
           recordId: item.id,
           recordLabel: item.docNo,
@@ -206,7 +248,7 @@ export function createStockTransferService(
   }
 
   async function update(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       docNo?: string
@@ -220,19 +262,8 @@ export function createStockTransferService(
       transitWarehouseId?: string
     },
   ): Promise<StockTransfer> {
-    requirePermission(actor, 'inv.stock_transfer:update')
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('inv_stock_transfer')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '手工调拨单不存在')
-      const before = mapDoc(locked)
-      if (!canAccessCompany(actor, before.companyId)) {
-        throw new ApiError('forbidden', '无权操作该公司数据')
-      }
+      const before = await loadDoc(trx, permit, id, true)
       if (before.status !== 'DRAFT') {
         throw new ApiError('conflict', '仅草稿调拨单可修改或删除')
       }
@@ -281,7 +312,7 @@ export function createStockTransferService(
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapDoc(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'inv_stock_transfer',
           recordId: item.id,
           recordLabel: item.docNo,
@@ -299,25 +330,14 @@ export function createStockTransferService(
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'inv.stock_transfer:delete')
+  async function remove(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('inv_stock_transfer')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '手工调拨单不存在')
-      const item = mapDoc(locked)
-      if (!canAccessCompany(actor, item.companyId)) {
-        throw new ApiError('forbidden', '无权操作该公司数据')
-      }
+      const item = await loadDoc(trx, permit, id, true)
       if (item.status !== 'DRAFT') {
         throw new ApiError('conflict', '仅草稿调拨单可修改或删除')
       }
       await trx.deleteFrom('inv_stock_transfer').where('id', '=', id).execute()
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_stock_transfer',
         recordId: item.id,
         recordLabel: item.docNo,
@@ -329,20 +349,9 @@ export function createStockTransferService(
     })
   }
 
-  async function ship(actor: Actor, id: string): Promise<StockTransfer> {
-    requirePermission(actor, 'inv.stock_transfer:ship')
+  async function ship(permit: Permit, id: string): Promise<StockTransfer> {
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('inv_stock_transfer')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '手工调拨单不存在')
-      const before = mapDoc(locked)
-      if (!canAccessCompany(actor, before.companyId)) {
-        throw new ApiError('forbidden', '无权操作该公司数据')
-      }
+      const before = await loadDoc(trx, permit, id, true)
       if (before.status !== 'DRAFT') {
         throw new ApiError('conflict', '仅草稿调拨单可发货')
       }
@@ -398,14 +407,14 @@ export function createStockTransferService(
         .set({
           status: 'shipped',
           shipped_at: now,
-          shipped_by_id: actor.userId?.trim() ? actor.userId : null,
+          shipped_by_id: permit.actor.userId || null,
           updated_at: sql`(now() AT TIME ZONE 'utc')`,
         })
         .where('id', '=', id)
         .returningAll()
         .executeTakeFirstOrThrow()
       const after = mapDoc(row)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_stock_transfer',
         recordId: after.id,
         recordLabel: after.docNo,
@@ -419,23 +428,12 @@ export function createStockTransferService(
   }
 
   async function receive(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: { receipts?: Array<{ itemId: string; qty: string }> | null },
   ): Promise<StockTransfer> {
-    requirePermission(actor, 'inv.stock_transfer:receive')
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('inv_stock_transfer')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '手工调拨单不存在')
-      const before = mapDoc(locked)
-      if (!canAccessCompany(actor, before.companyId)) {
-        throw new ApiError('forbidden', '无权操作该公司数据')
-      }
+      const before = await loadDoc(trx, permit, id, true)
       if (before.status !== 'SHIPPED') {
         throw new ApiError('conflict', '仅已发货调拨单可收货')
       }
@@ -506,14 +504,14 @@ export function createStockTransferService(
         .set({
           status: 'received',
           received_at: now,
-          received_by_id: actor.userId?.trim() ? actor.userId : null,
+          received_by_id: permit.actor.userId || null,
           updated_at: sql`(now() AT TIME ZONE 'utc')`,
         })
         .where('id', '=', id)
         .returningAll()
         .executeTakeFirstOrThrow()
       const after = mapDoc(row)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_stock_transfer',
         recordId: after.id,
         recordLabel: after.docNo,
@@ -526,38 +524,37 @@ export function createStockTransferService(
     })
   }
 
-  async function getItem(actor: Actor, id: string): Promise<StockTransferItem> {
-    requirePermission(actor, 'inv.stock_transfer:read')
-    const row = await db
-      .selectFrom('inv_stock_transfer_item')
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst()
-    if (!row || !canAccessCompany(actor, row.company_id)) {
-      throw new ApiError('not_found', '手工调拨单行不存在')
-    }
-    return mapItem(row)
+  /** 行的可达性经 via 链递归到母单自身的行谓词 */
+  async function getItem(permit: Permit, id: string): Promise<StockTransferItem> {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target: itemTarget,
+      table: ITEM_TABLE,
+      id,
+      notFoundMessage: `${ITEM_LABEL}不存在`,
+    })
+    return mapItem(row as never)
   }
 
-  async function queryItems(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'inv.stock_transfer:read')
-    const scope = companyScopeWhere(actor, 'company_id')
-    if (scope.empty) return { count: 0, results: [] as StockTransferItem[] }
-    return listFromSource({
+  async function queryItems(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target: itemTarget,
+      alias: ITEM_TABLE,
       resource: ITEM_META,
       source: sql` FROM inv_stock_transfer_item`,
       select: sql`SELECT id,idx,qty,base_qty,received_qty,material_code,material_name,material_spec,
         unit_name,remark,inserted_at,updated_at,stock_transfer_id,company_id,material_id,unit_id`,
       defaultOrder: sql`"idx" ASC, "id" ASC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapItem(r as never),
     })
   }
 
   async function createItem(
-    actor: Actor,
+    permit: Permit,
     input: {
       stockTransferId: string
       idx: number
@@ -567,11 +564,10 @@ export function createStockTransferService(
       remark?: string | null
     },
   ): Promise<StockTransferItem> {
-    requirePermission(actor, 'inv.stock_transfer:create')
     const qty = parseQty(input.qty)
     validateItemInput(qty, input.materialId, input.unitId, input.remark)
     return withTx(db, async (trx) => {
-      const doc = await lockDraft(trx, actor, input.stockTransferId)
+      const doc = await lockDraft(trx, permit, input.stockTransferId)
       const projection = await projectStockItem(
         trx,
         input.materialId,
@@ -598,7 +594,7 @@ export function createStockTransferService(
         .returningAll()
         .executeTakeFirstOrThrow()
       const item = mapItem(row)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_stock_transfer_item',
         recordId: item.id,
         recordLabel: item.materialCode,
@@ -612,7 +608,7 @@ export function createStockTransferService(
   }
 
   async function updateItem(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       idx?: number
@@ -623,22 +619,16 @@ export function createStockTransferService(
       remarkPresent?: boolean
     },
   ): Promise<StockTransferItem> {
-    requirePermission(actor, 'inv.stock_transfer:update')
     return withTx(db, async (trx) => {
-      const current = await trx
-        .selectFrom('inv_stock_transfer_item')
-        .selectAll()
-        .where('id', '=', id)
-        .executeTakeFirst()
-      if (!current) throw new ApiError('not_found', '手工调拨单行不存在')
-      await lockDraft(trx, actor, current.stock_transfer_id)
+      // 母单先锁（授权 + 草稿门），再锁行：与并发路径的加锁顺序一致
+      await parentOf(trx, permit, id)
       const locked = await trx
         .selectFrom('inv_stock_transfer_item')
         .selectAll()
         .where('id', '=', id)
         .forUpdate()
         .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '手工调拨单行不存在')
+      if (!locked) throw new ApiError('not_found', `${ITEM_LABEL}不存在`)
       const before = mapItem(locked)
       const qty = input.qty != null ? parseQty(input.qty) : decimal(before.qty)
       const materialId = input.materialId ?? before.materialId
@@ -681,7 +671,7 @@ export function createStockTransferService(
         .returningAll()
         .executeTakeFirstOrThrow()
       const item = mapItem(row)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_stock_transfer_item',
         recordId: item.id,
         recordLabel: item.materialCode,
@@ -694,26 +684,19 @@ export function createStockTransferService(
     })
   }
 
-  async function removeItem(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'inv.stock_transfer:delete')
+  async function removeItem(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const current = await trx
-        .selectFrom('inv_stock_transfer_item')
-        .selectAll()
-        .where('id', '=', id)
-        .executeTakeFirst()
-      if (!current) throw new ApiError('not_found', '手工调拨单行不存在')
-      await lockDraft(trx, actor, current.stock_transfer_id)
+      await parentOf(trx, permit, id)
       const locked = await trx
         .selectFrom('inv_stock_transfer_item')
         .selectAll()
         .where('id', '=', id)
         .forUpdate()
         .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '手工调拨单行不存在')
+      if (!locked) throw new ApiError('not_found', `${ITEM_LABEL}不存在`)
       const item = mapItem(locked)
       await trx.deleteFrom('inv_stock_transfer_item').where('id', '=', id).execute()
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_stock_transfer_item',
         recordId: item.id,
         recordLabel: item.materialCode,
@@ -742,24 +725,6 @@ export function createStockTransferService(
 }
 
 export type StockTransferService = ReturnType<typeof createStockTransferService>
-
-async function lockDraft(db: DbHandle, actor: Actor, id: string): Promise<StockTransfer> {
-  const row = await db
-    .selectFrom('inv_stock_transfer')
-    .selectAll()
-    .where('id', '=', id)
-    .forUpdate()
-    .executeTakeFirst()
-  if (!row) throw new ApiError('not_found', '手工调拨单不存在')
-  const doc = mapDoc(row)
-  if (!canAccessCompany(actor, doc.companyId)) {
-    throw new ApiError('forbidden', '无权操作该公司数据')
-  }
-  if (doc.status !== 'DRAFT') {
-    throw new ApiError('conflict', '仅草稿调拨单可编辑单据行')
-  }
-  return doc
-}
 
 function validateDistinct(fromId: string, toId: string, transitId: string): void {
   if (fromId === toId || fromId === transitId || toId === transitId) {

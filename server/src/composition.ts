@@ -11,7 +11,7 @@ import { createAccountingServices } from './modules/accounting/index.ts'
 import { createBaseServices } from './modules/base/index.ts'
 import { createMarketService } from './modules/base/market/index.ts'
 import { createHrServices } from './modules/hr/index.ts'
-import { createIamService } from './modules/iam/index.ts'
+import { createDepartmentService, createIamService } from './modules/iam/index.ts'
 import { createInventoryServices } from './modules/inventory/index.ts'
 import {
   createManufacturingServices,
@@ -40,6 +40,7 @@ import {
   createFileService,
   createStorageService,
 } from './platform/files/index.ts'
+import { createAuthzEnforcer } from './platform/authz/enforce.ts'
 import type { Registry } from './platform/meta/registry.ts'
 import { buildNumberingCatalog, createNumberingService } from './platform/numbering/index.ts'
 import {
@@ -75,38 +76,45 @@ function assembleDomain(
     manufacturing: createManufacturingSettingService(db),
     accounting: createAccountingSettingService(db),
   })
-  const numbering = createNumberingService(db, buildNumberingCatalog(opts.registry))
+  const numbering = createNumberingService(db, buildNumberingCatalog(opts.registry), opts.registry)
   // 附件宿主从 Meta Registry 派生（meta.attachments 即声明即注册，启动期 fail-closed）
   const owners = buildOwnerRegistryFromMeta(opts.registry.list())
-  const files = createFileService({ db, owners })
-  const storages = createStorageService({ db })
-  const audit = createAuditService(db)
+  // 判定入口（无状态，归宿解析的记忆化在 Registry 内）：平台服务与路由共用同一份声明
+  const authz = createAuthzEnforcer(opts.registry)
+  const files = createFileService({ db, owners, authz })
+  const storages = createStorageService({ db, authz })
+  const audit = createAuditService(db, opts.registry)
   const printing = createPrintingService({
     db,
     files,
     catalog: buildPrintingCatalog(opts.registry),
+    registry: opts.registry,
     converter: opts.converter ?? createSofficeConverter(),
   })
   // 业务域 DocBuilder 显式装配（platform 不内置业务表查询）
-  registerSalesOrderDocBuilder(printing, db)
-  registerWorkOrderDocBuilder(printing, db)
-  const base = createBaseServices(db)
-  const market = createMarketService(db, { settings })
+  registerSalesOrderDocBuilder(printing, db, opts.registry)
+  registerWorkOrderDocBuilder(printing, db, opts.registry)
+  const base = createBaseServices(db, opts.registry)
+  const market = createMarketService(db, { settings, registry: opts.registry })
   const iam = createIamService(db, opts.registry)
-  const party = createPartyServices(db, numbering)
+  const departments = createDepartmentService(db, opts.registry)
+  const party = createPartyServices(db, numbering, opts.registry)
   const hr = createHrServices(db, files, {
     employees: party.employees,
+    authz,
+    registry: opts.registry,
   })
-  const companyAccountDefaults = createCompanyAccountDefaultService(db)
-  const inv = createInventoryServices(db, numbering)
-  const accounting = createAccountingServices(db, numbering, {
+  const companyAccountDefaults = createCompanyAccountDefaultService(db, opts.registry)
+  const inv = createInventoryServices(db, numbering, opts.registry)
+  const accounting = createAccountingServices(db, numbering, opts.registry, {
     isJournalLinkedToBankRecon,
   })
-  const trading = createTradingServices(db, numbering)
+  const trading = createTradingServices(db, numbering, opts.registry)
   const finance = createFinanceServices(db, numbering, {
     reconciliations: trading.reconciliations,
     journals: accounting.journals,
     files,
+    registry: opts.registry,
   })
   const todoSources = createTodoSourceRegistry()
   registerFinanceTodoSources(todoSources)
@@ -114,8 +122,8 @@ function assembleDomain(
   // 启动期 fail-closed：meta.todoSource 声明与注册互为镜像，draftLink/party 表列必须存在
   assertTodoSourcesConsistent(opts.registry.list(), todoSources)
   const todos = createTodoService(db, todoSources)
-  const scm = createScmServices(db)
-  const manufacturing = createManufacturingServices(db, numbering)
+  const scm = createScmServices(db, opts.registry)
+  const manufacturing = createManufacturingServices(db, numbering, opts.registry)
   return {
     settings,
     numbering,
@@ -127,6 +135,7 @@ function assembleDomain(
     base,
     market,
     iam,
+    departments,
     party,
     hr,
     companyAccountDefaults,
@@ -148,6 +157,8 @@ export interface Services extends ReturnType<typeof assembleDomain> {
 /** 装配全部平台 + 领域服务；overrides 应用之后再构造 setup */
 export function createServices(db: Kysely<Database>, opts: CreateServicesOptions): Services {
   const merged = { ...assembleDomain(db, opts), ...opts.overrides }
+  // 判定入口无状态（归宿解析记忆化在 Registry 内），种子闭包按需再取一份
+  const authz = createAuthzEnforcer(opts.registry)
   // setup 必须在 overrides 之后构造：seedSampleData 闭包要看到替换后的服务集
   const setup =
     opts.overrides?.setup ??
@@ -159,6 +170,7 @@ export function createServices(db: Kysely<Database>, opts: CreateServicesOptions
         seedSampleData(
           {
             db,
+            authz,
             accounts: merged.base.accounts,
             companyAccountDefaults: merged.companyAccountDefaults,
             warehouses: merged.inv.warehouses,
@@ -185,10 +197,10 @@ export function createServices(db: Kysely<Database>, opts: CreateServicesOptions
   return { ...merged, setup }
 }
 
-/** 服务图 → AppDeps 机械摊平（db/auth/betterAuth/logtoEnabled/registry 由调用方补） */
+/** 服务图 → AppDeps 机械摊平（db/auth/betterAuth/logtoEnabled/registry/authz 由调用方补） */
 export function toAppDeps(
   services: Services,
-): Omit<AppDeps, 'db' | 'auth' | 'betterAuth' | 'logtoEnabled' | 'registry'> {
+): Omit<AppDeps, 'db' | 'auth' | 'betterAuth' | 'logtoEnabled' | 'registry' | 'authz'> {
   const { base, party, inv, accounting, finance } = services
   return {
     settings: services.settings,
@@ -203,6 +215,7 @@ export function toAppDeps(
     accounts: base.accounts,
     market: services.market,
     iam: services.iam,
+    departments: services.departments,
     customers: party.customers,
     suppliers: party.suppliers,
     employees: party.employees,

@@ -8,21 +8,38 @@ import { createDb } from '~/db/index.ts'
 import { withTx } from '~/db/tx.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createReconciliationService } from '~/modules/trading/reconciliation/service.ts'
 import { createVatInvoiceService } from './invoice-service.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
+
+/** sealed registry 同时供编号与 authz 执行面消费（授权归宿解析） */
+const numberingRegistry = createSealedResourceRegistry()
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
 
 run('PG 集成（增值税发票）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
+  const numbering = createNumberingService(db, buildNumberingCatalog(numberingRegistry), numberingRegistry)
   const gl = createGlEngine()
-  const reconciliations = createReconciliationService(db, numbering, gl)
-  const svc = createVatInvoiceService(db, numbering, { gl, reconciliations })
+  const reconciliations = createReconciliationService(db, numbering, gl, numberingRegistry)
+  const authz = createAuthzEnforcer(numberingRegistry)
+  const svc = createVatInvoiceService(db, numbering, {
+    gl,
+    reconciliations,
+    registry: numberingRegistry,
+  })
+  /** 本文件只验领域行为；superAdmin 凭证 rowFilter 恒全集。凭证每次现取。 */
+  const permit = (): Permit => {
+    const decision = authz.decideFor(actor, 'accVatInvoices', 'read')
+    if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+    return decision.permit
+  }
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `INV${suffix}`
 
@@ -47,7 +64,7 @@ run('PG 集成（增值税发票）', () => {
   const reconItemId = crypto.randomUUID()
   const userId = crypto.randomUUID()
 
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId,
     username: 'inv-test',
     name: '发票测试',
@@ -55,7 +72,7 @@ run('PG 集成（增值税发票）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
 
   const today = '2099-03-15'
 
@@ -209,7 +226,7 @@ run('PG 集成（增值税发票）', () => {
   })
 
   test('费用票：手填编号 + 审核过账 + 作废冲销', async () => {
-    const inv = await svc.create(actor, {
+    const inv = await svc.create(permit(), {
       companyId,
       docNo: `${prefix}EXP`,
       direction: 'INBOUND',
@@ -227,7 +244,7 @@ run('PG 集成（增值税发票）', () => {
       amountAccountId,
     })
     expect(inv.status).toBe('DRAFT')
-    const audited = await svc.audit(actor, inv.id, today)
+    const audited = await svc.audit(permit(), inv.id, today)
     expect(audited.status).toBe('AUDITED')
     expect(audited.postingDate).toBe(today)
     expect(audited.auditedById).toBe(userId)
@@ -241,7 +258,7 @@ run('PG 集成（增值税发票）', () => {
     expect(Number(gl.rows[0]!.c)).toBe(2)
     expect(Number(gl.rows[0]!.debit)).toBe(100)
 
-    const voided = await svc.void(actor, inv.id)
+    const voided = await svc.void(permit(), inv.id)
     expect(voided.status).toBe('VOIDED')
     const cancelled = await sql<{ c: string }>`
       SELECT count(*)::text AS c FROM acc_gl_entry
@@ -252,7 +269,7 @@ run('PG 集成（增值税发票）', () => {
   })
 
   test('费用票红冲产生原分录 + 红冲分录', async () => {
-    const inv = await svc.create(actor, {
+    const inv = await svc.create(permit(), {
       companyId,
       docNo: `${prefix}REV`,
       direction: 'INBOUND',
@@ -270,8 +287,8 @@ run('PG 集成（增值税发票）', () => {
       amountAccountId,
       taxAccountId,
     })
-    await svc.audit(actor, inv.id, today)
-    const reversed = await svc.reverse(actor, inv.id, {
+    await svc.audit(permit(), inv.id, today)
+    const reversed = await svc.reverse(permit(), inv.id, {
       postingDate: today,
       redInvoiceNo: `${prefix}RED`,
     })
@@ -289,7 +306,7 @@ run('PG 集成（增值税发票）', () => {
   })
 
   test('销项发票审核结单对账 + 关闭待办；作废 reopen + 复活待办', async () => {
-    const inv = await svc.create(actor, {
+    const inv = await svc.create(permit(), {
       companyId,
       docNo: `${prefix}SAL`,
       direction: 'OUTBOUND',
@@ -307,7 +324,7 @@ run('PG 集成（增值税发票）', () => {
       amountAccountId: salesDebitId,
       salReconciliationId: reconId,
     })
-    const audited = await svc.audit(actor, inv.id, today)
+    const audited = await svc.audit(permit(), inv.id, today)
     expect(audited.status).toBe('AUDITED')
 
     const head = await sql<{ status: string }>`
@@ -331,7 +348,7 @@ run('PG 集成（增值税发票）', () => {
     `.execute(db)
     expect(Number(gl.rows[0]!.c)).toBe(4)
 
-    const voided = await svc.void(actor, inv.id)
+    const voided = await svc.void(permit(), inv.id)
     expect(voided.status).toBe('VOIDED')
     expect(voided.salReconciliationId).toBeNull()
 
@@ -349,7 +366,7 @@ run('PG 集成（增值税发票）', () => {
   })
 
   test('仅草稿可改删；对账关联缺失校验', async () => {
-    const inv = await svc.create(actor, {
+    const inv = await svc.create(permit(), {
       companyId,
       docNo: `${prefix}DR`,
       direction: 'INBOUND',
@@ -364,14 +381,14 @@ run('PG 集成（增值税发票）', () => {
       partyAccountId,
       amountAccountId,
     })
-    await svc.audit(actor, inv.id, today)
+    await svc.audit(permit(), inv.id, today)
     await expect(
-      svc.update(actor, inv.id, { remarks: 'x', remarksPresent: true }),
+      svc.update(permit(), inv.id, { remarks: 'x', remarksPresent: true }),
     ).rejects.toBeInstanceOf(ApiError)
-    await expect(svc.remove(actor, inv.id)).rejects.toBeInstanceOf(ApiError)
+    await expect(svc.remove(permit(), inv.id)).rejects.toBeInstanceOf(ApiError)
 
     await expect(
-      svc.create(actor, {
+      svc.create(permit(), {
         companyId,
         direction: 'OUTBOUND',
         partyType: 'CUSTOMER',

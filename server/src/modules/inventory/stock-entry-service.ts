@@ -1,16 +1,20 @@
 /**
  * 库存分录流水 + 余额表（只读）；余额委托 inventory engine.balance。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、单条 `loadAuthorizedFrom`（不命中一律 not_found）。
+ * 余额是单公司聚合真值，公司不在边界内即空结果（不泄露存在性）。
  */
 import type { ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import type { BalanceRow, InventoryEngine } from '~/engines/inventory/index.ts'
 import type { DB as Database } from '~/db/types.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
-import { canAccessCompany } from '~/platform/authz/actor.ts'
-import { ApiError } from '~/platform/http/errors.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
-import {requirePermission,  dateWire, toDate, wireDecimal } from './helpers.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { companyInPermitScope, loadAuthorizedFrom } from '~/db/load.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
+import { dateWire, toDate, wireDecimal } from './helpers.ts'
 import { stockEntryResourceMeta } from './meta.ts'
 
 export interface StockEntry {
@@ -35,49 +39,60 @@ export interface StockEntry {
   customerPartNo: string | null
 }
 
+export const ENTRY_RESOURCE = 'invStockEntries'
+
 const META = stockEntryResourceMeta()
 
-export function createStockEntryService(db: Kysely<Database>, inventory: InventoryEngine) {
-  async function get(actor: Actor, id: string): Promise<StockEntry> {
-    requirePermission(actor, 'inv.stock_entry:read')
-    const row = await db
-      .selectFrom('inv_stock_entry as e')
-      .innerJoin('inv_material as m', 'm.id', 'e.material_id')
-      .selectAll('e')
-      .select(['m.code as material_code', 'm.name as material_name', 'm.spec as material_spec', 'm.customer_part_no'])
-      .where('e.id', '=', id)
-      .executeTakeFirst()
-    if (!row || !canAccessCompany(actor, row.company_id)) {
-      throw new ApiError('not_found', '库存分录不存在')
-    }
-    return mapEntry(row)
+/** 列表与单条共用同一份投影（别名与 listAuthorized 的 alias 必须逐字一致） */
+const ENTRY_ALIAS = 'inv_stock_entry'
+const ENTRY_SOURCE = sql` FROM (
+  SELECT e.*, m.code AS material_code, m.name AS material_name,
+    m.spec AS material_spec, m.customer_part_no AS customer_part_no
+  FROM inv_stock_entry e JOIN inv_material m ON m.id = e.material_id
+) AS inv_stock_entry`
+const ENTRY_SELECT = sql`SELECT id,seq,quantity,posting_date,voucher_type,voucher_id,voucher_no,
+  is_cancelled,remarks,inserted_at,company_id,warehouse_id,material_id,cancelled_at,
+  material_code,material_name,material_spec,customer_part_no`
+
+export function createStockEntryService(
+  db: Kysely<Database>,
+  inventory: InventoryEngine,
+  registry: Registry,
+) {
+  const target = registry.authzTarget(ENTRY_RESOURCE)
+
+  async function get(permit: Permit, id: string): Promise<StockEntry> {
+    return loadAuthorizedFrom({
+      db,
+      permit,
+      target,
+      alias: ENTRY_ALIAS,
+      source: ENTRY_SOURCE,
+      select: ENTRY_SELECT,
+      id,
+      mapRow: (r) => mapEntry(r as never),
+      notFoundMessage: '库存分录不存在',
+    })
   }
 
-  async function list(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'inv.stock_entry:read')
-    const scope = companyScopeWhere(actor, 'company_id')
-    if (scope.empty) return { count: 0, results: [] as StockEntry[] }
-    return listFromSource({
+  async function list(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target,
+      alias: ENTRY_ALIAS,
       resource: META,
       // join 物料主数据投影四字段(分录无快照,展示/搜索口径即物料当前值,见 ADR 物料列)
-      source: sql` FROM (
-        SELECT e.*, m.code AS material_code, m.name AS material_name,
-          m.spec AS material_spec, m.customer_part_no AS customer_part_no
-        FROM inv_stock_entry e JOIN inv_material m ON m.id = e.material_id
-      ) AS x`,
-      select: sql`SELECT id,seq,quantity,posting_date,voucher_type,voucher_id,voucher_no,
-        is_cancelled,remarks,inserted_at,company_id,warehouse_id,material_id,cancelled_at,
-        material_code,material_name,material_spec,customer_part_no`,
+      source: ENTRY_SOURCE,
+      select: ENTRY_SELECT,
       defaultOrder: sql`"seq" ASC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapEntry(r as never),
     })
   }
 
   async function balance(
-    actor: Actor,
+    permit: Permit,
     query: {
       companyId: string
       asOf?: string | null
@@ -86,10 +101,8 @@ export function createStockEntryService(db: Kysely<Database>, inventory: Invento
       hideZero?: boolean | null
     },
   ): Promise<BalanceRow[]> {
-    requirePermission(actor, 'inv.stock_entry:read')
-    if (!canAccessCompany(actor, query.companyId)) {
-      throw new ApiError('forbidden', '无权查看该公司数据')
-    }
+    // 聚合口径按单公司取数：公司不在边界内即空结果（不套逐行过滤，分录无行级绑定列）
+    if (!companyInPermitScope(permit, query.companyId)) return []
     const hideZero = query.hideZero == null ? true : query.hideZero
     return inventory.balance(db, {
       companyId: query.companyId,

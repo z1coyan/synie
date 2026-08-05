@@ -32,11 +32,15 @@ function mockClient(resource: string): ResourceClient {
 
 function extensionDoc(name: string, label: string): ResourceDocument {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     name,
     label,
     permissionPrefix: 'test',
-    capabilities: ['create', 'update', 'delete'],
+    capabilities: [
+      { action: 'create', scope: 'all' },
+      { action: 'update', scope: 'all' },
+      { action: 'delete', scope: 'all' },
+    ],
     fields: [
       {
         kind: 'scalar',

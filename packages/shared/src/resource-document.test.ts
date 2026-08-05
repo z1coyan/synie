@@ -14,7 +14,11 @@ function currencyDocument(overrides: Partial<ResourceDocument> = {}): ResourceDo
     name: 'basCurrencies',
     label: '货币',
     permissionPrefix: 'base.currency',
-    capabilities: ['create', 'update', 'delete'],
+    capabilities: [
+      { action: 'create', scope: 'all' },
+      { action: 'update', scope: 'all' },
+      { action: 'delete', scope: 'all' },
+    ],
     fields: [
       {
         kind: 'uuid',
@@ -88,10 +92,10 @@ function currencyDocument(overrides: Partial<ResourceDocument> = {}): ResourceDo
   return { ...base, ...overrides }
 }
 
-describe('ResourceDocument v2 契约', () => {
+describe('ResourceDocument v3 契约', () => {
   test('合法币种文档通过 decoder', () => {
     const doc = decodeResourceDocument(currencyDocument())
-    expect(doc.schemaVersion).toBe(2)
+    expect(doc.schemaVersion).toBe(3)
     expect(doc.label).toBe('货币')
     expect(doc.form.kind).toBe('basic')
     expect(doc.fields.find((f) => f.name === 'isoCode')?.input).toEqual({
@@ -102,11 +106,14 @@ describe('ResourceDocument v2 契约', () => {
 
   test('覆盖全部字段 kind 与 form/command 形态', () => {
     const doc = decodeResourceDocument({
-      schemaVersion: 2,
+      schemaVersion: 3,
       name: 'demo',
       label: '演示',
       permissionPrefix: 'demo.x',
-      capabilities: ['update', 'reconcile'],
+      capabilities: [
+        { action: 'update', scope: 'dept' },
+        { action: 'reconcile', scope: 'all' },
+      ],
       fields: [
         {
           kind: 'scalar',
@@ -254,6 +261,77 @@ describe('ResourceDocument v2 契约', () => {
       currencyDocument({ form: { kind: 'none' }, fields: currencyDocument().fields }),
     )
     expect(doc.form.kind).toBe('none')
+  })
+
+  test('capabilities 逐 entry 校验：非法 scope / 缺 action / 动作重复均拒绝', () => {
+    expect(() =>
+      decodeResourceDocument(
+        currencyDocument({
+          capabilities: [{ action: 'update', scope: 'company' as 'all' }],
+        }),
+      ),
+    ).toThrow(/非法数据范围/)
+
+    expect(() =>
+      decodeResourceDocument({
+        ...currencyDocument(),
+        capabilities: [{ scope: 'all' }],
+      }),
+    ).toThrow(/须为非空字符串/)
+
+    expect(() =>
+      decodeResourceDocument({
+        ...currencyDocument(),
+        capabilities: [
+          { action: 'update', scope: 'all' },
+          { action: 'update', scope: 'dept' },
+        ],
+      }),
+    ).toThrow(/能力动作重复/)
+
+    expect(() =>
+      decodeResourceDocument({
+        ...currencyDocument(),
+        capabilities: ['update'],
+      }),
+    ).toThrow(/须为对象/)
+  })
+
+  test('authz 维度：合法形状通过并透传', () => {
+    const doc = decodeResourceDocument(
+      currencyDocument({ authz: { ownerId: 'id', deptId: 'id', deptMode: 'stamped' } }),
+    )
+    expect(doc.authz).toEqual({ ownerId: 'id', deptId: 'id', deptMode: 'stamped' })
+
+    const noAuthz = decodeResourceDocument(currencyDocument())
+    expect(noAuthz.authz).toBeUndefined()
+  })
+
+  test('authz 维度：非法形状拒绝', () => {
+    // 引用未知字段
+    expect(() =>
+      decodeResourceDocument(currencyDocument({ authz: { ownerId: 'ghost' } })),
+    ).toThrow(/引用未知字段/)
+
+    // 空维度
+    expect(() =>
+      decodeResourceDocument(currencyDocument({ authz: {} })),
+    ).toThrow(/至少声明/)
+
+    // 非法 deptMode
+    expect(() =>
+      decodeResourceDocument(
+        currencyDocument({ authz: { deptId: 'id', deptMode: 'x' as 'stamped' } }),
+      ),
+    ).toThrow(/非法部门形态/)
+
+    // 非对象
+    expect(() =>
+      decodeResourceDocument({
+        ...currencyDocument(),
+        authz: 'yes',
+      }),
+    ).toThrow(/须为对象/)
   })
 
   test('拒绝未知 schema version', () => {

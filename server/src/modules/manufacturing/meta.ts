@@ -90,6 +90,8 @@ function headMeta(
     name,
     permissionPrefix: permission,
     permissionLabel: label,
+    // 工序/工艺模板均全局共享不分公司（无 company_id 列）
+    authz: { kind: 'global' },
     table,
     numbering: true,
     fields: [
@@ -184,6 +186,7 @@ export function processTemplateItemResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.route_template',
     permissionLabel: '工艺模板',
     table: 'mfg_process_template_item',
+    authz: { kind: 'via', parent: 'mfgProcessTemplates', fk: 'template_id' },
     fields: [
       ...routeFields(),
       fk('template_id', 'templateId', '工艺模板', 'mfgProcessTemplates', 'template', 'name', {
@@ -216,6 +219,7 @@ export function bomResourceMeta(): ResourceMeta {
     numbering: true,
     permissionLabel: 'BOM',
     table: 'mfg_bom',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', '编号', {
@@ -278,6 +282,7 @@ export function bomComponentResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.bom',
     permissionLabel: 'BOM',
     table: 'mfg_bom_component',
+    authz: { kind: 'via', parent: 'mfgBoms', fk: 'bom_id' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('quantity', 'quantity', 'decimal', '单位净用量(每 1 默认单位母物料)', {
@@ -328,6 +333,7 @@ export function bomRouteResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.bom',
     permissionLabel: 'BOM',
     table: 'mfg_bom_route',
+    authz: { kind: 'via', parent: 'mfgBoms', fk: 'bom_id' },
     fields: [
       ...routeFields(),
       fk('bom_id', 'bomId', 'BOM', 'mfgBoms', 'bom', 'code', { required: true, createOnly: true }),
@@ -356,6 +362,7 @@ export function bomByproductResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.bom',
     permissionLabel: 'BOM',
     table: 'mfg_bom_byproduct',
+    authz: { kind: 'via', parent: 'mfgBoms', fk: 'bom_id' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('quantity', 'quantity', 'decimal', '单位产出量(每 1 默认单位母物料)', {
@@ -403,6 +410,8 @@ export function demandResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.demand',
     permissionLabel: '履约需求单',
     table: 'mfg_demand',
+    // 指派部门形态：下发车间是业务字段，谁能改由 dispatch 动作码管，填写不受操作者部门约束
+    authz: { kind: 'company', dept: { column: 'assigned_dept_id', mode: 'assigned' } },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('demand_no', 'demandNo', 'string', '需求单号', { filterable: true, sortable: true }),
@@ -425,6 +434,14 @@ export function demandResourceMeta(): ResourceMeta {
       }),
       fk('company_id', 'companyId', '公司', 'basCompanies', 'company', 'name'),
       fk('created_by_id', 'createdById', '录入人', 'sysUsers', 'createdBy', 'name'),
+      fk(
+        'assigned_dept_id',
+        'assignedDeptId',
+        '下发车间',
+        'sysDepartments',
+        'assignedDept',
+        'name',
+      ),
     ],
     actions: [
       ...headCrud,
@@ -437,6 +454,8 @@ export function demandResourceMeta(): ResourceMeta {
       },
       { key: 'close', label: '关闭', scope: 'row' },
       { key: 'void', label: '作废', scope: 'row', isDanger: true },
+      // 下发/改派：草稿态在表单里填，已确认后只能走本动作（独立权限码，不并入 update）
+      { key: 'dispatch', label: '下发车间', scope: 'row' },
     ],
     printHead: true,
     printLoops: [{ name: 'items', resource: 'mfgDemandItems' }],
@@ -452,6 +471,7 @@ export function demandItemResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.demand',
     permissionLabel: '履约需求单',
     table: 'mfg_demand_item',
+    authz: { kind: 'via', parent: 'mfgDemands', fk: 'demand_id' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('idx', 'idx', 'integer', '行号', { filterable: true, sortable: true }),
@@ -565,11 +585,13 @@ export function workOrderResourceMeta(): ResourceMeta {
     name: 'mfgWorkOrders',
     classification: { presentation: 'extension', interactive: true },
     /** 工单图纸只读展示宿主：附件固化 company_id */
-    attachments: { companyScoped: true },
+    attachments: {},
     numbering: true,
     permissionPrefix: 'mfg.work_order',
     permissionLabel: '生产工单',
     table: 'mfg_work_order',
+    // 归属部门形态（盖章）：创建时按创建人部门写入 owner_dept_id，车间自建自见
+    authz: { kind: 'company', dept: { mode: 'stamped' } },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('work_order_no', 'workOrderNo', 'string', '工单号', {
@@ -624,6 +646,9 @@ export function workOrderResourceMeta(): ResourceMeta {
       fk('unit_id', 'unitId', '单位', 'basUnits', 'unit', 'name'),
       fk('bom_id', 'bomId', 'BOM(来源留痕)', 'mfgBoms', 'bom', 'code'),
       fk('created_by_id', 'createdById', '生成人', 'sysUsers', 'createdBy', 'name'),
+      fk('owner_dept_id', 'ownerDeptId', '归属部门', 'sysDepartments', 'ownerDept', 'name', {
+        readonly: true,
+      }),
       field('remaining_base_qty', 'remainingBaseQty', 'decimal', '未完成数量(默认单位)', {
         calculated: true,
         filterable: true,
@@ -659,6 +684,7 @@ export function workOrderComponentResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.work_order',
     permissionLabel: '生产工单',
     table: 'mfg_work_order_component',
+    authz: { kind: 'via', parent: 'mfgWorkOrders', fk: 'work_order_id' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true }),
       field('quantity', 'quantity', 'decimal', '净用量', { filterable: true }),
@@ -684,6 +710,7 @@ export function workOrderRouteResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.work_order',
     permissionLabel: '生产工单',
     table: 'mfg_work_order_route',
+    authz: { kind: 'via', parent: 'mfgWorkOrders', fk: 'work_order_id' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true }),
       field('seq', 'seq', 'integer', '工序顺序', { required: true, filterable: true, sortable: true }),
@@ -707,6 +734,7 @@ export function workOrderByproductResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.work_order',
     permissionLabel: '生产工单',
     table: 'mfg_work_order_byproduct',
+    authz: { kind: 'via', parent: 'mfgWorkOrders', fk: 'work_order_id' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true }),
       field('quantity', 'quantity', 'decimal', '产出量', { filterable: true }),
@@ -731,6 +759,7 @@ export function outputResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.output',
     permissionLabel: '生产入库单',
     table: 'mfg_output',
+    authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('output_no', 'outputNo', 'string', '入库单号', { filterable: true, sortable: true }),
@@ -783,6 +812,7 @@ export function outputItemResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.output',
     permissionLabel: '生产入库单',
     table: 'mfg_output_item',
+    authz: { kind: 'via', parent: 'mfgOutputs', fk: 'output_id' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('idx', 'idx', 'integer', '行号', { filterable: true, sortable: true }),
@@ -860,6 +890,7 @@ export function moldDesignResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.mold_design',
     permissionLabel: '模具设计',
     table: 'mfg_mold_design',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       // material_code/name/spec/unit_name 为 join 物料的计算列（source 子查询暴露同名别名）

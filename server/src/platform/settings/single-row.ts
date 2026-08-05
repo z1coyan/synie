@@ -1,14 +1,17 @@
 /**
  * 单行设置引擎：get + update + 审计 diff。
  * 业务域声明 table/map/merge/validate（约 20 行），platform 只留骨架与 sys_setting。
+ *
+ * 授权由平台承担：路由挂 `guard(资源, 动作)`，本引擎只收 Permit。
+ * 跨域/调度的受信任读走 `load(systemPermit(...))`——主体显式为 system，
+ * 取代「裸函数即受信任」的隐式约定（spec §4）。
  */
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import { auditDiff, writeAudit } from '../audit/write.ts'
-import type { Actor } from '../authz/actor.ts'
-import { requirePermission } from '../authz/actor.ts'
+import type { Permit } from '../authz/core/index.ts'
 import { ApiError } from '../http/errors.ts'
 
 const IDENTIFIER_RE = /^[a-z_][a-z0-9_]*$/
@@ -19,11 +22,6 @@ export interface SingleRowSettingConfig<TView extends { id: string }, TUpdate> {
   /** 审计 resource 名（通常与 table 相同） */
   resource: string
   notFoundMessage: string
-  /**
-   * 权限前缀：get 检 `${prefix}:read`，update 检 `${prefix}:update`。
-   * load() 为跨域/调度受信任读，不检权限。
-   */
-  permissionPrefix: string
   mapRow: (row: Record<string, unknown>) => TView
   /**
    * 合并更新：返回 after 视图、写库 set 列、审计 snap 前后。
@@ -53,8 +51,12 @@ export function createSingleRowSetting<TView extends { id: string }, TUpdate>(
   }
   const tableSql = sql.raw(config.table)
 
-  /** 受信任配置读（调度/业务过账链路）；鉴权由调用方能力码覆盖 */
-  async function load(): Promise<TView> {
+  /**
+   * 配置读：单行设置是全局资源（无公司列），Permit 只作主体标记不产生行过滤。
+   * 调度/过账链路传 systemPermit(...)；HTTP 路径由 get 经 guard 的 Permit 进入。
+   */
+  async function load(permit: Permit): Promise<TView> {
+    void permit
     const result = await sql<Record<string, unknown>>`
       SELECT * FROM ${tableSql} LIMIT 1
     `.execute(db)
@@ -63,13 +65,11 @@ export function createSingleRowSetting<TView extends { id: string }, TUpdate>(
     return config.mapRow(row)
   }
 
-  async function get(actor: Actor): Promise<TView> {
-    requirePermission(actor, `${config.permissionPrefix}:read`)
-    return load()
+  async function get(permit: Permit): Promise<TView> {
+    return load(permit)
   }
 
-  async function update(actor: Actor, input: TUpdate): Promise<TView> {
-    requirePermission(actor, `${config.permissionPrefix}:update`)
+  async function update(permit: Permit, input: TUpdate): Promise<TView> {
     return withTx(db, async (trx) => {
       const locked = await sql<Record<string, unknown>>`
         SELECT * FROM ${tableSql} FOR UPDATE LIMIT 1
@@ -92,7 +92,7 @@ export function createSingleRowSetting<TView extends { id: string }, TUpdate>(
         RETURNING *
       `.execute(trx)
       const result = config.mapRow(updated.rows[0]!)
-      await writeAudit(trx as DbHandle, actor, {
+      await writeAudit(trx as DbHandle, permit.actor, {
         resource: config.resource,
         recordId: result.id,
         actionType: 'update',

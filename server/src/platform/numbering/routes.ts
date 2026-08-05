@@ -4,9 +4,18 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '../auth/middleware.ts'
 import type { AuthService } from '../auth/service.ts'
+import type { AuthzEnforcer } from '../authz/enforce.ts'
+import { permitOf } from '../authz/enforce.ts'
 import type { AppEnv } from '../http/context.ts'
 import { listQuerySchema, validationHook } from '../http/zod.ts'
+import { RULE_RESOURCE_NAME } from './meta.ts'
 import type { NumberingService, Segment } from './service.ts'
+
+/**
+ * 编号规则 REST：逐端点挂 `guard(资源, 动作)`（requireAuth 之后）。
+ * 计数器 meta 无独立 actions 且与规则同前缀，故一律按规则资源取凭证
+ * （与迁移前 `sys.numbering_rule:read/update` 的门控逐字一致）。
+ */
 
 const segmentSchema = z
   .object({
@@ -41,25 +50,30 @@ const updateSchema = z
 const counterUpdateSchema = z.object({ value: z.number().int() }).strict()
 const idParam = z.object({ id: z.string().uuid() })
 
-export function numberingRoutes(deps: { auth: AuthService; numbering: NumberingService }) {
-  const { auth, numbering } = deps
+export function numberingRoutes(deps: {
+  auth: AuthService
+  authz: AuthzEnforcer
+  numbering: NumberingService
+}) {
+  const { auth, authz, numbering } = deps
+  const guard = (action: string) => authz.guard(RULE_RESOURCE_NAME, action)
 
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .get('/resources', async (c) => {
-      const resources = await numbering.numberableResources(c.get('actor'))
+    .get('/resources', guard('read'), async (c) => {
+      const resources = await numbering.numberableResources(permitOf(c))
       return c.json({ resources })
     })
-    .post('/rules/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const result = await numbering.listRules(c.get('actor'), toListQuery(c.req.valid('json')))
+    .post('/rules/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
+      const result = await numbering.listRules(permitOf(c), toListQuery(c.req.valid('json')))
       return c.json({
         count: result.count,
         results: result.results.map(ruleDto),
       })
     })
-    .post('/rules', zValidator('json', createSchema, validationHook), async (c) => {
+    .post('/rules', guard('create'), zValidator('json', createSchema, validationHook), async (c) => {
       const body = c.req.valid('json')
-      const rule = await numbering.create(c.get('actor'), {
+      const rule = await numbering.create(permitOf(c), {
         resource: body.resource,
         name: body.name,
         segments: body.segments as Segment[],
@@ -68,17 +82,18 @@ export function numberingRoutes(deps: { auth: AuthService; numbering: NumberingS
       })
       return c.json(ruleDto(rule), 201)
     })
-    .get('/rules/:id', zValidator('param', idParam, validationHook), async (c) => {
-      const rule = await numbering.getRule(c.get('actor'), c.req.valid('param').id)
+    .get('/rules/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
+      const rule = await numbering.getRule(permitOf(c), c.req.valid('param').id)
       return c.json(ruleDto(rule))
     })
     .patch(
       '/rules/:id',
+      guard('update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', updateSchema, validationHook),
       async (c) => {
         const body = c.req.valid('json')
-        const rule = await numbering.updateRule(c.get('actor'), c.req.valid('param').id, {
+        const rule = await numbering.updateRule(permitOf(c), c.req.valid('param').id, {
           name: body.name,
           segments: body.segments as Segment[] | undefined,
           perCompany: body.perCompany,
@@ -87,28 +102,29 @@ export function numberingRoutes(deps: { auth: AuthService; numbering: NumberingS
         return c.json(ruleDto(rule))
       },
     )
-    .delete('/rules/:id', zValidator('param', idParam, validationHook), async (c) => {
-      await numbering.deleteRule(c.get('actor'), c.req.valid('param').id)
+    .delete('/rules/:id', guard('delete'), zValidator('param', idParam, validationHook), async (c) => {
+      await numbering.deleteRule(permitOf(c), c.req.valid('param').id)
       return c.body(null, 204)
     })
-    .post('/counters/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const result = await numbering.listCounters(c.get('actor'), toListQuery(c.req.valid('json')))
+    .post('/counters/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
+      const result = await numbering.listCounters(permitOf(c), toListQuery(c.req.valid('json')))
       return c.json({
         count: result.count,
         results: result.results.map(counterDto),
       })
     })
-    .get('/counters/:id', zValidator('param', idParam, validationHook), async (c) => {
-      const counter = await numbering.getCounter(c.get('actor'), c.req.valid('param').id)
+    .get('/counters/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
+      const counter = await numbering.getCounter(permitOf(c), c.req.valid('param').id)
       return c.json(counterDto(counter))
     })
     .patch(
       '/counters/:id',
+      guard('update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', counterUpdateSchema, validationHook),
       async (c) => {
         const counter = await numbering.updateCounter(
-          c.get('actor'),
+          permitOf(c),
           c.req.valid('param').id,
           c.req.valid('json').value,
         )

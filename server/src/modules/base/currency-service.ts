@@ -1,3 +1,10 @@
+/**
+ * 币种（全局主数据，无公司列）。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、单条/写前取行 `loadAuthorized`。global 形态只有码级判定，
+ * 零公司授权的用户照样能读币种（spec §5）。本币引用保护是领域不变量，留在本文件。
+ */
 import type { ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
@@ -10,11 +17,13 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { listFromSource } from '~/db/list.ts'
-import { currencyResourceMeta } from './meta.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { loadAuthorized } from '~/db/load.ts'
+import { CURRENCY_RESOURCE_NAME, currencyResourceMeta } from './meta.ts'
 
 export interface Currency {
   id: string
@@ -41,25 +50,36 @@ export interface UpdateCurrencyInput {
   active?: boolean
 }
 
-const AUDIT = auditFieldsOf(currencyResourceMeta())
+const META = currencyResourceMeta()
+const AUDIT = auditFieldsOf(META)
+const TABLE = META.table
 const ISO_RE = /^[A-Z]{3}$/
 
-export function createCurrencyService(db: Kysely<Database>) {
-  async function get(actor: Actor, id: string): Promise<Currency> {
-    requirePermission(actor, 'base.currency:read')
-    const row = await db.selectFrom('bas_currency').selectAll().where('id', '=', id).executeTakeFirst()
-    if (!row) throw new ApiError('not_found', '货币不存在')
-    return mapRow(row)
+export function createCurrencyService(db: Kysely<Database>, registry: Registry) {
+  const target = registry.authzTarget(CURRENCY_RESOURCE_NAME)
+
+  async function get(permit: Permit, id: string): Promise<Currency> {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target,
+      table: TABLE,
+      id,
+      notFoundMessage: '货币不存在',
+    })
+    return mapRow(row as never)
   }
 
   async function list(
-    actor: Actor,
+    permit: Permit,
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: Currency[] }> {
-    requirePermission(actor, 'base.currency:read')
-    return listFromSource({
+    return listAuthorized({
       db,
-      resource: currencyResourceMeta(),
+      permit,
+      target,
+      alias: TABLE,
+      resource: META,
       source: sql` FROM bas_currency`,
       select: sql`SELECT id, name, iso_code, symbol, active, inserted_at, updated_at`,
       defaultOrder: sql`"iso_code" ASC, "id" ASC`,
@@ -77,8 +97,7 @@ export function createCurrencyService(db: Kysely<Database>) {
     })
   }
 
-  async function create(actor: Actor, input: CreateCurrencyInput): Promise<Currency> {
-    requirePermission(actor, 'base.currency:create')
+  async function create(permit: Permit, input: CreateCurrencyInput): Promise<Currency> {
     const normalized = validateCreate(input)
     const active = input.active ?? true
     return withTx(db, async (trx) => {
@@ -94,7 +113,7 @@ export function createCurrencyService(db: Kysely<Database>) {
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapRow(row)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'bas_currency',
           recordId: item.id,
           recordLabel: item.name,
@@ -111,18 +130,19 @@ export function createCurrencyService(db: Kysely<Database>) {
     })
   }
 
-  async function update(actor: Actor, id: string, input: UpdateCurrencyInput): Promise<Currency> {
-    requirePermission(actor, 'base.currency:update')
+  async function update(permit: Permit, id: string, input: UpdateCurrencyInput): Promise<Currency> {
     validateUpdate(input)
     return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('bas_currency')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '货币不存在')
-      const before = mapRow(locked)
+      const locked = await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '货币不存在',
+      })
+      const before = mapRow(locked as never)
       const after: Currency = {
         ...before,
         name: input.name !== undefined ? input.name.trim() : before.name,
@@ -173,7 +193,7 @@ export function createCurrencyService(db: Kysely<Database>) {
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = mapRow(updated)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'bas_currency',
           recordId: item.id,
           recordLabel: item.name,
@@ -190,17 +210,18 @@ export function createCurrencyService(db: Kysely<Database>) {
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'base.currency:delete')
+  async function remove(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('bas_currency')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '货币不存在')
-      const item = mapRow(locked)
+      const locked = await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '货币不存在',
+      })
+      const item = mapRow(locked as never)
       try {
         await trx.deleteFrom('bas_currency').where('id', '=', id).execute()
       } catch (err) {
@@ -208,7 +229,7 @@ export function createCurrencyService(db: Kysely<Database>) {
           { code: '23503', message: '货币已被业务数据引用,不可删除' },
         ])
       }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'bas_currency',
         recordId: item.id,
         recordLabel: item.name,

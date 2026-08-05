@@ -1,4 +1,10 @@
-import type { MarketService, RefreshResult } from '~/modules/base/market/service.ts'
+import {
+  marketSchedulerPermit,
+  type MarketService,
+  type RefreshResult,
+} from '~/modules/base/market/service.ts'
+import { systemPermit } from '~/platform/authz/core/index.ts'
+import { SYS_RESOURCE_NAME } from '~/platform/settings/meta.ts'
 import type { SettingsService } from '~/platform/settings/service.ts'
 import {
   decide,
@@ -64,14 +70,14 @@ export function createMarketScheduler(deps: MarketSchedulerDeps) {
         log('info', '行情定时调度: 触发最新价拉取', { at: now.toISOString() })
         await runSafely('定时最新价', async () => {
           if (deps.runLasts) return deps.runLasts(now)
-          return deps.market.refreshLasts(null, null, now)
+          return deps.market.refreshLasts(marketSchedulerPermit(), null, now)
         })
       }
       if (decision.runSettlements) {
         log('info', '行情定时调度: 触发结算价补拉', { at: now.toISOString() })
         await runSafely('定时结算价', async () => {
           if (deps.runSettlements) return deps.runSettlements(now)
-          return deps.market.refreshSettlements(null, null, now)
+          return deps.market.refreshSettlements(marketSchedulerPermit(), null, now)
         })
       }
     } catch (err) {
@@ -99,7 +105,7 @@ export function createMarketScheduler(deps: MarketSchedulerDeps) {
       log('error', '行情定时调度运行失败', { label, error: String(err) })
       try {
         await deps.settings.recordMarketFetch(
-          null,
+          systemPermit(SYS_RESOURCE_NAME, 'update'),
           `${label}: 运行异常: ${err instanceof Error ? err.message : String(err)}`,
         )
       } catch (writeErr) {

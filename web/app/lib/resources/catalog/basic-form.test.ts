@@ -15,11 +15,15 @@ import {
 
 function currencyDoc(): ResourceDocument {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     name: 'basCurrencies',
     label: '货币',
     permissionPrefix: 'base.currency',
-    capabilities: ['create', 'update', 'delete'],
+    capabilities: [
+      { action: 'create', scope: 'all' },
+      { action: 'update', scope: 'all' },
+      { action: 'delete', scope: 'all' },
+    ],
     fields: [
       {
         kind: 'uuid',
@@ -89,11 +93,15 @@ function currencyDoc(): ResourceDocument {
 
 function unitDoc(): ResourceDocument {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     name: 'basUnits',
     label: '单位',
     permissionPrefix: 'base.unit',
-    capabilities: ['create', 'update', 'delete'],
+    capabilities: [
+      { action: 'create', scope: 'all' },
+      { action: 'update', scope: 'all' },
+      { action: 'delete', scope: 'all' },
+    ],
     fields: [
       {
         kind: 'uuid',
@@ -180,11 +188,15 @@ function unitDoc(): ResourceDocument {
 
 function supplierDoc(): ResourceDocument {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     name: 'purSuppliers',
     label: '供应商',
     permissionPrefix: 'base.supplier',
-    capabilities: ['create', 'update', 'delete'],
+    capabilities: [
+      { action: 'create', scope: 'all' },
+      { action: 'update', scope: 'all' },
+      { action: 'delete', scope: 'all' },
+    ],
     fields: [
       {
         kind: 'uuid',
@@ -244,11 +256,15 @@ function supplierDoc(): ResourceDocument {
 
 function companyDoc(opts?: { currencyUnavailable?: boolean }): ResourceDocument {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     name: 'basCompanies',
     label: '公司',
     permissionPrefix: 'base.company',
-    capabilities: ['create', 'update', 'delete'],
+    capabilities: [
+      { action: 'create', scope: 'all' },
+      { action: 'update', scope: 'all' },
+      { action: 'delete', scope: 'all' },
+    ],
     fields: [
       {
         kind: 'uuid',

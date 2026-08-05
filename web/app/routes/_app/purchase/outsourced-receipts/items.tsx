@@ -69,9 +69,6 @@ function ReceiptItemsTab() {
         // 开抽屉需要母单 id;不进展示列,经 extraFields 取回(避免 receiptId 为 undefined 过滤报错);
         // 物料富单元格所需快照字段与物料外键一并补取
         extraFields={['receiptId', 'materialId', 'materialName', 'materialSpec', 'customerPartNo']}
-        // purOutsourcedReceiptItems 复用 purchase.outsourced_receipt 权限码,meta capabilities 为空:
-        // 显式声明本视图可用动作(整单「新建入库单」+ 草稿单「编辑/审核整单」),删除不进条目视图
-        capabilities={['create', 'update', 'audit']}
         createLabel="新建入库单"
         onCreate={() => openDrawer('create', null)}
         onView={(row) => {

@@ -232,6 +232,7 @@ export function orderHeadMeta(side: TradingSide): ResourceMeta {
     numbering: true,
     permissionLabel: spec.label,
     table: spec.headTable,
+    authz: { kind: 'company' },
     fields,
     actions,
     print: side === 'sales',
@@ -433,6 +434,7 @@ export function orderItemMeta(side: TradingSide): ResourceMeta {
     permissionPrefix: spec.prefix,
     permissionLabel: spec.label,
     table: spec.itemTable,
+    authz: { kind: 'via', parent: spec.headResource, fk: 'order_id' },
     fields,
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     // exclude 保留历史审计面：履约投影列与头冗余对手不进审计 diff
@@ -447,6 +449,7 @@ export function orderMaterialMeta(): ResourceMeta {
     permissionPrefix: 'purchase.order',
     permissionLabel: '采购订单',
     table: 'pur_order_item_material',
+    authz: { kind: 'via', parent: 'purOrderItems', fk: 'order_item_id' },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('quantity', 'quantity', 'decimal', '数量', { required: true, filterable: true, sortable: true }),
@@ -533,6 +536,7 @@ export function orderByproductMeta(): ResourceMeta {
     permissionPrefix: 'purchase.order',
     permissionLabel: '采购订单',
     table: 'pur_order_item_byproduct',
+    authz: { kind: 'via', parent: 'purOrderItems', fk: 'order_item_id' },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('quantity', 'quantity', 'decimal', '数量', { required: true, filterable: true, sortable: true }),

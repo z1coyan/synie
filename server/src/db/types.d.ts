@@ -840,6 +840,10 @@ export interface MfgBomRoute {
 }
 
 export interface MfgDemand {
+  /**
+   * 下发车间（指派部门形态）：业务字段，须与需求单同公司；填写不受操作者部门约束，已确认后改派走 dispatch 动作
+   */
+  assigned_dept_id: string | null;
   company_id: string;
   created_by_id: string | null;
   demand_date: Generated<Timestamp>;
@@ -985,6 +989,10 @@ export interface MfgWorkOrder {
   material_name: Generated<string>;
   material_spec: string | null;
   need_date: Timestamp | null;
+  /**
+   * 归属部门（盖章形态）：创建时按创建人部门自动写入，不可手填；人调部门不追溯存量行
+   */
+  owner_dept_id: string | null;
   qty: Generated<Numeric>;
   received_base_qty: Generated<Numeric>;
   status: Generated<string>;
@@ -1668,6 +1676,21 @@ export interface SysAuditLog {
   resource: string;
 }
 
+export interface SysDepartment {
+  code: string;
+  company_id: string;
+  enabled: Generated<boolean>;
+  id: Generated<string>;
+  inserted_at: Generated<Timestamp>;
+  name: string;
+  parent_id: string | null;
+  /**
+   * 物化路径：/{祖先id}/…/{本id}/；移动节点重算整棵子树
+   */
+  path: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface SysFile {
   content_type: string | null;
   filename: string;
@@ -1715,6 +1738,10 @@ export interface SysRole {
   builtin: Generated<boolean>;
   code: string;
   enabled: Generated<boolean>;
+  /**
+   * 全域授权旗标：持有即覆盖全部权限码（all 范围）；内置 admin 用此旗标取代 * 通配行
+   */
+  grants_all: Generated<boolean>;
   id: Generated<string>;
   inserted_at: Generated<Timestamp>;
   name: string;
@@ -1733,6 +1760,10 @@ export interface SysRolePermission {
   inserted_at: Generated<Timestamp>;
   permission: string;
   role_id: string;
+  /**
+   * 数据范围：all/dept_tree/dept/self（granted 预留、第一期拒写）；多角色同码取格上最大
+   */
+  scope: Generated<string>;
 }
 
 export interface SysSetting {
@@ -1798,6 +1829,10 @@ export interface SysTodoState {
 export interface SysUser {
   all_companies: Generated<boolean>;
   auth_user_id: string | null;
+  /**
+   * 所属部门（至多一个）；部门所在公司必须已在该用户公司授权集内（IAM 写侧硬校验）
+   */
+  department_id: string | null;
   email: string | null;
   hashed_password: string;
   id: Generated<string>;
@@ -1924,6 +1959,7 @@ export interface DB {
   synie_schema_migration: SynieSchemaMigration;
   sys_attachment: SysAttachment;
   sys_audit_log: SysAuditLog;
+  sys_department: SysDepartment;
   sys_file: SysFile;
   sys_numbering_counter: SysNumberingCounter;
   sys_numbering_rule: SysNumberingRule;

@@ -1,37 +1,45 @@
+/**
+ * 旧授权原语的过渡层（扫荡期存在，工单 09-12 逐批清零）。
+ *
+ * Actor 已换代为 v2（`platform/authz/core`）：精确码 + 范围位集 + 公司/部门维度。
+ * 本文件只保留把 v2 Actor 喂给存量调用点的薄适配；**新代码一律走 Permit**
+ * （`guard(resource, action)` → `listFromSource` / `loadAuthorized`），
+ * 见 ADR 2026-08-04 Permit 凭证式鉴权。
+ */
 import { ApiError } from '../http/errors.ts'
-import { matches } from './permission.ts'
+import type { Actor } from './core/index.ts'
 
-/** 请求主体（移植自 server-go platform/authz/actor.go） */
-export interface Actor {
-  userId: string
-  username: string
-  name: string | null
-  superAdmin: boolean
-  allCompanies: boolean
-  permissions: ReadonlySet<string>
-  companyIds: readonly string[]
-}
+export type { Actor }
 
+/** @deprecated 扫荡期过渡：改用 guard(resource, action) 取 Permit */
 export function hasPermission(actor: Actor | null, code: string): boolean {
   if (!actor) return false
-  if (actor.superAdmin) return true
-  return matches(actor.permissions, code)
+  if (actor.superAdmin || actor.kind === 'system') return true
+  return actor.grants.has(code)
 }
 
-/** 公司数据范围：bypass=true 表示不做公司过滤（超管/全公司授权） */
+/**
+ * 公司数据范围：bypass=true 表示不做公司过滤（超管/全公司授权/system）。
+ * @deprecated 扫荡期过渡：改用 Permit.rowFilter.company
+ */
 export function companyFilter(actor: Actor | null): { bypass: boolean; ids: readonly string[] } {
   if (!actor) return { bypass: false, ids: [] }
-  if (actor.superAdmin || actor.allCompanies) return { bypass: true, ids: [] }
-  return { bypass: false, ids: actor.companyIds }
+  if (actor.superAdmin || actor.kind === 'system' || actor.companies.all) {
+    return { bypass: true, ids: [] }
+  }
+  return { bypass: false, ids: actor.companies.ids }
 }
 
+/** @deprecated 扫荡期过渡：改用 loadAuthorized / create 写侧守卫 */
 export function canAccessCompany(actor: Actor | null, companyId: string): boolean {
-  if (!actor) return false
-  if (actor.superAdmin || actor.allCompanies) return true
-  return actor.companyIds.includes(companyId)
+  const scope = companyFilter(actor)
+  return scope.bypass || scope.ids.includes(companyId)
 }
 
-/** 无权限时抛出 403（供 handler/中间件使用）；保持 fail-closed */
+/**
+ * 无权限时抛出 403（fail-closed）。
+ * @deprecated 扫荡期过渡：改用 guard(resource, action)
+ */
 export function requirePermission(
   actor: Actor | null,
   code: string,
@@ -42,7 +50,10 @@ export function requirePermission(
   }
 }
 
-/** 公司数据权限闸门：无权限一律按 not_found 处理（fail-closed，不泄露公司存在性） */
+/**
+ * 公司数据权限闸门：不命中一律 not_found（不泄露存在性，与新体系错误语义一致）。
+ * @deprecated 扫荡期过渡：改用 loadAuthorized
+ */
 export function requireCompanyAccess(actor: Actor | null, companyId: string, message = '公司不存在'): void {
   if (!canAccessCompany(actor, companyId)) {
     throw new ApiError('not_found', message)

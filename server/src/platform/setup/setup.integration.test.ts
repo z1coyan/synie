@@ -18,6 +18,7 @@ import { createTradingServices } from '~/modules/trading/index.ts'
 import { buildTestApp, createPlatformRegistry, testDatabaseUrl, TEST_AUTH_SECRET } from '../../../test/helpers.ts'
 import { createTokenManager } from '../auth/token.ts'
 import type { Actor } from '../authz/actor.ts'
+import { createAuthzEnforcer } from '../authz/enforce.ts'
 import { createOwnerRegistry, createFileService } from '../files/index.ts'
 import { ApiError } from '../http/errors.ts'
 import { buildNumberingCatalog } from '../numbering/catalog.ts'
@@ -29,6 +30,7 @@ import {
   seedSampleData,
 } from '~/modules/setup/index.ts'
 import { createSetupService, SALES_ROLE_MENUS, SALES_ROLE_PERMISSIONS } from './service.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = testDatabaseUrl()
 const run = url ? describe : describe.skip
@@ -197,7 +199,7 @@ run('PG 集成（setup 向导）', () => {
     `.execute(db)
     expect(Number(active.rows[0]?.c)).toBe(1)
 
-    const actor: Actor = {
+    const actor: Actor = testActor({
       userId: winner.user.id,
       username: winner.user.username,
       name: winner.user.name,
@@ -205,7 +207,7 @@ run('PG 集成（setup 向导）', () => {
       allCompanies: true,
       permissions: new Set(),
       companyIds: [],
-    }
+    })
     // 无示例依赖时 seedSampleData=false：仅基础种子 + 完成旗标
     await setup.complete(actor, 'zh-CN', false)
 
@@ -236,27 +238,37 @@ run('PG 集成（setup 向导）', () => {
     expect(Number(counts.rows[0]?.categories)).toBeGreaterThanOrEqual(1)
     expect(Number(counts.rows[0]?.units)).toBeGreaterThanOrEqual(1)
 
-    // 内置角色种子：admin 持全域通配 `*`；sales 逐码授权（与权限目录对齐）
-    const roles = await sql<{ code: string; builtin: boolean; enabled: boolean }>`
-      SELECT code, builtin, enabled FROM sys_role WHERE code IN ('admin', 'sales') ORDER BY code
+    // 内置角色种子：admin 持全域授权旗标 grants_all（无通配授权行）；sales 逐码授权
+    const roles = await sql<{
+      code: string
+      builtin: boolean
+      enabled: boolean
+      grants_all: boolean
+    }>`
+      SELECT code, builtin, enabled, grants_all
+      FROM sys_role WHERE code IN ('admin', 'sales') ORDER BY code
     `.execute(db)
     expect(roles.rows.map((r) => r.code)).toEqual(['admin', 'sales'])
     expect(roles.rows.every((r) => r.builtin && r.enabled)).toBe(true)
+    expect(roles.rows.find((r) => r.code === 'admin')?.grants_all).toBe(true)
+    expect(roles.rows.find((r) => r.code === 'sales')?.grants_all).toBe(false)
 
     const adminPerms = await sql<{ permission: string }>`
       SELECT rp.permission
       FROM sys_role_permission rp JOIN sys_role r ON r.id = rp.role_id
       WHERE r.code = 'admin'
     `.execute(db)
-    expect(adminPerms.rows.map((r) => r.permission)).toEqual(['*'])
+    expect(adminPerms.rows).toEqual([])
 
-    const salesPerms = await sql<{ permission: string }>`
-      SELECT rp.permission
+    const salesPerms = await sql<{ permission: string; scope: string }>`
+      SELECT rp.permission, rp.scope
       FROM sys_role_permission rp JOIN sys_role r ON r.id = rp.role_id
       WHERE r.code = 'sales'
     `.execute(db)
     const salesSet = new Set(salesPerms.rows.map((r) => r.permission))
     expect(salesSet.size).toBe(SALES_ROLE_PERMISSIONS.length)
+    // 逐码授权一律 all 范围（三元组授权的范围 UI 见工单 13）
+    expect(new Set(salesPerms.rows.map((r) => r.scope))).toEqual(new Set(['all']))
     for (const code of SALES_ROLE_PERMISSIONS) {
       expect(salesSet.has(code)).toBe(true)
     }
@@ -324,29 +336,35 @@ run('PG 集成（setup 向导）', () => {
     '完整路径：公司+科目+示例数据 + C01 幂等 + 登录冒烟',
     async () => {
       await prepareEmptySetup()
-      const numbering = createNumberingService(db, buildNumberingCatalog(createPlatformRegistry()))
-      const base = createBaseServices(db)
-      const party = createPartyServices(db, numbering)
+      const registry = createPlatformRegistry()
+      const setupAuthz = createAuthzEnforcer(registry)
+      const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
+      const base = createBaseServices(db, registry)
+      const party = createPartyServices(db, numbering, registry)
       const owners = createOwnerRegistry()
-      const files = createFileService({ db, owners })
+      const files = createFileService({ db, owners, authz: createAuthzEnforcer(registry) })
       const hr = createHrServices(db, files, {
         employees: party.employees,
+        authz: setupAuthz,
+        registry,
       })
-      const companyAccountDefaults = createCompanyAccountDefaultService(db)
-      const inv = createInventoryServices(db, numbering)
-      const accounting = createAccountingServices(db, numbering, {
+      const companyAccountDefaults = createCompanyAccountDefaultService(db, registry)
+      const inv = createInventoryServices(db, numbering, registry)
+      const accounting = createAccountingServices(db, numbering, registry, {
         isJournalLinkedToBankRecon,
       })
-      const trading = createTradingServices(db, numbering)
+      const trading = createTradingServices(db, numbering, registry)
       const finance = createFinanceServices(db, numbering, {
         reconciliations: trading.reconciliations,
         journals: accounting.journals,
         files,
+        registry,
       })
-      const manufacturing = createManufacturingServices(db, numbering)
+      const manufacturing = createManufacturingServices(db, numbering, registry)
 
       const sample = {
         db,
+        authz: createAuthzEnforcer(registry),
         accounts: base.accounts,
         companyAccountDefaults,
         warehouses: inv.warehouses,
@@ -384,7 +402,7 @@ run('PG 集成（setup 向导）', () => {
       `.execute(db)
       await setup.activateBaseCurrency(cny.rows[0]!.id)
 
-      const actor: Actor = {
+      const actor: Actor = testActor({
         userId: first.user.id,
         username: first.user.username,
         name: first.user.name,
@@ -392,14 +410,19 @@ run('PG 集成（setup 向导）', () => {
         allCompanies: true,
         permissions: new Set(),
         companyIds: [],
+      })
+      const basePermit = (resource: string, action: string) => {
+        const decision = setupAuthz.decideFor(actor, resource, action)
+        if (decision.outcome !== 'permit') throw new Error(`夹具应当 permit：${resource}:${action}`)
+        return decision.permit
       }
-      const company = await base.companies.create(actor, {
+      const company = await base.companies.create(basePermit('basCompanies', 'create'), {
         code: 'JT',
         name: '台州京泰电气有限公司',
         shortName: '台州京泰',
         baseCurrencyId: cny.rows[0]!.id,
       })
-      await base.accounts.initializeTemplate(actor, company.id, 'small')
+      await base.accounts.initializeTemplate(basePermit('basAccounts', 'create'), company.id, 'small')
       await setup.complete(actor, 'zh-CN', true)
 
       const c01 = await sql<{ c: string }>`

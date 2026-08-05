@@ -1,5 +1,9 @@
 /**
  * 增值税发票 REST：/finance/vat-invoices/*
+ *
+ * 逐端点挂 `guard(资源, 动作)`（requireAuth 之后），handler 用 `permitOf(c)` 取凭证。
+ * S9（请求形态派生动作码）：作废/红冲共用服务实现，动作码由 `endInvoiceAction(reverseMode)`
+ * 在本文件派生——两码都已在 meta 的 actions 里声明，故 guard 不会撞 assertActionDeclared。
  */
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
@@ -7,9 +11,16 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
+import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
+import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
-import type { VatInvoice, VatInvoiceService, VatInvoiceUpdateInput } from './invoice-service.ts'
+import {
+  VAT_INVOICE_RESOURCE_NAME,
+  type VatInvoice,
+  type VatInvoiceService,
+  type VatInvoiceUpdateInput,
+} from './invoice-service.ts'
 
 const idParam = z.object({ id: z.string().uuid() })
 
@@ -252,18 +263,26 @@ function toUpdateInput(
   }
 }
 
+/** S9：作废/红冲的动作码由 reverseMode 派生（两码都在 meta 声明） */
+export function endInvoiceAction(reverseMode: boolean): string {
+  return reverseMode ? 'reverse' : 'void'
+}
+
 export function vatInvoiceRoutes(deps: {
   auth: AuthService
+  authz: AuthzEnforcer
   invoices: VatInvoiceService
 }) {
-  const { auth, invoices } = deps
+  const { auth, authz, invoices } = deps
+  const guard = (action: string) => authz.guard(VAT_INVOICE_RESOURCE_NAME, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
       '/query',
+      guard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await invoices.list(c.get('actor')!, toList(c.req.valid('json')))
+        const result = await invoices.list(permitOf(c), toList(c.req.valid('json')))
         return c.json({
           count: result.count,
           results: result.results.map(invoiceDto),
@@ -272,18 +291,20 @@ export function vatInvoiceRoutes(deps: {
     )
     .get(
       '/:id',
+      guard('read'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        const item = await invoices.get(c.get('actor')!, c.req.valid('param').id)
+        const item = await invoices.get(permitOf(c), c.req.valid('param').id)
         return c.json(invoiceDto(item))
       },
     )
     .post(
       '/',
+      guard('create'),
       zValidator('json', createSchema, validationHook),
       async (c) => {
         const body = c.req.valid('json')
-        const item = await invoices.create(c.get('actor')!, {
+        const item = await invoices.create(permitOf(c), {
           companyId: body.companyId,
           direction: body.direction,
           partyType: body.partyType,
@@ -321,13 +342,14 @@ export function vatInvoiceRoutes(deps: {
     )
     .patch(
       '/:id',
+      guard('update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', updateSchema, validationHook),
       async (c) => {
         const raw = (await c.req.json()) as Record<string, unknown>
         const body = c.req.valid('json')
         const item = await invoices.update(
-          c.get('actor')!,
+          permitOf(c),
           c.req.valid('param').id,
           toUpdateInput(body, raw),
         )
@@ -336,20 +358,22 @@ export function vatInvoiceRoutes(deps: {
     )
     .delete(
       '/:id',
+      guard('delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        await invoices.remove(c.get('actor')!, c.req.valid('param').id)
+        await invoices.remove(permitOf(c), c.req.valid('param').id)
         return c.body(null, 204)
       },
     )
     .post(
       '/:id/audit',
+      guard('audit'),
       zValidator('param', idParam, validationHook),
       zValidator('json', auditSchema, validationHook),
       async (c) => {
         const postingDate = c.req.valid('json').postingDate ?? ''
         const item = await invoices.audit(
-          c.get('actor')!,
+          permitOf(c),
           c.req.valid('param').id,
           postingDate ?? '',
         )
@@ -358,30 +382,34 @@ export function vatInvoiceRoutes(deps: {
     )
     .post(
       '/:id/void',
+      guard(endInvoiceAction(false)),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        const item = await invoices.void(c.get('actor')!, c.req.valid('param').id)
+        const item = await invoices.void(permitOf(c), c.req.valid('param').id)
         return c.json(invoiceDto(item))
       },
     )
     .post(
       '/:id/reverse',
+      guard(endInvoiceAction(true)),
       zValidator('param', idParam, validationHook),
       zValidator('json', reverseSchema, validationHook),
       async (c) => {
         const body = c.req.valid('json')
-        const item = await invoices.reverse(c.get('actor')!, c.req.valid('param').id, {
+        const item = await invoices.reverse(permitOf(c), c.req.valid('param').id, {
           postingDate: body.postingDate,
           redInvoiceNo: body.redInvoiceNo,
         })
         return c.json(invoiceDto(item))
       },
     )
+    // OCR 预填是「为建票读文件」：本资源 create ∧ 文件读（文件行级可达性归平台）
     .post(
       '/ocr',
+      guard('create'),
       zValidator('json', ocrSchema, validationHook),
       async (c) => {
-        const result = await invoices.ocr(c.get('actor')!, c.req.valid('json').fileId)
+        const result = await invoices.ocr(permitOf(c), c.req.valid('json').fileId)
         return c.json(result)
       },
     )

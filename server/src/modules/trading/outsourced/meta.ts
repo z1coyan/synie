@@ -19,6 +19,7 @@ export function outsourcedIssueMeta(): ResourceMeta {
     numbering: true,
     permissionLabel: '委外发料单',
     table: 'pur_outsourced_issue',
+    authz: { kind: 'company' },
     printHead: true,
     fields: [
       f('id', 'id', 'uuid', 'id', {"sortable": true, "readonly": true}),
@@ -57,6 +58,7 @@ export function outsourcedIssueItemMeta(): ResourceMeta {
     permissionPrefix: 'purchase.outsourced_issue',
     permissionLabel: '委外发料单',
     table: 'pur_outsourced_issue_item',
+    authz: { kind: 'via', parent: 'purOutsourcedIssues', fk: 'issue_id' },
     fields: [
       f('id', 'id', 'uuid', 'id', {"sortable": true, "readonly": true}),
       f('idx', 'idx', 'integer', '行号', {"sortable": true, "filterable": true}),
@@ -101,6 +103,7 @@ export function outsourcedReceiptMeta(): ResourceMeta {
     numbering: true,
     permissionLabel: '委外入库单',
     table: 'pur_outsourced_receipt',
+    authz: { kind: 'company' },
     printHead: true,
     fields: [
       f('id', 'id', 'uuid', 'id', {"sortable": true, "readonly": true}),
@@ -142,6 +145,7 @@ export function outsourcedReceiptItemMeta(): ResourceMeta {
     permissionPrefix: 'purchase.outsourced_receipt',
     permissionLabel: '委外入库单',
     table: 'pur_outsourced_receipt_item',
+    authz: { kind: 'via', parent: 'purOutsourcedReceipts', fk: 'receipt_id' },
     fields: [
       f('id', 'id', 'uuid', 'id', {"sortable": true, "readonly": true}),
       f('idx', 'idx', 'integer', '行号', {"sortable": true, "filterable": true}),
@@ -203,6 +207,7 @@ export function outsourcedReceiptItemMaterialMeta(): ResourceMeta {
     permissionPrefix: 'purchase.outsourced_receipt',
     permissionLabel: '委外入库单',
     table: 'pur_outsourced_receipt_item_material',
+    authz: { kind: 'via', parent: 'purOutsourcedReceiptItems', fk: 'receipt_item_id' },
     fields: [
       f('id', 'id', 'uuid', 'id', {"sortable": true, "readonly": true}),
       f('idx', 'idx', 'integer', '行号', {"sortable": true, "filterable": true}),
@@ -238,6 +243,7 @@ export function outsourcedReceiptItemByproductMeta(): ResourceMeta {
     permissionPrefix: 'purchase.outsourced_receipt',
     permissionLabel: '委外入库单',
     table: 'pur_outsourced_receipt_item_byproduct',
+    authz: { kind: 'via', parent: 'purOutsourcedReceiptItems', fk: 'receipt_item_id' },
     fields: [
       f('id', 'id', 'uuid', 'id', {"sortable": true, "readonly": true}),
       f('idx', 'idx', 'integer', '行号', {"sortable": true, "filterable": true}),

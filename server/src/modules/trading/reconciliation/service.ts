@@ -1,6 +1,14 @@
 /**
  * 销售/采购对账单：对称服务。
  * 常规：草稿→确认(占量+待办)→发票结单；赠送/样品：草稿→结单(占量+GL)→可作废。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、单条 `loadAuthorizedFrom`（与列表共用投影）、
+ * 写前取行 `loadAuthorized(forUpdate)`、create 走 `assertCompanyWritable`。
+ * `side` 只决定表/域差异，权限差异由路由选中的资源名（spec.headResource/itemResource）承载。
+ * 状态前置条件（草稿才能改等）是领域不变量，留在本文件抛 conflict。
+ * 发票联动接缝（closeFromInvoice/reopenFromInvoice/invoiceState）仍收 Actor：
+ * 调用方是 finance 的内部事务，本就不做公司判定，只用 actor 写审计。
  */
 import type { ListQuery } from '@synie/shared'
 import { decimal, roundAmount, roundBaseQty } from '@synie/shared'
@@ -16,10 +24,14 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf, mergeAuditFields } from '~/platform/audit/spec.ts'
-import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
+import type { Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
+import type { AuthzTarget } from '~/platform/meta/resource-authz.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
-import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { assertCompanyWritable, loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import {
   asDate,
@@ -28,7 +40,6 @@ import {
   ident,
   lowerParty,
   partyExists,
-  requirePerm,
   runeLen,
   toDateOnly,
   type TradingSide,
@@ -55,6 +66,18 @@ const ITEM_AUDIT = mergeAuditFields(
   auditFieldsOf(reconciliationItemMeta('sales')),
   auditFieldsOf(reconciliationItemMeta('purchase')),
 )
+
+/**
+ * 投影子查询的别名：listAuthorized / loadAuthorizedFrom 必须与 source 的 `) 别名` 逐字一致，
+ * 否则 via 链的 EXISTS 会静默算成空集。故此处单点定义，source 用 sql.raw 回填。
+ */
+const HEAD_ALIAS = 'reconciliations'
+const ITEM_ALIAS = 'reconciliation_items'
+
+/** 列表与单条共用一份 select（别名只有一处可写错） */
+const HEAD_SELECT = sql`SELECT id,reconciliation_no,reconciliation_type,party_type,party_id,
+  posting_date,remarks,status,inserted_at,updated_at,company_id,
+  debit_account_id,credit_account_id,created_by_id,gross_total,base_gross_total`
 
 type Numberer = Pick<NumberingService, 'nextInTx'>
 
@@ -83,38 +106,84 @@ export function createReconciliationService(
   db: Kysely<Database>,
   numberer: Numberer,
   gl: Pick<GlEngine, 'post' | 'cancel'>,
+  registry: Registry,
 ) {
-  async function listHeads(actor: Actor, side: TradingSide, query: Partial<ListQuery>) {
+  // 判定归宿按 side 解析：双边资源不同，权限差异全在资源名上
+  const headTargets: Record<TradingSide, AuthzTarget> = {
+    sales: registry.authzTarget(reconciliationSpec('sales').headResource),
+    purchase: registry.authzTarget(reconciliationSpec('purchase').headResource),
+  }
+  const itemTargets: Record<TradingSide, AuthzTarget> = {
+    sales: registry.authzTarget(reconciliationSpec('sales').itemResource),
+    purchase: registry.authzTarget(reconciliationSpec('purchase').itemResource),
+  }
+
+  /** 锁单头：授权取行（FOR UPDATE，不命中一律 not_found）+ 取投影 */
+  async function lockHead(
+    handle: DbHandle,
+    permit: Permit,
+    spec: ReconciliationSideSpec,
+    id: string,
+  ): Promise<Record<string, unknown>> {
+    await loadAuthorized({
+      db: handle,
+      permit,
+      target: headTargets[spec.side],
+      table: spec.table,
+      id,
+      forUpdate: true,
+      notFoundMessage: `${spec.label}不存在`,
+    })
+    const row = await queryHead(handle, spec, id)
+    if (!row) throw new ApiError('not_found', `${spec.label}不存在`)
+    return row
+  }
+
+  /** 条目的可达性经 via 链递归到母单自身的行谓词；返回裸行（写路径用） */
+  async function loadItemRow(handle: DbHandle, permit: Permit, side: TradingSide, id: string) {
+    return loadAuthorized({
+      db: handle,
+      permit,
+      target: itemTargets[side],
+      table: reconciliationSpec(side).itemTable,
+      id,
+      notFoundMessage: '对账条目不存在',
+    })
+  }
+
+  async function listHeads(permit: Permit, side: TradingSide, query: Partial<ListQuery>) {
     const spec = reconciliationSpec(side)
-    requirePerm(actor, spec.prefix, 'read', '无权限执行对账操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
-    return listFromSource({
+    return listAuthorized({
       db,
+      permit,
+      target: headTargets[side],
+      alias: HEAD_ALIAS,
       resource: reconciliationHeadMeta(side),
       source: headListSource(spec),
-      select: sql`SELECT id,reconciliation_no,reconciliation_type,party_type,party_id,
-        posting_date,remarks,status,inserted_at,updated_at,company_id,
-        debit_account_id,credit_account_id,created_by_id,gross_total,base_gross_total`,
+      select: HEAD_SELECT,
       defaultOrder: sql`"inserted_at" DESC, "id" DESC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapHeadDto(r),
     })
   }
 
-  async function getHead(actor: Actor, side: TradingSide, id: string) {
+  async function getHead(permit: Permit, side: TradingSide, id: string) {
     const spec = reconciliationSpec(side)
-    requirePerm(actor, spec.prefix, 'read', '无权限执行对账操作')
-    const row = await queryHead(db, spec, id)
-    if (!row || !canAccessCompany(actor, String(row.company_id))) {
-      throw new ApiError('not_found', `${spec.label}不存在`)
-    }
-    return mapHeadDto(row)
+    return loadAuthorizedFrom({
+      db,
+      permit,
+      target: headTargets[side],
+      alias: HEAD_ALIAS,
+      source: headListSource(spec),
+      select: HEAD_SELECT,
+      id,
+      mapRow: (r) => mapHeadDto(r),
+      notFoundMessage: `${spec.label}不存在`,
+    })
   }
 
   async function createHead(
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     input: {
       companyId: string
@@ -128,13 +197,11 @@ export function createReconciliationService(
     },
   ) {
     const spec = reconciliationSpec(side)
-    requirePerm(actor, spec.prefix, 'create', '无权限执行对账操作')
     if (!input.companyId) {
       throw ApiError.validation(`${spec.label}参数不合法`, { companyId: ['必填'] })
     }
-    if (!canAccessCompany(actor, input.companyId)) {
-      throw new ApiError('not_found', `${spec.label}不存在`)
-    }
+    // 入参校验（400）先于公司边界（404）：错误语义唯一规则只管后者
+    assertCompanyWritable(permit, input.companyId, '公司不存在')
     return withTx(db, async (trx) => {
       let debitAccountId = input.debitAccountId ?? ''
       let creditAccountId = input.creditAccountId ?? ''
@@ -177,13 +244,13 @@ export function createReconciliationService(
           ) VALUES (
             ${no}, ${kind}, ${partyType}, ${input.partyId}::uuid, ${input.remarks ?? null},
             ${input.companyId}::uuid, ${debitAccountId}::uuid, ${creditAccountId}::uuid,
-            ${actor.userId || null}::uuid
+            ${permit.actor.userId || null}::uuid
           ) RETURNING id
         `.execute(trx)
         const id = ins.rows[0]!.id
         const row = await queryHead(trx, spec, id)
         const dto = mapHeadDto(row!)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: spec.table,
           recordId: id,
           recordLabel: no,
@@ -202,7 +269,7 @@ export function createReconciliationService(
   }
 
   async function updateHead(
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     id: string,
     input: {
@@ -217,9 +284,8 @@ export function createReconciliationService(
     },
   ) {
     const spec = reconciliationSpec(side)
-    requirePerm(actor, spec.prefix, 'update', '无权限执行对账操作')
     return withTx(db, async (trx) => {
-      const before = await lockHead(trx, actor, spec, id)
+      const before = await lockHead(trx, permit, spec, id)
       if (String(before.status) !== 'draft') {
         throw new ApiError('conflict', `仅草稿${spec.label}可修改`)
       }
@@ -298,7 +364,7 @@ export function createReconciliationService(
           WHERE id=${id}::uuid
         `.execute(trx)
         const row = await queryHead(trx, spec, id)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: spec.table,
           recordId: id,
           recordLabel: no,
@@ -316,15 +382,14 @@ export function createReconciliationService(
     })
   }
 
-  async function deleteHead(actor: Actor, side: TradingSide, id: string) {
+  async function deleteHead(permit: Permit, side: TradingSide, id: string) {
     const spec = reconciliationSpec(side)
-    requirePerm(actor, spec.prefix, 'delete', '无权限执行对账操作')
     await withTx(db, async (trx) => {
-      const before = await lockHead(trx, actor, spec, id)
+      const before = await lockHead(trx, permit, spec, id)
       if (String(before.status) !== 'draft') {
         throw new ApiError('conflict', `仅草稿${spec.label}可删除`)
       }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: spec.table,
         recordId: id,
         recordLabel: String(before.reconciliation_no),
@@ -343,19 +408,17 @@ export function createReconciliationService(
     })
   }
 
-  async function confirm(actor: Actor, side: TradingSide, id: string) {
+  async function confirm(permit: Permit, side: TradingSide, id: string) {
     const spec = reconciliationSpec(side)
-    requirePerm(actor, spec.prefix, 'confirm', '无权限执行对账操作')
-    return changeState(actor, spec, id, 'draft', 'confirmed', 'regular', 'confirm', async (trx, before) => {
+    return changeState(permit, spec, id, 'draft', 'confirmed', 'regular', 'confirm', async (trx, before) => {
       await adjustProjection(trx, spec, id, 1)
-      await openTodo(trx, spec, before, actor.userId || null)
+      await openTodo(trx, spec, before, permit.actor.userId || null)
     })
   }
 
-  async function unconfirm(actor: Actor, side: TradingSide, id: string) {
+  async function unconfirm(permit: Permit, side: TradingSide, id: string) {
     const spec = reconciliationSpec(side)
-    requirePerm(actor, spec.prefix, 'unconfirm', '无权限执行对账操作')
-    return changeState(actor, spec, id, 'confirmed', 'draft', 'regular', 'unconfirm', async (trx, before) => {
+    return changeState(permit, spec, id, 'confirmed', 'draft', 'regular', 'unconfirm', async (trx, before) => {
       const column = side === 'sales' ? 'sal_reconciliation_id' : 'pur_reconciliation_id'
       const linked = await sql<{ e: boolean }>`
         SELECT EXISTS(SELECT 1 FROM acc_vat_invoice WHERE ${sql.raw(column)}=${before.id}::uuid) AS e
@@ -369,15 +432,14 @@ export function createReconciliationService(
   }
 
   async function audit(
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     id: string,
     input: { postingDate?: string | null },
   ) {
     const spec = reconciliationSpec(side)
-    requirePerm(actor, spec.prefix, 'audit', '无权限执行对账操作')
     return withTx(db, async (trx) => {
-      const before = await lockHead(trx, actor, spec, id)
+      const before = await lockHead(trx, permit, spec, id)
       if (String(before.reconciliation_type) !== 'gift_sample' || String(before.status) !== 'draft') {
         throw new ApiError('conflict', '仅草稿赠送/样品对账单可结单审核')
       }
@@ -393,7 +455,7 @@ export function createReconciliationService(
           updated_at=(now() AT TIME ZONE 'utc') WHERE id=${id}::uuid
       `.execute(trx)
       const row = await queryHead(trx, spec, id)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: spec.table,
         recordId: id,
         recordLabel: String(before.reconciliation_no),
@@ -406,10 +468,9 @@ export function createReconciliationService(
     })
   }
 
-  async function voidHead(actor: Actor, side: TradingSide, id: string) {
+  async function voidHead(permit: Permit, side: TradingSide, id: string) {
     const spec = reconciliationSpec(side)
-    requirePerm(actor, spec.prefix, 'void', '无权限执行对账操作')
-    return changeState(actor, spec, id, 'closed', 'voided', 'gift_sample', 'void', async (trx, before) => {
+    return changeState(permit, spec, id, 'closed', 'voided', 'gift_sample', 'void', async (trx, before) => {
       await gl.cancel(trx, { type: spec.voucher, id: String(before.id) })
       await adjustProjection(trx, spec, id, -1)
     })
@@ -483,35 +544,39 @@ export function createReconciliationService(
     }
   }
 
-  async function listItems(actor: Actor, side: TradingSide, query: Partial<ListQuery>) {
+  async function listItems(permit: Permit, side: TradingSide, query: Partial<ListQuery>) {
     const spec = reconciliationSpec(side)
-    requirePerm(actor, spec.prefix, 'read', '无权限执行对账操作')
-    const scope = companyScopeWhere(actor)
-    if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
-    return listFromSource({
+    return listAuthorized({
       db,
+      permit,
+      target: itemTargets[side],
+      alias: ITEM_ALIAS,
       resource: reconciliationItemMeta(side),
       source: itemListSource(spec),
       select: itemSelect(spec),
       defaultOrder: sql`"idx" ASC, "id" ASC`,
       query,
-      extraWhere: scope.where,
       mapRow: (r) => mapItemDto(side, r),
     })
   }
 
-  async function getItem(actor: Actor, side: TradingSide, id: string) {
+  async function getItem(permit: Permit, side: TradingSide, id: string) {
     const spec = reconciliationSpec(side)
-    requirePerm(actor, spec.prefix, 'read', '无权限执行对账操作')
-    const row = await queryItem(db, spec, id)
-    if (!row || !canAccessCompany(actor, String(row.company_id))) {
-      throw new ApiError('not_found', '对账条目不存在')
-    }
-    return mapItemDto(side, row)
+    return loadAuthorizedFrom({
+      db,
+      permit,
+      target: itemTargets[side],
+      alias: ITEM_ALIAS,
+      source: itemListSource(spec),
+      select: itemSelect(spec),
+      id,
+      mapRow: (r) => mapItemDto(side, r),
+      notFoundMessage: '对账条目不存在',
+    })
   }
 
   async function createItem(
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     input: {
       reconciliationId: string
@@ -524,10 +589,10 @@ export function createReconciliationService(
     },
   ) {
     const spec = reconciliationSpec(side)
-    requirePerm(actor, spec.prefix, 'create', '无权限执行对账操作')
     validateItemShape(spec, input)
     return withTx(db, async (trx) => {
-      const head = await lockHead(trx, actor, spec, input.reconciliationId)
+      // 母单先行：授权 + 行锁 + 草稿门，再写条目
+      const head = await lockHead(trx, permit, spec, input.reconciliationId)
       if (String(head.status) !== 'draft') {
         throw new ApiError('conflict', '仅草稿对账单可编辑条目')
       }
@@ -563,7 +628,7 @@ export function createReconciliationService(
           id = ins.rows[0]!.id
         }
         const row = await queryItem(trx, spec, id)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: spec.itemTable,
           recordId: id,
           recordLabel: `${String(head.reconciliation_no)}-${Number(row!.idx)}`,
@@ -580,7 +645,7 @@ export function createReconciliationService(
   }
 
   async function updateItem(
-    actor: Actor,
+    permit: Permit,
     side: TradingSide,
     id: string,
     input: {
@@ -597,11 +662,10 @@ export function createReconciliationService(
     },
   ) {
     const spec = reconciliationSpec(side)
-    requirePerm(actor, spec.prefix, 'update', '无权限执行对账操作')
     return withTx(db, async (trx) => {
-      const before = await queryItem(trx, spec, id)
-      if (!before) throw new ApiError('not_found', '对账条目不存在')
-      const head = await lockHead(trx, actor, spec, String(before.reconciliation_id))
+      // 条目经 via 链取（不可达即 not_found），再母单先行加锁
+      const before = await loadItemRow(trx, permit, side, id)
+      const head = await lockHead(trx, permit, spec, String(before.reconciliation_id))
       if (String(head.status) !== 'draft') {
         throw new ApiError('conflict', '仅草稿对账单可编辑条目')
       }
@@ -649,7 +713,7 @@ export function createReconciliationService(
         const row = await queryItem(trx, spec, id)
         const changes = auditDiff(itemSnap(before), itemSnap(row!), ITEM_AUDIT)
         if (Object.keys(changes).length > 0) {
-          await writeAudit(trx, actor, {
+          await writeAudit(trx, permit.actor, {
             resource: spec.itemTable,
             recordId: id,
             recordLabel: `${String(head.reconciliation_no)}-${Number(row!.idx)}`,
@@ -666,17 +730,15 @@ export function createReconciliationService(
     })
   }
 
-  async function deleteItem(actor: Actor, side: TradingSide, id: string) {
+  async function deleteItem(permit: Permit, side: TradingSide, id: string) {
     const spec = reconciliationSpec(side)
-    requirePerm(actor, spec.prefix, 'delete', '无权限执行对账操作')
     await withTx(db, async (trx) => {
-      const before = await queryItem(trx, spec, id)
-      if (!before) throw new ApiError('not_found', '对账条目不存在')
-      const head = await lockHead(trx, actor, spec, String(before.reconciliation_id))
+      const before = await loadItemRow(trx, permit, side, id)
+      const head = await lockHead(trx, permit, spec, String(before.reconciliation_id))
       if (String(head.status) !== 'draft') {
         throw new ApiError('conflict', '仅草稿对账单可编辑条目')
       }
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: spec.itemTable,
         recordId: id,
         recordLabel: `${String(head.reconciliation_no)}-${Number(before.idx)}`,
@@ -690,7 +752,7 @@ export function createReconciliationService(
   }
 
   async function changeState(
-    actor: Actor,
+    permit: Permit,
     spec: ReconciliationSideSpec,
     id: string,
     from: ReconciliationStatus,
@@ -700,7 +762,7 @@ export function createReconciliationService(
     effect: (trx: TrxHandle, before: Record<string, unknown>) => Promise<void>,
   ) {
     return withTx(db, async (trx) => {
-      const before = await lockHead(trx, actor, spec, id)
+      const before = await lockHead(trx, permit, spec, id)
       if (String(before.status) !== from || String(before.reconciliation_type) !== kind) {
         throw new ApiError('conflict', '对账单当前状态不允许执行该动作')
       }
@@ -716,7 +778,7 @@ export function createReconciliationService(
         throw new ApiError('conflict', '对账单已被并发处理')
       }
       const row = await queryHead(trx, spec, id)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: spec.table,
         recordId: id,
         recordLabel: String(before.reconciliation_no),
@@ -815,7 +877,7 @@ function headListSource(spec: ReconciliationSideSpec) {
     FROM ${ident(spec.table)} h
     LEFT JOIN ${ident(spec.itemTable)} i ON i.reconciliation_id=h.id
     GROUP BY h.id
-  ) reconciliations`
+  ) ${sql.raw(HEAD_ALIAS)}`
 }
 
 function itemSelect(spec: ReconciliationSideSpec) {
@@ -840,7 +902,7 @@ function itemListSource(spec: ReconciliationSideSpec) {
       JOIN sal_reconciliation r ON r.id=ri.reconciliation_id
       JOIN sal_delivery_item i ON i.id=ri.delivery_item_id
       JOIN sal_delivery h ON h.id=i.delivery_id
-    ) reconciliation_items`
+    ) ${sql.raw(ITEM_ALIAS)}`
   }
   return sql` FROM (
     SELECT ri.id,ri.idx,ri.qty,ri.base_qty,ri.amount,ri.base_amount,ri.remarks,
@@ -858,17 +920,14 @@ function itemListSource(spec: ReconciliationSideSpec) {
     LEFT JOIN pur_receipt sh ON sh.id=si.receipt_id
     LEFT JOIN pur_outsourced_receipt_item oi ON oi.id=ri.outsourced_receipt_item_id
     LEFT JOIN pur_outsourced_receipt oh ON oh.id=oi.receipt_id
-  ) reconciliation_items`
+  ) ${sql.raw(ITEM_ALIAS)}`
 }
 
 // ---- query helpers ----
 
 async function queryHead(db: DbHandle, spec: ReconciliationSideSpec, id: string) {
   const rows = await sql<Record<string, unknown>>`
-    SELECT id,reconciliation_no,reconciliation_type,party_type,party_id,
-      posting_date,remarks,status,inserted_at,updated_at,company_id,
-      debit_account_id,credit_account_id,created_by_id,gross_total,base_gross_total
-    ${headListSource(spec)} WHERE id=${id}::uuid
+    ${HEAD_SELECT}${headListSource(spec)} WHERE id=${id}::uuid
   `.execute(db)
   return rows.rows[0] ?? null
 }
@@ -878,24 +937,6 @@ async function queryItem(db: DbHandle, spec: ReconciliationSideSpec, id: string)
     ${itemSelect(spec)}${itemListSource(spec)} WHERE id=${id}::uuid
   `.execute(db)
   return rows.rows[0] ?? null
-}
-
-async function lockHead(
-  db: DbHandle,
-  actor: Actor,
-  spec: ReconciliationSideSpec,
-  id: string,
-): Promise<Record<string, unknown>> {
-  const lock = await sql<{ company_id: string }>`
-    SELECT company_id FROM ${ident(spec.table)} WHERE id=${id}::uuid FOR UPDATE
-  `.execute(db)
-  if (!lock.rows[0]) throw new ApiError('not_found', `${spec.label}不存在`)
-  if (!canAccessCompany(actor, lock.rows[0].company_id)) {
-    throw new ApiError('not_found', `${spec.label}不存在`)
-  }
-  const row = await queryHead(db, spec, id)
-  if (!row) throw new ApiError('not_found', `${spec.label}不存在`)
-  return row
 }
 
 async function requireItems(db: DbHandle, spec: ReconciliationSideSpec, id: string) {

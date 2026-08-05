@@ -1,17 +1,22 @@
 import { unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ListQuery } from '@synie/shared'
-import { sql, type Expression, type Kysely, type SqlBool } from 'kysely'
-import { buildListQuery } from '~/db/filterbuild.ts'
-import { toReadSpec } from '~/platform/meta/read-spec.ts'
+import { sql, type Kysely } from 'kysely'
+import { conjunction } from '~/db/authz-sql.ts'
+import { listFromSource } from '~/db/list.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import { auditCreated, auditDestroyed, writeAudit } from '../audit/write.ts'
 import { auditFieldsOf } from '../audit/spec.ts'
-import { canAccessCompany, hasPermission, requirePermission, type Actor } from '../authz/actor.ts'
+import type { Actor, Permit } from '../authz/core/index.ts'
+import type { AuthzEnforcer } from '../authz/enforce.ts'
 import { ApiError } from '../http/errors.ts'
-import { fileResourceMeta } from './meta.ts'
+import {
+  ATTACHMENT_RESOURCE_NAME,
+  FILE_RESOURCE_NAME,
+  attachmentResourceMeta,
+  fileResourceMeta,
+} from './meta.ts'
 import {
   createLocalStorage,
   createS3Storage,
@@ -20,7 +25,14 @@ import {
   safeExtension,
   type ObjectStorage,
 } from './object-storage.ts'
-import { resolveOwner, type OwnerRegistry } from './owner-registry.ts'
+import type { OwnerRegistry } from './owner-registry.ts'
+import {
+  fileReachableWhere,
+  loadReachableFile,
+  ownerReachableWhere,
+  resolveOwner,
+  type ReachabilityDeps,
+} from './reachability.ts'
 import type {
   AttachInput,
   Attachment,
@@ -35,84 +47,94 @@ import type {
 } from './types.ts'
 
 const MAX_UPLOAD_SIZE = 50 << 20
-const FILE_AUDIT_FIELDS = auditFieldsOf(fileResourceMeta())
-// sys_attachment 无 ResourceMeta（附件不进 Catalog，挂 owner 资源展示），白名单暂留手抄；
-// 若将来为附件建 meta，此清单应改吃 auditFieldsOf。
-const ATTACHMENT_AUDIT_FIELDS = ['file_id', 'owner_type', 'owner_id', 'category', 'company_id'] as const
+const FILE_META = fileResourceMeta()
+const FILE_AUDIT_FIELDS = auditFieldsOf(FILE_META)
+const ATTACHMENT_AUDIT_FIELDS = auditFieldsOf(attachmentResourceMeta())
 
 export interface FileServiceDeps {
   db: Kysely<Database>
   owners: OwnerRegistry
+  /** 判定入口：文件/挂接自身的归宿解析 + 多态宿主的 read 凭证 */
+  authz: Pick<AuthzEnforcer, 'decideFor' | 'targetOf'>
 }
 
 export function createFileService(deps: FileServiceDeps) {
-  const { db, owners } = deps
+  const { db, owners, authz } = deps
+  const reach: ReachabilityDeps = { owners, authz }
+  const fileTarget = authz.targetOf(FILE_RESOURCE_NAME)
+  const attachmentTarget = authz.targetOf(ATTACHMENT_RESOURCE_NAME)
 
-  async function get(actor: Actor, id: string): Promise<StoredFile> {
-    requirePermission(actor, 'sys.file:read')
-    return loadFile(id)
+  async function get(permit: Permit, id: string): Promise<StoredFile> {
+    return mapFile(await loadReachable(db, permit, id))
   }
 
-  /** 跨模块受信任读：鉴权由调用方业务能力码覆盖，不检 sys.file */
+  /** 平台判定 + 行锁的文件取行；不命中 not_found（不区分不存在与不可达） */
+  async function loadReachable(
+    handle: DbHandle,
+    permit: Permit,
+    id: string,
+    options?: { forUpdate?: boolean },
+  ): Promise<FileRow> {
+    const row = await loadReachableFile(handle, reach, permit, fileTarget.root, id, options)
+    return row as unknown as FileRow
+  }
+
+  /** 跨模块受信任读（打印模板/导入回读）：鉴权由调用方业务能力码覆盖，不判文件可达性 */
   async function readStoredFile(id: string): Promise<{ file: StoredFile; content: Uint8Array }> {
-    const file = await loadFile(id)
+    const row = await db.selectFrom('sys_file').selectAll().where('id', '=', id).executeTakeFirst()
+    if (!row) throw new ApiError('not_found', '文件不存在')
+    const file = mapFile(row)
+    return { file, content: await readObject(file) }
+  }
+
+  /**
+   * 跨域读文件内容（OCR 等）：文件可达性走平台判定——
+   * 码不满足 forbidden，行级不可达 not_found。取代各域自造的 requireAccessibleFile。
+   */
+  async function readReachableFile(
+    actor: Actor,
+    id: string,
+  ): Promise<{ file: StoredFile; content: Uint8Array }> {
+    const decision = authz.decideFor(actor, FILE_RESOURCE_NAME, 'read')
+    if (decision.outcome === 'deny') throw new ApiError('forbidden', '无权限读取文件')
+    const file = mapFile(await loadReachable(db, decision.permit, id))
+    return { file, content: await readObject(file) }
+  }
+
+  async function readObject(file: StoredFile): Promise<Uint8Array> {
     const store = await objectStorageByName(db, file.storage)
     try {
-      const content = await store.read(file.key)
-      return { file, content }
+      return await store.read(file.key)
     } catch (err) {
       if (err === ERR_OBJECT_NOT_FOUND) throw new ApiError('not_found', '文件对象缺失')
       throw new ApiError('internal', '读取文件对象失败', { cause: err })
     }
   }
 
-  async function loadFile(id: string): Promise<StoredFile> {
-    const row = await db
-      .selectFrom('sys_file')
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst()
-    if (!row) throw new ApiError('not_found', '文件不存在')
-    return mapFile(row)
+  /** 文件行可达谓词（列表/单条共用同一实现） */
+  function reachableWhere(permit: Permit) {
+    return fileReachableWhere(reach, permit, fileTarget.root, 'sys_file')
   }
 
-  async function list(actor: Actor, query: FileListQuery): Promise<FileList> {
-    requirePermission(actor, 'sys.file:read')
-    const limit = query.limit === undefined || query.limit === 0 ? 20 : query.limit
-    const offset = query.offset ?? 0
-    if (limit < 1 || limit > 200 || offset < 0) {
-      throw ApiError.validation('分页参数不合法', { limit: ['必须在 1 到 200 之间'] })
-    }
-    const listQuery: ListQuery = {
-      limit,
-      offset,
-      search: query.search,
-      sort: query.sort,
-      filter: query.filter,
-    }
-    const built = buildListQuery(toReadSpec(fileResourceMeta()), listQuery)
-
-    let countQ = db.selectFrom('sys_file').select(db.fn.countAll<string>().as('count'))
-    if (built.where) countQ = countQ.where(built.where as Expression<SqlBool>)
-    const countRow = await countQ.executeTakeFirstOrThrow()
-    const count = Number(countRow.count)
-
-    let rowsQ = db.selectFrom('sys_file').selectAll()
-    if (built.where) rowsQ = rowsQ.where(built.where as Expression<SqlBool>)
-    if (built.orderBy) {
-      // filterbuild 产出参数化 ORDER BY 片段（含方向）
-      rowsQ = rowsQ.orderBy(built.orderBy as never).orderBy('id')
-    } else {
-      rowsQ = rowsQ.orderBy('inserted_at', 'desc').orderBy('id')
-    }
-    const rows = await rowsQ.limit(limit).offset(offset).execute()
-    return { count, results: rows.map(mapFile) }
+  async function list(permit: Permit, query: FileListQuery): Promise<FileList> {
+    return listFromSource<StoredFile>({
+      db,
+      resource: FILE_META,
+      source: sql`FROM sys_file`,
+      select: sql`SELECT sys_file.*`,
+      defaultOrder: sql`"inserted_at" DESC, "id" ASC`,
+      query,
+      extraWhere: reachableWhere(permit),
+      mapRow: (row) => mapFile(row as unknown as FileRow),
+    })
   }
 
-  async function upload(actor: Actor, input: UploadInput): Promise<UploadResult> {
-    if (!hasPermission(actor, 'sys.file:create')) {
-      throw new ApiError('forbidden', '无权限上传文件')
-    }
+  /**
+   * 上传（含可选的即时挂接）。挂接与文件同码（sys_attachment 声明 via sysFiles），
+   * 故一张 create 凭证即可；宿主可达性由 resolveOwner 判定。
+   */
+  async function upload(permit: Permit, input: UploadInput): Promise<UploadResult> {
+    const actor = permit.actor
     const filename = input.filename.trim()
     if (!filename || [...filename].length > 255) {
       throw ApiError.validation('上传参数不合法', {
@@ -154,7 +176,7 @@ export function createFileService(deps: FileServiceDeps) {
       const result = await withTx(db, async (trx) => {
         let companyId: string | null = null
         if (hasOwnerId) {
-          companyId = await resolveOwner(trx, owners, actor, input.ownerType!.trim(), input.ownerId!)
+          companyId = await resolveOwner(trx, reach, actor, input.ownerType!.trim(), input.ownerId!)
         }
         const contentType = nullableString(input.contentType)
         const inserted = await trx
@@ -166,6 +188,7 @@ export function createFileService(deps: FileServiceDeps) {
             content_type: contentType,
             size,
             sha256,
+            // 属主列即 sys_file 的 authz owner 绑定（self 范围的判定基准）
             uploaded_by_id: actor.userId,
           })
           .returningAll()
@@ -202,25 +225,20 @@ export function createFileService(deps: FileServiceDeps) {
     }
   }
 
-  async function attach(actor: Actor, fileId: string, input: AttachInput): Promise<Attachment> {
-    if (!hasPermission(actor, 'sys.file:read') || !hasPermission(actor, 'sys.file:create')) {
-      throw new ApiError('forbidden', '无权限挂接文件')
-    }
+  /**
+   * 挂接已有文件到业务宿主：文件侧走同一份可达性判定
+   * （孤儿文件即「本人上传」，已挂接文件随其宿主），宿主侧走 resolveOwner。
+   */
+  async function attach(permit: Permit, fileId: string, input: AttachInput): Promise<Attachment> {
     if (!input.ownerType.trim() || !input.ownerId.trim()) {
       throw ApiError.validation('缺少附件宿主参数', { owner: ['ownerType 与 ownerId 必填'] })
     }
+    const actor = permit.actor
     return withTx(db, async (trx) => {
-      const row = await trx
-        .selectFrom('sys_file')
-        .select(['uploaded_by_id'])
-        .where('id', '=', fileId)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!row) throw new ApiError('not_found', '文件不存在或无权访问')
-      if (!actor.superAdmin && row.uploaded_by_id !== actor.userId) {
-        throw new ApiError('forbidden', '仅能挂接本人上传的文件')
-      }
-      const companyId = await resolveOwner(trx, owners, actor, input.ownerType.trim(), input.ownerId)
+      await loadReachableFile(trx, reach, permit, attachmentTarget.root, fileId, {
+        forUpdate: true,
+      })
+      const companyId = await resolveOwner(trx, reach, actor, input.ownerType.trim(), input.ownerId)
       return createAttachment(
         trx,
         actor,
@@ -233,26 +251,20 @@ export function createFileService(deps: FileServiceDeps) {
     })
   }
 
-  async function listAttachments(actor: Actor, query: AttachmentQuery): Promise<AttachmentList> {
-    if (!hasPermission(actor, 'sys.file:read')) {
-      throw new ApiError('forbidden', '无权限读取附件')
-    }
+  async function listAttachments(permit: Permit, query: AttachmentQuery): Promise<AttachmentList> {
     const limit = query.limit === undefined || query.limit === 0 ? 200 : query.limit
     const offset = query.offset ?? 0
     if (limit < 1 || limit > 200 || offset < 0) {
       throw ApiError.validation('分页参数不合法', { limit: ['必须在 1 到 200 之间'] })
     }
 
-    const conditions: ReturnType<typeof sql>[] = [sql`1=1`]
+    // 可达性即「宿主行本身可见」；已按 owner_type 过滤时只编译该宿主类型的谓词
+    const conditions = [ownerReachableWhere(reach, permit.actor, 'a', query.ownerType)]
     if (query.fileId) conditions.push(sql`a.file_id = ${query.fileId}::uuid`)
     if (query.ownerType) conditions.push(sql`a.owner_type = ${query.ownerType}`)
     if (query.ownerId) conditions.push(sql`a.owner_id = ${query.ownerId}::uuid`)
     if (query.category) conditions.push(sql`a.category = ${query.category}`)
-    if (!actor.superAdmin && !actor.allCompanies) {
-      const ids = actor.companyIds
-      conditions.push(sql`(a.company_id IS NULL OR a.company_id = ANY(${ids}::uuid[]))`)
-    }
-    const where = sql.join(conditions, sql` AND `)
+    const where = conjunction(conditions)
 
     const countResult = await sql<{ count: string }>`
       SELECT count(*)::text AS count
@@ -315,31 +327,8 @@ export function createFileService(deps: FileServiceDeps) {
     return { count, results }
   }
 
-  async function download(actor: Actor, id: string): Promise<DownloadResult> {
-    if (!hasPermission(actor, 'sys.file:read')) {
-      throw new ApiError('forbidden', '无权限下载文件')
-    }
-    const file = await loadFile(id)
-    const attachments = await db
-      .selectFrom('sys_attachment')
-      .select(['owner_type', 'company_id'])
-      .where('file_id', '=', id)
-      .execute()
-
-    let allowed = false
-    if (attachments.length === 0) {
-      allowed = actor.superAdmin || file.uploadedById === actor.userId
-    } else {
-      for (const row of attachments) {
-        const spec = owners.lookup(row.owner_type)
-        if (!spec || !hasPermission(actor, `${spec.permissionPrefix}:read`)) continue
-        if (row.company_id === null || canAccessCompany(actor, row.company_id)) {
-          allowed = true
-          break
-        }
-      }
-    }
-    if (!allowed) throw new ApiError('forbidden', '无权下载该文件')
+  async function download(permit: Permit, id: string): Promise<DownloadResult> {
+    const file = mapFile(await loadReachable(db, permit, id))
 
     const store = await objectStorageByName(db, file.storage)
     try {
@@ -367,21 +356,25 @@ export function createFileService(deps: FileServiceDeps) {
     }
   }
 
-  async function deleteAttachment(actor: Actor, id: string): Promise<void> {
-    if (!hasPermission(actor, 'sys.file:delete')) {
-      throw new ApiError('forbidden', '无权限删除附件')
-    }
+  async function deleteAttachment(permit: Permit, id: string): Promise<void> {
+    const actor = permit.actor
     await withTx(db, async (trx) => {
-      const row = await trx
-        .selectFrom('sys_attachment')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
+      // 行锁 + 可达性一次取行；不可达（含跨公司宿主）一律 not_found
+      const locked = await sql<{
+        id: string
+        file_id: string
+        owner_type: string
+        owner_id: string
+        category: string
+        company_id: string | null
+        inserted_at: Date | string
+      }>`
+        SELECT a.* FROM sys_attachment AS a
+        WHERE a.id = ${id}::uuid AND ${ownerReachableWhere(reach, actor, 'a')}
+        FOR UPDATE
+      `.execute(trx)
+      const row = locked.rows[0]
       if (!row) throw new ApiError('not_found', '附件不存在')
-      if (row.company_id !== null && !canAccessCompany(actor, row.company_id)) {
-        throw new ApiError('forbidden', '无权限删除其他公司的附件')
-      }
       await trx.deleteFrom('sys_attachment').where('id', '=', id).execute()
       const value: Attachment = {
         id: row.id,
@@ -403,19 +396,10 @@ export function createFileService(deps: FileServiceDeps) {
     })
   }
 
-  async function deleteFile(actor: Actor, id: string): Promise<void> {
-    if (!hasPermission(actor, 'sys.file:delete')) {
-      throw new ApiError('forbidden', '无权限删除文件')
-    }
+  async function deleteFile(permit: Permit, id: string): Promise<void> {
+    const actor = permit.actor
     const { file, storageName } = await withTx(db, async (trx) => {
-      const row = await trx
-        .selectFrom('sys_file')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!row) throw new ApiError('not_found', '文件不存在')
-      const fileRow = mapFile(row)
+      const fileRow = mapFile(await loadReachable(trx, permit, id, { forUpdate: true }))
 
       const attachCount = await trx
         .selectFrom('sys_attachment')
@@ -465,6 +449,7 @@ export function createFileService(deps: FileServiceDeps) {
   return {
     get,
     readStoredFile,
+    readReachableFile,
     list,
     upload,
     attach,
@@ -594,7 +579,7 @@ function toObjectStorage(row: {
   }
 }
 
-function mapFile(row: {
+interface FileRow {
   id: string
   storage: string
   key: string
@@ -604,7 +589,9 @@ function mapFile(row: {
   sha256: string | null
   inserted_at: Date | string
   uploaded_by_id: string | null
-}): StoredFile {
+}
+
+function mapFile(row: FileRow): StoredFile {
   return {
     id: row.id,
     storage: row.storage,

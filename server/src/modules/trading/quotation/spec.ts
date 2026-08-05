@@ -130,6 +130,7 @@ export function quotationHeadMeta(side: TradingSide): ResourceMeta {
     numbering: true,
     permissionLabel: spec.label,
     table: spec.headTable,
+    authz: { kind: 'company' },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('quotation_no', 'quotationNo', 'string', '报价单号', {
@@ -240,6 +241,7 @@ export function quotationItemMeta(side: TradingSide): ResourceMeta {
     permissionPrefix: spec.prefix,
     permissionLabel: spec.label,
     table: spec.itemTable,
+    authz: { kind: 'via', parent: spec.headResource, fk: 'quotation_id' },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('idx', 'idx', 'integer', '行号', { required: true, filterable: true, sortable: true }),
@@ -394,6 +396,7 @@ export function quotationTierMeta(side: TradingSide): ResourceMeta {
     permissionPrefix: spec.prefix,
     permissionLabel: spec.label,
     table: spec.tierTable,
+    authz: { kind: 'via', parent: spec.itemResource, fk: 'item_id' },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('min_qty', 'minQty', 'decimal', '起订量(≥ 该量适用本档价)', {

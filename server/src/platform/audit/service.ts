@@ -1,12 +1,21 @@
+/**
+ * 审计日志查询（可空公司列）。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
+ * 「全局事件（company_id IS NULL）所有人可见」由 meta 的 `nullable: true` 声明给出，
+ * 编译形态即 `(col IS NULL OR col = ANY($ids))`——手滚 NULL-admitting 变体收编。
+ */
 import type { ListQuery } from '@synie/shared'
 import { sql, type Expression, type Kysely, type SqlBool } from 'kysely'
 import { buildListQuery } from '~/db/filterbuild.ts'
 import { toReadSpec } from '~/platform/meta/read-spec.ts'
 import type { DB as Database } from '~/db/types.ts'
-import type { Actor } from '../authz/actor.ts'
-import { companyFilter, hasPermission } from '../authz/actor.ts'
+import { compileRowFilter } from '~/db/authz-sql.ts'
+import { loadAuthorized } from '~/db/load.ts'
+import type { Permit } from '../authz/core/index.ts'
 import { ApiError } from '../http/errors.ts'
-import { auditLogResourceMeta } from './meta.ts'
+import type { Registry } from '../meta/registry.ts'
+import { AUDIT_LOG_RESOURCE_NAME, auditLogResourceMeta } from './meta.ts'
 
 export interface AuditLog {
   id: string
@@ -22,21 +31,25 @@ export interface AuditLog {
   insertedAt: Date
 }
 
-export function createAuditService(db: Kysely<Database>) {
-  async function get(actor: Actor, id: string): Promise<AuditLog> {
-    requireRead(actor)
-    const row = await db.selectFrom('sys_audit_log').selectAll().where('id', '=', id).executeTakeFirst()
-    if (!row) throw new ApiError('not_found', '审计日志不存在')
-    const value = mapLog(row)
-    assertCompanyAccess(actor, value.companyId)
-    return value
+export function createAuditService(db: Kysely<Database>, registry: Registry) {
+  const target = registry.authzTarget(AUDIT_LOG_RESOURCE_NAME)
+
+  async function get(permit: Permit, id: string): Promise<AuditLog> {
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target,
+      table: 'sys_audit_log',
+      id,
+      notFoundMessage: '审计日志不存在',
+    })
+    return mapLog(row as never)
   }
 
   async function list(
-    actor: Actor,
+    permit: Permit,
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: AuditLog[] }> {
-    requireRead(actor)
     // 对齐 server-go systemops：Audit 默认 limit=50
     const limit = query.limit === undefined || query.limit === 0 ? 50 : query.limit
     const offset = query.offset ?? 0
@@ -51,19 +64,16 @@ export function createAuditService(db: Kysely<Database>) {
       filter: query.filter,
     })
 
-    const scope = companyFilter(actor)
-    const scopeClause = scope.bypass
-      ? null
-      : sql`(company_id IS NULL OR company_id = ANY(${[...scope.ids]}::uuid[]))`
+    const scopeClause = compileRowFilter(permit, target, 'sys_audit_log')
 
     let countQ = db.selectFrom('sys_audit_log').select(db.fn.countAll<string>().as('count'))
     if (built.where) countQ = countQ.where(built.where as Expression<SqlBool>)
-    if (scopeClause) countQ = countQ.where(scopeClause as Expression<SqlBool>)
+    countQ = countQ.where(scopeClause as Expression<SqlBool>)
     const count = Number((await countQ.executeTakeFirstOrThrow()).count)
 
     let rowsQ = db.selectFrom('sys_audit_log').selectAll()
     if (built.where) rowsQ = rowsQ.where(built.where as Expression<SqlBool>)
-    if (scopeClause) rowsQ = rowsQ.where(scopeClause as Expression<SqlBool>)
+    rowsQ = rowsQ.where(scopeClause as Expression<SqlBool>)
     if (built.orderBy) rowsQ = rowsQ.orderBy(built.orderBy as never).orderBy('id')
     else rowsQ = rowsQ.orderBy('inserted_at', 'desc').orderBy('id')
     const rows = await rowsQ.limit(limit).offset(offset).execute()
@@ -74,22 +84,6 @@ export function createAuditService(db: Kysely<Database>) {
 }
 
 export type AuditService = ReturnType<typeof createAuditService>
-
-function requireRead(actor: Actor): void {
-  if (!hasPermission(actor, 'sys.audit_log:read')) {
-    throw new ApiError('forbidden', '无权限执行该操作')
-  }
-}
-
-function assertCompanyAccess(actor: Actor, companyId: string | null): void {
-  if (companyId === null) return
-  const scope = companyFilter(actor)
-  if (scope.bypass) return
-  // 公司隔离 fail-closed：无权当「不存在」，对齐 server-go systemops
-  if (!scope.ids.includes(companyId)) {
-    throw new ApiError('not_found', '审计日志不存在')
-  }
-}
 
 function mapLog(row: {
   id: string

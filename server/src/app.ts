@@ -26,7 +26,8 @@ import {
   payrollRoutes,
   type HrServices,
 } from './modules/hr/index.ts'
-import { iamRoleRoutes, iamUserRoutes } from './modules/iam/index.ts'
+import { iamDepartmentRoutes, iamRoleRoutes, iamUserRoutes } from './modules/iam/index.ts'
+import type { DepartmentService } from './modules/iam/index.ts'
 import type { IamService } from './modules/iam/service.ts'
 import {
   customerRoutes,
@@ -53,10 +54,19 @@ import type {
   StockCountService,
   StockEntryService,
 } from './modules/inventory/index.ts'
-import { tradingRouteMounts, type TradingServices } from './modules/trading/index.ts'
-import { scmRouteMounts, type ScmServices } from './modules/scm/index.ts'
-import { manufacturingRoutes, type ManufacturingServices } from './modules/manufacturing/index.ts'
 import {
+  SALES_RESOURCE_NAME,
+  tradingRouteMounts,
+  type TradingServices,
+} from './modules/trading/index.ts'
+import { scmRouteMounts, type ScmServices } from './modules/scm/index.ts'
+import {
+  MFG_RESOURCE_NAME,
+  manufacturingRoutes,
+  type ManufacturingServices,
+} from './modules/manufacturing/index.ts'
+import {
+  ACC_RESOURCE_NAME,
   vatInvoiceRoutes,
   bankAccountRoutes,
   bankTransactionRoutes,
@@ -94,6 +104,7 @@ import type { SettingsService } from './platform/settings/service.ts'
 import { printingRoutes, systemPrintingRoutes } from './platform/printing/routes.ts'
 import type { PrintingService } from './platform/printing/service.ts'
 import { todoRoutes, type TodoService } from './platform/todo/index.ts'
+import type { AuthzEnforcer } from './platform/authz/enforce.ts'
 import { setupRoutes, type SetupService } from './platform/setup/index.ts'
 
 /**
@@ -108,6 +119,8 @@ export interface AppDeps {
   /** Logto OIDC 是否启用（env 三件套齐备）；透出到 setup status 供登录页判断 */
   logtoEnabled: boolean
   registry: Registry
+  /** 授权执行面（guard / decideFor / targetOf）；由 registry 派生 */
+  authz: AuthzEnforcer
   settings: SettingsService
   numbering: NumberingService
   files: FileService
@@ -120,6 +133,8 @@ export interface AppDeps {
   accounts: AccountService
   market: MarketService
   iam: IamService
+  /** 部门（组织树主数据）；新授权体系首个 guard/Permit 消费者 */
+  departments: DepartmentService
   customers: CustomerService
   suppliers: SupplierService
   employees: EmployeeService
@@ -206,20 +221,39 @@ export function buildApp(deps: AppDeps) {
     .route('/auth', authRoutes(deps.auth))
     .on(['GET', 'POST'], '/auth/*', (c) => deps.betterAuth.handler(c.req.raw))
     .route('/meta', metaRoutes(deps.registry, deps.auth))
-    .route('/settings', settingsRoutes({ auth: deps.auth, settings: deps.settings }))
-    .route('/system/numbering', numberingRoutes({ auth: deps.auth, numbering: deps.numbering }))
-    .route('/files', fileRoutes({ auth: deps.auth, files: deps.files }))
-    .route('/system/storages', storageRoutes({ auth: deps.auth, storages: deps.storages }))
-    .route('/system/audit-logs', auditRoutes({ auth: deps.auth, audit: deps.audit }))
+    .route(
+      '/settings',
+      settingsRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        settings: deps.settings,
+        resources: {
+          sales: SALES_RESOURCE_NAME,
+          manufacturing: MFG_RESOURCE_NAME,
+          accounting: ACC_RESOURCE_NAME,
+        },
+      }),
+    )
+    .route('/system/numbering', numberingRoutes({ auth: deps.auth, authz: deps.authz, numbering: deps.numbering }))
+    .route('/files', fileRoutes({ auth: deps.auth, authz: deps.authz, files: deps.files }))
+    .route(
+      '/system/storages',
+      storageRoutes({ auth: deps.auth, authz: deps.authz, storages: deps.storages }),
+    )
+    .route('/system/audit-logs', auditRoutes({ auth: deps.auth, authz: deps.authz, audit: deps.audit }))
     .route(
       '/system/printing',
-      systemPrintingRoutes({ auth: deps.auth, printing: deps.printing }),
+      systemPrintingRoutes({ auth: deps.auth, authz: deps.authz, printing: deps.printing }),
     )
-    .route('/printing', printingRoutes({ auth: deps.auth, printing: deps.printing }))
+    .route(
+      '/printing',
+      printingRoutes({ auth: deps.auth, authz: deps.authz, printing: deps.printing }),
+    )
     .route(
       '/base',
       baseRoutes({
         auth: deps.auth,
+        authz: deps.authz,
         currencies: deps.currencies,
         companies: deps.companies,
         units: deps.units,
@@ -230,6 +264,7 @@ export function buildApp(deps: AppDeps) {
       '/base/market-instruments',
       marketInstrumentRoutes({
         auth: deps.auth,
+        authz: deps.authz,
         market: deps.market,
       }),
     )
@@ -237,47 +272,53 @@ export function buildApp(deps: AppDeps) {
       '/base/market-price-points',
       marketPricePointRoutes({
         auth: deps.auth,
+        authz: deps.authz,
         market: deps.market,
       }),
     )
-    .route('/system/users', iamUserRoutes({ auth: deps.auth, iam: deps.iam }))
-    .route('/system/roles', iamRoleRoutes({ auth: deps.auth, iam: deps.iam }))
-    .route('/base/customers', customerRoutes({ auth: deps.auth, customers: deps.customers }))
-    .route('/base/suppliers', supplierRoutes({ auth: deps.auth, suppliers: deps.suppliers }))
+    .route('/system/users', iamUserRoutes({ auth: deps.auth, authz: deps.authz, iam: deps.iam }))
+    .route(
+      '/system/departments',
+      iamDepartmentRoutes({ auth: deps.auth, authz: deps.authz, departments: deps.departments }),
+    )
+    .route('/system/roles', iamRoleRoutes({ auth: deps.auth, authz: deps.authz, iam: deps.iam }))
+    .route('/base/customers', customerRoutes({ auth: deps.auth, authz: deps.authz, customers: deps.customers }))
+    .route('/base/suppliers', supplierRoutes({ auth: deps.auth, authz: deps.authz, suppliers: deps.suppliers }))
     .route(
       '/base/party-addresses',
-      partyAddressRoutes({ auth: deps.auth, addresses: deps.partyAddresses }),
+      partyAddressRoutes({ auth: deps.auth, authz: deps.authz, addresses: deps.partyAddresses }),
     )
-    .route('/hr/employees', employeeRoutes({ auth: deps.auth, employees: deps.employees }))
+    .route('/hr/employees', employeeRoutes({ auth: deps.auth, authz: deps.authz, employees: deps.employees }))
     .route(
       '/hr/attendance-punches',
-      attendancePunchRoutes({ auth: deps.auth, attendance: deps.hr.attendance }),
+      attendancePunchRoutes({ auth: deps.auth, authz: deps.authz, attendance: deps.hr.attendance }),
     )
     .route(
       '/hr/attendance-imports',
-      attendanceImportRoutes({ auth: deps.auth, attendance: deps.hr.attendance }),
+      attendanceImportRoutes({ auth: deps.auth, authz: deps.authz, attendance: deps.hr.attendance }),
     )
     .route(
       '/hr/attendance-days',
-      attendanceDayRoutes({ auth: deps.auth, attendance: deps.hr.attendance }),
+      attendanceDayRoutes({ auth: deps.auth, authz: deps.authz, attendance: deps.hr.attendance }),
     )
     .route(
       '/hr/attendance-corrections',
-      attendanceCorrectionRoutes({ auth: deps.auth, attendance: deps.hr.attendance }),
+      attendanceCorrectionRoutes({ auth: deps.auth, authz: deps.authz, attendance: deps.hr.attendance }),
     )
-    .route('/hr/payrolls', payrollRoutes({ auth: deps.auth, payroll: deps.hr.payroll }))
+    .route('/hr/payrolls', payrollRoutes({ auth: deps.auth, authz: deps.authz, payroll: deps.hr.payroll }))
     .route(
       '/hr/payroll-payments',
-      payrollPaymentRoutes({ auth: deps.auth, payroll: deps.hr.payroll }),
+      payrollPaymentRoutes({ auth: deps.auth, authz: deps.authz, payroll: deps.hr.payroll }),
     )
     .route(
       '/hr/employee-loans',
-      employeeLoanRoutes({ auth: deps.auth, payroll: deps.hr.payroll }),
+      employeeLoanRoutes({ auth: deps.auth, authz: deps.authz, payroll: deps.hr.payroll }),
     )
     .route(
       '/sales/company-account-defaults',
       companyAccountDefaultRoutes({
         auth: deps.auth,
+        authz: deps.authz,
         defaults: deps.companyAccountDefaults,
       }),
     )
@@ -285,6 +326,7 @@ export function buildApp(deps: AppDeps) {
       '/base',
       inventoryMasterRoutes({
         auth: deps.auth,
+        authz: deps.authz,
         categories: deps.invCategories,
         materials: deps.invMaterials,
         materialUnits: deps.invMaterialUnits,
@@ -295,6 +337,7 @@ export function buildApp(deps: AppDeps) {
       '/inventory',
       inventoryRoutes({
         auth: deps.auth,
+        authz: deps.authz,
         stockDocs: deps.invStockDocs,
         stockTransfers: deps.invStockTransfers,
         stockCounts: deps.invStockCounts,
@@ -305,60 +348,62 @@ export function buildApp(deps: AppDeps) {
       '/accounting',
       accountingRoutes({
         auth: deps.auth,
+        authz: deps.authz,
         journals: deps.journals,
         entries: deps.entries,
       }),
     )
     .route(
       '/finance/vat-invoices',
-      vatInvoiceRoutes({ auth: deps.auth, invoices: deps.invoices }),
+      vatInvoiceRoutes({ auth: deps.auth, authz: deps.authz, invoices: deps.invoices }),
     )
     .route(
       '/finance/bank-accounts',
-      bankAccountRoutes({ auth: deps.auth, banking: deps.banking }),
+      bankAccountRoutes({ auth: deps.auth, authz: deps.authz, banking: deps.banking }),
     )
     .route(
       '/finance/bank-transactions',
-      bankTransactionRoutes({ auth: deps.auth, banking: deps.banking }),
+      bankTransactionRoutes({ auth: deps.auth, authz: deps.authz, banking: deps.banking }),
     )
     .route(
       '/finance/bank-import-templates',
-      bankImportTemplateRoutes({ auth: deps.auth, banking: deps.banking }),
+      bankImportTemplateRoutes({ auth: deps.auth, authz: deps.authz, banking: deps.banking }),
     )
     .route(
       '/finance/bank-imports',
-      bankImportRoutes({ auth: deps.auth, banking: deps.banking }),
+      bankImportRoutes({ auth: deps.auth, authz: deps.authz, banking: deps.banking }),
     )
     .route(
       '/finance/bank-import-items',
-      bankImportItemRoutes({ auth: deps.auth, banking: deps.banking }),
+      bankImportItemRoutes({ auth: deps.auth, authz: deps.authz, banking: deps.banking }),
     )
     .route(
       '/finance/bank-reconciliations',
-      bankReconciliationRoutes({ auth: deps.auth, banking: deps.banking }),
+      bankReconciliationRoutes({ auth: deps.auth, authz: deps.authz, banking: deps.banking }),
     )
     .route(
       '/finance/expense-reports',
-      expenseReportRoutes({ auth: deps.auth, expenses: deps.expenses }),
+      expenseReportRoutes({ auth: deps.auth, authz: deps.authz, expenses: deps.expenses }),
     )
     .route(
       '/finance/expense-report-items',
-      expenseReportItemRoutes({ auth: deps.auth, expenses: deps.expenses }),
+      expenseReportItemRoutes({ auth: deps.auth, authz: deps.authz, expenses: deps.expenses }),
     )
-    .route('/finance/bills', billRoutes({ auth: deps.auth, bills: deps.bills }))
+    .route('/finance/bills', billRoutes({ auth: deps.auth, authz: deps.authz, bills: deps.bills }))
     .route(
       '/finance/bill-transactions',
-      billTransactionRoutes({ auth: deps.auth, bills: deps.bills }),
+      billTransactionRoutes({ auth: deps.auth, authz: deps.authz, bills: deps.bills }),
     )
     .route(
       '/finance/bill-holdings',
-      billHoldingRoutes({ auth: deps.auth, bills: deps.bills }),
+      billHoldingRoutes({ auth: deps.auth, authz: deps.authz, bills: deps.bills }),
     )
     .route('/todos', todoRoutes({ auth: deps.auth, todos: deps.todos }))
     .route(
       '/manufacturing',
       manufacturingRoutes({
         auth: deps.auth,
+        authz: deps.authz,
         master: deps.manufacturing.master,
         demands: deps.manufacturing.demands,
         workOrders: deps.manufacturing.workOrders,
@@ -367,8 +412,8 @@ export function buildApp(deps: AppDeps) {
       }),
     )
 
-  const t = tradingRouteMounts({ auth: deps.auth, trading: deps.trading })
-  const s = scmRouteMounts({ auth: deps.auth, scm: deps.scm })
+  const t = tradingRouteMounts({ auth: deps.auth, authz: deps.authz, trading: deps.trading })
+  const s = scmRouteMounts({ auth: deps.auth, authz: deps.authz, scm: deps.scm })
   const app2 = app
     .route('/sales/quotations', t.salesQuotations)
     .route('/sales/quotation-items', t.salesQuotationItems)

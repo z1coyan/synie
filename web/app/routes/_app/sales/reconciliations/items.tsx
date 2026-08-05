@@ -65,9 +65,6 @@ function ReconciliationItemsTab() {
       defaultSort={{ column: 'deliveryDate', direction: 'descending' }}
       // 开抽屉需要母单 id;不进展示列,经 extraFields 取回(避免 reconciliationId 为 undefined 过滤报错)
       extraFields={['reconciliationId']}
-      // salReconciliationItems 复用 sales.reconciliation 权限码,meta capabilities 为空:显式声明本视图
-      // 可用动作(整单「新建对账单」+ 草稿单「编辑」),不声明 delete,删除不进条目视图
-      capabilities={['create', 'update']}
       createLabel="新建对账单"
       onCreate={() => openDrawer('create', null)}
       onView={(row) => {

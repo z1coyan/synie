@@ -8,7 +8,8 @@ import { createDb } from '~/db/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { createTodoSourceRegistry } from './source-registry.ts'
-import { createTodoService } from './service.ts'
+import { createTodoService, todoPermit } from './service.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -42,7 +43,8 @@ function testTodoSources() {
 
 run('PG 集成（待办）', () => {
   const db = createDb(url!)
-  const svc = createTodoService(db, testTodoSources())
+  const sources = testTodoSources()
+  const svc = createTodoService(db, sources)
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `TD${suffix}`
 
@@ -57,7 +59,11 @@ run('PG 集成（待办）', () => {
   const historyId = crypto.randomUUID()
   const otherCompanyTodo = crypto.randomUUID()
 
-  const actorA: Actor = {
+  /** 待办凭证：源注册表的权限码析取（anyOf），与路由同一路径 */
+  const act = (actor: Actor) => todoPermit(actor, sources, 'action')
+  const unread = (actor: Actor) => todoPermit(actor, sources, 'unread')
+
+  const actorA: Actor = testActor({
     userId: userA,
     username: 'todo-a',
     name: 'A',
@@ -65,8 +71,8 @@ run('PG 集成（待办）', () => {
     allCompanies: false,
     permissions: new Set(['acc.vat_invoice:create', 'acc.vat_invoice:read']),
     companyIds: [companyA],
-  }
-  const actorB: Actor = {
+  })
+  const actorB: Actor = testActor({
     userId: userB,
     username: 'todo-b',
     name: 'B',
@@ -74,8 +80,8 @@ run('PG 集成（待办）', () => {
     allCompanies: false,
     permissions: new Set(['acc.vat_invoice:create', 'acc.vat_invoice:read']),
     companyIds: [companyA],
-  }
-  const readOnly: Actor = {
+  })
+  const readOnly: Actor = testActor({
     userId: userA,
     username: 'todo-ro',
     name: 'RO',
@@ -83,8 +89,8 @@ run('PG 集成（待办）', () => {
     allCompanies: false,
     permissions: new Set(['acc.vat_invoice:read']),
     companyIds: [companyA],
-  }
-  const wrongCompany: Actor = {
+  })
+  const wrongCompany: Actor = testActor({
     userId: userA,
     username: 'todo-wc',
     name: 'WC',
@@ -92,7 +98,7 @@ run('PG 集成（待办）', () => {
     allCompanies: false,
     permissions: new Set(['acc.vat_invoice:create', 'acc.vat_invoice:read']),
     companyIds: [companyB],
-  }
+  })
 
   beforeAll(async () => {
     await sql`
@@ -163,7 +169,7 @@ run('PG 集成（待办）', () => {
   })
 
   test('列表按公司圈人；无 create 权限不可查；历史 tab', async () => {
-    const active = await svc.list(actorA, { tab: 'active' })
+    const active = await svc.list(act(actorA), { tab: 'active' })
     expect(active.count).toBe(1)
     expect(active.results[0]!.id).toBe(todoId)
     expect(active.results[0]!.type).toBe('ISSUE_INVOICE')
@@ -172,47 +178,47 @@ run('PG 集成（待办）', () => {
     expect(active.results[0]!.company?.name).toBe(prefix + '公司A')
 
     // companyB 可见本公司待办，不可见 companyA
-    const other = await svc.list(wrongCompany, { tab: 'active' })
+    const other = await svc.list(act(wrongCompany), { tab: 'active' })
     expect(other.results.every((t) => t.companyId === companyB)).toBe(true)
     expect(other.results.find((t) => t.id === todoId)).toBeUndefined()
 
-    await expect(svc.list(readOnly, { tab: 'active' })).rejects.toBeInstanceOf(ApiError)
+    expect(() => act(readOnly)).toThrow(ApiError)
 
-    const history = await svc.list(actorA, { tab: 'history' })
+    const history = await svc.list(act(actorA), { tab: 'history' })
     expect(history.count).toBe(1)
     expect(history.results[0]!.id).toBe(historyId)
     expect(history.results[0]!.closedReason).toBe('UNCONFIRM')
   })
 
   test('已读仅影响本人未读数', async () => {
-    const beforeA = await svc.unreadCount(actorA)
-    const beforeB = await svc.unreadCount(actorB)
+    const beforeA = await svc.unreadCount(unread(actorA))
+    const beforeB = await svc.unreadCount(unread(actorB))
     expect(beforeA).toBeGreaterThanOrEqual(1)
     expect(beforeB).toBeGreaterThanOrEqual(1)
 
-    const marked = await svc.markRead(actorA, todoId)
+    const marked = await svc.markRead(act(actorA), todoId)
     expect(marked.myReadAt).toBeTruthy()
 
-    const afterA = await svc.unreadCount(actorA)
-    const afterB = await svc.unreadCount(actorB)
+    const afterA = await svc.unreadCount(unread(actorA))
+    const afterB = await svc.unreadCount(unread(actorB))
     expect(afterA).toBe(beforeA - 1)
     expect(afterB).toBe(beforeB)
   })
 
   test('个人忽略只影响本人；includeDismissed 可见', async () => {
-    const dismissed = await svc.dismiss(actorB, todoId)
+    const dismissed = await svc.dismiss(act(actorB), todoId)
     expect(dismissed.dismissed).toBe(true)
     expect(dismissed.myDismissedAt).toBeTruthy()
 
-    const hidden = await svc.list(actorB, { tab: 'active' })
+    const hidden = await svc.list(act(actorB), { tab: 'active' })
     expect(hidden.results.find((t) => t.id === todoId)).toBeUndefined()
 
-    const included = await svc.list(actorB, { tab: 'active', includeDismissed: true })
+    const included = await svc.list(act(actorB), { tab: 'active', includeDismissed: true })
     const row = included.results.find((t) => t.id === todoId)
     expect(row?.dismissed).toBe(true)
 
     // A 仍可见
-    const forA = await svc.list(actorA, { tab: 'active' })
+    const forA = await svc.list(act(actorA), { tab: 'active' })
     expect(forA.results.find((t) => t.id === todoId)).toBeTruthy()
   })
 
@@ -224,7 +230,7 @@ run('PG 集成（待办）', () => {
        WHERE id = ${todoId}::uuid
     `.execute(db)
 
-    const active = await svc.list(actorB, { tab: 'active' })
+    const active = await svc.list(act(actorB), { tab: 'active' })
     const row = active.results.find((t) => t.id === todoId)
     expect(row).toBeTruthy()
     // 历史 dismissed_at 仍在，但 dismissed 标志因复位基准失效而为 false
@@ -233,12 +239,12 @@ run('PG 集成（待办）', () => {
   })
 
   test('只读权限可读未读数', async () => {
-    const count = await svc.unreadCount(readOnly)
+    const count = await svc.unreadCount(unread(readOnly))
     expect(count).toBeGreaterThanOrEqual(0)
   })
 
   test('不存在待办 mark/dismiss → not_found', async () => {
-    await expect(svc.markRead(actorA, crypto.randomUUID())).rejects.toMatchObject({
+    await expect(svc.markRead(act(actorA), crypto.randomUUID())).rejects.toMatchObject({
       code: 'not_found',
     })
   })

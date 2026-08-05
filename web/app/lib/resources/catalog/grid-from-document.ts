@@ -1,5 +1,5 @@
 /**
- * 从 ResourceDocument v2 派生 GridMeta。
+ * 从 ResourceDocument v3 派生 GridMeta。
  * contract 后这是 Grid 唯一 Meta 来源。
  */
 import type { ResourceDocument } from '@synie/shared'
@@ -24,6 +24,7 @@ export function gridMetaFromDocument(document: ResourceDocument): GridMeta {
   return {
     columns: resolvedColumns,
     capabilities: [...document.capabilities],
+    ...(document.authz ? { authz: document.authz } : {}),
     extendedActions: document.commands.map((c) => ({
       key: c.key,
       label: c.label,
@@ -41,7 +42,7 @@ export function gridMetaFromDocument(document: ResourceDocument): GridMeta {
       isDanger: c.isDanger ?? false,
       confirmKind: c.confirmKind,
     })),
-    canDelete: document.capabilities.includes('delete'),
+    canDelete: document.capabilities.some((entry) => entry.action === 'delete'),
   }
 }
 

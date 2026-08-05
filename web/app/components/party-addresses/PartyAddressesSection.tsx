@@ -3,6 +3,7 @@
  * 主体尚未保存时只提示；保存后按 partyType+partyId 列表增删改。
  * 行操作走 ⋯ 菜单（同 DataGrid RowActionsMenu 惯例）。
  */
+import { hasCapability } from '@synie/shared'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Chip, Spinner, Table, toast } from '@heroui/react'
@@ -44,7 +45,7 @@ export function PartyAddressesSection(props: {
   const queryClient = useQueryClient()
   const { binding, formProps } = useCatalogBasicForm(RESOURCE, '地址')
   const meta = useGridMeta(RESOURCE, true)
-  const can = (action: string) => (meta.data?.capabilities ?? []).includes(action)
+  const can = (action: string) => hasCapability(meta.data?.capabilities ?? [], action)
 
   const queryKey = ['partyAddresses', partyType, partyId]
   const list = useQuery({

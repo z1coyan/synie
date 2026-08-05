@@ -1,3 +1,10 @@
+/**
+ * 物料分类（全局共享树，无公司列）。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 列表 `listAuthorized`、单条 `loadAuthorizedFrom`、写前取行 `loadAuthorized(forUpdate)`。
+ * global 形态只有码级判定（矩阵不开行级范围）；树结构约束（叶子/下级/引用）是领域不变量，留在本文件。
+ */
 import type { ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
@@ -10,11 +17,13 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { listFromSource } from '~/db/list.ts'
-import {requirePermission,  runeLen, toDate } from './helpers.ts'
+import { listAuthorized } from '~/db/list.ts'
+import { loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
+import { runeLen, toDate } from './helpers.ts'
 import { materialCategoryResourceMeta } from './meta.ts'
 
 export interface MaterialCategory {
@@ -33,6 +42,11 @@ export interface MaterialCategory {
 const AUDIT = auditFieldsOf(materialCategoryResourceMeta())
 const META = materialCategoryResourceMeta()
 
+export const CATEGORY_RESOURCE = 'invMaterialCategories'
+
+const TABLE = META.table
+/** 列表与单条共用同一份投影（别名与 listAuthorized 的 alias 必须逐字一致） */
+const ALIAS = 'material_category'
 const SOURCE = sql`
   FROM (
     SELECT c.id,c.code,c.name,c.is_leaf,c.active,c.inserted_at,c.updated_at,c.parent_id,
@@ -42,25 +56,35 @@ const SOURCE = sql`
     LEFT JOIN inv_material_category p ON p.id=c.parent_id
   ) material_category
 `
+const SELECT = sql`SELECT id,code,name,is_leaf,active,inserted_at,updated_at,
+  parent_id,parent_name,has_children`
 
-export function createMaterialCategoryService(db: Kysely<Database>) {
-  async function get(actor: Actor, id: string): Promise<MaterialCategory> {
-    requirePermission(actor, 'base.material_category:read')
-    const rows = await sql<Record<string, unknown>>`
-      SELECT id,code,name,is_leaf,active,inserted_at,updated_at,parent_id,parent_name,has_children
-      ${SOURCE} WHERE id = ${id}::uuid
-    `.execute(db)
-    if (rows.rows.length === 0) throw new ApiError('not_found', '物料分类不存在')
-    return mapRow(rows.rows[0]!)
+export function createMaterialCategoryService(db: Kysely<Database>, registry: Registry) {
+  const target = registry.authzTarget(CATEGORY_RESOURCE)
+
+  async function get(permit: Permit, id: string): Promise<MaterialCategory> {
+    return loadAuthorizedFrom({
+      db,
+      permit,
+      target,
+      alias: ALIAS,
+      source: SOURCE,
+      select: SELECT,
+      id,
+      mapRow,
+      notFoundMessage: '物料分类不存在',
+    })
   }
 
-  async function list(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'base.material_category:read')
-    return listFromSource({
+  async function list(permit: Permit, query: Partial<ListQuery>) {
+    return listAuthorized({
       db,
+      permit,
+      target,
+      alias: ALIAS,
       resource: META,
       source: SOURCE,
-      select: sql`SELECT id,code,name,is_leaf,active,inserted_at,updated_at,parent_id,parent_name,has_children`,
+      select: SELECT,
       defaultOrder: sql`"code" ASC, "id" ASC`,
       query,
       mapRow,
@@ -68,7 +92,7 @@ export function createMaterialCategoryService(db: Kysely<Database>) {
   }
 
   async function create(
-    actor: Actor,
+    permit: Permit,
     input: {
       code: string
       name: string
@@ -77,7 +101,6 @@ export function createMaterialCategoryService(db: Kysely<Database>) {
       parentId?: string | null
     },
   ): Promise<MaterialCategory> {
-    requirePermission(actor, 'base.material_category:create')
     const code = input.code.trim()
     const name = input.name.trim()
     validateNames(code, name)
@@ -94,7 +117,7 @@ export function createMaterialCategoryService(db: Kysely<Database>) {
           .returningAll()
           .executeTakeFirstOrThrow()
         const item = await getInTx(trx, row.id)
-        await writeAudit(trx, actor, {
+        await writeAudit(trx, permit.actor, {
           resource: 'inv_material_category',
           recordId: item.id,
           recordLabel: item.name,
@@ -113,7 +136,7 @@ export function createMaterialCategoryService(db: Kysely<Database>) {
   }
 
   async function update(
-    actor: Actor,
+    permit: Permit,
     id: string,
     input: {
       code?: string
@@ -124,16 +147,17 @@ export function createMaterialCategoryService(db: Kysely<Database>) {
       parentIdPresent?: boolean
     },
   ): Promise<MaterialCategory> {
-    requirePermission(actor, 'base.material_category:update')
     return withTx(db, async (trx) => {
       await lockTree(trx)
-      const locked = await trx
-        .selectFrom('inv_material_category')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '物料分类不存在')
+      const locked = await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '物料分类不存在',
+      })
       const before = await getInTx(trx, id)
       const code = (input.code ?? before.code).trim()
       const name = (input.name ?? before.name).trim()
@@ -142,7 +166,7 @@ export function createMaterialCategoryService(db: Kysely<Database>) {
       const active = input.active ?? before.active
       const parentId = input.parentIdPresent ? (input.parentId ?? null) : before.parentId
       await validateParent(trx, id, parentId)
-      if (isLeaf !== locked.is_leaf) {
+      if (isLeaf !== Boolean(locked.is_leaf)) {
         if (isLeaf) {
           const child = await trx
             .selectFrom('inv_material_category')
@@ -197,7 +221,7 @@ export function createMaterialCategoryService(db: Kysely<Database>) {
         ])
       }
       const updated = await getInTx(trx, id)
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_material_category',
         recordId: id,
         recordLabel: updated.name,
@@ -209,17 +233,18 @@ export function createMaterialCategoryService(db: Kysely<Database>) {
     })
   }
 
-  async function remove(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'base.material_category:delete')
+  async function remove(permit: Permit, id: string): Promise<void> {
     await withTx(db, async (trx) => {
       await lockTree(trx)
-      const locked = await trx
-        .selectFrom('inv_material_category')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '物料分类不存在')
+      await loadAuthorized({
+        db: trx,
+        permit,
+        target,
+        table: TABLE,
+        id,
+        forUpdate: true,
+        notFoundMessage: '物料分类不存在',
+      })
       const child = await trx
         .selectFrom('inv_material_category')
         .select('id')
@@ -234,7 +259,7 @@ export function createMaterialCategoryService(db: Kysely<Database>) {
       if (mat) throw new ApiError('conflict', '分类下存在物料,不能删除')
       const item = await getInTx(trx, id)
       await trx.deleteFrom('inv_material_category').where('id', '=', id).execute()
-      await writeAudit(trx, actor, {
+      await writeAudit(trx, permit.actor, {
         resource: 'inv_material_category',
         recordId: id,
         recordLabel: item.name,
@@ -252,8 +277,7 @@ export type MaterialCategoryService = ReturnType<typeof createMaterialCategorySe
 
 async function getInTx(db: DbHandle, id: string): Promise<MaterialCategory> {
   const rows = await sql<Record<string, unknown>>`
-    SELECT id,code,name,is_leaf,active,inserted_at,updated_at,parent_id,parent_name,has_children
-    ${SOURCE} WHERE id = ${id}::uuid
+    ${SELECT}${SOURCE} WHERE id = ${id}::uuid
   `.execute(db)
   if (rows.rows.length === 0) throw new ApiError('not_found', '物料分类不存在')
   return mapRow(rows.rows[0]!)
