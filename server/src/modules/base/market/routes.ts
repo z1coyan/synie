@@ -9,44 +9,11 @@ import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
-import { INSTRUMENT_RESOURCE_NAME, PRICE_POINT_RESOURCE_NAME } from './meta.ts'
-import type {
-  MarketInstrument,
-  MarketPricePoint,
-  MarketService,
-  PriceSeries,
-} from './service.ts'
+import { PRICE_POINT_RESOURCE_NAME } from './meta.ts'
+import type { MarketPricePoint, MarketService, PriceSeries } from './service.ts'
 
 
 const idParam = z.object({ id: z.string().uuid() })
-
-const instrumentCreateSchema = z
-  .object({
-    code: z.string().min(1),
-    name: z.string().min(1),
-    sourceType: z.string().min(1),
-    defaultPriceKind: z.string().min(1),
-    active: z.boolean().optional(),
-    fetchEnabled: z.boolean().optional(),
-    externalLastCode: z.string().nullable().optional(),
-    externalProductGroup: z.string().nullable().optional(),
-    note: z.string().nullable().optional(),
-    currencyId: z.string().uuid(),
-    unitId: z.string().uuid(),
-  })
-  .strict()
-
-const instrumentUpdateSchema = z
-  .object({
-    name: z.string().min(1).optional(),
-    defaultPriceKind: z.string().min(1).optional(),
-    active: z.boolean().optional(),
-    fetchEnabled: z.boolean().optional(),
-    externalLastCode: z.string().nullable().optional(),
-    externalProductGroup: z.string().nullable().optional(),
-    note: z.string().nullable().optional(),
-  })
-  .strict()
 
 const pricePointCreateSchema = z
   .object({
@@ -73,10 +40,6 @@ const refreshSchema = z
   })
   .strict()
 
-function present(raw: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(raw, key)
-}
-
 function toListQuery(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
   return {
     limit: body.limit,
@@ -93,25 +56,6 @@ function rfc3339(d: Date): string {
     return d.toISOString().replace('.000Z', 'Z')
   }
   return d.toISOString()
-}
-
-function instrumentDto(item: MarketInstrument) {
-  return {
-    id: item.id,
-    code: item.code,
-    name: item.name,
-    sourceType: item.sourceType,
-    defaultPriceKind: item.defaultPriceKind,
-    active: item.active,
-    fetchEnabled: item.fetchEnabled,
-    externalLastCode: item.externalLastCode,
-    externalProductGroup: item.externalProductGroup,
-    note: item.note,
-    currencyId: item.currencyId,
-    unitId: item.unitId,
-    insertedAt: rfc3339(item.insertedAt),
-    updatedAt: rfc3339(item.updatedAt),
-  }
 }
 
 function pricePointDto(item: MarketPricePoint) {
@@ -160,83 +104,6 @@ function parseDateTime(value: string, field: string): Date {
     throw ApiError.validation('时间格式不合法', { [field]: ['必须是 RFC3339 时间'] })
   }
   return d
-}
-
-/**
- * 挂载于 `/base/market-instruments`。
- * 逐端点挂 `guard(资源, 动作)`（requireAuth 之后），handler 用 `permitOf(c)` 取凭证。
- */
-export function marketInstrumentRoutes(deps: {
-  auth: AuthService
-  authz: AuthzEnforcer
-  market: MarketService
-}) {
-  const { auth, authz, market } = deps
-  const instrumentGuard = (action: string) => authz.guard(INSTRUMENT_RESOURCE_NAME, action)
-  return new Hono<AppEnv>()
-    .use('*', requireAuth(auth))
-    .post(
-      '/query',
-      instrumentGuard('read'),
-      zValidator('json', listQuerySchema, validationHook),
-      async (c) => {
-        const result = await market.listInstruments(permitOf(c), toListQuery(c.req.valid('json')))
-        return c.json({
-          count: result.count,
-          results: result.results.map(instrumentDto),
-        })
-      },
-    )
-    .post(
-      '/',
-      instrumentGuard('create'),
-      zValidator('json', instrumentCreateSchema, validationHook),
-      async (c) => {
-        const body = c.req.valid('json')
-        const item = await market.createInstrument(permitOf(c), body)
-        return c.json(instrumentDto(item), 201)
-      },
-    )
-    .get(
-      '/:id',
-      instrumentGuard('read'),
-      zValidator('param', idParam, validationHook),
-      async (c) => {
-        return c.json(instrumentDto(await market.getInstrument(permitOf(c), c.req.valid('param').id)))
-      },
-    )
-    .patch(
-      '/:id',
-      instrumentGuard('update'),
-      zValidator('param', idParam, validationHook),
-      zValidator('json', instrumentUpdateSchema, validationHook),
-      async (c) => {
-        const raw = (await c.req.json()) as Record<string, unknown>
-        const body = c.req.valid('json')
-        const item = await market.updateInstrument(permitOf(c), c.req.valid('param').id, {
-          name: body.name,
-          defaultPriceKind: body.defaultPriceKind,
-          active: body.active,
-          fetchEnabled: body.fetchEnabled,
-          externalLastCode: body.externalLastCode,
-          externalLastCodePresent: present(raw, 'externalLastCode'),
-          externalProductGroup: body.externalProductGroup,
-          externalProductGroupPresent: present(raw, 'externalProductGroup'),
-          note: body.note,
-          notePresent: present(raw, 'note'),
-        })
-        return c.json(instrumentDto(item))
-      },
-    )
-    .delete(
-      '/:id',
-      instrumentGuard('delete'),
-      zValidator('param', idParam, validationHook),
-      async (c) => {
-        await market.deleteInstrument(permitOf(c), c.req.valid('param').id)
-        return c.body(null, 204)
-      },
-    )
 }
 
 /**
@@ -332,13 +199,4 @@ export function marketPricePointRoutes(deps: {
         return c.json(pricePointDto(item))
       },
     )
-}
-
-/** 兼容旧命名 */
-export function marketInstrumentRoutesLegacy(deps: {
-  auth: AuthService
-  authz: AuthzEnforcer
-  instruments: MarketService
-}) {
-  return marketInstrumentRoutes({ auth: deps.auth, authz: deps.authz, market: deps.instruments })
 }

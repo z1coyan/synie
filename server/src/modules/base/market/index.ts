@@ -11,7 +11,9 @@ export {
 export {
   createMarketService,
   createMarketInstrumentService,
+  createInstrumentService,
   resolveQuote,
+  type InstrumentService,
   type MarketService,
   type MarketInstrumentService,
   type MarketInstrument,
@@ -26,10 +28,7 @@ export {
   type RefreshItem,
   type QuoteCandidate,
 } from './service.ts'
-export {
-  marketInstrumentRoutes,
-  marketPricePointRoutes,
-} from './routes.ts'
+export { marketPricePointRoutes } from './routes.ts'
 export {
   createPublicMarketClient,
   pastSettlementWindow,

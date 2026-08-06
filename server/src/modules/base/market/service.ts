@@ -1,20 +1,24 @@
+/**
+ * 行情品种（标准派生） + 行情价点/取价/拉取（手写）。
+ *
+ * 品种是平坦主数据：CRUD/批量/审计/授权由 platform/standard 按 meta 派生，
+ * 本文件只留一条领域不变量（有价点不许删）与约束文案。
+ * 价点按动作弹射保持手写——create 的两列（币种/单位）由品种带出、观测时刻是
+ * UTC 墙钟 timestamp、只作废不改删，均非标准词表能表达的形状（详见迁移报告）。
+ */
 import { decimal, isDecimalString, toDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import {
-  auditCreated,
-  auditDestroyed,
-  auditDiff,
-  writeAudit,
-} from '~/platform/audit/write.ts'
+import { auditCreated, auditDiff, writeAudit } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { systemPermit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { SettingsService } from '~/platform/settings/service.ts'
+import { createStandardService, type StandardService } from '~/platform/standard/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listAuthorized } from '~/db/list.ts'
 import { findAuthorized, loadAuthorized } from '~/db/load.ts'
@@ -52,6 +56,8 @@ export interface MarketInstrument {
   unitId: string
   insertedAt: Date
   updatedAt: Date
+  /** 标准派生服务的行形约束（StandardItem） */
+  [key: string]: unknown
 }
 
 export interface MarketPricePoint {
@@ -83,17 +89,15 @@ export interface InstrumentCreate {
   unitId: string
 }
 
+/** present-key 语义：出现即写，null 清空，缺省不动（标准派生原生支持，不再有 *Present 布尔） */
 export interface InstrumentUpdate {
   name?: string
   defaultPriceKind?: string
   active?: boolean
   fetchEnabled?: boolean
   externalLastCode?: string | null
-  externalLastCodePresent?: boolean
   externalProductGroup?: string | null
-  externalProductGroupPresent?: boolean
   note?: string | null
-  notePresent?: boolean
 }
 
 export interface PricePointCreate {
@@ -153,8 +157,6 @@ const POINT_META = pricePointResourceMeta()
 const INSTRUMENT_TABLE = INSTRUMENT_META.table
 const POINT_TABLE = POINT_META.table
 
-const INSTRUMENT_AUDIT = auditFieldsOf(INSTRUMENT_META)
-
 const POINT_AUDIT = auditFieldsOf(POINT_META)
 
 /**
@@ -181,261 +183,49 @@ export interface MarketServiceDeps {
 }
 
 /**
+ * 行情品种——标准派生服务（CRUD + 批量 + 审计 + 授权全部由 meta 派生）。
+ * 领域不变量只剩一条：品种下有价点时不许删（价点是历史事实，只能停用品种）。
+ */
+export function createInstrumentService(
+  db: Kysely<Database>,
+  registry: Registry,
+): StandardService<MarketInstrument> {
+  return createStandardService<MarketInstrument>({
+    db,
+    registry,
+    resource: INSTRUMENT_RESOURCE_NAME,
+    notFound: '行情品种不存在',
+    defaultOrder: sql`"code" ASC, "id" ASC`,
+    writeErrors: WRITE_MAPPINGS,
+    hooks: {
+      beforeDelete: async (trx, { item }) => {
+        const hasPoints = await trx
+          .selectFrom('bas_market_price_point')
+          .select('id')
+          .where('instrument_id', '=', String(item.id))
+          .executeTakeFirst()
+        if (hasPoints) {
+          throw new ApiError('conflict', '品种下已有行情价点,请停用而非删除')
+        }
+      },
+    },
+  })
+}
+
+export type InstrumentService = StandardService<MarketInstrument>
+
+/**
  * 行情品种 / 价点 / 取价 / 拉取。
  * 工厂闭包；写路径 withTx + 审计；金额走 shared decimal。
  */
 export function createMarketService(db: Kysely<Database>, deps: MarketServiceDeps) {
-  const { settings } = deps
-  const instrumentTarget = deps.registry.authzTarget(INSTRUMENT_RESOURCE_NAME)
-  const pointTarget = deps.registry.authzTarget(PRICE_POINT_RESOURCE_NAME)
+  const { settings, registry } = deps
+  const instrumentTarget = registry.authzTarget(INSTRUMENT_RESOURCE_NAME)
+  const pointTarget = registry.authzTarget(PRICE_POINT_RESOURCE_NAME)
 
-  // ── 品种 ──────────────────────────────────────────────
+  // ── 品种（标准派生） ──────────────────────────────────
 
-  async function getInstrument(permit: Permit, id: string): Promise<MarketInstrument> {
-    const row = await loadAuthorized({
-      db,
-      permit,
-      target: instrumentTarget,
-      table: INSTRUMENT_TABLE,
-      id,
-      notFoundMessage: '行情品种不存在',
-    })
-    return mapInstrument(row as never)
-  }
-
-  async function listInstruments(
-    permit: Permit,
-    query: Partial<ListQuery>,
-  ): Promise<{ count: number; results: MarketInstrument[] }> {
-    return listAuthorized({
-      db,
-      permit,
-      target: instrumentTarget,
-      alias: INSTRUMENT_TABLE,
-      resource: INSTRUMENT_META,
-      source: sql` FROM bas_market_instrument`,
-      select: sql`SELECT id,code,name,source_type,default_price_kind,active,fetch_enabled,
-external_last_code,external_product_group,note,currency_id,unit_id,inserted_at,updated_at`,
-      defaultOrder: sql`"code" ASC, "id" ASC`,
-      query,
-      mapRow: (r) =>
-        mapInstrument({
-          id: String(r.id),
-          code: String(r.code),
-          name: String(r.name),
-          source_type: String(r.source_type),
-          default_price_kind: String(r.default_price_kind),
-          active: Boolean(r.active),
-          fetch_enabled: Boolean(r.fetch_enabled),
-          external_last_code: r.external_last_code == null ? null : String(r.external_last_code),
-          external_product_group:
-            r.external_product_group == null ? null : String(r.external_product_group),
-          note: r.note == null ? null : String(r.note),
-          currency_id: String(r.currency_id),
-          unit_id: String(r.unit_id),
-          inserted_at: r.inserted_at as Date,
-          updated_at: r.updated_at as Date,
-        }),
-    })
-  }
-
-  async function createInstrument(
-    permit: Permit,
-    input: InstrumentCreate,
-  ): Promise<MarketInstrument> {
-    const normalized = normalizeInstrument(
-      input.code,
-      input.name,
-      input.sourceType,
-      input.defaultPriceKind,
-    )
-    validateOptionalLengths(
-      input.externalLastCode,
-      32,
-      'externalLastCode',
-      input.externalProductGroup,
-      16,
-      'externalProductGroup',
-      input.note,
-      255,
-      'note',
-    )
-    const missing: Record<string, string[]> = {}
-    if (!input.currencyId) missing.currencyId = ['不能为空']
-    if (!input.unitId) missing.unitId = ['不能为空']
-    if (Object.keys(missing).length > 0) {
-      throw ApiError.validation('行情品种参数不合法', missing)
-    }
-    const active = input.active ?? true
-    const fetchEnabled = input.fetchEnabled ?? false
-    return withTx(db, async (trx) => {
-      try {
-        const row = await trx
-          .insertInto('bas_market_instrument')
-          .values({
-            code: normalized.code,
-            name: normalized.name,
-            source_type: normalized.sourceType,
-            default_price_kind: normalized.priceKind,
-            active,
-            fetch_enabled: fetchEnabled,
-            external_last_code: emptyToNull(input.externalLastCode),
-            external_product_group: emptyToNull(input.externalProductGroup),
-            note: emptyToNull(input.note),
-            currency_id: input.currencyId,
-            unit_id: input.unitId,
-          })
-          .returningAll()
-          .executeTakeFirstOrThrow()
-        const item = mapInstrument(row)
-        await writeAudit(trx, permit.actor, {
-          resource: 'bas_market_instrument',
-          recordId: item.id,
-          recordLabel: item.name,
-          actionType: 'create',
-          actionName: 'create',
-          changes: auditCreated(instrumentSnapshot(item), INSTRUMENT_AUDIT),
-        })
-        return item
-      } catch (err) {
-        throw mapWriteError(err, '保存行情数据失败', WRITE_MAPPINGS)
-      }
-    })
-  }
-
-  async function updateInstrument(
-    permit: Permit,
-    id: string,
-    input: InstrumentUpdate,
-  ): Promise<MarketInstrument> {
-    return withTx(db, async (trx) => {
-      const locked = await loadAuthorized({
-        db: trx,
-        permit,
-        target: instrumentTarget,
-        table: INSTRUMENT_TABLE,
-        id,
-        forUpdate: true,
-        notFoundMessage: '行情品种不存在',
-      })
-      const before = mapInstrument(locked as never)
-
-      let name = before.name
-      let kind = before.defaultPriceKind.toLowerCase()
-      let active = before.active
-      let fetchEnabled = before.fetchEnabled
-      let externalLast = before.externalLastCode
-      let externalGroup = before.externalProductGroup
-      let note = before.note
-
-      if (input.name !== undefined) name = input.name.trim()
-      if (input.defaultPriceKind !== undefined) {
-        kind = input.defaultPriceKind.trim().toLowerCase()
-      }
-      if (input.active !== undefined) active = input.active
-      if (input.fetchEnabled !== undefined) fetchEnabled = input.fetchEnabled
-      if (input.externalLastCodePresent) {
-        externalLast = input.externalLastCode ?? null
-      }
-      if (input.externalProductGroupPresent) {
-        externalGroup = input.externalProductGroup ?? null
-      }
-      if (input.notePresent) {
-        note = input.note ?? null
-      }
-
-      if (!name || [...name].length > 64 || !validPriceKind(kind)) {
-        throw ApiError.validation('行情品种参数不合法', {
-          name: ['不能为空且最多 64 个字符'],
-          defaultPriceKind: ['仅支持 SETTLEMENT/AVERAGE/LAST'],
-        })
-      }
-      validateOptionalLengths(
-        externalLast,
-        32,
-        'externalLastCode',
-        externalGroup,
-        16,
-        'externalProductGroup',
-        note,
-        255,
-        'note',
-      )
-
-      try {
-        const updated = await trx
-          .updateTable('bas_market_instrument')
-          .set({
-            name,
-            default_price_kind: kind,
-            active,
-            fetch_enabled: fetchEnabled,
-            external_last_code: emptyToNull(externalLast),
-            external_product_group: emptyToNull(externalGroup),
-            note: emptyToNull(note),
-            updated_at: sql`(now() AT TIME ZONE 'utc')`,
-          })
-          .where('id', '=', id)
-          .returningAll()
-          .executeTakeFirstOrThrow()
-        const item = mapInstrument(updated)
-        const changes = auditDiff(
-          instrumentSnapshot(before),
-          instrumentSnapshot(item),
-          INSTRUMENT_AUDIT,
-        )
-        if (Object.keys(changes).length > 0) {
-          await writeAudit(trx, permit.actor, {
-            resource: 'bas_market_instrument',
-            recordId: item.id,
-            recordLabel: item.name,
-            actionType: 'update',
-            actionName: 'update',
-            changes,
-          })
-        }
-        return item
-      } catch (err) {
-        throw mapWriteError(err, '保存行情数据失败', WRITE_MAPPINGS)
-      }
-    })
-  }
-
-  async function deleteInstrument(permit: Permit, id: string): Promise<void> {
-    await withTx(db, async (trx) => {
-      const locked = await loadAuthorized({
-        db: trx,
-        permit,
-        target: instrumentTarget,
-        table: INSTRUMENT_TABLE,
-        id,
-        forUpdate: true,
-        notFoundMessage: '行情品种不存在',
-      })
-      const item = mapInstrument(locked as never)
-      const hasPoints = await trx
-        .selectFrom('bas_market_price_point')
-        .select('id')
-        .where('instrument_id', '=', id)
-        .executeTakeFirst()
-      if (hasPoints) {
-        throw new ApiError('conflict', '品种下已有行情价点,请停用而非删除')
-      }
-      try {
-        await trx.deleteFrom('bas_market_instrument').where('id', '=', id).execute()
-        await writeAudit(trx, permit.actor, {
-          resource: 'bas_market_instrument',
-          recordId: item.id,
-          recordLabel: item.name,
-          actionType: 'destroy',
-          actionName: 'destroy',
-          changes: auditDestroyed(instrumentSnapshot(item), INSTRUMENT_AUDIT),
-        })
-      } catch (err) {
-        throw mapWriteError(err, '保存行情数据失败', WRITE_MAPPINGS)
-      }
-    })
-  }
+  const instruments = createInstrumentService(db, registry)
 
   // ── 价点 ──────────────────────────────────────────────
 
@@ -1002,11 +792,18 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
   }
 
   return {
-    getInstrument,
-    listInstruments,
-    createInstrument,
-    updateInstrument,
-    deleteInstrument,
+    /** 品种标准派生服务（路由直接消费；CRUD/批量端点由 platform/standard 派生） */
+    instruments,
+    /** 路由派生取 meta 用；app.ts 改直挂 standardRoutes 后可移除 */
+    registry,
+    // 品种 CRUD 委托：保持既有服务面（拉取链路与既有调用点不改） —— 语义即标准动作
+    getInstrument: (permit: Permit, id: string) => instruments.get(permit, id),
+    listInstruments: (permit: Permit, query: Partial<ListQuery>) => instruments.list(permit, query),
+    createInstrument: (permit: Permit, input: InstrumentCreate | Record<string, unknown>) =>
+      instruments.create(permit, input as Record<string, unknown>),
+    updateInstrument: (permit: Permit, id: string, patch: InstrumentUpdate | Record<string, unknown>) =>
+      instruments.update(permit, id, patch as Record<string, unknown>),
+    deleteInstrument: (permit: Permit, id: string) => instruments.remove(permit, id),
     getPricePoint,
     listPricePoints,
     createPricePoint,
@@ -1018,8 +815,8 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
     refreshLasts,
     refreshSettlements,
     // 兼容旧命名
-    list: listInstruments,
-    get: getInstrument,
+    list: (permit: Permit, query: Partial<ListQuery>) => instruments.list(permit, query),
+    get: (permit: Permit, id: string) => instruments.get(permit, id),
   }
 }
 
@@ -1132,31 +929,6 @@ function mapPoint(row: {
   }
 }
 
-function normalizeInstrument(
-  code: string,
-  name: string,
-  sourceType: string,
-  priceKind: string,
-): { code: string; name: string; sourceType: string; priceKind: string } {
-  code = code.trim()
-  name = name.trim()
-  sourceType = sourceType.trim().toLowerCase()
-  priceKind = priceKind.trim().toLowerCase()
-  const fields: Record<string, string[]> = {}
-  if (!code || [...code].length > 32) fields.code = ['不能为空且最多 32 个字符']
-  if (!name || [...name].length > 64) fields.name = ['不能为空且最多 64 个字符']
-  if (sourceType !== 'exchange' && sourceType !== 'spot_index' && sourceType !== 'other') {
-    fields.sourceType = ['仅支持 EXCHANGE/SPOT_INDEX/OTHER']
-  }
-  if (!validPriceKind(priceKind)) {
-    fields.defaultPriceKind = ['仅支持 SETTLEMENT/AVERAGE/LAST']
-  }
-  if (Object.keys(fields).length > 0) {
-    throw ApiError.validation('行情品种参数不合法', fields)
-  }
-  return { code, name, sourceType, priceKind }
-}
-
 function validPriceKind(value: string): boolean {
   return value === 'settlement' || value === 'average' || value === 'last'
 }
@@ -1173,22 +945,6 @@ function validateOptionalLengths(...values: unknown[]): void {
   }
   if (Object.keys(fields).length > 0) {
     throw ApiError.validation('行情参数不合法', fields)
-  }
-}
-
-function instrumentSnapshot(x: MarketInstrument): Record<string, unknown> {
-  return {
-    code: x.code,
-    name: x.name,
-    source_type: x.sourceType.toLowerCase(),
-    default_price_kind: x.defaultPriceKind.toLowerCase(),
-    active: x.active,
-    fetch_enabled: x.fetchEnabled,
-    external_last_code: x.externalLastCode,
-    external_product_group: x.externalProductGroup,
-    note: x.note,
-    currency_id: x.currencyId,
-    unit_id: x.unitId,
   }
 }
 
