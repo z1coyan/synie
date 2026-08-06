@@ -34,6 +34,10 @@ export function toDbValue(field: FieldMeta, value: unknown): unknown {
     case 'enum':
       // 库内大小写按 meta 声明；缺省小写（全站约定），'upper' 是历史遗留列的逃生舱
       return field.enumStorage === 'upper' ? String(value).toUpperCase() : String(value).toLowerCase()
+    case 'enumArray':
+      return Array.isArray(value)
+        ? value.map((v) => (field.enumStorage === 'upper' ? String(v).toUpperCase() : String(v).toLowerCase()))
+        : value
     case 'decimal':
       return decimal(String(value)).toFixed()
     case 'string':
@@ -49,6 +53,8 @@ export function fromDbValue(field: FieldMeta, value: unknown): unknown {
   switch (field.type) {
     case 'enum':
       return String(value).toUpperCase()
+    case 'enumArray':
+      return Array.isArray(value) ? value.map((v) => String(v).toUpperCase()) : value
     case 'decimal':
       return decimal(String(value)).toFixed()
     case 'date':

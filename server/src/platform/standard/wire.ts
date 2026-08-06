@@ -45,6 +45,13 @@ function baseSchema(meta: ResourceMeta, field: FieldMeta): z.ZodTypeAny {
       }
       return z.enum(values as [string, ...string[]])
     }
+    case 'enumArray': {
+      const values = (field.enumOptions ?? []).map((o) => o.value)
+      if (values.length === 0) {
+        throw new Error(`标准派生：资源 ${meta.name} 枚举数组字段 ${field.apiName} 缺少 options`)
+      }
+      return z.array(z.enum(values as [string, ...string[]]))
+    }
     case 'uuid':
     case 'fk':
       return z.string().uuid()

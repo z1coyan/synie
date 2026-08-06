@@ -65,6 +65,12 @@ function docMeta(): ResourceMeta {
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('doc_no', 'docNo', 'string', '单号', { maxLength: 32, nullable: true, filterable: true, sortable: true }),
       field('name', 'name', 'string', '名称', { required: true, maxLength: 64, filterable: true, sortable: true }),
+      field('tags', 'tags', 'enumArray', '标签', {
+        enumOptions: [
+          { value: 'RED', label: '红' },
+          { value: 'BLUE', label: '蓝' },
+        ],
+      }),
       field('status', 'status', 'enum', '状态', { readonly: true, enumOptions: statusOptions, filterable: true }),
       field('audited_at', 'auditedAt', 'datetime', '审核时间', { readonly: true }),
       field('audited_by_id', 'auditedById', 'uuid', '审核人', { readonly: true }),
@@ -228,6 +234,7 @@ run('标准动作内核 v2（postgres）', () => {
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         doc_no varchar(32),
         name varchar(64) NOT NULL,
+        tags text[] NOT NULL DEFAULT '{}',
         status varchar(16) NOT NULL DEFAULT 'draft',
         audited_at timestamp,
         audited_by_id uuid,
@@ -270,6 +277,22 @@ run('标准动作内核 v2（postgres）', () => {
   async function createDraft(name = `单-${crypto.randomUUID().slice(0, 6)}`) {
     return docs.create(p('create'), { docNo: `NO-${crypto.randomUUID().slice(0, 8)}`, name, companyId })
   }
+
+  describe('enumArray', () => {
+    test('wire 大写往返、库内小写;同值补丁无差异不审计', async () => {
+      const doc = await docs.create(p('create'), { name: '标签单', companyId, tags: ['RED', 'BLUE'] })
+      expect(doc.tags).toEqual(['RED', 'BLUE'])
+      const raw = await sql<{ tags: string[] }>`SELECT tags FROM std_v2_doc WHERE id = ${doc.id}::uuid`.execute(db)
+      expect(raw.rows[0]!.tags).toEqual(['red', 'blue'])
+
+      await docs.update(p('update'), doc.id, { tags: ['RED', 'BLUE'] })
+      expect(await auditRows('std_v2_doc', doc.id, 'update')).toBe(0)
+
+      const updated = await docs.update(p('update'), doc.id, { tags: ['BLUE'] })
+      expect(updated.tags).toEqual(['BLUE'])
+      expect(await auditRows('std_v2_doc', doc.id, 'update')).toBe(1)
+    })
+  })
 
   describe('numbering', () => {
     test('未提供单号自动取号；显式传入跳过', async () => {
