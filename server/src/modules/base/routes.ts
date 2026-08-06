@@ -8,58 +8,12 @@ import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { deriveWireSchemas } from '~/platform/standard/wire.ts'
 import type { AccountService } from './account-service.ts'
 import type { CompanyService } from './company-service.ts'
 import { ACCOUNT_RESOURCE_NAME, COMPANY_RESOURCE_NAME } from './meta.ts'
 
 const idParam = z.object({ id: z.string().uuid() })
-
-const companyCreateSchema = z
-  .object({
-    code: z.string().min(1),
-    name: z.string().min(1),
-    shortName: z.string().min(1),
-    parentId: z.string().uuid().nullable().optional(),
-    baseCurrencyId: z.string().uuid(),
-  })
-  .strict()
-
-const companyUpdateSchema = z
-  .object({
-    name: z.string().min(1).optional(),
-    shortName: z.string().min(1).optional(),
-    parentId: z.string().uuid().nullable().optional(),
-    baseCurrencyId: z.string().uuid().optional(),
-  })
-  .strict()
-
-const accountDirectionSchema = z.enum(['DEBIT', 'CREDIT'])
-
-const accountCreateSchema = z
-  .object({
-    code: z.string().min(1),
-    name: z.string().min(1),
-    direction: accountDirectionSchema,
-    isGroup: z.boolean().optional(),
-    active: z.boolean().optional(),
-    role: z.string().nullable().optional(),
-    parentId: z.string().uuid().nullable().optional(),
-    companyId: z.string().uuid(),
-    currencyId: z.string().uuid().nullable().optional(),
-  })
-  .strict()
-
-const accountUpdateSchema = z
-  .object({
-    name: z.string().min(1).optional(),
-    direction: accountDirectionSchema.optional(),
-    isGroup: z.boolean().optional(),
-    active: z.boolean().optional(),
-    role: z.string().nullable().optional(),
-    parentId: z.string().uuid().nullable().optional(),
-    currencyId: z.string().uuid().nullable().optional(),
-  })
-  .strict()
 
 const accountTemplateSchema = z
   .object({
@@ -76,8 +30,14 @@ export interface BaseRouteDeps {
 }
 
 /**
- * 挂载于 /base（公司/科目——尚未标准派生的两资源）。
- * 货币/单位已迁 platform/standard 派生路由，见 app.ts 的 /base/currencies、/base/units。
+ * 挂载于 /base（公司/科目——服务已标准派生，路由按动作弹射保留手写）。
+ * 货币/单位走 platform/standard 派生路由，见 app.ts 的 /base/currencies、/base/units。
+ *
+ * 手写理由：两资源的 wire 含嵌套对象（parent/baseCurrency/company/currency/hasChildren），
+ * 标准路由的通用 toDto 返回 Record 会宽化 ApiType、打断 web 的 hc 类型链；
+ * 且标准路由要求完整词表（批量动作），两资源现只有 CRUD 四码。
+ * wire schema 仍自 meta 派生（唯一事实源），PATCH 即 present-key 语义：
+ * 出现即写、null 清空、缺省不动（zod 可选字段天然如此，不再需要 `*Present` 布尔）。
  *
  * 逐端点挂 `guard(资源, 动作)`（requireAuth 之后），handler 用 `permitOf(c)` 取凭证。
  * 动作码唯一事实源是 meta：科目模板初始化未声明独立动作，沿用 create 门控。
@@ -86,6 +46,8 @@ export function baseRoutes(deps: BaseRouteDeps) {
   const { auth, authz, companies, accounts } = deps
   const companyGuard = (action: string) => authz.guard(COMPANY_RESOURCE_NAME, action)
   const accountGuard = (action: string) => authz.guard(ACCOUNT_RESOURCE_NAME, action)
+  const companySchemas = deriveWireSchemas(companies.meta, companies.stampedColumns)
+  const accountSchemas = deriveWireSchemas(accounts.meta, accounts.stampedColumns)
 
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
@@ -101,16 +63,9 @@ export function baseRoutes(deps: BaseRouteDeps) {
     .post(
       '/companies',
       companyGuard('create'),
-      zValidator('json', companyCreateSchema, validationHook),
+      zValidator('json', companySchemas.create, validationHook),
       async (c) => {
-      const body = c.req.valid('json')
-      const item = await companies.create(permitOf(c), {
-        code: body.code,
-        name: body.name,
-        shortName: body.shortName,
-        parentId: body.parentId,
-        baseCurrencyId: body.baseCurrencyId,
-      })
+      const item = await companies.create(permitOf(c), c.req.valid('json') as Record<string, unknown>)
       return c.json(companyDto(item), 201)
     })
     .get(
@@ -125,17 +80,13 @@ export function baseRoutes(deps: BaseRouteDeps) {
       '/companies/:id',
       companyGuard('update'),
       zValidator('param', idParam, validationHook),
-      zValidator('json', companyUpdateSchema, validationHook),
+      zValidator('json', companySchemas.update, validationHook),
       async (c) => {
-        const raw = (await c.req.json()) as Record<string, unknown>
-        const body = c.req.valid('json')
-        const item = await companies.update(permitOf(c), c.req.valid('param').id, {
-          name: body.name,
-          shortName: body.shortName,
-          parentId: body.parentId,
-          parentIdPresent: Object.prototype.hasOwnProperty.call(raw, 'parentId'),
-          baseCurrencyId: body.baseCurrencyId,
-        })
+        const item = await companies.update(
+          permitOf(c),
+          c.req.valid('param').id,
+          c.req.valid('json') as Record<string, unknown>,
+        )
         return c.json(companyDto(item))
       },
     )
@@ -173,20 +124,9 @@ export function baseRoutes(deps: BaseRouteDeps) {
     .post(
       '/accounts',
       accountGuard('create'),
-      zValidator('json', accountCreateSchema, validationHook),
+      zValidator('json', accountSchemas.create, validationHook),
       async (c) => {
-      const body = c.req.valid('json')
-      const item = await accounts.create(permitOf(c), {
-        code: body.code,
-        name: body.name,
-        direction: body.direction,
-        isGroup: body.isGroup,
-        active: body.active,
-        role: body.role,
-        parentId: body.parentId,
-        companyId: body.companyId,
-        currencyId: body.currencyId,
-      })
+      const item = await accounts.create(permitOf(c), c.req.valid('json') as Record<string, unknown>)
       return c.json(accountDto(item), 201)
     })
     .get(
@@ -201,22 +141,13 @@ export function baseRoutes(deps: BaseRouteDeps) {
       '/accounts/:id',
       accountGuard('update'),
       zValidator('param', idParam, validationHook),
-      zValidator('json', accountUpdateSchema, validationHook),
+      zValidator('json', accountSchemas.update, validationHook),
       async (c) => {
-        const raw = (await c.req.json()) as Record<string, unknown>
-        const body = c.req.valid('json')
-        const item = await accounts.update(permitOf(c), c.req.valid('param').id, {
-          name: body.name,
-          direction: body.direction,
-          isGroup: body.isGroup,
-          active: body.active,
-          role: body.role,
-          rolePresent: Object.prototype.hasOwnProperty.call(raw, 'role'),
-          parentId: body.parentId,
-          parentIdPresent: Object.prototype.hasOwnProperty.call(raw, 'parentId'),
-          currencyId: body.currencyId,
-          currencyIdPresent: Object.prototype.hasOwnProperty.call(raw, 'currencyId'),
-        })
+        const item = await accounts.update(
+          permitOf(c),
+          c.req.valid('param').id,
+          c.req.valid('json') as Record<string, unknown>,
+        )
         return c.json(accountDto(item))
       },
     )
@@ -240,6 +171,7 @@ function toListQuery(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> 
   }
 }
 
+/** DTO 保持手写显式形状：hc 类型链需要精确键型（标准 toDto 的 Record 会宽化 ApiType） */
 function companyDto(item: Awaited<ReturnType<CompanyService['get']>>) {
   return {
     id: item.id,

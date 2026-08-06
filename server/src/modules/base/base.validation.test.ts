@@ -1,9 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import { ApiError } from '~/platform/http/errors.ts'
-import { normalizeCreate, validateInput } from './account-service.ts'
+import { applyGroupRoleRule } from './account-service.ts'
 import { createRegistry } from '~/platform/meta/registry.ts'
 import { deriveWireSchemas } from '~/platform/standard/wire.ts'
-import { allBaseResourceMetas, unitResourceMeta } from './meta.ts'
+import {
+  accountResourceMeta,
+  allBaseResourceMetas,
+  companyResourceMeta,
+  unitResourceMeta,
+} from './meta.ts'
 
 describe('base 校验与 Meta', () => {
   test('Meta 四资源可注册', () => {
@@ -43,57 +47,88 @@ describe('base 校验与 Meta', () => {
     expect(schemas.create.safeParse({ unitType: 'AREA', name: '平米', symbol: 'm2', ratio: 'abc' }).success).toBe(false)
   })
 
-  test('会计科目：方向/角色/汇总清 role', () => {
-    const leaf = normalizeCreate({
-      code: '1124',
-      name: '未开票应收',
+  test('会计科目派生 schema：方向/角色枚举、编码与名称长度、未知键', () => {
+    const schemas = deriveWireSchemas(accountResourceMeta(), new Set())
+    const companyId = '00000000-0000-0000-0000-000000000001'
+
+    const ok = schemas.create.parse({
+      code: ' 1124 ',
+      name: ' 未开票应收 ',
       direction: 'DEBIT',
       role: 'UNBILLED_RECEIVABLE',
-      companyId: '00000000-0000-0000-0000-000000000001',
-    })
-    expect(leaf.role).toBe('unbilled_receivable')
-    validateInput(leaf)
+      companyId,
+    }) as Record<string, unknown>
+    expect(ok.code).toBe('1124')
+    expect(ok.name).toBe('未开票应收')
+    // wire 恒大写；库内小写由 toDbValue 落库时转换
+    expect(ok.role).toBe('UNBILLED_RECEIVABLE')
+    // 角色可空（清空）
+    expect(schemas.create.safeParse({ code: '1', name: '资产', direction: 'DEBIT', role: null, companyId }).success).toBe(true)
 
-    const group = normalizeCreate({
-      code: '1',
-      name: '资产',
-      direction: 'DEBIT',
-      isGroup: true,
-      role: 'RECEIVABLE',
-      companyId: '00000000-0000-0000-0000-000000000001',
-    })
+    const bad = [
+      { code: '', name: 'x', direction: 'DEBIT', companyId },
+      { code: 'x'.repeat(33), name: 'x', direction: 'DEBIT', companyId },
+      { code: '1', name: 'x'.repeat(129), direction: 'DEBIT', companyId },
+      { code: '1', name: 'x', direction: 'sideways', companyId },
+      { code: '1', name: 'x', direction: 'debit', companyId },
+      { code: '1', name: 'x', direction: 'DEBIT', role: 'NOT_A_ROLE', companyId },
+      { code: '1', name: 'x', direction: 'DEBIT', companyId, bogus: 1 },
+      { code: '1', name: 'x', direction: 'DEBIT' },
+    ]
+    for (const input of bad) {
+      expect(schemas.create.safeParse(input).success).toBe(false)
+    }
+
+    // 编码/公司 createOnly：不进 update schema
+    expect(schemas.update.safeParse({ code: '2' }).success).toBe(false)
+    expect(schemas.update.safeParse({ companyId }).success).toBe(false)
+    expect(schemas.update.safeParse({ name: '改名', parentId: null }).success).toBe(true)
+  })
+
+  test('会计科目：汇总科目清 role（领域钩子）', () => {
+    const group: Record<string, unknown> = { isGroup: true, role: 'RECEIVABLE' }
+    applyGroupRoleRule(group)
     expect(group.role).toBeNull()
-    expect(group.direction).toBe('debit')
-    validateInput(group)
 
-    expect(() =>
-      validateInput({
-        code: '',
-        name: 'x',
-        direction: 'debit',
-        companyId: 'c',
-        role: null,
-      }),
-    ).toThrow(ApiError)
+    const leaf: Record<string, unknown> = { isGroup: false, role: 'RECEIVABLE' }
+    applyGroupRoleRule(leaf)
+    expect(leaf.role).toBe('RECEIVABLE')
+  })
 
-    expect(() =>
-      validateInput({
-        code: '1',
-        name: 'x',
-        direction: 'sideways',
-        companyId: 'c',
-        role: null,
-      }),
-    ).toThrow(ApiError)
+  test('公司派生 schema：名称/简称长度、上级可空、编号 createOnly', () => {
+    const schemas = deriveWireSchemas(companyResourceMeta(), new Set())
+    const currencyId = '00000000-0000-0000-0000-000000000002'
 
-    expect(() =>
-      validateInput({
-        code: '1',
-        name: 'x',
-        direction: 'debit',
-        companyId: 'c',
-        role: 'NOT_A_ROLE',
-      }),
-    ).toThrow(ApiError)
+    const ok = schemas.create.parse({
+      code: 'SH',
+      name: ' 上海总部 ',
+      shortName: ' 上海 ',
+      parentId: null,
+      baseCurrencyId: currencyId,
+    }) as Record<string, unknown>
+    expect(ok.name).toBe('上海总部')
+    expect(ok.shortName).toBe('上海')
+
+    const bad = [
+      { code: 'SH', name: 'x'.repeat(129), shortName: '上海', baseCurrencyId: currencyId },
+      { code: 'SH', name: '上海总部', shortName: 'x'.repeat(33), baseCurrencyId: currencyId },
+      { code: 'SH', name: '  ', shortName: '上海', baseCurrencyId: currencyId },
+      { code: 'SH', name: '上海总部', shortName: '上海' },
+      { code: 'SH', name: '上海总部', shortName: '上海', baseCurrencyId: currencyId, bogus: 1 },
+    ]
+    for (const input of bad) {
+      expect(schemas.create.safeParse(input).success).toBe(false)
+    }
+
+    expect(schemas.update.safeParse({ code: 'BJ' }).success).toBe(false)
+    expect(schemas.update.safeParse({ name: '改名', parentId: null }).success).toBe(true)
+
+    // present-key 语义（取代路由的 parentIdPresent 布尔）：缺省键不出现在解析结果里，
+    // 显式 null 保留 → 服务侧「出现即写、null 清空、缺省不动」
+    const cleared = schemas.update.parse({ parentId: null }) as Record<string, unknown>
+    expect(Object.hasOwn(cleared, 'parentId')).toBe(true)
+    expect(cleared.parentId).toBeNull()
+    const renamed = schemas.update.parse({ name: '改名' }) as Record<string, unknown>
+    expect(Object.hasOwn(renamed, 'parentId')).toBe(false)
   })
 })

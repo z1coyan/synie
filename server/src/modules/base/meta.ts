@@ -120,13 +120,20 @@ export function companyResourceMeta(): ResourceMeta {
         filterable: true,
         sortable: true,
       }),
-      field('name', 'name', 'string', '公司名称', { required: true, filterable: true, sortable: true }),
+      field('name', 'name', 'string', '公司名称', {
+        required: true,
+        maxLength: 128,
+        filterable: true,
+        sortable: true,
+      }),
       field('short_name', 'shortName', 'string', '公司简称', {
         required: true,
+        maxLength: 32,
         filterable: true,
         sortable: true,
       }),
       field('parent_id', 'parentId', 'fk', '上级公司', {
+        nullable: true,
         filterable: true,
         ref: { resource: companyResource, relation: companyRelation, labelField: nameField },
       }),
@@ -274,10 +281,16 @@ export function accountResourceMeta(): ResourceMeta {
       field('code', 'code', 'string', '科目编码', {
         required: true,
         createOnly: true,
+        maxLength: 32,
         filterable: true,
         sortable: true,
       }),
-      field('name', 'name', 'string', '科目名称', { required: true, filterable: true, sortable: true }),
+      field('name', 'name', 'string', '科目名称', {
+        required: true,
+        maxLength: 128,
+        filterable: true,
+        sortable: true,
+      }),
       field('direction', 'direction', 'enum', '余额方向', {
         required: true,
         enumOptions: directionOptions,
@@ -287,6 +300,7 @@ export function accountResourceMeta(): ResourceMeta {
       field('is_group', 'isGroup', 'boolean', '汇总科目', { filterable: true, sortable: true }),
       field('active', 'active', 'boolean', '启用', { filterable: true, sortable: true }),
       field('role', 'role', 'enum', '科目角色', {
+        nullable: true,
         enumOptions: roleOptions,
         filterable: true,
         sortable: true,
@@ -306,6 +320,7 @@ export function accountResourceMeta(): ResourceMeta {
         sortable: true,
       }),
       field('parent_id', 'parentId', 'fk', '上级科目', {
+        nullable: true,
         filterable: true,
         ref: { resource: accountResource, relation: accountRelation, labelField: nameField },
       }),
@@ -316,6 +331,7 @@ export function accountResourceMeta(): ResourceMeta {
         ref: { resource: companyResource, relation: companyRelation, labelField: nameField },
       }),
       field('currency_id', 'currencyId', 'fk', '币种', {
+        nullable: true,
         filterable: true,
         ref: { resource: currencyResource, relation: currencyRelation, labelField: nameField },
       }),
