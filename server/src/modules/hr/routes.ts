@@ -15,7 +15,12 @@ import type { AuthService } from '~/platform/auth/service.ts'
 import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
-import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import {
+  dateOnlySchema,
+  decimalStringSchema,
+  listQuerySchema,
+  validationHook,
+} from '~/platform/http/zod.ts'
 import { FILE_RESOURCE_NAME } from '~/platform/files/meta.ts'
 import {
   ATTENDANCE_CORRECTION_RESOURCE,
@@ -439,15 +444,15 @@ export function payrollRoutes(deps: {
           .object({
             employeeId: z.string().uuid(),
             month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
-            workdays: z.string().optional(),
+            workdays: decimalStringSchema.optional(),
             attendanceDays: z.number().int().min(0).optional(),
             missingDays: z.number().int().min(0).optional(),
-            overtimeHours: z.string().optional(),
-            dailyWage: z.string().optional(),
-            allowance: z.string().optional(),
-            bonus: z.string().optional(),
-            fine: z.string().optional(),
-            loanDeduction: z.string().optional(),
+            overtimeHours: decimalStringSchema.optional(),
+            dailyWage: decimalStringSchema.optional(),
+            allowance: decimalStringSchema.optional(),
+            bonus: decimalStringSchema.optional(),
+            fine: decimalStringSchema.optional(),
+            loanDeduction: decimalStringSchema.optional(),
             remarks: z.string().nullable().optional(),
           })
           .strict(),
@@ -493,27 +498,27 @@ export function payrollRoutes(deps: {
         'json',
         z
           .object({
-            workdays: z.string().optional(),
+            workdays: decimalStringSchema.optional(),
             attendanceDays: z.number().int().min(0).optional(),
             missingDays: z.number().int().min(0).optional(),
-            overtimeHours: z.string().optional(),
-            dailyWage: z.string().optional(),
-            allowance: z.string().optional(),
-            bonus: z.string().optional(),
-            fine: z.string().optional(),
-            loanDeduction: z.string().optional(),
+            overtimeHours: decimalStringSchema.optional(),
+            dailyWage: decimalStringSchema.optional(),
+            allowance: decimalStringSchema.optional(),
+            bonus: decimalStringSchema.optional(),
+            fine: decimalStringSchema.optional(),
+            loanDeduction: decimalStringSchema.optional(),
             remarks: z.string().nullable().optional(),
           })
           .strict(),
         validationHook,
       ),
+      // present-key 语义由标准内核承担：出现即写、null 清空、缺省不动
       async (c) => {
-        const raw = (await c.req.json()) as Record<string, unknown>
-        const body = c.req.valid('json')
-        const item = await hr.updatePayroll(permitOf(c), c.req.valid('param').id, {
-          ...body,
-          remarksPresent: present(raw, 'remarks'),
-        })
+        const item = await hr.updatePayroll(
+          permitOf(c),
+          c.req.valid('param').id,
+          c.req.valid('json'),
+        )
         return c.json(payrollDto(item))
       },
     )
@@ -636,8 +641,8 @@ export function employeeLoanRoutes(deps: {
           .object({
             employeeId: z.string().uuid(),
             kind: z.enum(['BORROW', 'REPAY', 'borrow', 'repay']),
-            occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-            amount: z.string(),
+            occurredOn: dateOnlySchema,
+            amount: decimalStringSchema,
             remarks: z.string().nullable().optional(),
           })
           .strict(),
@@ -681,20 +686,20 @@ export function employeeLoanRoutes(deps: {
           .object({
             employeeId: z.string().uuid().optional(),
             kind: z.enum(['BORROW', 'REPAY', 'borrow', 'repay']).optional(),
-            occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-            amount: z.string().optional(),
+            occurredOn: dateOnlySchema.optional(),
+            amount: decimalStringSchema.optional(),
             remarks: z.string().nullable().optional(),
           })
           .strict(),
         validationHook,
       ),
+      // present-key 语义由标准内核承担：出现即写、null 清空、缺省不动
       async (c) => {
-        const raw = (await c.req.json()) as Record<string, unknown>
-        const body = c.req.valid('json')
-        const item = await hr.updateLoan(permitOf(c), c.req.valid('param').id, {
-          ...body,
-          remarksPresent: present(raw, 'remarks'),
-        })
+        const item = await hr.updateLoan(
+          permitOf(c),
+          c.req.valid('param').id,
+          c.req.valid('json'),
+        )
         return c.json(loanDto(item))
       },
     )

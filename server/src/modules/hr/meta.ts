@@ -337,32 +337,34 @@ export function payrollResourceMeta(): ResourceMeta {
     authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('month', 'month', 'string', '月份', { filterable: true, sortable: true, readonly: true }),
+      // 员工 + 月份是单据身份：建单后不可改（错了删单重建）
+      field('month', 'month', 'string', '月份', {
+        required: true,
+        createOnly: true,
+        filterable: true,
+        sortable: true,
+      }),
       field('workdays', 'workdays', 'decimal', '月工日', {
         filterable: true,
         sortable: true,
-        readonly: true,
       }),
       field('attendance_days', 'attendanceDays', 'integer', '出勤天数', {
         filterable: true,
         sortable: true,
-        readonly: true,
       }),
       field('missing_days', 'missingDays', 'integer', '缺卡天数', {
         filterable: true,
         sortable: true,
-        readonly: true,
       }),
       field('overtime_hours', 'overtimeHours', 'decimal', '加班工时', {
         filterable: true,
         sortable: true,
-        readonly: true,
       }),
       field('daily_wage', 'dailyWage', 'decimal', '日薪', {
         filterable: true,
         sortable: true,
-        readonly: true,
       }),
+      // 应发链派生列：服务端算，wire 不可写
       field('base_amount', 'baseAmount', 'decimal', '基本工资', {
         filterable: true,
         sortable: true,
@@ -371,22 +373,18 @@ export function payrollResourceMeta(): ResourceMeta {
       field('allowance', 'allowance', 'decimal', '补贴', {
         filterable: true,
         sortable: true,
-        readonly: true,
       }),
       field('bonus', 'bonus', 'decimal', '奖金', {
         filterable: true,
         sortable: true,
-        readonly: true,
       }),
       field('fine', 'fine', 'decimal', '罚款', {
         filterable: true,
         sortable: true,
-        readonly: true,
       }),
       field('loan_deduction', 'loanDeduction', 'decimal', '借款抵扣', {
         filterable: true,
         sortable: true,
-        readonly: true,
       }),
       field('payable', 'payable', 'decimal', '应发工资', {
         filterable: true,
@@ -405,7 +403,7 @@ export function payrollResourceMeta(): ResourceMeta {
       field('remarks', 'remarks', 'string', '备注', {
         filterable: true,
         sortable: true,
-        readonly: true,
+        nullable: true,
       }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         filterable: true,
@@ -418,8 +416,9 @@ export function payrollResourceMeta(): ResourceMeta {
         readonly: true,
       }),
       field('employee_id', 'employeeId', 'fk', '员工', {
+        required: true,
+        createOnly: true,
         filterable: true,
-        readonly: true,
         ref: { resource: 'hrEmployees', relation: 'employee', labelField: 'name' },
       }),
       field('paid_total', 'paidTotal', 'decimal', '实发合计', {
@@ -428,6 +427,7 @@ export function payrollResourceMeta(): ResourceMeta {
       }),
     ],
     actions: crud,
+    lookup: { labelField: 'month' },
     printHead: true,
     printLoops: [{ name: 'payments', resource: 'hrPayrollPayments' }],
     audit: { enabled: true },
@@ -468,6 +468,7 @@ export function payrollPaymentResourceMeta(): ResourceMeta {
       field('remarks', 'remarks', 'string', '备注', {
         filterable: true,
         sortable: true,
+        nullable: true,
       }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         filterable: true,
@@ -550,6 +551,7 @@ export function employeeLoanResourceMeta(): ResourceMeta {
       field('remarks', 'remarks', 'string', '备注', {
         filterable: true,
         sortable: true,
+        nullable: true,
       }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         filterable: true,
@@ -578,6 +580,8 @@ export function employeeLoanResourceMeta(): ResourceMeta {
       }),
     ],
     actions: crud,
+    // 无 name/label/code：审计 record_label 与选择器标签统一取发生日期
+    lookup: { labelField: 'occurredOn' },
     form: {
       kind: 'basic',
       exclude: ['id', 'payrollId', 'createdById', 'insertedAt', 'updatedAt'],
