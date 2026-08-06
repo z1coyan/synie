@@ -73,8 +73,18 @@ export function materialCategoryResourceMeta(): ResourceMeta {
     authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('code', 'code', 'string', '分类编号', { required: true, filterable: true, sortable: true }),
-      field('name', 'name', 'string', '分类名称', { required: true, filterable: true, sortable: true }),
+      field('code', 'code', 'string', '分类编号', {
+        required: true,
+        maxLength: 32,
+        filterable: true,
+        sortable: true,
+      }),
+      field('name', 'name', 'string', '分类名称', {
+        required: true,
+        maxLength: 128,
+        filterable: true,
+        sortable: true,
+      }),
       field('is_leaf', 'isLeaf', 'boolean', '叶子分类', { filterable: true, sortable: true }),
       field('active', 'active', 'boolean', '启用', { filterable: true, sortable: true }),
       field('has_children', 'hasChildren', 'boolean', '含下级分类', {
@@ -92,6 +102,7 @@ export function materialCategoryResourceMeta(): ResourceMeta {
         sortable: true,
       }),
       field('parent_id', 'parentId', 'fk', '上级分类', {
+        nullable: true,
         filterable: true,
         ref: {
           resource: 'invMaterialCategories',
@@ -100,7 +111,7 @@ export function materialCategoryResourceMeta(): ResourceMeta {
         },
       }),
     ],
-    actions: crud,
+    actions: standardCrud,
     form: {
       kind: 'basic',
       exclude: ['id', 'active', 'insertedAt', 'updatedAt', 'hasChildren'],

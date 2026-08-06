@@ -703,6 +703,76 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     })
   })
 
+  test('单头改单（标准内核）：present-key 语义 / 业务日归一 / 无差异不落库', async () => {
+    const { currencyId } = await ensureBaseline()
+    const editSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()
+    const company = await companies.create(companyPermit(), {
+      code: await allocCompanyCode(db, `E${editSuffix}`),
+      name: `改单公司${editSuffix}`,
+      shortName: `改${editSuffix.slice(0, 2)}`,
+      baseCurrencyId: currencyId,
+    })
+    tracked.companyIds.push(company.id)
+    const whA = await inv.warehouses.create(masterPermit('invWarehouses', 'create'), {
+      name: `E${editSuffix}A`,
+      companyId: company.id,
+      isLeaf: true,
+    })
+    const whB = await inv.warehouses.create(masterPermit('invWarehouses', 'create'), {
+      name: `E${editSuffix}B`,
+      companyId: company.id,
+      isLeaf: true,
+    })
+    tracked.warehouseIds.push(whA.id, whB.id)
+
+    const doc = await inv.stockDocs.create(permit(), {
+      docNo: `E${editSuffix}-IN`,
+      direction: 'IN',
+      companyId: company.id,
+      warehouseId: whA.id,
+      summary: '原摘要',
+    })
+    tracked.docIds.push(doc.id)
+    expect(doc.docDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+
+    // 出现即写：summary 置空、仓库改挂；未出现的 remarks 不动
+    const updated = await inv.stockDocs.update(permit(), doc.id, {
+      summary: null,
+      warehouseId: whB.id,
+      docDate: '2026-03-04T00:00:00Z',
+    })
+    expect(updated.summary).toBeNull()
+    expect(updated.warehouseId).toBe(whB.id)
+    // 业务日接受 ISO 输入，落库与读回恒为 YYYY-MM-DD
+    expect(updated.docDate).toBe('2026-03-04')
+    expect(updated.status).toBe('DRAFT')
+    expect(updated.createdById).toBe(actor.userId)
+
+    const auditRows = async (actionName: string) =>
+      (
+        await db
+          .selectFrom('sys_audit_log')
+          .select('id')
+          .where('resource', '=', 'inv_stock_doc')
+          .where('record_id', '=', doc.id)
+          .where('action_name', '=', actionName)
+          .execute()
+      ).length
+    expect(await auditRows('create')).toBe(1)
+    expect(await auditRows('update')).toBe(1)
+
+    // 无差异补丁：直接返回现值，不写审计、不动 updated_at
+    const noop = await inv.stockDocs.update(permit(), doc.id, { docDate: '2026-03-04' })
+    expect(await auditRows('update')).toBe(1)
+    expect(noop.updatedAt.getTime()).toBe(updated.updatedAt.getTime())
+
+    // 非草稿不可改：审核后即锁（行非空校验先于状态翻转）
+    await expect(inv.stockDocs.audit(permit(), doc.id)).rejects.toMatchObject({
+      code: 'conflict',
+      message: '审核前必须至少填写一行单据行',
+    })
+  })
+
   test('物料类型：默认库存、枚举校验、有库存分录后锁定', async () => {
     const { currencyId, unitId } = await ensureBaseline()
     const lockSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()

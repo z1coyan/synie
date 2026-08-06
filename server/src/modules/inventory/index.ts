@@ -17,8 +17,9 @@ import { createWarehouseService } from './warehouse-service.ts'
 export { inventoryRoutes } from './routes.ts'
 export { inventoryMasterRoutes } from './master-routes.ts'
 export { allInventoryResourceMetas } from './meta.ts'
-/** 标准派生路由的资源名（app.ts 挂 `/base/materials` 用） */
+/** 标准派生路由的资源名（app.ts 挂 `/base/materials`、`/base/material-categories` 用） */
 export { MATERIAL_RESOURCE } from './material-service.ts'
+export { CATEGORY_RESOURCE } from './category-service.ts'
 export type { MaterialCategoryService } from './category-service.ts'
 export type { MaterialService } from './material-service.ts'
 export type { MaterialUnitService } from './material-unit-service.ts'

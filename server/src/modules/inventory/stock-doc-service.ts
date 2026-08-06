@@ -1,10 +1,14 @@
 /**
- * 手工出入库单：审核/作废走 withTx + 库存过账骨架（auditInventoryDocInTx）。
+ * 手工出入库单：单头走标准动作内核（get/list/update/remove + workflow 转移），
+ * 审核/作废两个转移的 effect 调库存引擎（取代 posting/skeleton 的编排 spec）。
  *
- * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
- * 列表 `listAuthorized`、写前取行 `loadAuthorized`（不命中一律 not_found）、
- * create 走 `assertCompanyWritable`。模块内零鉴权代码。
- * 状态前置条件（草稿才能改等）是领域不变量，留在本文件抛 conflict。
+ * 两处按动作弹射（内核缺「服务端派生列」原语，见迁移决策日志）：
+ * - `create`：`created_by_id` 是 readonly 列且本资源不声明 owner 绑定
+ *   （矩阵不得授出行级范围，见 resource-authz.test），内核 insert 写不进该列；
+ * - 单据行 CRUD：物料快照列（material_code/base_qty…）readonly，
+ *   子行内核的 update 只写 writable 列，行充实落不了库。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
  */
 import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -12,32 +16,23 @@ import type { Kysely } from 'kysely'
 import type { InventoryEngine } from '~/engines/inventory/index.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import {
-  auditCreated,
-  auditDestroyed,
-  auditDiff,
-  writeAudit,
-} from '~/platform/audit/write.ts'
+import { auditCreated, auditDestroyed, auditDiff, writeAudit } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
+import { mapRow, snapshot } from '~/platform/standard/fields.ts'
+import { auditStamp, createStandardService, type StandardService } from '~/platform/standard/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listAuthorized } from '~/db/list.ts'
 import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
 import {
-  auditInventoryDocInTx,
-  voidInventoryDocInTx,
-} from '~/platform/posting/skeleton.ts'
-import {
   dateWire,
-  lowerStatus,
   projectStockItem,
   runeLen,
   toDate,
   trimOrNull,
-  upperStatus,
   validateLeafWarehouse,
   validateOptionalText,
   wireDecimal,
@@ -48,11 +43,12 @@ import { stockDocItemResourceMeta, stockDocResourceMeta } from './meta.ts'
 export type StockDocDirection = 'IN' | 'OUT'
 export type StockDocStatus = 'DRAFT' | 'AUDITED' | 'VOIDED'
 
+/** wire 形单头（内核口径：date 为 YYYY-MM-DD 字符串，datetime 为 Date） */
 export interface StockDoc {
   id: string
   docNo: string
   direction: StockDocDirection
-  docDate: Date
+  docDate: string
   summary: string | null
   remarks: string | null
   status: StockDocStatus
@@ -63,6 +59,7 @@ export interface StockDoc {
   warehouseId: string
   createdById: string | null
   auditedById: string | null
+  [key: string]: unknown
 }
 
 export interface StockDocItem {
@@ -83,12 +80,12 @@ export interface StockDocItem {
   unitId: string
 }
 
-const DOC_AUDIT = auditFieldsOf(stockDocResourceMeta())
-
-const ITEM_AUDIT = auditFieldsOf(stockDocItemResourceMeta())
-
 const DOC_META = stockDocResourceMeta()
 const ITEM_META = stockDocItemResourceMeta()
+
+const DOC_AUDIT = auditFieldsOf(DOC_META)
+const ITEM_AUDIT = auditFieldsOf(ITEM_META)
+
 const LABEL = '手工出入库单'
 const ITEM_LABEL = '手工出入库单行'
 const VOUCHER_TYPE = 'inv.stock_doc'
@@ -99,6 +96,8 @@ export const DOC_ITEM_RESOURCE = 'invStockDocItems'
 const DOC_TABLE = 'inv_stock_doc'
 const ITEM_TABLE = 'inv_stock_doc_item'
 
+const DOC_WRITE_ERRORS = [{ code: '23505', message: '单据编号已存在' }] as const
+
 export function createStockDocService(
   db: Kysely<Database>,
   numbering: NumberingService,
@@ -108,64 +107,92 @@ export function createStockDocService(
   const docTarget = registry.authzTarget(DOC_RESOURCE)
   const itemTarget = registry.authzTarget(DOC_ITEM_RESOURCE)
 
-  /** 按 Permit 取单头（可锁）；不命中一律 not_found */
-  async function loadDoc(
-    handle: DbHandle,
-    permit: Permit,
-    id: string,
-    forUpdate: boolean,
-  ): Promise<StockDoc> {
-    const row = await loadAuthorized({
-      db: handle,
-      permit,
-      target: docTarget,
-      table: DOC_TABLE,
-      id,
-      forUpdate,
-      notFoundMessage: `${LABEL}不存在`,
-    })
-    return mapDoc(row as never)
+  /** 单头行集（审核过账用；行由手写路径维护，故此处直查） */
+  async function itemRowsOf(trx: DbHandle, docId: string) {
+    return trx.selectFrom('inv_stock_doc_item').selectAll().where('stock_doc_id', '=', docId).execute()
   }
 
-  /** 锁草稿单头：行编辑与工作流的公共前置（授权 → 状态守卫） */
-  async function lockDraftDoc(trx: DbHandle, permit: Permit, docId: string): Promise<StockDoc> {
-    const doc = await loadDoc(trx, permit, docId, true)
-    if (doc.status !== 'DRAFT') {
-      throw new ApiError('conflict', `仅草稿${LABEL}可编辑单据行`)
-    }
-    return doc
-  }
+  const base: StandardService<StockDoc> = createStandardService<StockDoc>({
+    db,
+    registry,
+    resource: DOC_RESOURCE,
+    notFound: `${LABEL}不存在`,
+    defaultOrder: sql`"doc_no" ASC, "id" ASC`,
+    writeErrors: [...DOC_WRITE_ERRORS],
+    hooks: {
+      // create 走手写路径；本钩子只服务 update
+      validate: ({ action, draft, before }) => {
+        if (action !== 'update' || !before) return
+        normalizeDocDraft(draft)
+        if (draft.direction !== before.direction) {
+          throw ApiError.validation(`${LABEL}参数不合法`, { direction: ['出入库方向不可变更'] })
+        }
+        const fields: Record<string, string[]> = {}
+        const docNo = String(draft.docNo ?? '')
+        if (!docNo || runeLen(docNo) > 32) fields.docNo = ['不能为空且最多 32 个字符']
+        validateOptionalText(fields, 'summary', draft.summary as string | null, 512)
+        validateOptionalText(fields, 'remarks', draft.remarks as string | null, 512)
+        if (Object.keys(fields).length > 0) {
+          throw ApiError.validation(`${LABEL}参数不合法`, fields)
+        }
+      },
+      beforeWrite: async (trx, { draft }) => {
+        await validateLeafWarehouse(trx, String(draft.companyId), String(draft.warehouseId), LABEL)
+      },
+    },
+    workflow: {
+      mutableMessage: `仅草稿${LABEL}可修改或删除`,
+      transitions: [
+        {
+          key: 'audit',
+          label: '审核',
+          from: ['DRAFT'],
+          to: 'AUDITED',
+          guardMessage: `仅草稿${LABEL}可审核`,
+          stamps: ({ permit }) => auditStamp(permit),
+          effect: async (trx, { before }) => {
+            const items = await itemRowsOf(trx, String(before.id))
+            if (items.length === 0) {
+              throw new ApiError('conflict', '审核前必须至少填写一行单据行')
+            }
+            // 方向进 direction；数量为绝对值（引擎 interface 瘦身后）
+            const stockLines = items.map((item) => ({
+              warehouseId: String(before.warehouseId),
+              materialId: item.material_id,
+              quantity: decimal(item.base_qty),
+              direction: before.direction === 'OUT' ? ('out' as const) : ('in' as const),
+              remarks: before.summary as string | null,
+            }))
+            await inventory.post(
+              trx,
+              {
+                type: VOUCHER_TYPE,
+                id: String(before.id),
+                no: String(before.docNo),
+                companyId: String(before.companyId),
+                postingDate: String(before.docDate),
+              },
+              stockLines,
+            )
+          },
+        },
+        {
+          key: 'void',
+          label: '作废',
+          from: ['AUDITED'],
+          to: 'VOIDED',
+          guardMessage: `仅已审核${LABEL}可作废`,
+          effect: async (trx, { before }) => {
+            await inventory.cancel(trx, { type: VOUCHER_TYPE, id: String(before.id) }, new Date())
+          },
+        },
+      ],
+    },
+  })
 
-  /** 单据行的母单：行不存在与母单不可达同为 not_found */
-  async function parentOf(trx: DbHandle, permit: Permit, itemId: string): Promise<StockDoc> {
-    const row = await trx
-      .selectFrom('inv_stock_doc_item')
-      .select('stock_doc_id')
-      .where('id', '=', itemId)
-      .executeTakeFirst()
-    if (!row) throw new ApiError('not_found', `${ITEM_LABEL}不存在`)
-    return lockDraftDoc(trx, permit, row.stock_doc_id)
-  }
-  async function get(permit: Permit, id: string): Promise<StockDoc> {
-    return loadDoc(db, permit, id, false)
-  }
-
-  async function list(permit: Permit, query: Partial<ListQuery>) {
-    return listAuthorized({
-      db,
-      permit,
-      target: docTarget,
-      alias: DOC_TABLE,
-      resource: DOC_META,
-      source: sql` FROM inv_stock_doc`,
-      select: sql`SELECT id,doc_no,direction,doc_date,summary,remarks,status,audited_at,
-        inserted_at,updated_at,company_id,warehouse_id,created_by_id,audited_by_id`,
-      defaultOrder: sql`"doc_no" ASC, "id" ASC`,
-      query,
-      mapRow: (r) => mapDoc(r as never),
-    })
-  }
-
+  /**
+   * 创建（手写）：单号取号 + 录入人盖章 —— created_by_id 不在内核可写列内。
+   */
   async function create(
     permit: Permit,
     input: {
@@ -198,7 +225,7 @@ export function createStockDocService(
       let docNo = input.docNo?.trim() ?? ''
       if (!docNo) {
         docNo = await numbering.nextInTx(trx, {
-          resource: 'inv.stock_doc',
+          resource: VOUCHER_TYPE,
           values: {
             company_id: input.companyId,
             doc_date: docDate,
@@ -214,7 +241,7 @@ export function createStockDocService(
           .insertInto('inv_stock_doc')
           .values({
             doc_no: docNo,
-            direction: lowerStatus(input.direction),
+            direction: input.direction.toLowerCase(),
             doc_date: docDate,
             summary: trimOrNull(input.summary),
             remarks: trimOrNull(input.remarks),
@@ -224,189 +251,55 @@ export function createStockDocService(
           })
           .returningAll()
           .executeTakeFirstOrThrow()
-        const item = mapDoc(row)
+        const item = mapRow(DOC_META, row) as StockDoc
         await writeAudit(trx, permit.actor, {
-          resource: 'inv_stock_doc',
+          resource: DOC_TABLE,
           recordId: item.id,
           recordLabel: item.docNo,
           companyId: item.companyId,
           actionType: 'create',
           actionName: 'create',
-          changes: auditCreated(docSnap(item), DOC_AUDIT),
+          changes: auditCreated(snapshot(DOC_META, item, DOC_AUDIT), DOC_AUDIT),
         })
         return item
       } catch (err) {
-        throw mapWriteError(err, '创建手工出入库单失败', [
-          { code: '23505', message: '单据编号已存在' },
-        ])
+        throw mapWriteError(err, '创建手工出入库单失败', [...DOC_WRITE_ERRORS])
       }
     })
   }
 
-  async function update(
-    permit: Permit,
-    id: string,
-    input: {
-      docNo?: string
-      direction?: StockDocDirection
-      docDate?: string
-      summary?: string | null
-      summaryPresent?: boolean
-      remarks?: string | null
-      remarksPresent?: boolean
-      warehouseId?: string
-    },
-  ): Promise<StockDoc> {
-    return withTx(db, async (trx) => {
-      const before = await loadDoc(trx, permit, id, true)
-      if (before.status !== 'DRAFT') {
-        throw new ApiError('conflict', '仅草稿手工出入库单可修改或删除')
-      }
-      if (input.direction != null && input.direction !== before.direction) {
-        throw ApiError.validation(`${LABEL}参数不合法`, { direction: ['出入库方向不可变更'] })
-      }
-      const after: StockDoc = {
-        ...before,
-        docNo: input.docNo != null ? input.docNo.trim() : before.docNo,
-        docDate: input.docDate ? new Date(`${dateWire(input.docDate)}T00:00:00Z`) : before.docDate,
-        summary: input.summaryPresent ? trimOrNull(input.summary) : before.summary,
-        remarks: input.remarksPresent ? trimOrNull(input.remarks) : before.remarks,
-        warehouseId: input.warehouseId ?? before.warehouseId,
-      }
-      const fields: Record<string, string[]> = {}
-      if (!after.docNo || runeLen(after.docNo) > 32) fields.docNo = ['不能为空且最多 32 个字符']
-      validateOptionalText(fields, 'summary', after.summary, 512)
-      validateOptionalText(fields, 'remarks', after.remarks, 512)
-      if (Object.keys(fields).length > 0) {
-        throw ApiError.validation(`${LABEL}参数不合法`, fields)
-      }
-      await validateLeafWarehouse(trx, after.companyId, after.warehouseId, LABEL)
-      const changes = auditDiff(docSnap(before), docSnap(after), DOC_AUDIT)
-      if (Object.keys(changes).length === 0) return before
-      try {
-        const row = await trx
-          .updateTable('inv_stock_doc')
-          .set({
-            doc_no: after.docNo,
-            doc_date: dateWire(after.docDate),
-            summary: after.summary,
-            remarks: after.remarks,
-            warehouse_id: after.warehouseId,
-            updated_at: sql`(now() AT TIME ZONE 'utc')`,
-          })
-          .where('id', '=', id)
-          .returningAll()
-          .executeTakeFirstOrThrow()
-        const item = mapDoc(row)
-        await writeAudit(trx, permit.actor, {
-          resource: 'inv_stock_doc',
-          recordId: item.id,
-          recordLabel: item.docNo,
-          companyId: item.companyId,
-          actionType: 'update',
-          actionName: 'update',
-          changes,
-        })
-        return item
-      } catch (err) {
-        throw mapWriteError(err, '更新手工出入库单失败', [
-          { code: '23505', message: '单据编号已存在' },
-        ])
-      }
+  /** 按 Permit 取单头（可锁）；不命中一律 not_found */
+  async function loadDoc(handle: DbHandle, permit: Permit, id: string, forUpdate: boolean): Promise<StockDoc> {
+    const row = await loadAuthorized({
+      db: handle,
+      permit,
+      target: docTarget,
+      table: DOC_TABLE,
+      id,
+      forUpdate,
+      notFoundMessage: `${LABEL}不存在`,
     })
+    return mapRow(DOC_META, row) as StockDoc
   }
 
-  async function remove(permit: Permit, id: string): Promise<void> {
-    await withTx(db, async (trx) => {
-      const item = await loadDoc(trx, permit, id, true)
-      if (item.status !== 'DRAFT') {
-        throw new ApiError('conflict', '仅草稿手工出入库单可修改或删除')
-      }
-      await trx.deleteFrom('inv_stock_doc').where('id', '=', id).execute()
-      await writeAudit(trx, permit.actor, {
-        resource: 'inv_stock_doc',
-        recordId: item.id,
-        recordLabel: item.docNo,
-        companyId: item.companyId,
-        actionType: 'destroy',
-        actionName: 'destroy',
-        changes: auditDestroyed(docSnap(item), DOC_AUDIT),
-      })
-    })
+  /** 锁草稿单头：行编辑的公共前置（授权 → 状态守卫） */
+  async function lockDraftDoc(trx: DbHandle, permit: Permit, docId: string): Promise<StockDoc> {
+    const doc = await loadDoc(trx, permit, docId, true)
+    if (doc.status !== 'DRAFT') {
+      throw new ApiError('conflict', `仅草稿${LABEL}可编辑单据行`)
+    }
+    return doc
   }
 
-  async function audit(permit: Permit, id: string): Promise<StockDoc> {
-    return withTx(db, async (trx) =>
-      auditInventoryDocInTx(trx, permit.actor, inventory, {
-        voucherType: VOUCHER_TYPE,
-        headTable: 'inv_stock_doc',
-        setPostingDate: false,
-        lockDraft: async (t) => {
-          const before = await loadDoc(t, permit, id, true)
-          if (before.status !== 'DRAFT') {
-            throw new ApiError('conflict', '仅草稿手工出入库单可审核')
-          }
-          return before
-        },
-        collect: async (t, before) => {
-          const items = await t
-            .selectFrom('inv_stock_doc_item')
-            .selectAll()
-            .where('stock_doc_id', '=', id)
-            .execute()
-          if (items.length === 0) {
-            throw new ApiError('conflict', '审核前必须至少填写一行单据行')
-          }
-          // 方向进 direction；数量为绝对值（引擎 interface 瘦身后）
-          const stockLines = items.map((item) => ({
-            warehouseId: before.warehouseId,
-            materialId: item.material_id,
-            quantity: decimal(item.base_qty),
-            direction: before.direction === 'OUT' ? ('out' as const) : ('in' as const),
-            remarks: before.summary,
-          }))
-          return { stockLines, postingDate: dateWire(before.docDate) }
-        },
-        voucherOf: (h) => ({ id: h.id, no: h.docNo, companyId: h.companyId }),
-        reload: async (t, headId) => {
-          const row = await t
-            .selectFrom('inv_stock_doc')
-            .selectAll()
-            .where('id', '=', headId)
-            .executeTakeFirstOrThrow()
-          return mapDoc(row)
-        },
-        snapshot: docSnap,
-        auditFields: DOC_AUDIT,
-      }),
-    )
-  }
-
-  async function voidDoc(permit: Permit, id: string): Promise<StockDoc> {
-    return withTx(db, async (trx) =>
-      voidInventoryDocInTx(trx, permit.actor, inventory, {
-        voucherType: VOUCHER_TYPE,
-        headTable: 'inv_stock_doc',
-        lockAudited: async (t) => {
-          const before = await loadDoc(t, permit, id, true)
-          if (before.status !== 'AUDITED') {
-            throw new ApiError('conflict', '仅已审核手工出入库单可作废')
-          }
-          return before
-        },
-        voucherOf: (h) => ({ id: h.id, no: h.docNo, companyId: h.companyId }),
-        reload: async (t, headId) => {
-          const row = await t
-            .selectFrom('inv_stock_doc')
-            .selectAll()
-            .where('id', '=', headId)
-            .executeTakeFirstOrThrow()
-          return mapDoc(row)
-        },
-        snapshot: docSnap,
-        auditFields: DOC_AUDIT,
-      }),
-    )
+  /** 单据行的母单：行不存在与母单不可达同为 not_found */
+  async function parentOf(trx: DbHandle, permit: Permit, itemId: string): Promise<StockDoc> {
+    const row = await trx
+      .selectFrom('inv_stock_doc_item')
+      .select('stock_doc_id')
+      .where('id', '=', itemId)
+      .executeTakeFirst()
+    if (!row) throw new ApiError('not_found', `${ITEM_LABEL}不存在`)
+    return lockDraftDoc(trx, permit, row.stock_doc_id)
   }
 
   // —— 行 ——
@@ -454,13 +347,7 @@ export function createStockDocService(
     validateItemInput(qty, input.materialId, input.unitId, input.remark)
     return withTx(db, async (trx) => {
       const doc = await lockDraftDoc(trx, permit, input.stockDocId)
-      const projection = await projectStockItem(
-        trx,
-        input.materialId,
-        input.unitId,
-        qty,
-        '手工出入库单行',
-      )
+      const projection = await projectStockItem(trx, input.materialId, input.unitId, qty, ITEM_LABEL)
       const row = await trx
         .insertInto('inv_stock_doc_item')
         .values({
@@ -481,7 +368,7 @@ export function createStockDocService(
         .executeTakeFirstOrThrow()
       const item = mapItem(row)
       await writeAudit(trx, permit.actor, {
-        resource: 'inv_stock_doc_item',
+        resource: ITEM_TABLE,
         recordId: item.id,
         recordLabel: item.materialCode,
         companyId: item.companyId,
@@ -522,7 +409,7 @@ export function createStockDocService(
       const remark = input.remarkPresent ? trimOrNull(input.remark) : before.remark
       const idx = input.idx ?? before.idx
       validateItemInput(qty, materialId, unitId, remark)
-      const projection = await projectStockItem(trx, materialId, unitId, qty, '手工出入库单行')
+      const projection = await projectStockItem(trx, materialId, unitId, qty, ITEM_LABEL)
       const after: StockDocItem = {
         ...before,
         idx,
@@ -558,7 +445,7 @@ export function createStockDocService(
         .executeTakeFirstOrThrow()
       const item = mapItem(row)
       await writeAudit(trx, permit.actor, {
-        resource: 'inv_stock_doc_item',
+        resource: ITEM_TABLE,
         recordId: item.id,
         recordLabel: item.materialCode,
         companyId: item.companyId,
@@ -583,7 +470,7 @@ export function createStockDocService(
       const item = mapItem(locked)
       await trx.deleteFrom('inv_stock_doc_item').where('id', '=', id).execute()
       await writeAudit(trx, permit.actor, {
-        resource: 'inv_stock_doc_item',
+        resource: ITEM_TABLE,
         recordId: item.id,
         recordLabel: item.materialCode,
         companyId: item.companyId,
@@ -595,13 +482,10 @@ export function createStockDocService(
   }
 
   return {
-    get,
-    list,
+    ...base,
     create,
-    update,
-    remove,
-    audit,
-    void: voidDoc,
+    audit: (permit: Permit, id: string) => base.transition(permit, id, 'audit'),
+    void: (permit: Permit, id: string) => base.transition(permit, id, 'void'),
     getItem,
     queryItems,
     createItem,
@@ -612,38 +496,12 @@ export function createStockDocService(
 
 export type StockDocService = ReturnType<typeof createStockDocService>
 
-function mapDoc(row: {
-  id: string
-  doc_no: string
-  direction: string
-  doc_date: Date | string
-  summary: string | null
-  remarks: string | null
-  status: string
-  audited_at: Date | string | null
-  inserted_at: Date | string
-  updated_at: Date | string
-  company_id: string
-  warehouse_id: string
-  created_by_id: string | null
-  audited_by_id: string | null
-}): StockDoc {
-  return {
-    id: row.id,
-    docNo: row.doc_no,
-    direction: upperStatus(row.direction) as StockDocDirection,
-    docDate: toDate(row.doc_date),
-    summary: row.summary,
-    remarks: row.remarks,
-    status: upperStatus(row.status) as StockDocStatus,
-    auditedAt: row.audited_at ? toDate(row.audited_at) : null,
-    insertedAt: toDate(row.inserted_at),
-    updatedAt: toDate(row.updated_at),
-    companyId: row.company_id,
-    warehouseId: row.warehouse_id,
-    createdById: row.created_by_id,
-    auditedById: row.audited_by_id,
-  }
+/** 单头 wire 规范化（trim / 业务日切片）：服务直调路径与路由同口径 */
+function normalizeDocDraft(draft: Record<string, unknown>): void {
+  if (typeof draft.docNo === 'string') draft.docNo = draft.docNo.trim()
+  if (typeof draft.docDate === 'string') draft.docDate = dateWire(draft.docDate)
+  draft.summary = trimOrNull(draft.summary as string | null | undefined)
+  draft.remarks = trimOrNull(draft.remarks as string | null | undefined)
 }
 
 function mapItem(row: {
@@ -682,22 +540,6 @@ function mapItem(row: {
   }
 }
 
-function docSnap(item: StockDoc): Record<string, unknown> {
-  return {
-    doc_no: item.docNo,
-    direction: item.direction,
-    doc_date: item.docDate,
-    summary: item.summary,
-    remarks: item.remarks,
-    status: item.status,
-    audited_at: item.auditedAt,
-    company_id: item.companyId,
-    warehouse_id: item.warehouseId,
-    created_by_id: item.createdById,
-    audited_by_id: item.auditedById,
-  }
-}
-
 function itemSnap(item: StockDocItem): Record<string, unknown> {
   return {
     idx: item.idx,
@@ -717,7 +559,7 @@ function itemSnap(item: StockDocItem): Record<string, unknown> {
 
 function parseQty(raw: string) {
   if (!isDecimalString(raw) || !decimal(raw).isPositive()) {
-    throw ApiError.validation('手工出入库单行参数不合法', { qty: ['数量必须大于零'] })
+    throw ApiError.validation(`${ITEM_LABEL}参数不合法`, { qty: ['数量必须大于零'] })
   }
   return decimal(raw)
 }
@@ -734,6 +576,6 @@ function validateItemInput(
   if (!unitId) fields.unitId = ['必填']
   if (remark != null && runeLen(remark) > 512) fields.remark = ['最多 512 个字符']
   if (Object.keys(fields).length > 0) {
-    throw ApiError.validation('手工出入库单行参数不合法', fields)
+    throw ApiError.validation(`${ITEM_LABEL}参数不合法`, fields)
   }
 }
