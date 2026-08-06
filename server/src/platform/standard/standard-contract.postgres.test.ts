@@ -14,13 +14,15 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
+import { createAccountService } from '~/modules/base/account-service.ts'
 import { createCurrencyService } from '~/modules/base/currency-service.ts'
 import { createUnitService } from '~/modules/base/unit-service.ts'
 import { createBankAccountService } from '~/modules/finance/banking-accounts.ts'
 import { createInstrumentService } from '~/modules/base/market/index.ts'
+import { createMaterialCategoryService } from '~/modules/inventory/category-service.ts'
 import { createMaterialService } from '~/modules/inventory/material-service.ts'
 import { createPartyAddressService } from '~/modules/party/address-service.ts'
-import { createCustomerService, createSupplierService } from '~/modules/party/party-service.ts'
+import { createCustomerService, createEmployeeService, createSupplierService } from '~/modules/party/party-service.ts'
 import { buildNumberingCatalog } from '~/platform/numbering/catalog.ts'
 import { createNumberingService } from '~/platform/numbering/service.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
@@ -107,6 +109,40 @@ const CASES: ContractCase[] = [
     patch: () => ({ name: `合同地址改-${crypto.randomUUID().slice(0, 8)}` }),
   },
   {
+    title: '员工',
+    resource: 'hrEmployees',
+    make: (db, registry) =>
+      createEmployeeService(db, createNumberingService(db, buildNumberingCatalog(registry), registry), registry),
+    valid: () => ({
+      code: `CE${crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`,
+      name: `合同员工-${crypto.randomUUID().slice(0, 8)}`,
+      insuranceTypes: ['SOCIAL_INJURY'],
+    }),
+    patch: () => ({ name: `合同员工改-${crypto.randomUUID().slice(0, 8)}` }),
+  },
+  {
+    title: '会计科目',
+    resource: 'basAccounts',
+    make: (db, registry) => createAccountService(db, registry),
+    valid: () => ({
+      code: `CA${crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`,
+      name: `合同科目-${crypto.randomUUID().slice(0, 8)}`,
+      direction: 'DEBIT',
+      companyId: accountFixture.companyId,
+    }),
+    patch: () => ({ name: `合同科目改-${crypto.randomUUID().slice(0, 8)}` }),
+  },
+  {
+    title: '物料分类',
+    resource: 'invMaterialCategories',
+    make: (db, registry) => createMaterialCategoryService(db, registry),
+    valid: () => ({
+      code: `CC${crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`,
+      name: `合同分类-${crypto.randomUUID().slice(0, 8)}`,
+    }),
+    patch: () => ({ name: `合同分类改-${crypto.randomUUID().slice(0, 8)}` }),
+  },
+  {
     title: '物料',
     resource: 'invMaterials',
     make: (db, registry) =>
@@ -142,6 +178,8 @@ let contractPartyId = ''
 const marketFixture = { currencyId: '', unitId: '' }
 /** 物料描述符的分类/单位/编号规则夹具 */
 const materialFixture = { categoryId: '', unitId: '', ruleId: '' }
+/** 会计科目描述符的公司夹具（裸插入，避开公司服务的建仓联动） */
+const accountFixture = { companyId: '', currencyId: '' }
 
 run('标准动作合同（postgres）', () => {
   const db = createDb(url!)
@@ -193,6 +231,16 @@ run('标准动作合同（postgres）', () => {
       VALUES ('quantity', false, ${`合同料单位-${suffix}`}, ${`mt${suffix.slice(0, 6)}`}, 1) RETURNING id
     `.execute(db)
     materialFixture.unitId = mUnit.rows[0]!.id
+    const acctCur = await sql<{ id: string }>`
+      INSERT INTO bas_currency(name, iso_code) VALUES (${`合同科目币-${suffix}`}, ${letters(3)}) RETURNING id
+    `.execute(db)
+    accountFixture.currencyId = acctCur.rows[0]!.id
+    const acctCompany = await sql<{ id: string }>`
+      INSERT INTO bas_company(code, name, short_name, base_currency_id)
+      VALUES (${letters(2) + suffix.slice(4, 8).toUpperCase()}, ${`合同科目公司-${suffix}`}, ${`科目司-${suffix.slice(0, 4)}`}, ${accountFixture.currencyId}::uuid)
+      RETURNING id
+    `.execute(db)
+    accountFixture.companyId = acctCompany.rows[0]!.id
     // 物料自动取号规则（同资源唯一启用；共享库已有则复用，不新插）
     const existing = await sql<{ id: string }>`
       SELECT id FROM sys_numbering_rule WHERE resource = 'base.material' AND enabled
@@ -229,6 +277,9 @@ run('标准动作合同（postgres）', () => {
     if (materialFixture.ruleId) {
       await db.deleteFrom('sys_numbering_rule').where('id', '=', materialFixture.ruleId).execute()
     }
+    await db.deleteFrom('bas_account').where('company_id', '=', accountFixture.companyId).execute()
+    await db.deleteFrom('bas_company').where('id', '=', accountFixture.companyId).execute()
+    await db.deleteFrom('bas_currency').where('id', '=', accountFixture.currencyId).execute()
     await db.destroy()
   })
 

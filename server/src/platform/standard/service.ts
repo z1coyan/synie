@@ -69,6 +69,12 @@ export interface StandardHooks {
   ) => Promise<void> | void
   /** 事务内删前（引用保护等） */
   beforeDelete?: (trx: TrxHandle, ctx: { permit: Permit; item: Record<string, unknown> }) => Promise<void> | void
+  /**
+   * create 的服务端派生列（db 列名 → 值）：readonly 系统列（如无 owner 绑定时的
+   * created_by_id、快照时间戳）随 INSERT 一并落库——写在 RETURNING 之前，
+   * 故 create 审计快照完整（afterWrite 补写会让审计记 null，不允许）。
+   */
+  insertColumns?: (ctx: StandardHookContext) => Record<string, unknown>
 }
 
 /** 工作流转移上下文（before 为 wire 形现值） */
@@ -469,6 +475,7 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
           extraCols[tree.pathColumn] = childPath(parent?.path ?? null, id)
         }
       }
+      if (hooks.insertColumns) Object.assign(extraCols, hooks.insertColumns({ action: 'create', permit, draft }))
       if (options.numbering && numberField) {
         const current = draft[numberField.apiName]
         if (current === undefined || current === null || String(current).trim() === '') {

@@ -74,6 +74,7 @@ function docMeta(): ResourceMeta {
       field('status', 'status', 'enum', '状态', { readonly: true, enumOptions: statusOptions, filterable: true }),
       field('audited_at', 'auditedAt', 'datetime', '审核时间', { readonly: true }),
       field('audited_by_id', 'auditedById', 'uuid', '审核人', { readonly: true }),
+      field('stamped_note', 'stampedNote', 'string', '系统章', { readonly: true, nullable: true }),
       field('company_id', 'companyId', 'uuid', '公司', { required: true, createOnly: true }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', { readonly: true, sortable: true }),
       field('updated_at', 'updatedAt', 'datetime', '更新时间', { readonly: true, sortable: true }),
@@ -100,6 +101,7 @@ function itemMeta(): ResourceMeta {
       field('doc_id', 'docId', 'uuid', '母单', { required: true, createOnly: true, filterable: true }),
       field('idx', 'idx', 'integer', '行号', { required: true, sortable: true }),
       field('qty', 'qty', 'decimal', '数量', { required: true }),
+      field('qty_x2', 'qtyX2', 'decimal', '双倍数量', { readonly: true }),
       field('company_id', 'companyId', 'uuid', '公司', { readonly: true }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', { readonly: true }),
       field('updated_at', 'updatedAt', 'datetime', '更新时间', { readonly: true }),
@@ -165,6 +167,9 @@ run('标准动作内核 v2（postgres）', () => {
     registry,
     resource: 'stdV2Docs',
     numbering: { service: fakeNumbering, field: 'docNo' },
+    hooks: {
+      insertColumns: () => ({ stamped_note: 'G1' }),
+    },
     workflow: {
       mutableStatuses: ['DRAFT'],
       mutableMessage: '仅草稿测试单可修改或删除',
@@ -205,6 +210,12 @@ run('标准动作内核 v2（postgres）', () => {
         if (parent.status !== 'DRAFT') throw new ApiError('conflict', '仅草稿测试单可编辑单据行')
       },
     },
+    derivedFields: ['qtyX2'],
+    hooks: {
+      beforeWrite: (_trx, { draft }) => {
+        draft.qtyX2 = String(Number(draft.qty) * 2)
+      },
+    },
   })
 
   const nodes = createStandardService({
@@ -234,6 +245,7 @@ run('标准动作内核 v2（postgres）', () => {
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         doc_no varchar(32),
         name varchar(64) NOT NULL,
+        stamped_note varchar(32),
         tags text[] NOT NULL DEFAULT '{}',
         status varchar(16) NOT NULL DEFAULT 'draft',
         audited_at timestamp,
@@ -249,6 +261,7 @@ run('标准动作内核 v2（postgres）', () => {
         doc_id uuid NOT NULL REFERENCES std_v2_doc(id) ON DELETE CASCADE,
         idx integer NOT NULL,
         qty numeric(18,6) NOT NULL,
+        qty_x2 numeric(18,6),
         company_id uuid NOT NULL,
         inserted_at timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'utc'),
         updated_at timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
@@ -311,6 +324,8 @@ run('标准动作内核 v2（postgres）', () => {
     test('创建即草稿；审核翻转状态+盖章+效果列+审计 actionName', async () => {
       const doc = await createDraft()
       expect(doc.status).toBe('DRAFT')
+      // G1:服务端派生插入列随 INSERT 落库,create 审计快照完整
+      expect(doc.stampedNote).toBe('G1')
 
       const audited = await docs.transition(p('audit'), doc.id, 'audit')
       expect(audited.status).toBe('AUDITED')
@@ -381,10 +396,12 @@ run('标准动作内核 v2（postgres）', () => {
       const item = await items.create(p('create', 'stdV2Items'), { docId: doc.id, idx: 1, qty: '2.5' })
       expect(item.companyId).toBe(companyId)
       expect(item.qty).toBe('2.5')
+      expect(item.qtyX2).toBe('5')
       expect(await auditRows('std_v2_item', item.id, 'create')).toBe(1)
 
       const updated = await items.update(p('update', 'stdV2Items'), item.id, { qty: '3' })
       expect(updated.qty).toBe('3')
+      expect(updated.qtyX2).toBe('6')
       expect(await auditRows('std_v2_item', item.id, 'update')).toBe(1)
 
       // 无差异补丁：不写审计

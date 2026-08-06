@@ -77,6 +77,12 @@ export interface StandardChildServiceOptions {
   hooks?: ChildHooks
   projection?: StandardProjection
   /**
+   * 服务端派生列（apiName，meta 声明 readonly）：钩子在 beforeWrite 里充实 draft
+   * （物料快照 material_code/base_qty 等），这些列随 INSERT/UPDATE 一并落库。
+   * wire 不可写（readonly 已保证），审计 diff 覆盖（物理列天然进白名单）。
+   */
+  derivedFields?: readonly string[]
+  /**
    * 审计 record_label 覆盖：子行常无自己的名称列（label 在 join 出来的引用上），
    * meta 派生取不到时由模块给出（item 为投影后的 wire 形）。
    */
@@ -128,6 +134,12 @@ export function createStandardChildService<TItem extends StandardItem = Standard
   const inheritFields = (parent.inheritFields ?? []).map((n) => {
     const f = byName(n)
     if (!f) throw new Error(`标准子行派生：资源 ${resource} 带入字段 ${n} 不存在`)
+    return f
+  })
+  const derivedFields = (options.derivedFields ?? []).map((n) => {
+    const f = byName(n)
+    if (!f) throw new Error(`标准子行派生：资源 ${resource} 派生字段 ${n} 不存在`)
+    if (!f.readonly) throw new Error(`标准子行派生：资源 ${resource} 派生字段 ${n} 必须声明 readonly（wire 不可写）`)
     return f
   })
   const stampedColumns = new Set(inheritFields.map((f) => f.dbColumn))
@@ -261,7 +273,7 @@ export function createStandardChildService<TItem extends StandardItem = Standard
       cols.push(sql.id(field.dbColumn))
       vals.push(sql`${toDbValue(field, value)}`)
     }
-    for (const field of inheritFields) {
+    for (const field of [...inheritFields, ...derivedFields]) {
       const value = draft[field.apiName]
       if (value === undefined) continue
       cols.push(sql.id(field.dbColumn))
@@ -317,7 +329,9 @@ export function createStandardChildService<TItem extends StandardItem = Standard
       await hooks.beforeWrite?.(trx, { action: 'update', permit, draft, parent: parentWire, before })
       const changes = auditDiff(snapshot(meta, before, AUDIT), snapshot(meta, draft, AUDIT), AUDIT)
       if (Object.keys(changes).length === 0) return reload(trx, permit, before)
-      const sets = writable.map((f) => sql`${sql.id(f.dbColumn)} = ${toDbValue(f, draft[f.apiName])}`)
+      const sets = [...writable, ...derivedFields].map(
+        (f) => sql`${sql.id(f.dbColumn)} = ${toDbValue(f, draft[f.apiName])}`,
+      )
       sets.push(sql`updated_at = (now() AT TIME ZONE 'utc')`)
       let item: TItem
       try {

@@ -31,7 +31,7 @@ import type { DepartmentService } from './modules/iam/index.ts'
 import type { IamService } from './modules/iam/service.ts'
 import {
   CUSTOMER_RESOURCE_NAME,
-  employeeRoutes,
+  EMPLOYEE_RESOURCE_NAME,
   PARTY_ADDRESS_RESOURCE_NAME,
   SUPPLIER_RESOURCE_NAME,
 } from './modules/party/index.ts'
@@ -43,7 +43,12 @@ import type {
 } from './modules/party/party-service.ts'
 import { companyAccountDefaultRoutes } from './modules/sales/index.ts'
 import type { CompanyAccountDefaultService } from './modules/sales/company-account-default.ts'
-import { inventoryMasterRoutes, inventoryRoutes, MATERIAL_RESOURCE } from './modules/inventory/index.ts'
+import {
+  CATEGORY_RESOURCE,
+  inventoryMasterRoutes,
+  inventoryRoutes,
+  MATERIAL_RESOURCE,
+} from './modules/inventory/index.ts'
 import type {
   MaterialCategoryService,
   MaterialService,
@@ -337,7 +342,16 @@ export function buildApp(deps: AppDeps) {
         service: deps.partyAddresses,
       }),
     )
-    .route('/hr/employees', employeeRoutes({ auth: deps.auth, authz: deps.authz, employees: deps.employees }))
+    .route(
+      '/hr/employees',
+      standardRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        registry: deps.registry,
+        resource: EMPLOYEE_RESOURCE_NAME,
+        service: deps.employees,
+      }),
+    )
     .route(
       '/hr/attendance-punches',
       attendancePunchRoutes({ auth: deps.auth, authz: deps.authz, attendance: deps.hr.attendance }),
@@ -382,11 +396,20 @@ export function buildApp(deps: AppDeps) {
       }),
     )
     .route(
+      '/base/material-categories',
+      standardRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        registry: deps.registry,
+        resource: CATEGORY_RESOURCE,
+        service: deps.invCategories,
+      }),
+    )
+    .route(
       '/base',
       inventoryMasterRoutes({
         auth: deps.auth,
         authz: deps.authz,
-        categories: deps.invCategories,
         materialUnits: deps.invMaterialUnits,
         warehouses: deps.invWarehouses,
       }),
