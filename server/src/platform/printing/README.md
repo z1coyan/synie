@@ -10,4 +10,3 @@ xlsx 模板打印/导出：占位符抽取校验 + 循环区行复制 + 批量�
   - `POST /api/v1/system/printing/templates` 等模板 CRUD
   - `GET /api/v1/printing/resources` / `field-catalog` / `templates`
   - `POST /api/v1/printing/render`（模板+单据→PDF/xlsx 文件流）
-- 工单：`.scratch/arch-deepening/issues/03-printing-decouple.md`

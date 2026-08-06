@@ -4,7 +4,6 @@
 backend
 server-go
 docs
-.scratch
 uploads
 **/*.log
 **/.env

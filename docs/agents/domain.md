@@ -4,28 +4,29 @@ How the engineering skills should consume this repo's domain documentation when 
 
 ## Before exploring, read these
 
-- **`CONTEXT.md`** at the repo root — domain language (ubiquitous language).
-- **`docs/adr/`** — read ADRs that touch the area you're about to work in.
-- **`docs/产品文档/`** — product feature specs by business module (not a Matt-skills primitive, but authoritative for delivered behaviour).
+- **`docs/术语表.md`** — 领域术语（ubiquitous language）的唯一定义处。
+- **`docs/系统架构/adr/`** — read ADRs that touch the area you're about to work in.
+- **`docs/业务模块/`** — 按业务模块分篇的功能说明书，已交付行为的权威描述。
 
-If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates `CONTEXT.md` / ADRs lazily when terms or decisions actually get resolved.
+If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates 术语表 / ADRs lazily when terms or decisions actually get resolved.
 
 ## File structure
 
 Single-context repo:
 
 ```
-/
-├── CONTEXT.md
-├── docs/
-│   ├── adr/
-│   └── 产品文档/
-└── .scratch/          ← active specs & issues (local issue tracker)
+docs/
+├── 术语表.md          ← 领域术语唯一定义
+├── 系统架构/
+│   ├── 模块结构.md     ← 后端分层与依赖规则
+│   ├── 资源接入.md     ← 新增资源的前后端接入点清单
+│   └── adr/           ← 架构决策记录
+└── 业务模块/           ← 功能说明书（按业务模块分篇）
 ```
 
 ## Use the glossary's vocabulary
 
-When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `CONTEXT.md`. Don't drift to synonyms the glossary explicitly avoids.
+When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `docs/术语表.md`. Don't drift to synonyms the glossary explicitly avoids.
 
 If the concept you need isn't in the glossary yet, that's a signal — either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
 

@@ -1,5 +1,5 @@
 // 「权限与菜单」统一抽屉纯逻辑层：dirty 计算、保存计划、跳转域推导、行锚点。
-// 语义见 .scratch/role-access-drawer/spec.md（grill 六问定案）：
+// 语义见 ADR docs/系统架构/adr/2026-08-01-role-menu-whitelist.md：
 // - 两区勾选态各有独立基线，dirty = 当前勾选 ≠ 基线
 // - 保存计划只含「dirty 且可写」的区，顺序固定 菜单 → 功能权限（两 sync 幂等无耦合，
 //   顺序仅让部分失败的归因可预期）；计划为空时保存钮禁用

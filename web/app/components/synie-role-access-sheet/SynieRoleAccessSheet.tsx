@@ -1,4 +1,4 @@
-// 「权限与菜单」统一配置抽屉（.scratch/role-access-drawer/spec.md，grill 六问定案）：
+// 「权限与菜单」统一配置抽屉（ADR docs/系统架构/adr/2026-08-01-role-menu-whitelist.md）：
 // 一个容器、两区强隔离——上「菜单可见性」区 + 下「功能权限」区，菜单树叶子项带
 // 关联资源注解、点击跳转权限矩阵对应行。合并只合并容器：两套存储/端点/门控不动。
 import { useEffect, useMemo, useRef, useState } from 'react'

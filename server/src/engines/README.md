@@ -16,4 +16,3 @@
 - 金额/数量走 `@synie/shared` decimal（interface 层禁止 number）
 - 业务日 `toDateOnly` 单点在 `~/db/dates.ts`
 
-实现工单：`.scratch/ts-backend-rewrite/issues/03-engines.md`

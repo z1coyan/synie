@@ -1,5 +1,5 @@
 // 「配置菜单」Sheet 纯逻辑层：叶子码收集、已失效（孤儿）识别、有效勾选数、提交序列化。
-// 语义对齐规格 .scratch/menu-permission/spec.md：
+// 语义对齐 ADR docs/系统架构/adr/2026-08-01-role-menu-whitelist.md：
 // - 只有叶子菜单项参与勾选与提交；组/模块复选框仅是批量快捷（三态由叶子推导）
 // - 白名单里存在目录外 code（菜单已删除/改名）= 已失效项：不自动删，提示 + 一键清理
 import type { MenuGroup, MenuModule } from '~/lib/menu'

@@ -29,7 +29,7 @@ function entry(shape: PostingShape, note?: string): PostingShapeEntry {
   return note ? { shape, note } : { shape }
 }
 
-/** key 为权限资源码（域.资源），与 CONTEXT.md 术语一致 */
+/** key 为权限资源码（域.资源），与 docs/术语表.md 术语一致 */
 export const POSTING_SHAPES = {
   // ---- 履约：库存 + 条件总账 + 订单投影 ----
   'sales.delivery': entry('fulfillment'),

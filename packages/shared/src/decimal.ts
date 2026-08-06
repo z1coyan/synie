@@ -3,7 +3,7 @@ import Decimal from 'decimal.js'
 // 金额纪律（对齐迁移定案 KD7 与 server-go 的 shopspring/decimal 行为）：
 // - wire 一律字符串十进制，禁止 JSON number 表示金额/数量
 // - 舍入恒为 half-up（half away from zero），与 Elixir/Go 两版一致
-// - 精度档位：金额 2 位、本币单价 4 位、base 数量 6 位（见 CONTEXT.md 金额链）
+// - 精度档位：金额 2 位、本币单价 4 位、base 数量 6 位（见 docs/术语表.md 金额链）
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP, toExpPos: 100, toExpNeg: -100 })
 
 export { Decimal }

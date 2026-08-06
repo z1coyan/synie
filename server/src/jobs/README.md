@@ -6,4 +6,3 @@
 - 行为参考：`server-go/internal/jobs/marketsched/`
 - 形态：进程内 scheduler（`setInterval`），不引外部队列；`stop()` 优雅停机
 - 决策纯函数：`marketsched/decision.ts`（可注入时钟的 scheduler 见 `scheduler.ts`）
-- 实现工单：`.scratch/ts-backend-rewrite/issues/14-market-jobs.md`

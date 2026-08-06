@@ -1,7 +1,7 @@
 import { Label, ListBox, Select } from '@heroui/react'
 
 // 报销类型 = 科目角色的五个费用角色(bas_account_role 枚举,与后端 AccountRole.expense_roles/0 同序);
-// 纯录入辅助:单据上不存角色值、只存科目(见 CONTEXT.md「费用角色」)
+// 纯录入辅助:单据上不存角色值、只存科目(见 docs/术语表.md「费用角色」)
 export const EXPENSE_ROLES = [
   { value: 'TRAVEL', label: '差旅费' },
   { value: 'OFFICE', label: '办公费' },

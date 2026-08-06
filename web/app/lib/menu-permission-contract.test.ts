@@ -5,7 +5,7 @@
  * 2. 权限目录里每个 prefix 必须被至少一个菜单项注解，或列入下方显式「无菜单」白名单
  *    （防新资源上线后注解漏标，抽屉里变成无法跳转的孤岛）；
  * 3. 同一菜单项的注解不重复。
- * 语义见 .scratch/role-access-drawer/spec.md。
+ * 语义见 ADR docs/系统架构/adr/2026-08-01-role-menu-whitelist.md。
  */
 import { describe, expect, test } from 'bun:test'
 import { menuModules } from './menu.ts'

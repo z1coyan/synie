@@ -12,8 +12,6 @@ modules/<domain>/
 
 硬规则：
 1. 域间依赖单向（sales/purchase → engines → platform），跨域用显式参数，禁止环。
-2. wire 形状（URL/JSON/错误文案）与 server-go + 原 OpenAPI 对齐；verify 脚本见
-   `.scratch/migration/verify-*.ts`（改为打 Bun server 后即验收工具）。
+2. wire 形状（URL/JSON/错误文案）与历史 server-go + 原 OpenAPI 对齐（归档见 git 历史）。
 3. 每域落地即在 `src/index.ts` 的 registerAll 处注册 meta 并挂载路由。
 
-实现顺序与验收：`.scratch/ts-backend-rewrite/spec.md` 与 issues/。

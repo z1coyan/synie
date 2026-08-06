@@ -2,7 +2,7 @@ import { decimal, toDecimalString } from '@synie/shared'
 
 /**
  * 考勤日算与 .dat 解析纯函数（对齐 server-go/internal/domain/hr/operations）。
- * ADR: docs/adr/2026-07-15-attendance-daily-calc.md / attendance-import.md
+ * ADR: docs/系统架构/adr/2026-07-15-attendance-daily-calc.md / attendance-import.md
  */
 
 export const MORNING_AFTERNOON_SPLIT_HOUR = 12
@@ -189,7 +189,7 @@ export function lowerWire(value: string): string {
 
 // ── 工资发放 ↔ 借款抵扣纯核 ─────────────────────────────────────────────────
 // IO（写 payment / loan / payroll status / audit）归 service adapter。
-// 产品规则：docs/产品文档/人力薪酬.md「工资发放与借款抵扣」
+// 产品规则：docs/业务模块/人力薪酬.md「工资发放与借款抵扣」
 
 /** 参与余额汇总的借款台账行（kind 大小写不敏感） */
 export interface LoanBalanceRow {

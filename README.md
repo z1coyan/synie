@@ -12,7 +12,7 @@ Synie 是一个多公司财务 ERP，**纯 TypeScript monorepo**（Bun workspace
 
 已交付的核心模块包括总账、发票、银行与票据、客户和供应商、销售采购库存制造、人力薪酬、基础资料及系统管理。
 
-历史栈清场记录见 [`docs/migration/2026-07-28-go-to-bun-ts-cutover.md`](docs/migration/2026-07-28-go-to-bun-ts-cutover.md)（Go tag `server-go-final`、Elixir tag `backend-elixir-final`；OpenAPI 归档 `docs/migration/openapi-server-go-final.yaml`）。
+历史栈（Go / Elixir）已移出工作树，考古见 git tag `server-go-final` / `backend-elixir-final`。
 
 ## 目录结构
 
@@ -29,13 +29,11 @@ Synie 是一个多公司财务 ERP，**纯 TypeScript monorepo**（Bun workspace
 │   ├── app/lib/api/            # hono/client 与 Resource Client
 │   ├── app/lib/resources/      # ResourceClient registry
 │   └── app/routes/             # 页面与路由
-├── contracts/                  # 历史 fixtures（authz 等）；HTTP 类型源为 ApiType
-├── CONTEXT.md                  # 领域术语（ubiquitous language）
-├── docs/
-│   ├── adr/                    # 架构决策记录
-│   ├── migration/              # 迁移设计与归档（含历史 OpenAPI）
-│   └── 产品文档/               # 功能说明书
-└── .scratch/                   # 活跃规格与本地工单
+├── contracts/                  # authz 等共享测试 fixtures；HTTP 类型源为 ApiType
+└── docs/
+    ├── 术语表.md               # 领域术语（ubiquitous language）唯一定义
+    ├── 系统架构/               # 模块结构、资源接入清单与 adr/ 决策记录
+    └── 业务模块/               # 功能说明书（按业务模块分篇）
 ```
 
 > Monorepo：根 `package.json` 统一管理 Bun workspaces（`packages/*` + `server` + `web`），

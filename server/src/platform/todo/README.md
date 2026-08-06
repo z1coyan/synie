@@ -3,7 +3,7 @@
 待办：从源单据状态推导的物化提醒（横切，不引流程引擎）——随源状态自动
 出现/关闭/复活，用户侧仅已读与个人忽略。
 
-- 行为参考：`.scratch/todo-facility/spec.md` 与 ADR `docs/adr/2026-07-25-todo-facility.md`
+- 行为参考：`docs/业务模块/待办.md` 与 ADR `docs/系统架构/adr/2026-07-25-todo-facility.md`
 - 生产者：`modules/trading/reconciliation`（confirm/unconfirm + closeFromInvoice/reopenFromInvoice）
 - 消费 API：`GET /todos/unread-count`、`POST /todos/query`、`POST /todos/{id}/read|dismiss`
 - **源注册表** `TodoSourceRegistry`（仿 OwnerRegistry）：

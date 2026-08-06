@@ -3,9 +3,8 @@
 Synie ERP 的**产品后端**：**Bun + Hono + Kysely + PostgreSQL**，与 `web/`（TanStack Start）
 经 `hono/client` 共享全链路类型（契约即代码）。
 
-- 领域语义唯一来源：`CONTEXT.md` + `docs/产品文档/` + `docs/adr/`
-- 迁移完成记录：`docs/migration/2026-07-28-go-to-bun-ts-cutover.md`
-- 历史 wire 归档：`docs/migration/openapi-server-go-final.yaml`（tag `server-go-final`）
+- 领域语义唯一来源：`docs/术语表.md` + `docs/业务模块/` + `docs/系统架构/adr/`
+- 历史 Go 栈见 git tag `server-go-final`
 
 ## 技术栈定案
 

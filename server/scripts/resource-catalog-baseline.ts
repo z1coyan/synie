@@ -4,10 +4,10 @@
  * 用法（仓库根或 server/）：
  *   bun server/scripts/resource-catalog-baseline.ts
  *
- * 写出：
- *   .scratch/resource-catalog/baseline/report.json
- *   .scratch/resource-catalog/baseline/report.md
- *   .scratch/resource-catalog/baseline/currency-meta.superadmin.json
+ * 写出（gitignored）：
+ *   server/.baseline/resource-catalog/report.json
+ *   server/.baseline/resource-catalog/report.md
+ *   server/.baseline/resource-catalog/currency-meta.superadmin.json
  *
  * 可扩展统计均为实测，禁止硬置零。
  */
@@ -26,7 +26,7 @@ import { decodeResourceDocument } from '@synie/shared'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '../..')
-const outDir = join(repoRoot, '.scratch/resource-catalog/baseline')
+const outDir = join(repoRoot, 'server/.baseline/resource-catalog')
 
 const superAdmin: Actor = {
   userId: 'baseline',

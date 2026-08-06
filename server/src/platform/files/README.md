@@ -9,7 +9,6 @@
 
 - 行为参考：`server-go/internal/platform/files/`
 - 表：`sys_file` / `sys_storage` / `sys_attachment`
-- 实现工单：`.scratch/ts-backend-rewrite/issues/01-platform-completion.md`
 
 ## 模块
 

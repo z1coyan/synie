@@ -1,7 +1,7 @@
 /**
  * 承兑持有段重放纯核：把已审核交易序列投影为当前持有段。
  * IO（读交易 / 整删整建 holding）归 bill-service adapter。
- * 行为对齐 docs/产品文档/票据.md「库存重放」。
+ * 行为对齐 docs/业务模块/票据.md「库存重放」。
  */
 import { decimal, toDecimalString } from '@synie/shared'
 import { ApiError } from '~/platform/http/errors.ts'

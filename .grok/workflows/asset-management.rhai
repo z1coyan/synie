@@ -33,7 +33,7 @@ fn constraints() {
     let s = "";
     s += "工作区 /home/zyan/code/synie。中文第一语言（文档与用户可见文案）；标识符英文。";
     s += "必读：AGENTS.md、server/AGENTS.md、server/README.md、web 侧既有资源/菜单先例、";
-    s += ".scratch/asset-management/spec.md、当前工单 md、CONTEXT.md 术语。";
+    s += ".scratch/asset-management/spec.md、当前工单 md、docs/术语表.md 术语。";
     s += "实现方式：/implement — 优先在约定 seam 上 TDD；实现中定期 typecheck 与单测；";
     s += "工单完成后对该工单改动做 code-review 级自检并修明显问题；conventional commit（中文 subject），";
     s += "更新 issue Status: resolved（或 partial 并写 remaining）。禁止 push / reset --hard / 改 origin。";
@@ -207,7 +207,7 @@ let t09 = if core_done {
     agent(
         implement_issue(
             ".scratch/asset-management/issues/09-docs-and-acceptance.md",
-            "docs/产品文档/资产管理.md 晋升；更新库存物料与 README 索引；CONTEXT 去未实现标注；"
+            "docs/业务模块/资产管理.md 晋升；更新库存物料与 README 索引；CONTEXT 去未实现标注；"
                 + "全链验收测试；spec 状态改为已实现"
         ),
         #{ label: "issue-09", capability_mode: "all", output_schema: work_schema }

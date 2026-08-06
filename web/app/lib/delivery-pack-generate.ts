@@ -1,5 +1,5 @@
 /**
- * 「从装箱清单获取」的 FIFO 分摊纯函数(规格 .scratch/delivery-pack-first-ux)。
+ * 「从装箱清单获取」的 FIFO 分摊纯函数(规格见 docs/业务模块/销售发货.md。
  *
  * 精度纪律:全部数量以「默认单位微量」(base × 10^6 的 BigInt)运算,杜绝浮点误差;
  * 生成行数量 = 分摊 base × 单位换算系数 的精确十进制串——服务端 base = qty ÷ factor
