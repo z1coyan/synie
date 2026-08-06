@@ -1,31 +1,25 @@
 /**
- * 物料主档（全局共享，无公司列）。
+ * 物料主档（全局共享，无公司列）——标准派生服务。
  *
- * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
- * 列表 `listAuthorized`、单条 `loadAuthorizedFrom`、写前取行 `loadAuthorized(forUpdate)`。
- * global 形态只有码级判定；默认单位/物料类型的引用保护是领域不变量，留在本文件。
+ * CRUD/批量/审计/授权/自动编号全部由 `platform/standard` 按 meta 派生
+ * （编号走 meta.numbering + 内核 numbering 选项，wire 未传 code 才取号）；
+ * 列表与单条的分类/单位/客户 join 投影由内核 projection 复刻（写后同事务重载）。
+ *
+ * 本文件只留领域不变量（钩子）：
+ * - 客户物料配对（非客户物料清空客户与客户料号；客户物料必须选客户）
+ * - 引用完整性（分类须启用叶子、单位与客户须存在）
+ * - 改默认单位/物料类型/客户约束的引用保护，删除前的库存分录保护与转换行级联
  */
-import type { ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import { withTx, type DbHandle } from '~/db/tx.ts'
+import type { DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import {
-  auditCreated,
-  auditDestroyed,
-  auditDiff,
-  writeAudit,
-} from '~/platform/audit/write.ts'
-import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
-import { mapWriteError } from '~/db/dberr.ts'
-import { listAuthorized } from '~/db/list.ts'
-import { loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
-import { runeLen, toDate, trimOrNull } from './helpers.ts'
-import { materialResourceMeta } from './meta.ts'
+import { createStandardService, type StandardService } from '~/platform/standard/service.ts'
+import { runeLen, trimOrNull } from './helpers.ts'
+import { materialTypeOptions } from './meta.ts'
 
 export interface MaterialRef {
   id: string
@@ -51,15 +45,11 @@ export interface Material {
   category: MaterialRef
   defaultUnit: MaterialRef
   customer: MaterialRef | null
+  [key: string]: unknown
 }
-
-const AUDIT = auditFieldsOf(materialResourceMeta())
-
-const META = materialResourceMeta()
 
 export const MATERIAL_RESOURCE = 'invMaterials'
 
-const TABLE = META.table
 /** 列表与单条共用同一份投影（别名与 listAuthorized 的 alias 必须逐字一致） */
 const ALIAS = 'material'
 const SOURCE = sql`
@@ -75,317 +65,89 @@ const SOURCE = sql`
     LEFT JOIN sal_customers customer ON customer.id=m.customer_id
   ) material
 `
-const SELECT = sql`SELECT id,code,material_type,name,spec,customer_part_no,is_customer_material,active,
-  inserted_at,updated_at,category_id,default_unit_id,customer_id,
-  category_code,category_name,unit_name,unit_symbol,customer_code,customer_name`
+const SELECT_EXTRA = sql`category_code,category_name,unit_name,unit_symbol,customer_code,customer_name`
+
+const MATERIAL_TYPES = new Set(materialTypeOptions.map((o) => o.value))
 
 export function createMaterialService(
   db: Kysely<Database>,
   numbering: NumberingService,
   registry: Registry,
-) {
-  const target = registry.authzTarget(MATERIAL_RESOURCE)
-
-  async function get(permit: Permit, id: string): Promise<Material> {
-    return loadAuthorizedFrom({
-      db,
-      permit,
-      target,
-      alias: ALIAS,
-      source: SOURCE,
-      select: SELECT,
-      id,
-      mapRow,
-      notFoundMessage: '物料不存在',
-    })
-  }
-
-  async function list(permit: Permit, query: Partial<ListQuery>) {
-    return listAuthorized({
-      db,
-      permit,
-      target,
-      alias: ALIAS,
-      resource: META,
-      source: SOURCE,
-      select: SELECT,
-      defaultOrder: sql`"code" ASC, "id" ASC`,
-      query,
-      mapRow,
-    })
-  }
-
-  async function create(
-    permit: Permit,
-    input: {
-      name: string
-      materialType?: string
-      spec?: string | null
-      customerPartNo?: string | null
-      isCustomerMaterial?: boolean
-      active?: boolean
-      categoryId: string
-      defaultUnitId: string
-      customerId?: string | null
-    },
-  ): Promise<Material> {
-    const normalized = normalizeCreate(input)
-    return withTx(db, async (trx) => {
-      await validateRelations(trx, normalized)
-      const code = (
-        await numbering.nextInTx(trx, {
-          resource: 'base.material',
-          values: {
-            name: normalized.name,
-            spec: normalized.spec,
-            customer_part_no: normalized.customerPartNo,
-            is_customer_material: normalized.isCustomerMaterial,
-            active: normalized.active,
-            category_id: normalized.categoryId,
-            default_unit_id: normalized.defaultUnitId,
-            customer_id: normalized.customerId,
-          },
-        })
-      ).trim()
-      if (!code || runeLen(code) > 64) {
-        throw ApiError.validation('物料参数不合法', {
-          code: ['自动编号不能为空且最多 64 个字符'],
-        })
-      }
-      try {
-        const row = await trx
-          .insertInto('inv_material')
-          .values({
-            code,
-            material_type: normalized.materialType,
-            name: normalized.name,
-            spec: normalized.spec,
-            customer_part_no: normalized.customerPartNo,
-            is_customer_material: normalized.isCustomerMaterial,
-            active: normalized.active,
-            category_id: normalized.categoryId,
-            default_unit_id: normalized.defaultUnitId,
-            customer_id: normalized.customerId,
-          })
-          .returningAll()
-          .executeTakeFirstOrThrow()
-        const item = await getInTx(trx, row.id)
-        await writeAudit(trx, permit.actor, {
-          resource: 'inv_material',
-          recordId: item.id,
-          recordLabel: item.name,
-          actionType: 'create',
-          actionName: 'create',
-          changes: auditCreated(snap(item), AUDIT),
-        })
-        return item
-      } catch (err) {
-        throw mapWriteError(err, '创建物料失败', [
-          { code: '23505', constraint: 'inv_material_unique_code_index', message: '物料编号已存在' },
-          { code: '23505', message: '物料唯一字段已存在' },
-        ])
-      }
-    })
-  }
-
-  async function update(
-    permit: Permit,
-    id: string,
-    input: {
-      name?: string
-      materialType?: string
-      spec?: string | null
-      specPresent?: boolean
-      customerPartNo?: string | null
-      customerPartNoPresent?: boolean
-      isCustomerMaterial?: boolean
-      active?: boolean
-      categoryId?: string
-      defaultUnitId?: string
-      customerId?: string | null
-      customerIdPresent?: boolean
-    },
-  ): Promise<Material> {
-    return withTx(db, async (trx) => {
-      await loadAuthorized({
-        db: trx,
-        permit,
-        target,
-        table: TABLE,
-        id,
-        forUpdate: true,
-        notFoundMessage: '物料不存在',
-      })
-      // 锁行后按投影重读（before 即锁定行的映射，改前值一律取自它）
-      const before = await getInTx(trx, id)
-      const draft = {
-        name: input.name ?? before.name,
-        materialType: input.materialType ?? before.materialType,
-        spec: input.specPresent ? (input.spec ?? null) : before.spec,
-        customerPartNo: input.customerPartNoPresent
-          ? (input.customerPartNo ?? null)
-          : before.customerPartNo,
-        isCustomerMaterial: input.isCustomerMaterial ?? before.isCustomerMaterial,
-        active: input.active ?? before.active,
-        categoryId: input.categoryId ?? before.categoryId,
-        defaultUnitId: input.defaultUnitId ?? before.defaultUnitId,
-        customerId: input.customerIdPresent ? (input.customerId ?? null) : before.customerId,
-      }
-      const normalized = normalizeCreate(draft)
-      await validateRelations(trx, normalized)
-      if (normalized.defaultUnitId !== before.defaultUnitId) {
-        const unit = await trx
-          .selectFrom('inv_material_unit')
-          .select('id')
-          .where('material_id', '=', id)
-          .executeTakeFirst()
-        if (unit) {
-          throw ApiError.validation('物料参数不合法', {
-            defaultUnitId: ['存在单位转换行,不能修改默认单位,请先删除转换行'],
-          })
+): StandardService<Material> {
+  return createStandardService<Material>({
+    db,
+    registry,
+    resource: MATERIAL_RESOURCE,
+    notFound: '物料不存在',
+    defaultOrder: sql`"code" ASC, "id" ASC`,
+    numbering: { service: numbering, field: 'code' },
+    projection: { source: SOURCE, alias: ALIAS, selectExtra: SELECT_EXTRA, mapExtra },
+    writeErrors: [
+      { code: '23505', constraint: 'inv_material_unique_code_index', message: '物料编号已存在' },
+      { code: '23505', message: '物料唯一字段已存在' },
+      { code: '23503', message: '物料已被引用或关联记录不存在' },
+    ],
+    hooks: {
+      validate: ({ draft }) => normalizeMaterial(draft),
+      beforeWrite: async (trx, { action, draft, before }) => {
+        await validateRelations(trx, draft)
+        if (action !== 'update' || !before) return
+        const id = String(draft.id)
+        if (draft.defaultUnitId !== before.defaultUnitId) {
+          const unit = await trx
+            .selectFrom('inv_material_unit')
+            .select('id')
+            .where('material_id', '=', id)
+            .executeTakeFirst()
+          if (unit) {
+            throw ApiError.validation('物料参数不合法', {
+              defaultUnitId: ['存在单位转换行,不能修改默认单位,请先删除转换行'],
+            })
+          }
+          if (await hasStockEntry(trx, id)) {
+            throw ApiError.validation('物料参数不合法', {
+              defaultUnitId: ['物料已有库存分录,默认单位不可修改'],
+            })
+          }
         }
-        const stock = await trx
-          .selectFrom('inv_stock_entry')
-          .select('id')
-          .where('material_id', '=', id)
-          .executeTakeFirst()
-        if (stock) {
-          throw ApiError.validation('物料参数不合法', {
-            defaultUnitId: ['物料已有库存分录,默认单位不可修改'],
-          })
-        }
-      }
-      if (normalized.materialType !== before.materialType) {
-        const stock = await trx
-          .selectFrom('inv_stock_entry')
-          .select('id')
-          .where('material_id', '=', id)
-          .executeTakeFirst()
-        if (stock) {
+        if (draft.materialType !== before.materialType && (await hasStockEntry(trx, id))) {
           throw new ApiError('conflict', '物料已有库存分录,物料类型不可修改')
         }
-      }
-      if (
-        normalized.isCustomerMaterial !== before.isCustomerMaterial ||
-        normalized.customerId !== before.customerId
-      ) {
-        const ref = await sql<{ exists: boolean }>`
-          SELECT EXISTS(
-            SELECT 1 FROM sal_order_item soi WHERE soi.material_id = ${id}::uuid
-            UNION ALL
-            SELECT 1 FROM sal_quotation_item sqi WHERE sqi.material_id = ${id}::uuid
-          ) AS exists
-        `.execute(trx)
-        if (ref.rows[0]?.exists) {
-          throw new ApiError('conflict', '物料已被报价或订单引用,不能修改客户约束')
+        if (
+          draft.isCustomerMaterial !== before.isCustomerMaterial ||
+          draft.customerId !== before.customerId
+        ) {
+          const ref = await sql<{ exists: boolean }>`
+            SELECT EXISTS(
+              SELECT 1 FROM sal_order_item soi WHERE soi.material_id = ${id}::uuid
+              UNION ALL
+              SELECT 1 FROM sal_quotation_item sqi WHERE sqi.material_id = ${id}::uuid
+            ) AS exists
+          `.execute(trx)
+          if (ref.rows[0]?.exists) {
+            throw new ApiError('conflict', '物料已被报价或订单引用,不能修改客户约束')
+          }
         }
-      }
-      const afterBase = { ...before, ...normalized, code: before.code }
-      const changes = auditDiff(snap(before), snap(afterBase), AUDIT)
-      if (Object.keys(changes).length === 0) return before
-      try {
-        await trx
-          .updateTable('inv_material')
-          .set({
-            name: normalized.name,
-            material_type: normalized.materialType,
-            spec: normalized.spec,
-            customer_part_no: normalized.customerPartNo,
-            is_customer_material: normalized.isCustomerMaterial,
-            active: normalized.active,
-            category_id: normalized.categoryId,
-            default_unit_id: normalized.defaultUnitId,
-            customer_id: normalized.customerId,
-            updated_at: sql`(now() AT TIME ZONE 'utc')`,
-          })
-          .where('id', '=', id)
-          .execute()
-      } catch (err) {
-        throw mapWriteError(err, '更新物料失败', [
-          { code: '23505', message: '物料唯一字段已存在' },
-        ])
-      }
-      const updated = await getInTx(trx, id)
-      await writeAudit(trx, permit.actor, {
-        resource: 'inv_material',
-        recordId: id,
-        recordLabel: updated.name,
-        actionType: 'update',
-        actionName: 'update',
-        changes,
-      })
-      return updated
-    })
-  }
-
-  async function remove(permit: Permit, id: string): Promise<void> {
-    await withTx(db, async (trx) => {
-      await loadAuthorized({
-        db: trx,
-        permit,
-        target,
-        table: TABLE,
-        id,
-        forUpdate: true,
-        notFoundMessage: '物料不存在',
-      })
-      const stock = await trx
-        .selectFrom('inv_stock_entry')
-        .select('id')
-        .where('material_id', '=', id)
-        .executeTakeFirst()
-      if (stock) throw new ApiError('conflict', '物料已被库存分录引用,不能删除')
-      const item = await getInTx(trx, id)
-      try {
+      },
+      beforeDelete: async (trx, { item }) => {
+        const id = String(item.id)
+        if (await hasStockEntry(trx, id)) {
+          throw new ApiError('conflict', '物料已被库存分录引用,不能删除')
+        }
         await trx.deleteFrom('inv_material_unit').where('material_id', '=', id).execute()
-        await trx.deleteFrom('inv_material').where('id', '=', id).execute()
-      } catch (err) {
-        throw mapWriteError(err, '删除物料失败', [
-          { code: '23503', message: '物料已被引用或关联记录不存在' },
-        ])
-      }
-      await writeAudit(trx, permit.actor, {
-        resource: 'inv_material',
-        recordId: id,
-        recordLabel: item.name,
-        actionType: 'destroy',
-        actionName: 'destroy',
-        changes: auditDestroyed(snap(item), AUDIT),
-      })
-    })
-  }
-
-  return { get, list, create, update, remove }
+      },
+    },
+  })
 }
 
 export type MaterialService = ReturnType<typeof createMaterialService>
 
-async function getInTx(db: DbHandle, id: string): Promise<Material> {
-  const rows = await sql<Record<string, unknown>>`
-    ${SELECT}${SOURCE} WHERE id = ${id}::uuid
-  `.execute(db)
-  if (rows.rows.length === 0) throw new ApiError('not_found', '物料不存在')
-  return mapRow(rows.rows[0]!)
-}
-
-function mapRow(r: Record<string, unknown>): Material {
+/** 投影附加列 → wire 嵌套引用对象（分类/默认单位/客户） */
+function mapExtra(r: Record<string, unknown>): Record<string, unknown> {
   const categoryId = String(r.category_id)
   const defaultUnitId = String(r.default_unit_id)
   const customerId = r.customer_id == null ? null : String(r.customer_id)
   return {
-    id: String(r.id),
-    code: String(r.code),
-    materialType: String(r.material_type),
-    name: String(r.name),
-    spec: r.spec == null ? null : String(r.spec),
-    customerPartNo: r.customer_part_no == null ? null : String(r.customer_part_no),
-    isCustomerMaterial: Boolean(r.is_customer_material),
-    active: Boolean(r.active),
-    insertedAt: toDate(r.inserted_at),
-    updatedAt: toDate(r.updated_at),
-    categoryId,
-    defaultUnitId,
-    customerId,
     category: {
       id: categoryId,
       name: String(r.category_name),
@@ -407,100 +169,56 @@ function mapRow(r: Record<string, unknown>): Material {
   }
 }
 
-function snap(item: {
-  code: string
-  materialType: string
-  name: string
-  spec: string | null
-  customerPartNo: string | null
-  isCustomerMaterial: boolean
-  active: boolean
-  categoryId: string
-  defaultUnitId: string
-  customerId: string | null
-}): Record<string, unknown> {
-  return {
-    code: item.code,
-    material_type: item.materialType,
-    name: item.name,
-    spec: item.spec,
-    customer_part_no: item.customerPartNo,
-    is_customer_material: item.isCustomerMaterial,
-    active: item.active,
-    category_id: item.categoryId,
-    default_unit_id: item.defaultUnitId,
-    customer_id: item.customerId,
-  }
-}
-
-interface NormalizedMaterial {
-  name: string
-  materialType: string
-  spec: string | null
-  customerPartNo: string | null
-  isCustomerMaterial: boolean
-  active: boolean
-  categoryId: string
-  defaultUnitId: string
-  customerId: string | null
-}
-
-const MATERIAL_TYPES = ['STOCK', 'VIRTUAL', 'ASSET'] as const
-
-function normalizeCreate(input: {
-  name: string
-  materialType?: string
-  spec?: string | null
-  customerPartNo?: string | null
-  isCustomerMaterial?: boolean
-  active?: boolean
-  categoryId: string
-  defaultUnitId: string
-  customerId?: string | null
-}): NormalizedMaterial {
-  let isCustomerMaterial = input.isCustomerMaterial ?? false
-  let customerId = input.customerId ?? null
-  let customerPartNo = trimOrNull(input.customerPartNo)
-  if (!isCustomerMaterial) {
-    customerId = null
-    customerPartNo = null
-  }
-  const result: NormalizedMaterial = {
-    name: input.name.trim(),
-    materialType: (input.materialType ?? 'STOCK').trim().toUpperCase(),
-    spec: trimOrNull(input.spec),
-    customerPartNo,
-    isCustomerMaterial,
-    active: input.active ?? true,
-    categoryId: input.categoryId,
-    defaultUnitId: input.defaultUnitId,
-    customerId,
-  }
+/**
+ * 领域规范化 + 不变量（原地改 draft）。
+ * wire schema 已做 trim/长度/枚举校验；此处补服务直调路径（种子数据等）的同等约束。
+ */
+function normalizeMaterial(draft: Record<string, unknown>): void {
   const fields: Record<string, string[]> = {}
-  if (!(MATERIAL_TYPES as readonly string[]).includes(result.materialType)) {
-    fields.materialType = ['只能为 STOCK(库存)/VIRTUAL(虚拟)/ASSET(资产)']
+  const name = typeof draft.name === 'string' ? draft.name.trim() : ''
+  draft.name = name
+  draft.spec = trimOrNull(draft.spec as string | null | undefined)
+  draft.customerPartNo = trimOrNull(draft.customerPartNo as string | null | undefined)
+  if (draft.materialType !== undefined && draft.materialType !== null) {
+    draft.materialType = String(draft.materialType).trim().toUpperCase()
+    if (!MATERIAL_TYPES.has(String(draft.materialType))) {
+      fields.materialType = ['只能为 STOCK(库存)/VIRTUAL(虚拟)/ASSET(资产)']
+    }
   }
-  if (!result.name || runeLen(result.name) > 128) fields.name = ['不能为空且最多 128 个字符']
-  if (result.spec && runeLen(result.spec) > 128) fields.spec = ['最多 128 个字符']
-  if (result.customerPartNo && runeLen(result.customerPartNo) > 64) {
+  // 非客户物料不留客户与客户料号（列上另有 customer_material_pair CHECK）
+  if (draft.isCustomerMaterial !== true) {
+    draft.customerId = null
+    draft.customerPartNo = null
+  }
+  if (!name || runeLen(name) > 128) fields.name = ['不能为空且最多 128 个字符']
+  if (draft.spec && runeLen(String(draft.spec)) > 128) fields.spec = ['最多 128 个字符']
+  if (draft.customerPartNo && runeLen(String(draft.customerPartNo)) > 64) {
     fields.customerPartNo = ['最多 64 个字符']
   }
-  if (!result.categoryId) fields.categoryId = ['不能为空']
-  if (!result.defaultUnitId) fields.defaultUnitId = ['不能为空']
-  if (result.isCustomerMaterial && !result.customerId) {
+  if (!draft.categoryId) fields.categoryId = ['不能为空']
+  if (!draft.defaultUnitId) fields.defaultUnitId = ['不能为空']
+  if (draft.isCustomerMaterial === true && !draft.customerId) {
     fields.customerId = ['客户物料必须选择客户']
   }
   if (Object.keys(fields).length > 0) {
     throw ApiError.validation('物料参数不合法', fields)
   }
-  return result
 }
 
-async function validateRelations(db: DbHandle, input: NormalizedMaterial): Promise<void> {
+async function hasStockEntry(db: DbHandle, materialId: string): Promise<boolean> {
+  const row = await db
+    .selectFrom('inv_stock_entry')
+    .select('id')
+    .where('material_id', '=', materialId)
+    .executeTakeFirst()
+  return Boolean(row)
+}
+
+async function validateRelations(db: DbHandle, draft: Record<string, unknown>): Promise<void> {
   const cat = await db
     .selectFrom('inv_material_category')
     .select(['is_leaf', 'active'])
-    .where('id', '=', input.categoryId)
+    .where('id', '=', String(draft.categoryId))
     .executeTakeFirst()
   if (!cat) {
     throw ApiError.validation('物料参数不合法', { categoryId: ['物料分类不存在'] })
@@ -513,16 +231,16 @@ async function validateRelations(db: DbHandle, input: NormalizedMaterial): Promi
   const unit = await db
     .selectFrom('bas_unit')
     .select('id')
-    .where('id', '=', input.defaultUnitId)
+    .where('id', '=', String(draft.defaultUnitId))
     .executeTakeFirst()
   if (!unit) {
     throw ApiError.validation('物料参数不合法', { defaultUnitId: ['默认单位不存在'] })
   }
-  if (input.customerId) {
+  if (draft.customerId) {
     const customer = await db
       .selectFrom('sal_customers')
       .select('id')
-      .where('id', '=', input.customerId)
+      .where('id', '=', String(draft.customerId))
       .executeTakeFirst()
     if (!customer) {
       throw ApiError.validation('物料参数不合法', { customerId: ['客户不存在'] })
