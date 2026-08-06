@@ -32,11 +32,13 @@ export function departmentResourceMeta(): ResourceMeta {
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', '部门编码', {
         required: true,
+        maxLength: 32,
         filterable: true,
         sortable: true,
       }),
       field('name', 'name', 'string', '部门名称', {
         required: true,
+        maxLength: 64,
         filterable: true,
         sortable: true,
       }),
@@ -61,7 +63,9 @@ export function departmentResourceMeta(): ResourceMeta {
         filterable: true,
         ref: { resource: 'basCompanies', relation: 'company', labelField: 'name' },
       }),
+      // nullable：置空即升为公司下的一级部门（标准派生 create/update schema 消费）
       field('parent_id', 'parentId', 'fk', '上级部门', {
+        nullable: true,
         filterable: true,
         ref: { resource: DEPARTMENT_RESOURCE, relation: 'parent', labelField: 'name' },
       }),
