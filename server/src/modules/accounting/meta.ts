@@ -50,12 +50,22 @@ export function journalResourceMeta(): ResourceMeta {
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('voucher_no', 'voucherNo', 'string', '凭证编号', {
         required: true,
+        maxLength: 32,
         filterable: true,
         sortable: true,
       }),
       field('date', 'date', 'date', '单据日期', { required: true, filterable: true, sortable: true }),
-      field('posting_date', 'postingDate', 'date', '过账日期', { filterable: true, sortable: true }),
-      field('remarks', 'remarks', 'string', '凭证备注', { filterable: true, sortable: true }),
+      field('posting_date', 'postingDate', 'date', '过账日期', {
+        nullable: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('remarks', 'remarks', 'string', '凭证备注', {
+        nullable: true,
+        maxLength: 512,
+        filterable: true,
+        sortable: true,
+      }),
       field('status', 'status', 'enum', '状态', {
         readonly: true,
         enumOptions: statusOptions,
@@ -138,11 +148,13 @@ export function journalLineResourceMeta(): ResourceMeta {
       field('debit', 'debit', 'decimal', '借方金额', { required: true, filterable: true, sortable: true }),
       field('credit', 'credit', 'decimal', '贷方金额', { required: true, filterable: true, sortable: true }),
       field('party_type', 'partyType', 'enum', '对手类型', {
+        nullable: true,
         enumOptions: partyOptions,
         filterable: true,
         sortable: true,
       }),
       field('party_id', 'partyId', 'fk', '对手', {
+        nullable: true,
         filterable: true,
         ref: {
           resource: null,
@@ -158,7 +170,12 @@ export function journalLineResourceMeta(): ResourceMeta {
           ],
         },
       }),
-      field('remarks', 'remarks', 'string', '行备注', { filterable: true, sortable: true }),
+      field('remarks', 'remarks', 'string', '行备注', {
+        nullable: true,
+        maxLength: 512,
+        filterable: true,
+        sortable: true,
+      }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         readonly: true,
         filterable: true,

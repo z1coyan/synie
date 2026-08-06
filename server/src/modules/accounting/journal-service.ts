@@ -1,32 +1,37 @@
 /**
- * 手工会计凭证（头 + 行）服务。
- * 审核/取消经 GL 引擎写分录；禁止直写 acc_gl_entry。
+ * 手工会计凭证（头 + 行）。
+ *
+ * 单头走标准动作内核：CRUD（create 经 hooks.insertColumns 盖 created_by_id、
+ * 经 numbering 自动取号）+ workflow 两转移（audit/cancel），effect 只调 GL 引擎，
+ * 状态翻转/盖章/审计交内核。行走子行内核：母单草稿门 + company_id 带入 +
+ * currency_id 科目派生列。禁止直写 acc_gl_entry。
+ *
+ * 两处按动作弹射：
+ * - `list`：`lines` 行内筛选要 EXISTS 子查询（listAuthorized 的 extraWhere），
+ *   内核 list 无此形参；
+ * - `createAndAuditJournal`：调用方 trx 内的无闸 seam（内核动作自开事务且只收
+ *   Permit），故保留手写在途实现，与内核路径共用校验/取分录/审计快照helpers。
  *
  * 授权全由平台承担：路由挂 `guard(资源, 动作)`（工作流 audit/cancel 逐动作挂码），
- * 本服务只收 Permit——列表 `listAuthorized`、写前取行 `loadAuthorized`、
- * create 走 `assertCompanyWritable`。凭证行是 via(凭证头)，判定递归母单。
- * 状态前置条件（仅草稿可改等）是领域不变量，留在本文件抛 conflict。
+ * 本服务只收 Permit。凭证行是 via(凭证头)，判定递归母单。
  */
 import { decimal, isDecimalString, type Decimal, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import { withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
+import type { DbHandle, TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import type { GlEngine, GlEntry } from '~/engines/gl/index.ts'
-import {
-  auditCreated,
-  auditDestroyed,
-  auditDiff,
-  writeAudit,
-} from '~/platform/audit/write.ts'
+import { auditCreated, auditDiff, writeAudit } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import type { Actor, Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
+import { createStandardChildService } from '~/platform/standard/child.ts'
+import { mapRow, snapshot } from '~/platform/standard/fields.ts'
+import { createStandardService, type StandardService } from '~/platform/standard/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listAuthorized } from '~/db/list.ts'
-import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
 import {
   JOURNAL_LINE_RESOURCE_NAME,
   JOURNAL_RESOURCE_NAME,
@@ -72,6 +77,7 @@ export interface Journal {
   company: NamedRef
   createdBy: NamedRef | null
   submittedBy: NamedRef | null
+  [key: string]: unknown
 }
 
 export interface JournalLine {
@@ -92,6 +98,7 @@ export interface JournalLine {
   company: NamedRef
   account: CodeNamedRef
   currency: CodeNamedRef | null
+  [key: string]: unknown
 }
 
 export interface CreateJournalInput {
@@ -126,13 +133,12 @@ export interface CreateAndAuditJournalInput {
   lines: CreateAndAuditLineInput[]
 }
 
+/** PATCH 补丁（present-key 语义：键出现即写，null 清空，缺省不动） */
 export interface UpdateJournalInput {
   voucherNo?: string
   date?: string
   postingDate?: string | null
-  postingDatePresent?: boolean
   remarks?: string | null
-  remarksPresent?: boolean
 }
 
 export interface CreateLineInput {
@@ -146,27 +152,25 @@ export interface CreateLineInput {
   remarks?: string | null
 }
 
+/** 行 PATCH 补丁（present-key 语义，同单头） */
 export interface UpdateLineInput {
   idx?: number
   accountId?: string
   debit?: string
   credit?: string
   partyType?: string | null
-  partyTypePresent?: boolean
   partyId?: string | null
-  partyIdPresent?: boolean
   remarks?: string | null
-  remarksPresent?: boolean
 }
 
-const JOURNAL_AUDIT = auditFieldsOf(journalResourceMeta())
+const JOURNAL_META = journalResourceMeta()
+const LINE_META = journalLineResourceMeta()
 
-const LINE_AUDIT = auditFieldsOf(journalLineResourceMeta())
+const JOURNAL_AUDIT = auditFieldsOf(JOURNAL_META)
+const LINE_AUDIT = auditFieldsOf(LINE_META)
 
 const PARTY_KINDS = new Set(['supplier', 'customer', 'company', 'employee'])
 const VOUCHER_TYPE = 'acc.gl_journal'
-const JOURNAL_TABLE = 'acc_gl_journal'
-const JOURNAL_LINE_TABLE = 'acc_gl_journal_line'
 /** 列表/单条共用的投影别名（FROM (…) AS journals / journal_lines） */
 const JOURNAL_ALIAS = 'journals'
 const LINE_ALIAS = 'journal_lines'
@@ -188,6 +192,15 @@ LEFT JOIN acc_gl_journal_line l ON l.journal_id = j.id
 GROUP BY j.id, c.name, creator.name, submitter.name
 ) AS journals`
 
+/** 投影附加列（物理列由内核自 meta 派生，此处只列 join/聚合出来的） */
+const JOURNAL_EXTRA_COLS = sql`debit_total, credit_total, company_name, created_by_name, submitted_by_name`
+
+const JOURNAL_SELECT = sql`SELECT id, voucher_no, date, posting_date, remarks, status,
+submitted_at, inserted_at, updated_at, company_id, created_by_id, submitted_by_id,
+debit_total, credit_total, company_name, created_by_name, submitted_by_name`
+
+const JOURNAL_ORDER = sql`"date" DESC, "voucher_no" ASC, "id" ASC`
+
 const LINE_SOURCE = sql`
  FROM (
 SELECT l.id, l.idx, l.debit, l.credit, l.party_type, l.party_id, l.remarks,
@@ -200,6 +213,8 @@ JOIN bas_company c ON c.id = l.company_id
 JOIN bas_account a ON a.id = l.account_id
 LEFT JOIN bas_currency cur ON cur.id = l.currency_id
 ) AS journal_lines`
+
+const LINE_EXTRA_COLS = sql`voucher_no, company_name, account_code, account_name, currency_code, currency_name`
 
 const WRITE_MAPPINGS = [
   { code: '23505', message: '同一公司内凭证编号必须唯一' },
@@ -226,256 +241,17 @@ export function createJournalService(
 ) {
   const isJournalLinkedToBankRecon = deps.isJournalLinkedToBankRecon
   const journalTarget = registry.authzTarget(JOURNAL_RESOURCE_NAME)
-  const lineTarget = registry.authzTarget(JOURNAL_LINE_RESOURCE_NAME)
 
-  /**
-   * 按 Permit 锁凭证头（授权 + 行锁）；投影是带 join 的子查询，不能 FOR UPDATE，
-   * 故走「裸表 loadAuthorized(forUpdate) → 原投影重读」两段式。
-   */
-  async function lockAuthorizedJournal(
-    handle: DbHandle,
-    permit: Permit,
-    id: string,
-  ): Promise<Record<string, unknown>> {
-    return loadAuthorized({
-      db: handle,
-      permit,
-      target: journalTarget,
-      table: JOURNAL_TABLE,
-      id,
-      forUpdate: true,
-      notFoundMessage: '会计凭证不存在',
-    })
-  }
-
-  /** 锁草稿凭证：行编辑的公共前置（授权 404 → 状态 409） */
-  async function lockAuthorizedDraft(
-    handle: DbHandle,
-    permit: Permit,
-    id: string,
-  ): Promise<{ id: string; company_id: string }> {
-    const row = await lockAuthorizedJournal(handle, permit, id)
-    if (String(row.status) !== 'draft') {
-      throw new ApiError('conflict', '仅草稿凭证可编辑分录行')
-    }
-    return { id: String(row.id), company_id: String(row.company_id) }
-  }
-
-  async function get(permit: Permit, id: string): Promise<Journal> {
-    const row = await loadAuthorized({
-      db,
-      permit,
-      target: journalTarget,
-      table: JOURNAL_TABLE,
-      id,
-      notFoundMessage: '会计凭证不存在',
-    })
-    return loadJournal(db, String(row.id))
-  }
-
-  async function list(
-    permit: Permit,
-    query: Partial<ListQuery>,
-  ): Promise<{ count: number; results: Journal[] }> {
-    const { ordinaryFilter, lineFilter } = splitJournalLineFilter(query.filter)
-    const extraWhere = lineFilter
-      ? sql`EXISTS (
-        SELECT 1 FROM acc_gl_journal_line lf
-        WHERE lf.journal_id = journals.id
-          AND lf.account_id = ${lineFilter.accountId}::uuid
-          AND lf.${sql.raw(lineFilter.side)} > ${lineFilter.amount}
-      )`
-      : null
-
-    return listAuthorized({
-      db,
-      permit,
-      target: journalTarget,
-      alias: JOURNAL_ALIAS,
-      resource: journalResourceMeta(),
-      source: JOURNAL_SOURCE,
-      select: sql`SELECT id, voucher_no, date, posting_date, remarks, status,
-submitted_at, inserted_at, updated_at, company_id, created_by_id, submitted_by_id,
-debit_total, credit_total, company_name, created_by_name, submitted_by_name`,
-      defaultOrder: sql`"date" DESC, "voucher_no" ASC, "id" ASC`,
-      query: { ...query, filter: ordinaryFilter },
-      extraWhere,
-      mapRow: (r) => mapJournalRow(r),
-    })
-  }
-
-  async function create(permit: Permit, input: CreateJournalInput): Promise<Journal> {
-    // 入参校验（400）先于公司边界（404）
-    validateCreate(input)
-    assertCompanyWritable(permit, input.companyId, '会计凭证不存在')
-    return withTx(db, (trx) => createJournalInTx(trx, permit.actor, input))
-  }
-
-  /** 建头（编号→插入→审计）。create 与 createAndAuditJournal 共用的唯一实现。 */
-  async function createJournalInTx(
+  /** 审核用：复核持久化行并折成 GL 分录（内核 effect 与内部 seam 共用） */
+  async function collectEntries(
     trx: TrxHandle,
-    actor: Actor,
-    input: CreateJournalInput,
-  ): Promise<Journal> {
-    validateCreate(input)
-    let voucherNo = (input.voucherNo ?? '').trim()
-    if (voucherNo === '') {
-      voucherNo = await numbering.nextInTx(trx, {
-        resource: 'acc.gl_journal',
-        values: { company_id: input.companyId, date: input.date },
-      })
-    }
-    if ([...voucherNo].length > 32) {
-      throw validation('voucherNo', '最多 32 个字符')
-    }
-    try {
-      const inserted = await trx
-        .insertInto('acc_gl_journal')
-        .values({
-          voucher_no: voucherNo,
-          date: input.date,
-          posting_date: input.postingDate ?? null,
-          remarks: emptyToNull(input.remarks),
-          company_id: input.companyId,
-          created_by_id: actorUserId(actor),
-        })
-        .returning('id')
-        .executeTakeFirstOrThrow()
-      const item = await loadJournal(trx, inserted.id)
-      await writeAudit(trx, actor, {
-        resource: 'acc_gl_journal',
-        recordId: item.id,
-        recordLabel: item.voucherNo,
-        companyId: item.companyId,
-        actionType: 'create',
-        actionName: 'create',
-        changes: auditCreated(journalSnap(item), JOURNAL_AUDIT),
-      })
-      return item
-    } catch (err) {
-      if (err instanceof ApiError) throw err
-      throw mapWriteError(err, '创建会计凭证失败', WRITE_MAPPINGS)
-    }
-  }
-
-  async function update(
-    permit: Permit,
-    id: string,
-    input: UpdateJournalInput,
-  ): Promise<Journal> {
-    const actor = permit.actor
-    return withTx(db, async (trx) => {
-      const locked = await lockAuthorizedJournal(trx, permit, id)
-      if (String(locked.status) !== 'draft') throw draftError()
-      const before = await loadJournal(trx, id)
-      const after: Journal = {
-        ...before,
-        voucherNo: input.voucherNo !== undefined ? input.voucherNo.trim() : before.voucherNo,
-        date: input.date ?? before.date,
-        postingDate: input.postingDatePresent
-          ? (input.postingDate ?? null)
-          : before.postingDate,
-        remarks: input.remarksPresent ? (input.remarks ?? null) : before.remarks,
-      }
-      validateMutable(after)
-      const changes = auditDiff(journalSnap(before), journalSnap(after), JOURNAL_AUDIT)
-      if (Object.keys(changes).length === 0) return before
-      try {
-        await trx
-          .updateTable('acc_gl_journal')
-          .set({
-            voucher_no: after.voucherNo,
-            date: after.date,
-            posting_date: after.postingDate,
-            remarks: after.remarks,
-            updated_at: sql`(now() AT TIME ZONE 'utc')`,
-          })
-          .where('id', '=', id)
-          .execute()
-        const item = await loadJournal(trx, id)
-        await writeAudit(trx, actor, {
-          resource: 'acc_gl_journal',
-          recordId: item.id,
-          recordLabel: item.voucherNo,
-          companyId: item.companyId,
-          actionType: 'update',
-          actionName: 'update',
-          changes,
-        })
-        return item
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '更新会计凭证失败', WRITE_MAPPINGS)
-      }
-    })
-  }
-
-  async function remove(permit: Permit, id: string): Promise<void> {
-    const actor = permit.actor
-    await withTx(db, async (trx) => {
-      const locked = await lockAuthorizedJournal(trx, permit, id)
-      if (String(locked.status) !== 'draft') throw draftError()
-      const before = await loadJournal(trx, id)
-      try {
-        await trx.deleteFrom('acc_gl_journal').where('id', '=', id).execute()
-        await writeAudit(trx, actor, {
-          resource: 'acc_gl_journal',
-          recordId: before.id,
-          recordLabel: before.voucherNo,
-          companyId: before.companyId,
-          actionType: 'destroy',
-          actionName: 'destroy',
-          changes: auditDestroyed(journalSnap(before), JOURNAL_AUDIT),
-        })
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '删除会计凭证失败', WRITE_MAPPINGS)
-      }
-    })
-  }
-
-  async function audit(
-    permit: Permit,
-    id: string,
-    postingDate?: string | null,
-  ): Promise<Journal> {
-    return withTx(db, (trx) =>
-      auditJournalInTx(trx, permit.actor, id, postingDate, (t) =>
-        lockAuthorizedJournal(t, permit, id),
-      ),
-    )
-  }
-
-  /**
-   * 审核过账（锁头→复核行→GL→状态翻转→审计）。audit 与 createAndAuditJournal 共用的唯一实现。
-   * `lockHead` 由调用方给出：HTTP 路径走 Permit 授权锁，内部 seam（对账建票）走裸锁
-   * （调用方已用自己的权限码鉴权，且该凭证刚在同一 trx 内建出）。
-   */
-  async function auditJournalInTx(
-    trx: TrxHandle,
-    actor: Actor,
-    id: string,
-    postingDate: string | null | undefined,
-    lockHead: (t: TrxHandle) => Promise<Record<string, unknown>>,
-  ): Promise<Journal> {
-    const locked = await lockHead(trx)
-    if (String(locked.status) !== 'draft') {
-      throw new ApiError('conflict', '仅草稿凭证可审核')
-    }
-    const effectiveDate =
-      postingDate && postingDate.trim() !== ''
-        ? postingDate.trim().slice(0, 10)
-        : locked.posting_date
-          ? dateOnly(locked.posting_date as Date | string)
-          : null
-    if (!effectiveDate) {
-      throw validation('postingDate', '审核过账前必须填写过账日期')
-    }
-
+    companyId: string,
+    journalId: string,
+  ): Promise<GlEntry[]> {
     const lineRows = await trx
       .selectFrom('acc_gl_journal_line')
       .selectAll()
-      .where('journal_id', '=', id)
+      .where('journal_id', '=', journalId)
       .orderBy('idx', 'asc')
       .orderBy('id', 'asc')
       .execute()
@@ -492,7 +268,7 @@ debit_total, credit_total, company_name, created_by_name, submitted_by_name`,
         remarks: row.remarks,
         currencyId: row.currency_id,
       }
-      await validatePersistedLine(trx, String(locked.company_id), line)
+      await validatePersistedLine(trx, companyId, line)
       entries.push({
         accountId: line.accountId,
         currencyId: line.currencyId,
@@ -503,126 +279,230 @@ debit_total, credit_total, company_name, created_by_name, submitted_by_name`,
         remarks: line.remarks,
       })
     }
-
-    const before = await loadJournal(trx, id)
-    await gl.post(trx, {
-      type: VOUCHER_TYPE,
-      id,
-      no: String(locked.voucher_no),
-      companyId: String(locked.company_id),
-      postingDate: effectiveDate,
-    }, entries)
-
-    const now = new Date()
-    await trx
-      .updateTable('acc_gl_journal')
-      .set({
-        status: 'audited',
-        posting_date: effectiveDate,
-        submitted_at: now,
-        submitted_by_id: actorUserId(actor),
-        updated_at: sql`(now() AT TIME ZONE 'utc')`,
-      })
-      .where('id', '=', id)
-      .execute()
-
-    const after = await loadJournal(trx, id)
-    await writeAudit(trx, actor, {
-      resource: 'acc_gl_journal',
-      recordId: after.id,
-      recordLabel: after.voucherNo,
-      companyId: after.companyId,
-      actionType: 'update',
-      actionName: 'audit',
-      changes: auditDiff(journalSnap(before), journalSnap(after), JOURNAL_AUDIT),
-    })
-    return after
+    return entries
   }
 
-  async function cancel(permit: Permit, id: string): Promise<Journal> {
-    const actor = permit.actor
-    return withTx(db, async (trx) => {
-      const locked = await lockAuthorizedJournal(trx, permit, id)
-      if (String(locked.status) !== 'audited') {
-        throw new ApiError('conflict', '仅已审核凭证可取消')
-      }
-      if (isJournalLinkedToBankRecon) {
-        const used = await isJournalLinkedToBankRecon(trx, id)
-        if (used) {
-          throw new ApiError('conflict', '凭证已用于银行对账,请先解除对账')
-        }
-      }
-      const before = await loadJournal(trx, id)
-      await gl.cancel(trx, { type: VOUCHER_TYPE, id })
-      await trx
-        .updateTable('acc_gl_journal')
-        .set({
-          status: 'cancelled',
-          updated_at: sql`(now() AT TIME ZONE 'utc')`,
-        })
-        .where('id', '=', id)
-        .execute()
-      const after = await loadJournal(trx, id)
-      await writeAudit(trx, actor, {
-        resource: 'acc_gl_journal',
-        recordId: after.id,
-        recordLabel: after.voucherNo,
-        companyId: after.companyId,
-        actionType: 'update',
-        actionName: 'cancel',
-        changes: auditDiff(journalSnap(before), journalSnap(after), JOURNAL_AUDIT),
-      })
-      return after
-    })
-  }
+  const base: StandardService<Journal> = createStandardService<Journal>({
+    db,
+    registry,
+    resource: JOURNAL_RESOURCE_NAME,
+    notFound: '会计凭证不存在',
+    defaultOrder: JOURNAL_ORDER,
+    writeErrors: [...WRITE_MAPPINGS],
+    projection: {
+      source: JOURNAL_SOURCE,
+      alias: JOURNAL_ALIAS,
+      selectExtra: JOURNAL_EXTRA_COLS,
+      mapExtra: journalExtras,
+    },
+    numbering: { service: numbering, field: 'voucherNo' },
+    hooks: {
+      validate: ({ action, draft }) => validateJournalDraft(action, draft),
+      // 服务端派生插入列：本资源无 owner 绑定，created_by_id 是 readonly 系统列
+      insertColumns: ({ permit }) => ({ created_by_id: actorUserId(permit.actor) }),
+    },
+    workflow: {
+      mutableMessage: '仅草稿凭证可修改或删除',
+      transitions: [
+        {
+          key: 'audit',
+          label: '审核',
+          from: ['DRAFT'],
+          to: 'AUDITED',
+          guardMessage: '仅草稿凭证可审核',
+          effect: async (trx, { permit, before, input }) => {
+            const effectiveDate = resolvePostingDate(
+              input.postingDate as string | null | undefined,
+              before.postingDate as string | null,
+            )
+            const entries = await collectEntries(trx, String(before.companyId), String(before.id))
+            await gl.post(
+              trx,
+              {
+                type: VOUCHER_TYPE,
+                id: String(before.id),
+                no: String(before.voucherNo),
+                companyId: String(before.companyId),
+                postingDate: effectiveDate,
+              },
+              entries,
+            )
+            return {
+              posting_date: effectiveDate,
+              submitted_at: sql`(now() AT TIME ZONE 'utc')`,
+              submitted_by_id: actorUserId(permit.actor),
+            }
+          },
+        },
+        {
+          key: 'cancel',
+          label: '取消',
+          from: ['AUDITED'],
+          to: 'CANCELLED',
+          guardMessage: '仅已审核凭证可取消',
+          effect: async (trx, { before }) => {
+            if (isJournalLinkedToBankRecon) {
+              const used = await isJournalLinkedToBankRecon(trx, String(before.id))
+              if (used) {
+                throw new ApiError('conflict', '凭证已用于银行对账,请先解除对账')
+              }
+            }
+            await gl.cancel(trx, { type: VOUCHER_TYPE, id: String(before.id) })
+          },
+        },
+      ],
+    },
+  })
 
-  async function getLine(permit: Permit, id: string): Promise<JournalLine> {
-    const row = await loadAuthorized({
-      db,
-      permit,
-      target: lineTarget,
-      table: JOURNAL_LINE_TABLE,
-      id,
-      notFoundMessage: '会计凭证行不存在',
-    })
-    return loadLine(db, String(row.id))
-  }
-
-  async function listLines(
+  /**
+   * 列表（弹射）：`lines` 行内筛选要 EXISTS 子查询，内核 list 不收 extraWhere。
+   * 投影/白名单/缺省排序与内核共用同一份声明。
+   */
+  async function list(
     permit: Permit,
     query: Partial<ListQuery>,
-  ): Promise<{ count: number; results: JournalLine[] }> {
-    return listAuthorized({
+  ): Promise<{ count: number; results: Journal[] }> {
+    const { ordinaryFilter, lineFilter } = splitJournalLineFilter(query.filter)
+    const extraWhere = lineFilter
+      ? sql`EXISTS (
+        SELECT 1 FROM acc_gl_journal_line lf
+        WHERE lf.journal_id = journals.id
+          AND lf.account_id = ${lineFilter.accountId}::uuid
+          AND lf.${sql.raw(lineFilter.side)} > ${lineFilter.amount}
+      )`
+      : null
+
+    return listAuthorized<Journal>({
       db,
       permit,
-      target: lineTarget,
-      alias: LINE_ALIAS,
-      resource: journalLineResourceMeta(),
+      target: journalTarget,
+      alias: JOURNAL_ALIAS,
+      resource: JOURNAL_META,
+      source: JOURNAL_SOURCE,
+      select: JOURNAL_SELECT,
+      defaultOrder: JOURNAL_ORDER,
+      query: { ...query, filter: ordinaryFilter },
+      extraWhere,
+      mapRow: mapJournalRow,
+    })
+  }
+
+  const lines = createStandardChildService<JournalLine>({
+    db,
+    registry,
+    resource: JOURNAL_LINE_RESOURCE_NAME,
+    notFound: '会计凭证行不存在',
+    defaultOrder: sql`"idx" ASC, "id" ASC`,
+    writeErrors: [...WRITE_MAPPINGS],
+    parent: {
+      resource: JOURNAL_RESOURCE_NAME,
+      fkField: 'journalId',
+      notFound: '会计凭证不存在',
+      inheritFields: ['companyId'],
+      gate: (journal) => {
+        if (journal.status !== 'DRAFT') {
+          throw new ApiError('conflict', '仅草稿凭证可编辑分录行')
+        }
+      },
+    },
+    // 科目币种：readonly 派生列，随 INSERT/UPDATE 落库
+    derivedFields: ['currencyId'],
+    projection: {
       source: LINE_SOURCE,
-      select: sql`SELECT id, idx, debit, credit, party_type, party_id, remarks,
-inserted_at, updated_at, journal_id, company_id, account_id, currency_id,
-voucher_no, company_name, account_code, account_name, currency_code, currency_name`,
-      defaultOrder: sql`"idx" ASC, "id" ASC`,
-      query,
-      mapRow: (r) => mapLineRow(r),
-    })
+      alias: LINE_ALIAS,
+      selectExtra: LINE_EXTRA_COLS,
+      mapExtra: lineExtras,
+    },
+    // 行无名称列（名称在 join 出来的引用上）：审计标签取行号
+    recordLabel: (item) => String(item.idx),
+    hooks: {
+      validate: ({ draft }) => {
+        validateLineShape(
+          Number(draft.idx),
+          String(draft.accountId ?? ''),
+          decimal(String(draft.debit ?? '0')),
+          decimal(String(draft.credit ?? '0')),
+          (draft.partyType as string | null) ?? null,
+          (draft.partyId as string | null) ?? null,
+          (draft.remarks as string | null) ?? null,
+        )
+      },
+      beforeWrite: async (trx, { draft, parent }) => {
+        draft.currencyId = await validateLineReferences(
+          trx,
+          String(parent.companyId),
+          String(draft.accountId),
+          (draft.partyType as string | null) ?? null,
+          (draft.partyId as string | null) ?? null,
+        )
+      },
+    },
+  })
+
+  // ─── 内部 seam（弹射）：调用方 trx 内建凭证并审核过账 ───────────
+
+  /** 建头（校验→取号→插入→审计）；返回裸行 wire 形 */
+  async function insertJournalInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    input: CreateJournalInput,
+  ): Promise<Journal> {
+    const draft: Record<string, unknown> = {
+      voucherNo: input.voucherNo ?? '',
+      date: input.date,
+      remarks: input.remarks ?? null,
+    }
+    if (!input.companyId) {
+      throw validation('companyId', '必填')
+    }
+    validateJournalDraft('create', draft)
+    let voucherNo = String(draft.voucherNo ?? '')
+    if (voucherNo === '') {
+      voucherNo = await numbering.nextInTx(trx, {
+        resource: VOUCHER_TYPE,
+        values: { company_id: input.companyId, date: input.date },
+      })
+    }
+    if (runeLen(voucherNo) > 32) {
+      throw validation('voucherNo', '最多 32 个字符')
+    }
+    try {
+      const row = await trx
+        .insertInto('acc_gl_journal')
+        .values({
+          voucher_no: voucherNo,
+          date: input.date,
+          posting_date: input.postingDate ?? null,
+          remarks: input.remarks ?? null,
+          company_id: input.companyId,
+          created_by_id: actorUserId(actor),
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow()
+      const item = mapRow(JOURNAL_META, row as unknown as Record<string, unknown>) as Journal
+      await writeAudit(trx, actor, {
+        resource: JOURNAL_META.table,
+        recordId: item.id,
+        recordLabel: item.voucherNo,
+        companyId: item.companyId,
+        actionType: 'create',
+        actionName: 'create',
+        changes: auditCreated(snapshot(JOURNAL_META, item, JOURNAL_AUDIT), JOURNAL_AUDIT),
+      })
+      return item
+    } catch (err) {
+      if (err instanceof ApiError) throw err
+      throw mapWriteError(err, '创建会计凭证失败', WRITE_MAPPINGS)
+    }
   }
 
-  async function createLine(permit: Permit, input: CreateLineInput): Promise<JournalLine> {
-    return withTx(db, async (trx) => {
-      // 加锁顺序：母单先行（授权 + 草稿门）
-      const journal = await lockAuthorizedDraft(trx, permit, input.journalId)
-      return insertLineInTx(trx, permit.actor, journal, input)
-    })
-  }
-
-  /** 建行（形状/引用校验→插入→审计）。createLine 与 createAndAuditJournal 共用的唯一实现。 */
+  /** 建行（形状/引用校验→插入→审计） */
   async function insertLineInTx(
     trx: TrxHandle,
     actor: Actor,
-    journal: { id: string; company_id: string },
+    journal: { id: string; companyId: string },
     input: CreateLineInput,
-  ): Promise<JournalLine> {
+  ): Promise<void> {
     const debit = parseAmount(input.debit, 'debit')
     const credit = parseAmount(input.credit, 'credit')
     validateLineShape(
@@ -636,13 +516,13 @@ voucher_no, company_name, account_code, account_name, currency_code, currency_na
     )
     const currencyId = await validateLineReferences(
       trx,
-      journal.company_id,
+      journal.companyId,
       input.accountId,
       input.partyType ?? null,
       input.partyId ?? null,
     )
     try {
-      const inserted = await trx
+      const row = await trx
         .insertInto('acc_gl_journal_line')
         .values({
           idx: input.idx,
@@ -650,167 +530,92 @@ voucher_no, company_name, account_code, account_name, currency_code, currency_na
           credit: credit.toFixed(),
           party_type: normalizePartyDb(input.partyType ?? null),
           party_id: input.partyId ?? null,
-          remarks: emptyToNull(input.remarks),
+          remarks: input.remarks ?? null,
           journal_id: journal.id,
-          company_id: journal.company_id,
+          company_id: journal.companyId,
           account_id: input.accountId,
           currency_id: currencyId,
         })
-        .returning('id')
+        .returningAll()
         .executeTakeFirstOrThrow()
-      const item = await loadLine(trx, inserted.id)
+      const item = mapRow(LINE_META, row as unknown as Record<string, unknown>) as JournalLine
       await writeAudit(trx, actor, {
-        resource: 'acc_gl_journal_line',
+        resource: LINE_META.table,
         recordId: item.id,
         recordLabel: String(item.idx),
         companyId: item.companyId,
         actionType: 'create',
         actionName: 'create',
-        changes: auditCreated(lineSnap(item), LINE_AUDIT),
+        changes: auditCreated(snapshot(LINE_META, item, LINE_AUDIT), LINE_AUDIT),
       })
-      return item
     } catch (err) {
       if (err instanceof ApiError) throw err
       throw mapWriteError(err, '创建会计凭证行失败', WRITE_MAPPINGS)
     }
   }
 
-  async function updateLine(
-    permit: Permit,
+  /** 审核过账（裸锁→复核行→GL→状态翻转→审计）；调用方已鉴权 */
+  async function auditJournalInTx(
+    trx: TrxHandle,
+    actor: Actor,
     id: string,
-    input: UpdateLineInput,
-  ): Promise<JournalLine> {
-    const actor = permit.actor
-    return withTx(db, async (trx) => {
-      // 加锁顺序：先定位行归属，再锁母单（授权 + 草稿门），最后锁本行
-      const current = await loadAuthorized({
-        db: trx,
-        permit,
-        target: lineTarget,
-        table: JOURNAL_LINE_TABLE,
+    postingDate: string | null | undefined,
+  ): Promise<Journal> {
+    const locked = await trx
+      .selectFrom('acc_gl_journal')
+      .selectAll()
+      .where('id', '=', id)
+      .forUpdate()
+      .executeTakeFirst()
+    if (!locked) throw new ApiError('not_found', '会计凭证不存在')
+    const before = mapRow(JOURNAL_META, locked as unknown as Record<string, unknown>) as Journal
+    if (before.status !== 'DRAFT') {
+      throw new ApiError('conflict', '仅草稿凭证可审核')
+    }
+    const effectiveDate = resolvePostingDate(postingDate, before.postingDate)
+    const entries = await collectEntries(trx, before.companyId, id)
+    await gl.post(
+      trx,
+      {
+        type: VOUCHER_TYPE,
         id,
-        notFoundMessage: '会计凭证行不存在',
+        no: before.voucherNo,
+        companyId: before.companyId,
+        postingDate: effectiveDate,
+      },
+      entries,
+    )
+    const updated = await trx
+      .updateTable('acc_gl_journal')
+      .set({
+        status: 'audited',
+        posting_date: effectiveDate,
+        submitted_at: sql`(now() AT TIME ZONE 'utc')`,
+        submitted_by_id: actorUserId(actor),
+        updated_at: sql`(now() AT TIME ZONE 'utc')`,
       })
-      await lockAuthorizedDraft(trx, permit, String(current.journal_id))
-      const locked = await trx
-        .selectFrom('acc_gl_journal_line')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw lineNotFound()
-
-      const before = await loadLine(trx, id)
-      const debit =
-        input.debit !== undefined ? parseAmount(input.debit, 'debit') : decimal(before.debit)
-      const credit =
-        input.credit !== undefined ? parseAmount(input.credit, 'credit') : decimal(before.credit)
-      const partyType = input.partyTypePresent
-        ? (input.partyType ?? null)
-        : before.partyType
-      const partyId = input.partyIdPresent ? (input.partyId ?? null) : before.partyId
-      const remarks = input.remarksPresent ? (input.remarks ?? null) : before.remarks
-      const idx = input.idx ?? before.idx
-      const accountId = input.accountId ?? before.accountId
-
-      validateLineShape(idx, accountId, debit, credit, partyType, partyId, remarks)
-      const currencyId = await validateLineReferences(
-        trx,
-        locked.company_id,
-        accountId,
-        partyType,
-        partyId,
-      )
-
-      const afterPreview: JournalLine = {
-        ...before,
-        idx,
-        debit: debit.toFixed(),
-        credit: credit.toFixed(),
-        partyType: partyType ? partyType.toUpperCase() : null,
-        partyId,
-        remarks,
-        accountId,
-        currencyId,
-      }
-      const changes = auditDiff(lineSnap(before), lineSnap(afterPreview), LINE_AUDIT)
-      if (Object.keys(changes).length === 0) return before
-
-      try {
-        await trx
-          .updateTable('acc_gl_journal_line')
-          .set({
-            idx,
-            debit: debit.toFixed(),
-            credit: credit.toFixed(),
-            party_type: normalizePartyDb(partyType),
-            party_id: partyId,
-            remarks,
-            account_id: accountId,
-            currency_id: currencyId,
-            updated_at: sql`(now() AT TIME ZONE 'utc')`,
-          })
-          .where('id', '=', id)
-          .execute()
-        const item = await loadLine(trx, id)
-        await writeAudit(trx, actor, {
-          resource: 'acc_gl_journal_line',
-          recordId: item.id,
-          recordLabel: String(item.idx),
-          companyId: item.companyId,
-          actionType: 'update',
-          actionName: 'update',
-          changes,
-        })
-        return item
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '更新会计凭证行失败', WRITE_MAPPINGS)
-      }
+      .where('id', '=', id)
+      .returningAll()
+      .executeTakeFirstOrThrow()
+    const after = mapRow(JOURNAL_META, updated as unknown as Record<string, unknown>) as Journal
+    await writeAudit(trx, actor, {
+      resource: JOURNAL_META.table,
+      recordId: after.id,
+      recordLabel: after.voucherNo,
+      companyId: after.companyId,
+      actionType: 'update',
+      actionName: 'audit',
+      changes: auditDiff(
+        snapshot(JOURNAL_META, before, JOURNAL_AUDIT),
+        snapshot(JOURNAL_META, after, JOURNAL_AUDIT),
+        JOURNAL_AUDIT,
+      ),
     })
-  }
-
-  async function removeLine(permit: Permit, id: string): Promise<void> {
-    const actor = permit.actor
-    await withTx(db, async (trx) => {
-      const current = await loadAuthorized({
-        db: trx,
-        permit,
-        target: lineTarget,
-        table: JOURNAL_LINE_TABLE,
-        id,
-        notFoundMessage: '会计凭证行不存在',
-      })
-      await lockAuthorizedDraft(trx, permit, String(current.journal_id))
-      const locked = await trx
-        .selectFrom('acc_gl_journal_line')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw lineNotFound()
-      const before = await loadLine(trx, id)
-      try {
-        await trx.deleteFrom('acc_gl_journal_line').where('id', '=', id).execute()
-        await writeAudit(trx, actor, {
-          resource: 'acc_gl_journal_line',
-          recordId: before.id,
-          recordLabel: String(before.idx),
-          companyId: before.companyId,
-          actionType: 'destroy',
-          actionName: 'destroy',
-          changes: auditDestroyed(lineSnap(before), LINE_AUDIT),
-        })
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '删除会计凭证行失败', WRITE_MAPPINGS)
-      }
-    })
+    return loadJournal(trx, id)
   }
 
   /**
    * 内部 seam：调用方 trx 内一气呵成立凭证并审核过账。
-   * 凭证生命周期（编号→头→行→GL→状态翻转→审计）只有本模块一份实现；
    * 不设权限闸——调用方（如银行对账）已用自己的权限码鉴权。
    */
   async function createAndAuditJournal(
@@ -821,7 +626,7 @@ voucher_no, company_name, account_code, account_name, currency_code, currency_na
     if (!Array.isArray(input.lines) || input.lines.length === 0) {
       throw ApiError.validation('会计凭证参数不合法', { lines: ['至少一行'] })
     }
-    const journal = await createJournalInTx(trx, actor, {
+    const journal = await insertJournalInTx(trx, actor, {
       companyId: input.companyId,
       date: input.date,
       postingDate: input.postingDate,
@@ -829,7 +634,7 @@ voucher_no, company_name, account_code, account_name, currency_code, currency_na
     })
     for (let i = 0; i < input.lines.length; i++) {
       const line = input.lines[i]!
-      await insertLineInTx(trx, actor, { id: journal.id, company_id: journal.companyId }, {
+      await insertLineInTx(trx, actor, { id: journal.id, companyId: journal.companyId }, {
         journalId: journal.id,
         idx: i + 1,
         accountId: line.accountId,
@@ -840,26 +645,21 @@ voucher_no, company_name, account_code, account_name, currency_code, currency_na
         remarks: line.remarks ?? null,
       })
     }
-    // 内部 seam：凭证刚在本 trx 内建出，用裸锁（调用方已用自己的权限码鉴权）
-    return auditJournalInTx(trx, actor, journal.id, input.postingDate, (t) =>
-      lockJournal(t, journal.id),
-    )
+    return auditJournalInTx(trx, actor, journal.id, input.postingDate)
   }
 
   return {
-    get,
+    ...base,
     list,
-    create,
-    update,
-    remove,
-    audit,
-    cancel,
+    audit: (permit: Permit, id: string, postingDate?: string | null) =>
+      base.transition(permit, id, 'audit', { postingDate: postingDate ?? null }),
+    cancel: (permit: Permit, id: string) => base.transition(permit, id, 'cancel'),
     createAndAuditJournal,
-    getLine,
-    listLines,
-    createLine,
-    updateLine,
-    removeLine,
+    getLine: lines.get,
+    listLines: lines.list,
+    createLine: lines.create,
+    updateLine: lines.update,
+    removeLine: lines.remove,
   }
 }
 
@@ -873,38 +673,50 @@ function actorUserId(actor: Actor): string | null {
     : null
 }
 
-function notFound(): ApiError {
-  return new ApiError('not_found', '会计凭证不存在')
-}
-
-function lineNotFound(): ApiError {
-  return new ApiError('not_found', '会计凭证行不存在')
-}
-
-function draftError(): ApiError {
-  return new ApiError('conflict', '仅草稿凭证可修改或删除')
+function runeLen(value: string): number {
+  return [...value].length
 }
 
 function validation(field: string, message: string): ApiError {
   return ApiError.validation('会计凭证参数不合法', { [field]: [message] })
 }
 
-function emptyToNull(value: string | null | undefined): string | null {
-  if (value === undefined || value === null) return null
-  return value
+/** 过账日期：入参优先，缺省取头上现值；两者皆空即 422（审核前必须有过账日期） */
+function resolvePostingDate(
+  input: string | null | undefined,
+  current: string | null,
+): string {
+  const effective =
+    input && input.trim() !== '' ? input.trim().slice(0, 10) : (current ?? null)
+  if (!effective) {
+    throw validation('postingDate', '审核过账前必须填写过账日期')
+  }
+  return effective
 }
 
-function dateOnly(value: Date | string): string {
-  if (typeof value === 'string') return value.trim().slice(0, 10)
-  const y = value.getUTCFullYear()
-  const m = String(value.getUTCMonth() + 1).padStart(2, '0')
-  const d = String(value.getUTCDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
-function toDate(value: unknown): Date {
-  if (value instanceof Date) return value
-  return new Date(String(value))
+/**
+ * 单头 wire 规范化 + 领域校验（内核钩子与内部 seam 共用）。
+ * create：单号可空（取号补），长度上限；update：单号/日期必填。
+ */
+function validateJournalDraft(action: 'create' | 'update', draft: Record<string, unknown>): void {
+  if (typeof draft.voucherNo === 'string') draft.voucherNo = draft.voucherNo.trim()
+  const fields: Record<string, string[]> = {}
+  const voucherNo = typeof draft.voucherNo === 'string' ? draft.voucherNo : null
+  if (action === 'update') {
+    if (voucherNo === null || voucherNo === '') fields.voucherNo = ['必填']
+    else if (runeLen(voucherNo) > 32) fields.voucherNo = ['最多 32 个字符']
+  } else if (voucherNo !== null && runeLen(voucherNo) > 32) {
+    fields.voucherNo = ['最多 32 个字符']
+  }
+  const date = typeof draft.date === 'string' ? draft.date.trim() : ''
+  if (date === '') fields.date = ['必填']
+  const remarks = draft.remarks
+  if (typeof remarks === 'string' && runeLen(remarks) > 512) {
+    fields.remarks = ['最多 512 个字符']
+  }
+  if (Object.keys(fields).length > 0) {
+    throw ApiError.validation('会计凭证参数不合法', fields)
+  }
 }
 
 function decStr(value: unknown): string {
@@ -923,61 +735,12 @@ function normalizePartyDb(partyType: string | null): string | null {
   return partyType.trim().toLowerCase()
 }
 
-/** 内部 seam 用的裸行锁（无授权判定；HTTP 路径一律走 lockAuthorizedJournal） */
-async function lockJournal(db: DbHandle, id: string): Promise<Record<string, unknown>> {
-  const row = await db
-    .selectFrom('acc_gl_journal')
-    .selectAll()
-    .where('id', '=', id)
-    .forUpdate()
-    .executeTakeFirst()
-  if (!row) throw notFound()
-  return row as unknown as Record<string, unknown>
-}
-
-async function loadJournal(db: DbHandle, id: string): Promise<Journal> {
-  const result = await sql<Record<string, unknown>>`
-    SELECT id, voucher_no, date, posting_date, remarks, status,
-      submitted_at, inserted_at, updated_at, company_id, created_by_id, submitted_by_id,
-      debit_total, credit_total, company_name, created_by_name, submitted_by_name
-    ${JOURNAL_SOURCE}
-    WHERE id = ${id}
-  `.execute(db)
-  const row = result.rows[0]
-  if (!row) throw notFound()
-  return mapJournalRow(row)
-}
-
-async function loadLine(db: DbHandle, id: string): Promise<JournalLine> {
-  const result = await sql<Record<string, unknown>>`
-    SELECT id, idx, debit, credit, party_type, party_id, remarks,
-      inserted_at, updated_at, journal_id, company_id, account_id, currency_id,
-      voucher_no, company_name, account_code, account_name, currency_code, currency_name
-    ${LINE_SOURCE}
-    WHERE id = ${id}
-  `.execute(db)
-  const row = result.rows[0]
-  if (!row) throw lineNotFound()
-  return mapLineRow(row)
-}
-
-function mapJournalRow(r: Record<string, unknown>): Journal {
+/** 单头投影附加键（join 出来的公司/编写人/提交人与借贷合计） */
+function journalExtras(r: Record<string, unknown>): Record<string, unknown> {
   const companyId = String(r.company_id)
   const createdById = r.created_by_id == null ? null : String(r.created_by_id)
   const submittedById = r.submitted_by_id == null ? null : String(r.submitted_by_id)
   return {
-    id: String(r.id),
-    voucherNo: String(r.voucher_no),
-    date: dateOnly(r.date as Date | string),
-    postingDate: r.posting_date == null ? null : dateOnly(r.posting_date as Date | string),
-    remarks: r.remarks == null ? null : String(r.remarks),
-    status: String(r.status).toUpperCase() as JournalStatus,
-    submittedAt: r.submitted_at == null ? null : toDate(r.submitted_at),
-    insertedAt: toDate(r.inserted_at),
-    updatedAt: toDate(r.updated_at),
-    companyId,
-    createdById,
-    submittedById,
     debitTotal: decStr(r.debit_total),
     creditTotal: decStr(r.credit_total),
     company: { id: companyId, name: String(r.company_name) },
@@ -992,31 +755,14 @@ function mapJournalRow(r: Record<string, unknown>): Journal {
   }
 }
 
-function mapLineRow(r: Record<string, unknown>): JournalLine {
-  const id = String(r.id)
-  const journalId = String(r.journal_id)
-  const companyId = String(r.company_id)
-  const accountId = String(r.account_id)
+/** 行投影附加键（凭证/公司/科目/币种引用） */
+function lineExtras(r: Record<string, unknown>): Record<string, unknown> {
   const currencyId = r.currency_id == null ? null : String(r.currency_id)
-  const partyType = r.party_type == null ? null : String(r.party_type).toUpperCase()
   return {
-    id,
-    idx: Number(r.idx),
-    debit: decStr(r.debit),
-    credit: decStr(r.credit),
-    partyType,
-    partyId: r.party_id == null ? null : String(r.party_id),
-    remarks: r.remarks == null ? null : String(r.remarks),
-    insertedAt: toDate(r.inserted_at),
-    updatedAt: toDate(r.updated_at),
-    journalId,
-    companyId,
-    accountId,
-    currencyId,
-    journal: { id: journalId, voucherNo: String(r.voucher_no) },
-    company: { id: companyId, name: String(r.company_name) },
+    journal: { id: String(r.journal_id), voucherNo: String(r.voucher_no) },
+    company: { id: String(r.company_id), name: String(r.company_name) },
     account: {
-      id: accountId,
+      id: String(r.account_id),
       code: String(r.account_code),
       name: String(r.account_name),
     },
@@ -1031,61 +777,20 @@ function mapLineRow(r: Record<string, unknown>): JournalLine {
   }
 }
 
-function journalSnap(item: Journal): Record<string, unknown> {
-  return {
-    voucher_no: item.voucherNo,
-    date: item.date,
-    posting_date: item.postingDate,
-    remarks: item.remarks,
-    status: item.status,
-    submitted_at: item.submittedAt,
-    company_id: item.companyId,
-    created_by_id: item.createdById,
-    submitted_by_id: item.submittedById,
-  }
+function mapJournalRow(r: Record<string, unknown>): Journal {
+  return { ...mapRow(JOURNAL_META, r), ...journalExtras(r) } as Journal
 }
 
-function lineSnap(item: JournalLine): Record<string, unknown> {
-  return {
-    idx: item.idx,
-    debit: item.debit,
-    credit: item.credit,
-    party_type: item.partyType,
-    party_id: item.partyId,
-    remarks: item.remarks,
-    journal_id: item.journalId,
-    company_id: item.companyId,
-    account_id: item.accountId,
-    currency_id: item.currencyId,
-  }
-}
-
-function validateCreate(input: CreateJournalInput): void {
-  const fields: Record<string, string[]> = {}
-  if (!input.companyId) fields.companyId = ['必填']
-  if (!input.date || input.date.trim() === '') fields.date = ['必填']
-  if (input.voucherNo != null && [...input.voucherNo.trim()].length > 32) {
-    fields.voucherNo = ['最多 32 个字符']
-  }
-  if (input.remarks != null && [...input.remarks].length > 512) {
-    fields.remarks = ['最多 512 个字符']
-  }
-  if (Object.keys(fields).length > 0) {
-    throw ApiError.validation('会计凭证参数不合法', fields)
-  }
-}
-
-function validateMutable(item: Journal): void {
-  const fields: Record<string, string[]> = {}
-  if (!item.voucherNo.trim()) fields.voucherNo = ['必填']
-  else if ([...item.voucherNo].length > 32) fields.voucherNo = ['最多 32 个字符']
-  if (!item.date) fields.date = ['必填']
-  if (item.remarks != null && [...item.remarks].length > 512) {
-    fields.remarks = ['最多 512 个字符']
-  }
-  if (Object.keys(fields).length > 0) {
-    throw ApiError.validation('会计凭证参数不合法', fields)
-  }
+/** 无授权的投影单条（内部 seam 的返回值；HTTP 路径一律经内核授权读） */
+async function loadJournal(db: DbHandle, id: string): Promise<Journal> {
+  const result = await sql<Record<string, unknown>>`
+    ${JOURNAL_SELECT}
+    ${JOURNAL_SOURCE}
+    WHERE id = ${id}
+  `.execute(db)
+  const row = result.rows[0]
+  if (!row) throw new ApiError('not_found', '会计凭证不存在')
+  return mapJournalRow(row)
 }
 
 function validateLineShape(
@@ -1112,7 +817,7 @@ function validateLineShape(
       fields.partyType = ['只能为 SUPPLIER、CUSTOMER、COMPANY 或 EMPLOYEE']
     }
   }
-  if (remarks != null && [...remarks].length > 512) {
+  if (remarks != null && runeLen(remarks) > 512) {
     fields.remarks = ['最多 512 个字符']
   }
   if (Object.keys(fields).length > 0) {
