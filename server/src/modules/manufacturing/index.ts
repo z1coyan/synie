@@ -44,7 +44,7 @@ export function createManufacturingServices(
   const inventory = createInventoryEngine()
   const master = createMasterService(db, numbering, registry)
   const demands = createDemandService(db, numbering, registry)
-  const workOrders = createWorkOrderService(db, numbering, registry)
+  const workOrders = createWorkOrderService(db, numbering, registry, inventory)
   const outputs = createOutputService(db, numbering, inventory, registry)
   const moldDesigns = createMoldDesignService(db, numbering, registry)
   return { master, demands, workOrders, outputs, moldDesigns }

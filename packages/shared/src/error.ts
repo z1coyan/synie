@@ -10,6 +10,7 @@ export const API_ERROR_CODES = [
   'validation',
   'not_found',
   'conflict',
+  'unprocessable',
   'not_implemented',
   'internal',
 ] as const
@@ -31,6 +32,7 @@ export const API_ERROR_STATUS: Record<ApiErrorCode, number> = {
   validation: 400,
   not_found: 404,
   conflict: 409,
+  unprocessable: 422,
   not_implemented: 501,
   internal: 500,
 }

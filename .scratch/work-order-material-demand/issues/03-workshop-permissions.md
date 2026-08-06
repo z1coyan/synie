@@ -4,10 +4,12 @@
 
 **Blocked by:** 01 — 派生核心链路
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] 车间角色授权组合（read/update/confirm/delete、本部门数据范围）下：派生草稿可改可审可删，审核后进入下游车间/采购勾选池可见
-- [ ] 车间角色手工建单端点 403；销售勾选相关端点 403；前端建单入口自动隐藏
-- [ ] 车间看不到未下发到本车间的需求单（含他人派生给其他车间的单）
-- [ ] 计划角色建单/勾选/审核/下发行为全部不回归
-- [ ] 全栈 HTTP 双角色集成测试（buildTestApp 模式）覆盖以上正反面
+- [x] 车间角色授权组合（read/update/confirm/delete、本部门数据范围）下：派生草稿可改可审可删，审核后进入下游车间/采购勾选池可见
+- [x] 车间角色手工建单端点 403；销售勾选相关端点 403；前端建单入口自动隐藏
+- [x] 车间看不到未下发到本车间的需求单（含他人派生给其他车间的单）
+- [x] 计划角色建单/勾选/审核/下发行为全部不回归
+- [x] 全栈 HTTP 双角色集成测试（buildTestApp 模式）覆盖以上正反面
+
+**实施说明：** 零生产代码改动——assigned 部门数据范围（meta 已声明）与前端 capability 门控（`can('create')` 驱动建单按钮显隐）均为既有机制，角色授权为运行时授予（本票测试内按车间角色授权组合 `read/update/confirm/delete` + 工单全套 + `generate_material_demand`、scope=dept 直接写授权表验证）。交付物为 `server/test/workshop-demand-permissions.integration.test.ts`（双角色三用户：计划员 × 车间A × 车间B，6 例全绿）。

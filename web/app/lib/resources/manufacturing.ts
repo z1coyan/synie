@@ -1,4 +1,5 @@
 import { apiData, api } from '../api/client'
+import { toast } from '@heroui/react'
 import { createRowCommandAdapter } from './catalog/commands'
 import { restTransport } from './rest-transport'
 
@@ -75,10 +76,17 @@ export async function changeDemandItemFulfillment(
 }
 
 export async function voidWorkOrder(id: string) {
-  return apiData(
+  const result = await apiData(
     api.manufacturing['work-orders'][':id'].void.$post({
       param: { id }}),
   )
+  // 作废级联（票 04）：派生草稿已自动删除；已确认派生单只警告不拦截，单号名单由人收场
+  if (result.confirmedDerivedDemandNos.length > 0) {
+    toast.warning('工单已作废，但存在已确认的派生需求单，请人工收场', {
+      description: result.confirmedDerivedDemandNos.join('、'),
+    })
+  }
+  return result
 }
 
 export async function applyWorkOrderBom(id: string, bomId: string | null) {
@@ -94,6 +102,41 @@ export async function getWorkOrderBomSnapshot(id: string) {
   return apiData(
     api.manufacturing['work-orders'][':id']['bom-snapshot'].$get({
       param: { id },
+    }),
+  )
+}
+
+/**
+ * 「生成物料需求」弹窗取数（票 02）：每配料行的毛需求、参考库存（本公司全仓现货
+ * 合计快照，只读不锁不扣）与服务端默认（数量=毛−参考库存下限 0；covered=库存足够
+ * 默认去向「不需要」），均折算到行单位；前端不自行聚合库存。
+ */
+export async function getMaterialDemandPreview(id: string) {
+  return apiData(
+    api.manufacturing['work-orders'][':id']['material-demand-preview'].$get({
+      param: { id },
+    }),
+  )
+}
+
+/**
+ * 生成物料需求（工单物料需求派生，票 01）：逐行去向分流，按去向分组单事务生成需求单草稿。
+ * 响应含生成草稿清单（id+单号+去向）与服务端算出的每行毛需求回显。
+ * 重复生成（票 04）：已有未删除派生草稿时响应带 warning（不生成），二次确认后 force 重发。
+ */
+export async function generateMaterialDemand(
+  id: string,
+  lines: Array<{
+    componentId: string
+    qty: string
+    target: { kind: 'dept'; deptId: string } | { kind: 'purchase' }
+  }>,
+  force?: boolean,
+) {
+  return apiData(
+    api.manufacturing['work-orders'][':id']['generate-material-demand'].$post({
+      param: { id },
+      json: { lines, force },
     }),
   )
 }

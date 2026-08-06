@@ -27,7 +27,8 @@ export async function loginViaUI(
     .toBe(true)
   await usernameInput.pressSequentially(creds.username ?? ADMIN_USERNAME)
   await passwordInput.pressSequentially(creds.password ?? ADMIN_PASSWORD)
-  await page.getByRole('button', { name: /登\s*录|正在登录/ }).click()
+  // 锚定整词：登录页可能另有「使用 Logto 登录」按钮（logtoEnabled 时渲染）
+  await page.getByRole('button', { name: /^(登\s*录|正在登录)$/ }).click()
   await expect(page.getByRole('navigation', { name: '模块导航' })).toBeVisible()
   // 会话 cookie 已落（httpOnly，页面 JS 不可见，从 context 断言）
   const cookies = await page.context().cookies()

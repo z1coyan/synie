@@ -407,6 +407,12 @@ export function createDemandService(
       after.materialSpec = projection.materialSpec
       after.unitName = projection.unitName
       after.qty = toDecimalString(decimal(after.qty))
+      // 来源互斥：派生行（来源工单）不可再挂销售来源；销售占用校验只认销售来源行
+      if (after.salesOrderItemId != null && before.sourceWorkOrderId != null) {
+        throw ApiError.validation('需求行参数不合法', {
+          salesOrderItemId: ['来源销售订单条目与来源生产工单互斥,只能二选一'],
+        })
+      }
       await validateSalesSource(trx, after.salesOrderItemId, parent.companyId)
       const changes = auditDiff(itemSnap(before), itemSnap(after), ITEM_AUDIT)
       if (Object.keys(changes).length > 0) {
@@ -861,7 +867,7 @@ export type DemandService = ReturnType<typeof createDemandService>
  * 下发车间校验：同公司 + 未停用（新下发不允许指向停用部门，对齐用户挂部门口径）。
  * 空值即「未下发」，不校验。
  */
-async function resolveAssignedDept(
+export async function resolveAssignedDept(
   db: DbHandle,
   companyId: string,
   deptId: string | null | undefined,
@@ -884,6 +890,152 @@ async function resolveAssignedDept(
     throw ApiError.validation('履约需求单参数不合法', { assignedDeptId: ['车间已停用'] })
   }
   return deptId
+}
+
+/** 派生需求行（受信任写输入）：base 与快照均由调用方在同事务内复算好 */
+export interface DerivedDemandLine {
+  idx: number
+  materialId: string
+  unitId: string
+  qty: string
+  baseQty: string
+  needDate: string | null
+  sourceWorkOrderId: string
+  materialCode: string
+  materialName: string
+  materialSpec: string | null
+  unitName: string
+}
+
+/**
+ * 受信任写：工单「生成物料需求」动作内直接落需求单头+行（不走公开建单端点，
+ * 不校验 mfg.demand:create——与「动作内系统写他域不另要码」先例同构）。
+ * 调用方持事务（多张草稿单事务，任一失败整体回滚）；头/行走既有创建审计。
+ */
+export async function insertDerivedDemand(
+  trx: DbHandle,
+  actor: Permit['actor'],
+  input: {
+    companyId: string
+    demandNo: string
+    demandDate: string
+    remarks: string
+    assignedDeptId: string | null
+    lines: DerivedDemandLine[]
+  },
+): Promise<{ id: string; demandNo: string; assignedDeptId: string | null }> {
+  try {
+    const head = await trx
+      .insertInto('mfg_demand')
+      .values({
+        demand_no: input.demandNo,
+        demand_date: input.demandDate,
+        remarks: input.remarks,
+        status: 'draft',
+        company_id: input.companyId,
+        assigned_dept_id: input.assignedDeptId,
+        created_by_id: actor.userId || null,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow()
+    const demand = mapDemand(head)
+    await writeAudit(trx, actor, {
+      resource: 'mfg_demand',
+      recordId: demand.id,
+      recordLabel: demand.demandNo,
+      actionType: 'create',
+      actionName: 'create',
+      companyId: demand.companyId,
+      changes: auditCreated(demandSnap(demand), DEMAND_AUDIT),
+    })
+    for (const line of input.lines) {
+      const row = await trx
+        .insertInto('mfg_demand_item')
+        .values({
+          demand_id: demand.id,
+          company_id: input.companyId,
+          idx: String(line.idx),
+          material_id: line.materialId,
+          unit_id: line.unitId,
+          qty: line.qty,
+          base_qty: line.baseQty,
+          need_date: line.needDate,
+          fulfillment_method: null,
+          status: 'pending',
+          sales_order_item_id: null,
+          source_work_order_id: line.sourceWorkOrderId,
+          material_code: line.materialCode,
+          material_name: line.materialName,
+          material_spec: line.materialSpec,
+          unit_name: line.unitName,
+          remarks: null,
+          ordered_qty: '0',
+          received_qty: '0',
+          arranged_qty: '0',
+          completed_qty: '0',
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow()
+      const item = mapDemandItem(row)
+      await writeAudit(trx, actor, {
+        resource: 'mfg_demand_item',
+        recordId: item.id,
+        recordLabel: String(item.idx),
+        actionType: 'create',
+        actionName: 'create',
+        companyId: item.companyId,
+        changes: auditCreated(itemSnap(item), ITEM_AUDIT),
+      })
+    }
+    return { id: demand.id, demandNo: demand.demandNo, assignedDeptId: demand.assignedDeptId }
+  } catch (err) {
+    throw mfgWriteError('生成物料需求失败', err)
+  }
+}
+
+/**
+ * 受信任写：工单作废/删除的派生级联（票 04）——物理删除该工单派生的、仍处于
+ * 草稿态的需求单（头删除、行经 FK 级联），逐张写删除审计；仅 confirmed 派生单
+ * 进警告名单（只警告不拦截），closed/voided 不警告也不删除。调用方持事务。
+ */
+export async function cascadeDeleteDerivedDrafts(
+  trx: DbHandle,
+  actor: Permit['actor'],
+  workOrderId: string,
+): Promise<{ deletedDemandNos: string[]; confirmedDemandNos: string[] }> {
+  const heads = await trx
+    .selectFrom('mfg_demand')
+    .selectAll()
+    .where('id', 'in', (qb) =>
+      qb
+        .selectFrom('mfg_demand_item')
+        .select('demand_id')
+        .where('source_work_order_id', '=', workOrderId)
+        .distinct(),
+    )
+    .execute()
+  const deletedDemandNos: string[] = []
+  const confirmedDemandNos: string[] = []
+  for (const head of heads) {
+    if (head.status === 'confirmed') {
+      confirmedDemandNos.push(head.demand_no)
+      continue
+    }
+    if (head.status !== 'draft') continue
+    await trx.deleteFrom('mfg_demand').where('id', '=', head.id).execute()
+    const demand = mapDemand(head)
+    await writeAudit(trx, actor, {
+      resource: 'mfg_demand',
+      recordId: demand.id,
+      recordLabel: demand.demandNo,
+      actionType: 'destroy',
+      actionName: 'destroy',
+      companyId: demand.companyId,
+      changes: auditDestroyed(demandSnap(demand), DEMAND_AUDIT),
+    })
+    deletedDemandNos.push(demand.demandNo)
+  }
+  return { deletedDemandNos, confirmedDemandNos }
 }
 
 /** 按 Permit 取需求单行（可锁）；不命中一律 not_found。工单/入库服务共用 */
@@ -984,6 +1136,7 @@ function mapDemandItem(row: {
   fulfillment_method: string | null
   status: string
   sales_order_item_id: string | null
+  source_work_order_id: string | null
   material_code: string
   material_name: string
   material_spec: string | null
@@ -1017,6 +1170,7 @@ function mapDemandItem(row: {
       : null,
     status,
     salesOrderItemId: row.sales_order_item_id,
+    sourceWorkOrderId: row.source_work_order_id,
     materialCode: row.material_code,
     materialName: row.material_name,
     materialSpec: row.material_spec,
@@ -1048,6 +1202,7 @@ export function mapDemandItemRecord(r: Record<string, unknown>): DemandItem {
     fulfillment_method: r.fulfillment_method == null ? null : String(r.fulfillment_method),
     status: String(r.status),
     sales_order_item_id: r.sales_order_item_id == null ? null : String(r.sales_order_item_id),
+    source_work_order_id: r.source_work_order_id == null ? null : String(r.source_work_order_id),
     material_code: String(r.material_code),
     material_name: String(r.material_name),
     material_spec: r.material_spec == null ? null : String(r.material_spec),
@@ -1100,5 +1255,6 @@ function itemSnap(item: DemandItem) {
     material_id: item.materialId,
     unit_id: item.unitId,
     sales_order_item_id: item.salesOrderItemId,
+    source_work_order_id: item.sourceWorkOrderId,
   }
 }

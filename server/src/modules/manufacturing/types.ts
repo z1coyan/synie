@@ -130,6 +130,8 @@ export interface DemandItem {
   fulfillmentMethod: FulfillmentMethod | null
   status: DemandItemStatus
   salesOrderItemId: string | null
+  /** 来源生产工单（物料需求派生写入）：与销售来源互斥，派生行不占销售占用 */
+  sourceWorkOrderId: string | null
   materialCode: string
   materialName: string
   materialSpec: string | null

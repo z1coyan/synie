@@ -6,11 +6,12 @@
  * 不可手填；无部门用户创建即 NULL（只有 all 范围看得见）。
  * 从需求行建单的路由额外要求 `mfg.demand:read`（guard allOf），故来源单据的行级可达性同样成立。
  */
-import { decimal, isDecimalString, toDecimalString } from '@synie/shared'
+import { decimal, isDecimalString, roundBaseQty, toDecimalString } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
+import type { InventoryEngine } from '~/engines/inventory/index.ts'
 import {
   auditCreated,
   auditDestroyed,
@@ -29,11 +30,15 @@ import { syncDrawingAttachments } from '~/modules/trading/common.ts'
 import {
   DEMAND_ITEM_RESOURCE,
   DEMAND_RESOURCE,
+  cascadeDeleteDerivedDrafts,
+  insertDerivedDemand,
   loadDemandAuthorized,
   loadDemandItemAuthorized,
+  resolveAssignedDept,
 } from './demand-service.ts'
 import {
   asDateOrNull,
+  deriveItemProjection,
   ensureMaterial,
   ensureUnitAllowed,
   mfgWriteError,
@@ -51,16 +56,70 @@ import {
 } from './arrangement.ts'
 import type { AuthzTarget } from '~/platform/meta/resource-authz.ts'
 import { workOrderResourceMeta } from './meta.ts'
+import type { ItemProjection } from './helpers.ts'
 import type { Bom, ListQueryInput, WorkOrder, WorkOrderStatus } from './types.ts'
 
 export const WORK_ORDER_RESOURCE = 'mfgWorkOrders'
 const WORK_ORDER_TABLE = 'mfg_work_order'
 const WO_AUDIT = auditFieldsOf(workOrderResourceMeta())
 
+/** 生成物料需求请求行：未出现的配料行即「不需要」 */
+export interface MaterialDemandLineInput {
+  componentId: string
+  /** 数量（行单位=快照配料行单位）；不设硬顶，允许大于毛需求 */
+  qty: string
+  target: { kind: 'dept'; deptId: string } | { kind: 'purchase' }
+}
+
+export interface MaterialDemandResult {
+  /** 生成的需求单草稿（id + 单号 + 去向） */
+  demands: Array<{ id: string; demandNo: string; assignedDeptId: string | null }>
+  /** 服务端算出的每行毛需求回显（行单位） */
+  lines: Array<{
+    componentId: string
+    materialId: string
+    unitId: string
+    grossQty: string
+  }>
+  /** 重复生成警告（票 04）：已有未删除派生草稿且未带 force——此时不生成，demands/lines 为空 */
+  warning: { existingDraftDemandNos: string[] } | null
+}
+
+/** 「生成物料需求」弹窗取数行（票 02）：毛需求/参考库存/默认数量均折算到行单位，6 位 */
+export interface MaterialDemandPreviewLine {
+  componentId: string
+  materialId: string
+  unitId: string
+  materialCode: string
+  materialName: string
+  materialSpec: string | null
+  unitName: string
+  /** 毛需求 = 净用量 ×(1+损耗率,空按 1)× 工单 base 数量（理论耗用口径） */
+  grossQty: string
+  /** 参考库存：本公司全部仓库现货合计（库存引擎 balance 跨仓聚合），纯快照 */
+  stockQty: string
+  /** 默认数量 = 毛需求 − 参考库存（下限 0）；人可改、允许大于毛需求 */
+  defaultQty: string
+  /** 参考库存 ≥ 毛需求：默认去向「不需要」（仍可改） */
+  covered: boolean
+}
+
+interface PreparedLine {
+  componentId: string
+  materialId: string
+  unitId: string
+  qty: string
+  baseQty: string
+  grossQty: string
+  projection: ItemProjection
+  deptId: string | null
+}
+
 export function createWorkOrderService(
   db: Kysely<Database>,
   numbering: NumberingService,
   registry: Registry,
+  inventory: InventoryEngine,
 ) {
   const target = registry.authzTarget(WORK_ORDER_RESOURCE)
   const demandTarget = registry.authzTarget(DEMAND_RESOURCE)
@@ -259,6 +318,9 @@ export function createWorkOrderService(
       }
       try {
         await removeMakeArrangementByWorkOrder(trx, id)
+        // 删除同作废级联（票 04）：先清本工单派生的草稿态需求单（头+行级联、写删除审计）；
+        // 已确认派生单引用的工单由行 FK 天然拦截删除
+        await cascadeDeleteDerivedDrafts(trx, permit.actor, id)
         await sql`
           DELETE FROM sys_attachment
           WHERE owner_type = 'mfg_work_order' AND owner_id = ${id}::uuid
@@ -279,7 +341,10 @@ export function createWorkOrderService(
     })
   }
 
-  async function voidWorkOrder(permit: Permit, id: string): Promise<WorkOrder> {
+  async function voidWorkOrder(
+    permit: Permit,
+    id: string,
+  ): Promise<{ workOrder: WorkOrder; confirmedDerivedDemandNos: string[] }> {
     return withTx(db, async (trx) => {
       const before = await lockWorkOrder(trx, permit, id)
       if (before.status !== 'in_progress') {
@@ -294,6 +359,9 @@ export function createWorkOrderService(
         .where('id', '=', id)
         .execute()
       await removeMakeArrangementByWorkOrder(trx, id)
+      // 作废级联（票 04）：物理删除本工单派生的草稿态需求单（头+行级联、写删除审计）；
+      // 已确认派生单不动，单号带进响应警告名单（additive），只警告不拦截
+      const cascade = await cascadeDeleteDerivedDrafts(trx, permit.actor, id)
       const after = { ...before, status: 'voided' as WorkOrderStatus }
       await writeAudit(trx, permit.actor, {
         resource: 'mfg_work_order',
@@ -304,7 +372,7 @@ export function createWorkOrderService(
         companyId: after.companyId,
         changes: auditDiff(woSnap(before), woSnap(after), WO_AUDIT),
       })
-      return after
+      return { workOrder: after, confirmedDerivedDemandNos: cascade.confirmedDemandNos }
     })
   }
 
@@ -345,10 +413,23 @@ export function createWorkOrderService(
   async function getBomSnapshot(permit: Permit, workOrderId: string) {
     const wo = await loadWorkOrderAuthorized(db, permit, target, workOrderId, false)
     const components = await db
-      .selectFrom('mfg_work_order_component')
-      .selectAll()
-      .where('work_order_id', '=', workOrderId)
-      .orderBy('idx', 'asc')
+      .selectFrom('mfg_work_order_component as c')
+      .innerJoin('inv_material as m', 'm.id', 'c.material_id')
+      .innerJoin('bas_unit as u', 'u.id', 'c.unit_id')
+      .select([
+        'c.id',
+        'c.material_id',
+        'c.unit_id',
+        'c.quantity',
+        'c.loss_rate',
+        'c.note',
+        'm.code as material_code',
+        'm.name as material_name',
+        'm.spec as material_spec',
+        'u.name as unit_name',
+      ])
+      .where('c.work_order_id', '=', workOrderId)
+      .orderBy('c.idx', 'asc')
       .execute()
     const routes = await db
       .selectFrom('mfg_work_order_route')
@@ -371,6 +452,12 @@ export function createWorkOrderService(
         quantity: numStr(c.quantity),
         lossRate: c.loss_rate == null ? null : numStr(c.loss_rate),
         note: c.note,
+        // 物料/单位名称快照 join（派生弹窗展示）；毛需求=理论耗用口径，服务端算好供默认数量
+        materialCode: c.material_code,
+        materialName: c.material_name,
+        materialSpec: c.material_spec,
+        unitName: c.unit_name,
+        grossQty: grossRequirement(c.quantity, c.loss_rate, wo.baseQty),
       })),
       routes: routes.map((r) => ({
         id: r.id,
@@ -650,6 +737,251 @@ export function createWorkOrderService(
     })
   }
 
+  /**
+   * 「生成物料需求」弹窗取数（票 02）：每配料行的毛需求与参考库存快照。
+   * 参考库存只读复用库存引擎 balance——按 {公司,物料}（不指定仓库）聚合后跨仓合计，
+   * 折算到行单位展示；纯快照，不写分录、不锁不扣不预留。默认数量=毛−参考库存（下限 0），
+   * 参考库存足够的行带 covered 标记（默认去向「不需要」），均由服务端算好，前端不自行聚合。
+   */
+  async function getMaterialDemandPreview(
+    permit: Permit,
+    workOrderId: string,
+  ): Promise<{ lines: MaterialDemandPreviewLine[] }> {
+    const wo = await loadWorkOrderAuthorized(db, permit, target, workOrderId, false)
+    const components = await db
+      .selectFrom('mfg_work_order_component as c')
+      .innerJoin('inv_material as m', 'm.id', 'c.material_id')
+      .innerJoin('bas_unit as u', 'u.id', 'c.unit_id')
+      .leftJoin('inv_material_unit as mu', (join) =>
+        join.onRef('mu.material_id', '=', 'c.material_id').onRef('mu.unit_id', '=', 'c.unit_id'),
+      )
+      .select([
+        'c.id',
+        'c.material_id',
+        'c.unit_id',
+        'c.quantity',
+        'c.loss_rate',
+        'm.code as material_code',
+        'm.name as material_name',
+        'm.spec as material_spec',
+        'm.default_unit_id',
+        'u.name as unit_name',
+        'mu.factor as conversion_factor',
+      ])
+      .where('c.work_order_id', '=', workOrderId)
+      .orderBy('c.idx', 'asc')
+      .execute()
+    if (components.length === 0) return { lines: [] }
+
+    // 库存引擎按 { companyId, materialId } 聚合（不指定仓库）后跨仓合计：base 单位，6 位
+    const stockBaseByMaterial = new Map<string, string>()
+    for (const materialId of [...new Set(components.map((c) => c.material_id))]) {
+      const rows = await inventory.balance(db, {
+        companyId: wo.companyId,
+        materialId,
+        hideZero: false,
+      })
+      let total = decimal(0)
+      for (const r of rows) total = total.add(r.quantity)
+      stockBaseByMaterial.set(materialId, toDecimalString(decimal(roundBaseQty(total))))
+    }
+
+    return {
+      lines: components.map((c) => {
+        const grossQty = grossRequirement(c.quantity, c.loss_rate, wo.baseQty)
+        // 折算到行单位：默认单位即 base；转换单位 1 默认单位 = factor 行单位
+        let stockQty = decimal(stockBaseByMaterial.get(c.material_id)!)
+        if (c.unit_id !== c.default_unit_id) {
+          if (c.conversion_factor == null || !decimal(String(c.conversion_factor)).gt(0)) {
+            throw new ApiError('conflict', '配料行单位缺少物料单位转换系数')
+          }
+          stockQty = decimal(roundBaseQty(stockQty.mul(decimal(String(c.conversion_factor)))))
+        }
+        const gross = decimal(grossQty)
+        const covered = !stockQty.lt(gross)
+        const defaultQty = toDecimalString(
+          decimal(roundBaseQty(covered ? decimal(0) : gross.sub(stockQty))),
+        )
+        return {
+          componentId: c.id,
+          materialId: c.material_id,
+          unitId: c.unit_id,
+          materialCode: c.material_code,
+          materialName: c.material_name,
+          materialSpec: c.material_spec,
+          unitName: c.unit_name,
+          grossQty,
+          stockQty: toDecimalString(stockQty),
+          defaultQty,
+          covered,
+        }
+      }),
+    }
+  }
+
+  /**
+   * 生成物料需求（派生核心链路）：按 BOM 快照配料逐行校验后按去向分组，
+   * 单事务生成多张履约需求单草稿（受信任写，不走公开建单端点），任一失败整体回滚。
+   * 弹窗取数（毛需求/参考库存/默认数量）见 getMaterialDemandPreview。
+   */
+  async function generateMaterialDemand(
+    permit: Permit,
+    workOrderId: string,
+    input: { lines: MaterialDemandLineInput[]; force?: boolean },
+  ): Promise<MaterialDemandResult> {
+    if (input.lines.length === 0) {
+      throw ApiError.validation('物料需求参数不合法', { lines: ['至少选择一行配料'] })
+    }
+    return withTx(db, async (trx) => {
+      const wo = await lockWorkOrder(trx, permit, workOrderId)
+      if (wo.status !== 'in_progress') {
+        throw new ApiError('conflict', '仅进行中的生产工单可生成物料需求')
+      }
+      // 重复生成警告（票 04）：已有未删除派生草稿且未带 force 时不生成，
+      // 回警告标记（单号清单）；前端二次确认后带 force: true 重发才正常生成
+      if (!input.force) {
+        const existingDrafts = await trx
+          .selectFrom('mfg_demand')
+          .select('demand_no')
+          .where('status', '=', 'draft')
+          .where('id', 'in', (qb) =>
+            qb
+              .selectFrom('mfg_demand_item')
+              .select('demand_id')
+              .where('source_work_order_id', '=', workOrderId)
+              .distinct(),
+          )
+          .orderBy('demand_no', 'asc')
+          .execute()
+        if (existingDrafts.length > 0) {
+          return {
+            demands: [],
+            lines: [],
+            warning: {
+              existingDraftDemandNos: existingDrafts.map((r) => r.demand_no),
+            },
+          }
+        }
+      }
+      const components = await trx
+        .selectFrom('mfg_work_order_component')
+        .selectAll()
+        .where('work_order_id', '=', workOrderId)
+        .orderBy('idx', 'asc')
+        .execute()
+      if (components.length === 0) {
+        throw new ApiError('unprocessable', '工单未挂 BOM 快照，无法生成物料需求')
+      }
+      const byId = new Map(components.map((c) => [c.id, c]))
+
+      // 逐行校验 + 服务端复算（不信任前端折算）
+      const prepared: PreparedLine[] = []
+      const seen = new Set<string>()
+      for (const [i, line] of input.lines.entries()) {
+        const component = byId.get(line.componentId)
+        if (!component) {
+          throw ApiError.validation('物料需求参数不合法', {
+            [`lines[${i}].componentId`]: ['配料行不属于本工单'],
+          })
+        }
+        if (seen.has(line.componentId)) {
+          throw ApiError.validation('物料需求参数不合法', {
+            [`lines[${i}].componentId`]: ['配料行重复'],
+          })
+        }
+        seen.add(line.componentId)
+        const qty = parsePositiveQty(line.qty, `lines[${i}].qty`)
+        const deptId =
+          line.target.kind === 'dept'
+            ? await resolveAssignedDept(trx, wo.companyId, line.target.deptId)
+            : null
+        // 单位=快照配料行单位（限子物料默认/转换单位，复用既有单位校验与 base 复算）
+        const projection = await deriveItemProjection(
+          trx,
+          component.material_id,
+          component.unit_id,
+          qty,
+        )
+        // 毛需求 = 净用量 ×(1+损耗率,空按 1)× 工单 base 数量（理论耗用口径，6 位）
+        const grossQty = grossRequirement(component.quantity, component.loss_rate, wo.baseQty)
+        prepared.push({
+          componentId: line.componentId,
+          materialId: component.material_id,
+          unitId: component.unit_id,
+          qty,
+          baseQty: projection.baseQty,
+          grossQty,
+          projection,
+          deptId,
+        })
+      }
+
+      // 按去向分组：dept 相同合一张（头已填下发车间），purchase 合一张（下发为空）
+      const groups = new Map<string, PreparedLine[]>()
+      for (const p of prepared) {
+        const key = p.deptId ? `dept:${p.deptId}` : 'purchase'
+        const list = groups.get(key) ?? []
+        list.push(p)
+        groups.set(key, list)
+      }
+
+      const demandDate = utcToday()
+      const remarks = `来源工单:${wo.workOrderNo}`
+      const demands: MaterialDemandResult['demands'] = []
+      for (const [key, lines] of groups) {
+        const deptId = key.startsWith('dept:') ? key.slice('dept:'.length) : null
+        const no = await numbering.nextInTx(trx, {
+          resource: 'mfg.demand',
+          values: { company_id: wo.companyId, demand_date: demandDate },
+        })
+        const created = await insertDerivedDemand(trx, permit.actor, {
+          companyId: wo.companyId,
+          demandNo: no,
+          demandDate,
+          remarks,
+          assignedDeptId: deptId,
+          lines: lines.map((p, i) => ({
+            idx: i + 1,
+            materialId: p.materialId,
+            unitId: p.unitId,
+            qty: p.qty,
+            baseQty: p.baseQty,
+            needDate: wo.needDate,
+            sourceWorkOrderId: wo.id,
+            materialCode: p.projection.materialCode,
+            materialName: p.projection.materialName,
+            materialSpec: p.projection.materialSpec,
+            unitName: p.projection.unitName,
+          })),
+        })
+        demands.push(created)
+      }
+
+      // 工单动作审计痕（含生成单号清单）
+      await writeAudit(trx, permit.actor, {
+        resource: 'mfg_work_order',
+        recordId: wo.id,
+        recordLabel: wo.workOrderNo,
+        actionType: 'update',
+        actionName: 'generate_material_demand',
+        companyId: wo.companyId,
+        changes: {
+          derived_demands: { to: demands.map((d) => d.demandNo).join(', ') },
+        },
+      })
+      return {
+        demands,
+        lines: prepared.map((p) => ({
+          componentId: p.componentId,
+          materialId: p.materialId,
+          unitId: p.unitId,
+          grossQty: p.grossQty,
+        })),
+        warning: null,
+      }
+    })
+  }
+
   return {
     createWorkOrder,
     getWorkOrder,
@@ -660,6 +992,8 @@ export function createWorkOrderService(
     applyBom,
     getBomSnapshot,
     createInlineBom,
+    getMaterialDemandPreview,
+    generateMaterialDemand,
   }
 }
 
@@ -701,6 +1035,18 @@ export async function loadWorkOrderForProjection(
     .executeTakeFirst()
   if (!row) throw new ApiError('not_found', '生产工单不存在')
   return mapWorkOrder(row)
+}
+
+/** 毛需求（理论耗用口径）：净用量 ×(1+损耗率,空按 1)× 工单 base 数量，6 位 */
+export function grossRequirement(
+  quantity: unknown,
+  lossRate: unknown,
+  workOrderBaseQty: string,
+): string {
+  const factor = lossRate == null ? decimal(1) : decimal(String(lossRate)).add(1)
+  return toDecimalString(
+    decimal(roundBaseQty(decimal(String(quantity)).mul(factor).mul(decimal(workOrderBaseQty)))),
+  )
 }
 
 export async function hasAuditedOutput(db: DbHandle, workOrderId: string): Promise<boolean> {

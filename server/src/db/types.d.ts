@@ -889,6 +889,10 @@ export interface MfgDemandItem {
   received_qty: Generated<Numeric>;
   remarks: string | null;
   sales_order_item_id: string | null;
+  /**
+   * 来源生产工单（工单物料需求派生写入）：与销售来源互斥，派生行不参与销售占用
+   */
+  source_work_order_id: string | null;
   status: Generated<string>;
   unit_id: string;
   unit_name: Generated<string>;

@@ -37,6 +37,7 @@ const GRID_COLUMNS = [
   'status',
   'companyId',
   'salesOrderItemId',
+  'sourceWorkOrderId',
   'remarks',
 ]
 
@@ -61,6 +62,8 @@ const GRID_OVERRIDES = {
   completedQty: { label: '已完成' },
   qty: { mobileRole: 'summary' },
   salesOrderItemId: { label: '来源销售条目' },
+  // 来源生产工单：fk 单元格自动渲染只读链接（速览受工单读权限与数据范围约束），无来源为空
+  sourceWorkOrderId: { label: '来源工单' },
   orderedQty: { label: '已下单数量' },
   receivedQty: { label: '已收数量' },
 } satisfies Record<string, ColumnOverride>

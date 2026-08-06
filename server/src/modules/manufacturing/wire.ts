@@ -150,6 +150,7 @@ export function demandItemWire(item: DemandItem) {
     fulfillmentMethod: item.fulfillmentMethod ? upper(item.fulfillmentMethod) : null,
     status: upper(item.status),
     salesOrderItemId: item.salesOrderItemId,
+    sourceWorkOrderId: item.sourceWorkOrderId,
     materialCode: item.materialCode,
     materialName: item.materialName,
     materialSpec: item.materialSpec,

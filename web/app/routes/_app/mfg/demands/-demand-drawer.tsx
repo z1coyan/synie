@@ -348,6 +348,7 @@ export function DemandDrawerProvider({
                 'qty',
                 'needDate',
                 'salesOrderItemId',
+                'sourceWorkOrderId',
                 'remarks',
               ]}
               fields={{
@@ -374,6 +375,8 @@ export function DemandDrawerProvider({
                       ? demandItemMaterialCell(v, r)
                       : undefined,
                 },
+                // 派生行来源工单：只读链接，不进编辑表单（meta readonly）
+                sourceWorkOrderId: { label: '来源工单' },
               }}
             />
           )

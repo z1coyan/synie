@@ -548,6 +548,16 @@ export function demandItemResourceMeta(): ResourceMeta {
         'salesOrderItem',
         'materialCode',
       ),
+      // 物料需求派生写入；与销售来源互斥，只读穿透展示（不进表单）
+      fk(
+        'source_work_order_id',
+        'sourceWorkOrderId',
+        '来源生产工单(可空)',
+        'mfgWorkOrders',
+        'sourceWorkOrder',
+        'workOrderNo',
+        { readonly: true },
+      ),
       field('ordered', 'ordered', 'boolean', '已安排(有占量且未完成)', {
         calculated: true,
         readonly: true,
@@ -658,6 +668,8 @@ export function workOrderResourceMeta(): ResourceMeta {
     actions: [
       ...headCrud,
       { key: 'void', label: '作废', scope: 'row', isDanger: true },
+      // 物料需求派生：限定入口——车间角色只持本动作码，需求单写库走服务内受信任写
+      { key: 'generate_material_demand', label: '生成物料需求', scope: 'row' },
       { key: 'print', label: '打印', scope: 'row' },
       { key: 'export', label: '导出', scope: 'both' },
       { key: 'batch_print', label: '批量打印', scope: 'bulk' },

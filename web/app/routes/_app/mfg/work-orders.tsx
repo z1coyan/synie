@@ -21,6 +21,7 @@ import { toastError } from '~/lib/toast'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { BomDrawerProvider, useBomDrawer } from './boms/-bom-drawer'
 import { WorkOrderProgressCell } from './-work-order-progress-cell'
+import { useGenerateMaterialDemand } from './-material-demand-dialog'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 
@@ -115,6 +116,8 @@ function WorkOrdersPageInner() {
   const workOrderCaps = useResourceCapabilities(RESOURCE)
   const canCreateBom = bomCaps.has('create')
   const canUpdateWo = workOrderCaps.has('update')
+  // 生成物料需求（票 01）：分流弹窗（逐行去向→需求单草稿），仅进行中工单可用
+  const materialDemand = useGenerateMaterialDemand()
 
   const rowId = drawer?.recordId ?? null
   // status 与 hook 自查行同缓存键(binding.cache.rowKey),不另发请求
@@ -346,6 +349,14 @@ function WorkOrdersPageInner() {
               onAction: (row) => void startPrint('export', [row]),
             },
           ]}
+          // meta 声明的 row 动作：生成物料需求走分流弹窗（能力门控由 grid 按文档投影判）
+          actionHandlers={{
+            generate_material_demand: (rows) =>
+              materialDemand.requestGenerate(rows[0]),
+          }}
+          actionVisible={{
+            generate_material_demand: (row) => row.status === 'IN_PROGRESS',
+          }}
           bulkActions={[
             {
               key: 'batchExportExcel',
@@ -382,6 +393,18 @@ function WorkOrdersPageInner() {
 
           return (
             <div className="mt-4 space-y-4 border-t border-border pt-4">
+              {row.status === 'IN_PROGRESS' &&
+                workOrderCaps.has('generate_material_demand') && (
+                  <div>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onPress={() => materialDemand.requestGenerate(row)}
+                    >
+                      生成物料需求
+                    </Button>
+                  </div>
+                )}
               <div>
                 <p className="mb-2 text-sm font-medium">图纸</p>
                 <SynieAttachmentPanel
@@ -459,6 +482,7 @@ function WorkOrdersPageInner() {
         }}
       />
       {printDialog}
+      {materialDemand.dialog}
     </>
   )
 }

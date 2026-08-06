@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import {
   demandItemResourceMeta,
   demandResourceMeta,
   outputItemResourceMeta,
+  workOrderResourceMeta,
 } from './meta.ts'
 
 describe('制造资源 Meta', () => {
@@ -61,5 +63,30 @@ describe('制造资源 Meta', () => {
       filterable: true,
       sortable: true,
     })
+  })
+
+  test('工单声明「生成物料需求」row 级动作且权限码入目录', () => {
+    const action = workOrderResourceMeta().actions.find(
+      (a) => a.key === 'generate_material_demand',
+    )
+    expect(action).toMatchObject({ label: '生成物料需求', scope: 'row' })
+
+    const registry = createSealedResourceRegistry()
+    expect(registry.allPermissionCodes()).toContain(
+      'mfg.work_order:generate_material_demand',
+    )
+  })
+
+  test('需求行来源工单字段：fk 只读投影（与销售来源互斥，不进表单）', () => {
+    const fields = new Map(
+      demandItemResourceMeta().fields.map((field) => [field.apiName, field]),
+    )
+    const field = fields.get('sourceWorkOrderId')
+    expect(field).toMatchObject({
+      dbColumn: 'source_work_order_id',
+      type: 'fk',
+      readonly: true,
+    })
+    expect(field?.ref).toMatchObject({ resource: 'mfgWorkOrders' })
   })
 })

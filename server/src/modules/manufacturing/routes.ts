@@ -1263,10 +1263,68 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
         '/work-orders/:id/void',
         workOrderGuard('void'),
         zValidator('param', idParam, validationHook),
+        async (c) => {
+          // 作废级联（票 04）：派生草稿已物理删；confirmedDerivedDemandNos 为
+          // 已确认派生单警告名单（additive 字段，不拦截，前端展示由人收场）
+          const result = await workOrders.voidWorkOrder(permitOf(c), c.req.valid('param').id)
+          return c.json({
+            ...workOrderWire(result.workOrder),
+            confirmedDerivedDemandNos: result.confirmedDerivedDemandNos,
+          })
+        },
+      )
+      // 弹窗取数（票 02）：每行毛需求+参考库存快照与默认数量/默认去向标记；
+      // 与动作同码（限定入口），只读不写
+      .get(
+        '/work-orders/:id/material-demand-preview',
+        workOrderGuard('generate_material_demand'),
+        zValidator('param', idParam, validationHook),
         async (c) =>
           c.json(
-            workOrderWire(await workOrders.voidWorkOrder(permitOf(c), c.req.valid('param').id)),
+            await workOrders.getMaterialDemandPreview(permitOf(c), c.req.valid('param').id),
           ),
+      )
+      // 生成物料需求：限定入口——guard 只认工单动作码（不 allOf mfg.demand:*），
+      // 需求单头/行由服务内受信任写落库（单事务，任一失败整体回滚）
+      .post(
+        '/work-orders/:id/generate-material-demand',
+        workOrderGuard('generate_material_demand'),
+        zValidator('param', idParam, validationHook),
+        zValidator(
+          'json',
+          z
+            .object({
+              lines: z
+                .array(
+                  z
+                    .object({
+                      componentId: z.string().uuid(),
+                      qty: z.string().min(1),
+                      target: z.discriminatedUnion('kind', [
+                        z
+                          .object({ kind: z.literal('dept'), deptId: z.string().uuid() })
+                          .strict(),
+                        z.object({ kind: z.literal('purchase') }).strict(),
+                      ]),
+                    })
+                    .strict(),
+                )
+                .min(1),
+              // 重复生成（票 04）：已有未删除派生草稿时响应先回警告标记，
+              // 前端二次确认后带 force 重发才正常生成
+              force: z.boolean().optional(),
+            })
+            .strict(),
+          validationHook,
+        ),
+        async (c) => {
+          const result = await workOrders.generateMaterialDemand(
+            permitOf(c),
+            c.req.valid('param').id,
+            c.req.valid('json'),
+          )
+          return c.json(result, 201)
+        },
       )
       // —— 生产入库 ——
       .post(

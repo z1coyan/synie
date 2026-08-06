@@ -200,7 +200,12 @@ export function useDocumentDrawer<TDraft>(
     })
   }
   const loader = loaderRef.current
-  const detail = useSyncExternalStore(loader.subscribe, loader.getState)
+  // SSR 必须提供 getServerSnapshot（否则每次渲染报 Missing getServerSnapshot 并回退客户端渲染）
+  const detail = useSyncExternalStore(
+    loader.subscribe,
+    loader.getState,
+    loader.getState,
+  )
 
   // 深链/前进后退:URL 驱动打开时 open 未走,按 recordId 补拉/重置
   const urlRecordId = url.drawer?.recordId ?? null

@@ -1,6 +1,6 @@
 # Spec: 工单物料需求派生（嵌件/材料再分流）
 
-**Status:** ready-for-agent  
+**Status:** ready-for-human  
 **Feature slug:** `work-order-material-demand`  
 **Depends on:** 履约需求与生产执行（已交付）、履约安排混排与工单 BOM（已交付）、需求-采购串联（已交付）  
 **ADR:** [docs/adr/2026-08-06-work-order-material-demand.md](../../docs/adr/2026-08-06-work-order-material-demand.md)  
