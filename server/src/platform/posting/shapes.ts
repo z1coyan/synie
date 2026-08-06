@@ -37,8 +37,11 @@ export const POSTING_SHAPES = {
   'purchase.outsourced_receipt': entry('fulfillment'),
 
   // ---- 库存单据：仅库存引擎 ----
-  'inv.stock_doc': entry('inventory-doc'),
-  'inv.stock_count': entry('inventory-doc', 'actionName=approve/cancel，voidStatus=cancelled'),
+  'inv.stock_doc': entry('inventory-doc', '已迁 platform/standard workflow：effect 直调库存引擎，不再走本骨架'),
+  'inv.stock_count': entry(
+    'inventory-doc',
+    'actionName=approve/cancel，voidStatus=cancelled；已迁 platform/standard workflow，不再走本骨架',
+  ),
   'mfg.output': entry('inventory-doc', 'postProjection 回写工单完工与需求行'),
   'purchase.outsourced_issue': entry(
     'inventory-doc',
@@ -57,7 +60,7 @@ export const POSTING_SHAPES = {
   // ---- 例外：不套骨架（原因写在 note） ----
   'inv.stock_transfer': entry(
     'exception',
-    '发货/收货两段状态机（draft→shipped→received），字段 shipped_at/received_at，收货还逐行写 received_qty 并各写审计；非单段 audit/void 形状',
+    '发货/收货两段状态机（draft→shipped→received），字段 shipped_at/received_at，收货还逐行写 received_qty 并各写审计；已迁 platform/standard workflow（ship/receive 两转移）',
   ),
   'acc.gl_journal': entry(
     'exception',
