@@ -40,6 +40,13 @@ const fulfillmentOptions = [
   { value: 'STOCK', label: '库存' },
 ]
 
+const assignTypeOptions = [
+  { value: 'PURCHASE', label: '采购' },
+  { value: 'MAKE', label: '生产' },
+  { value: 'STOCK', label: '库存' },
+  { value: 'CLOSE', label: '关闭' },
+]
+
 const demandItemStatusOptions = [
   { value: 'PENDING', label: '待安排' },
   { value: 'SCHEDULED', label: '已安排' },
@@ -416,6 +423,18 @@ export function demandResourceMeta(): ResourceMeta {
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('demand_no', 'demandNo', 'string', '需求单号', { filterable: true, sortable: true }),
       field('demand_date', 'demandDate', 'date', '业务日期', { filterable: true, sortable: true }),
+      // 指派类型：纯路由声明（不占量、不约束行级安排、关闭不联动状态机）；
+      // make ⇔ 下发车间非空的联动由 service 硬校验（DB 另有 CHECK 兜底）
+      field('assign_type', 'assignType', 'enum', '指派类型', {
+        required: true,
+        filterable: true,
+        sortable: true,
+        enumOptions: assignTypeOptions,
+      }),
+      field('need_date', 'needDate', 'date', '需求日(新增行默认值,可空)', {
+        filterable: true,
+        sortable: true,
+      }),
       field('remarks', 'remarks', 'string', '备注', { filterable: true, sortable: true }),
       field('status', 'status', 'enum', '状态', {
         filterable: true,
@@ -454,8 +473,9 @@ export function demandResourceMeta(): ResourceMeta {
       },
       { key: 'close', label: '关闭', scope: 'row' },
       { key: 'void', label: '作废', scope: 'row', isDanger: true },
-      // 下发/改派：草稿态在表单里填，已确认后只能走本动作（独立权限码，不并入 update）
-      { key: 'dispatch', label: '下发车间', scope: 'row' },
+      // 下发/改派：草稿态在表单里填（随 assignType 联动校验），已确认后只能走本动作
+      // （独立权限码，不并入 update）；动作内可同时改指派类型与下发车间
+      { key: 'dispatch', label: '下发/改派', scope: 'row' },
     ],
     printHead: true,
     printLoops: [{ name: 'items', resource: 'mfgDemandItems' }],
@@ -468,6 +488,8 @@ export function demandItemResourceMeta(): ResourceMeta {
   return {
     name: 'mfgDemandItems',
     classification: { presentation: 'none', interactive: false },
+    /** 行图纸快照只读展示宿主：保存（创建/改物料）时从物料复制挂接，删行/删单清理 */
+    attachments: {},
     permissionPrefix: 'mfg.demand',
     permissionLabel: '履约需求单',
     table: 'mfg_demand_item',
@@ -500,7 +522,11 @@ export function demandItemResourceMeta(): ResourceMeta {
         filterable: true,
         sortable: true,
       }),
-      field('need_date', 'needDate', 'date', '需求日', { filterable: true, sortable: true }),
+      field('need_date', 'needDate', 'date', '需求日', {
+        required: true,
+        filterable: true,
+        sortable: true,
+      }),
       field('fulfillment_method', 'fulfillmentMethod', 'enum', '履约方式(已废弃)', {
         filterable: true,
         sortable: true,
@@ -540,13 +566,15 @@ export function demandItemResourceMeta(): ResourceMeta {
       fk('company_id', 'companyId', '公司', 'basCompanies', 'company', 'name'),
       fk('material_id', 'materialId', '物料', 'invMaterials', 'material', 'name'),
       fk('unit_id', 'unitId', '单位', 'basUnits', 'unit', 'name'),
+      // 来源销售订单条目：创建时定型（勾选带入），更新路径一律拒绝变更（service 硬校验）
       fk(
         'sales_order_item_id',
         'salesOrderItemId',
-        '来源销售订单条目(可空)',
+        '来源销售订单条目(可空,创建后只读)',
         'salOrderItems',
         'salesOrderItem',
         'materialCode',
+        { readonly: true },
       ),
       // 物料需求派生写入；与销售来源互斥，只读穿透展示（不进表单）
       fk(

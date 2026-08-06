@@ -57,6 +57,8 @@ export function SalesItemPicker(props: {
   companyId: string | null
   /** 已在单上的来源销售条目 id(不重复入池;拆批改走手动新增行) */
   excludeItemIds: string[]
+  /** 新行需求日默认值(取单头需求日;行需求日必填,空则纳入后需逐行补) */
+  defaultNeedDate?: string | null
   /** 勾选确认:把新行(带 local: 前缀 id)并给父级 items */
   onConfirm: (rows: Row[]) => void
   /** 新行起始行号 */
@@ -134,7 +136,8 @@ export function SalesItemPicker(props: {
           materialId: r.materialId,
           unitId: r.unitId,
           qty: suggestQty(r, o.remainingBaseQty),
-          needDate: null,
+          // 行需求日必填：勾选带入默认取单头需求日
+          needDate: props.defaultNeedDate ?? null,
           salesOrderItemId: r.id,
           remarks: null,
           // 带上 join 对象,表格 fk 单元格零反查直接显示标签

@@ -48,12 +48,15 @@ export async function voidDemand(id: string) {
   )
 }
 
-/** 下发/改派车间：仅已确认未关闭的需求单可用；草稿态改车间走表单 */
-export async function dispatchDemand(id: string, assignedDeptId: string) {
+/** 下发/改派：仅已确认未关闭的需求单可用；可同时改指派类型与下发车间；草稿态在表单里改 */
+export async function dispatchDemand(
+  id: string,
+  input: { assignType: string; assignedDeptId: string | null },
+) {
   return apiData(
     api.manufacturing.demands[':id'].dispatch.$post({
       param: { id },
-      json: { assignedDeptId }}),
+      json: input }),
   )
 }
 

@@ -841,6 +841,10 @@ export interface MfgBomRoute {
 
 export interface MfgDemand {
   /**
+   * 指派类型（purchase/make/stock/close）：纯路由声明，不占量不约束行级安排；make 时下发车间必填，其余类型必须为空
+   */
+  assign_type: string;
+  /**
    * 下发车间（指派部门形态）：业务字段，须与需求单同公司；填写不受操作者部门约束，已确认后改派走 dispatch 动作
    */
   assigned_dept_id: string | null;
@@ -850,6 +854,10 @@ export interface MfgDemand {
   demand_no: string;
   id: Generated<string>;
   inserted_at: Generated<Timestamp>;
+  /**
+   * 单头需求日：新增需求行的行需求日默认值，「批量带入」可刷新到全部既有行；改单头不追溯既有行
+   */
+  need_date: Timestamp | null;
   remarks: string | null;
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
@@ -883,7 +891,7 @@ export interface MfgDemandItem {
   material_id: string;
   material_name: Generated<string>;
   material_spec: string | null;
-  need_date: Timestamp | null;
+  need_date: Timestamp;
   ordered_qty: Generated<Numeric>;
   qty: Numeric;
   received_qty: Generated<Numeric>;

@@ -117,7 +117,7 @@ export const DEMAND_AUDIT_CONFIG = {
       })
       .then((result) => result.results),
   columns: [
-    { key: 'materialName', label: '物料', render: auditMaterialCell() },
+    { key: 'materialName', label: '物料', render: auditMaterialCell({ drawingOwnerType: 'mfg_demand_item' }) },
     { key: 'unitName', label: '单位' },
     { key: 'qty', label: '数量', align: 'end' },
     { key: 'needDate', label: '需求日' },
@@ -125,9 +125,9 @@ export const DEMAND_AUDIT_CONFIG = {
   ],
 } satisfies AuditDocConfig
 
-// 条目表格物料列:全站统一富单元格(需求行无图纸挂接,缩略图回退物料当前图纸);
+// 条目表格物料列:全站统一富单元格;行图纸快照挂接 mfg_demand_item 优先,无挂接回退物料当前图纸;
 // 本地新行无平铺快照(销售条目选择器只带 join 对象)返回 undefined 回落默认 fk 渲染
-const demandItemMaterialCell = materialCellRender()
+const demandItemMaterialCell = materialCellRender({ drawingOwnerType: 'mfg_demand_item' })
 const hasMaterialSnapshot = (row: Row) =>
   (row.materialCode != null && row.materialCode !== '') ||
   (row.materialName != null && row.materialName !== '')
@@ -277,6 +277,24 @@ export function DemandDrawerProvider({
             | string
             | null
             | undefined
+          // 单头需求日：新建行默认值的唯一来源（仅作带入，不追溯既有行）
+          const headNeedDate =
+            values.needDate != null && values.needDate !== ''
+              ? String(values.needDate).slice(0, 10)
+              : null
+          // 「批量带入」：把单头需求日刷到全部既有草稿行（覆盖已填值），随整体保存生效
+          const applyNeedDateToAll = () => {
+            if (!headNeedDate) {
+              toast.warning('请先填写单头需求日')
+              return
+            }
+            if (items.length === 0) {
+              toast.warning('当前没有需求行')
+              return
+            }
+            setItems(items.map((item) => ({ ...item, needDate: headNeedDate })))
+            toast.success(`已将需求日 ${headNeedDate} 带入 ${items.length} 行`)
+          }
 
           return (
             <SynieEditableTable
@@ -287,17 +305,28 @@ export function DemandDrawerProvider({
               readOnly={!editable}
               toolbar={
                 editable ? (
-                  <SalesItemPicker
-                    companyId={companyId ? String(companyId) : null}
-                    excludeItemIds={items
-                      .map((item) => String(item.salesOrderItemId ?? ''))
-                      .filter(Boolean)}
-                    nextIdx={nextIdx}
-                    onConfirm={(rows) => {
-                      setItems([...items, ...rows])
-                      toast.success(`已纳入 ${rows.length} 行销售需求`)
-                    }}
-                  />
+                  <>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      isDisabled={!headNeedDate}
+                      onPress={applyNeedDateToAll}
+                    >
+                      批量带入需求日
+                    </Button>
+                    <SalesItemPicker
+                      companyId={companyId ? String(companyId) : null}
+                      defaultNeedDate={headNeedDate}
+                      excludeItemIds={items
+                        .map((item) => String(item.salesOrderItemId ?? ''))
+                        .filter(Boolean)}
+                      nextIdx={nextIdx}
+                      onConfirm={(rows) => {
+                        setItems([...items, ...rows])
+                        toast.success(`已纳入 ${rows.length} 行销售需求`)
+                      }}
+                    />
+                  </>
                 ) : undefined
               }
               rowActions={
@@ -360,10 +389,19 @@ export function DemandDrawerProvider({
                 },
                 unitId: { order: 2, required: true },
                 qty: { order: 3, required: true },
-                needDate: { order: 4 },
+                // 行需求日必填；新建默认取单头需求日（仅带入，可逐行改）
+                needDate: { order: 4, required: true, defaultValue: headNeedDate },
+                // 来源销售条目创建时定型：编辑态只读且不再提交（service 同口径拒绝变更）
                 salesOrderItemId: {
                   order: 5,
                   label: '来源销售条目',
+                  edit: 'createOnly',
+                },
+                // 来源生产工单仅派生写入：两态只读展示，不可手挂
+                sourceWorkOrderId: {
+                  order: 5.5,
+                  label: '来源工单',
+                  edit: 'readOnly',
                 },
                 remarks: { order: 6 },
               }}

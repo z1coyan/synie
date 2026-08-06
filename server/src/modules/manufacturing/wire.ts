@@ -121,6 +121,8 @@ export function demandWire(item: Demand) {
     id: item.id,
     demandNo: item.demandNo,
     demandDate: item.demandDate,
+    assignType: upper(item.assignType),
+    needDate: item.needDate,
     remarks: item.remarks,
     status: upper(item.status),
     companyId: item.companyId,

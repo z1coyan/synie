@@ -89,4 +89,31 @@ describe('制造资源 Meta', () => {
     })
     expect(field?.ref).toMatchObject({ resource: 'mfgWorkOrders' })
   })
+
+  test('需求行：来源销售条目创建后只读、需求日必填、图纸快照宿主声明', () => {
+    const meta = demandItemResourceMeta()
+    const fields = new Map(meta.fields.map((field) => [field.apiName, field]))
+    expect(fields.get('salesOrderItemId')).toMatchObject({
+      dbColumn: 'sales_order_item_id',
+      type: 'fk',
+      readonly: true,
+    })
+    expect(fields.get('needDate')).toMatchObject({ required: true, type: 'date' })
+    // attachments 声明即附件宿主注册（ownerType=mfg_demand_item），行图纸快照挂接用
+    expect(meta.attachments).toEqual({})
+  })
+
+  test('需求单头：指派类型必填四值枚举、单头需求日可空、dispatch 改派动作', () => {
+    const meta = demandResourceMeta()
+    const fields = new Map(meta.fields.map((field) => [field.apiName, field]))
+    expect(fields.get('assignType')).toMatchObject({ required: true, type: 'enum' })
+    expect(fields.get('assignType')?.enumOptions?.map((o) => o.value)).toEqual([
+      'PURCHASE',
+      'MAKE',
+      'STOCK',
+      'CLOSE',
+    ])
+    expect(fields.get('needDate')).toMatchObject({ type: 'date' })
+    expect(meta.actions.some((a) => a.key === 'dispatch' && a.scope === 'row')).toBe(true)
+  })
 })

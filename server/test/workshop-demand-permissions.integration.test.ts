@@ -315,6 +315,7 @@ run('PG 集成（车间权限收口：需求单限定入口授权）', () => {
     const created = await post('/demands', plannerHeaders, {
       companyId,
       demandNo: `WS1-${suffix}`,
+      assignType: 'STOCK',
     })
     expect(created.status).toBe(201)
     sourceDemand = (await created.json()) as DemandDto
@@ -325,11 +326,13 @@ run('PG 集成（车间权限收口：需求单限定入口授权）', () => {
       materialId: productId,
       unitId,
       qty: '10',
+      needDate: '2026-08-01',
     })
     expect(item.status).toBe(201)
     sourceItemId = ((await item.json()) as { id: string }).id
     expect((await post(`/demands/${sourceDemand.id}/confirm`, plannerHeaders, {})).status).toBe(200)
     const dispatched = await post(`/demands/${sourceDemand.id}/dispatch`, plannerHeaders, {
+      assignType: 'MAKE',
       assignedDeptId: deptAId,
     })
     expect(dispatched.status).toBe(200)
@@ -361,6 +364,11 @@ run('PG 集成（车间权限收口：需求单限定入口授权）', () => {
         WHERE record_id = ${id}::uuid
            OR record_id IN (SELECT id FROM mfg_demand_item WHERE demand_id = ${id}::uuid)
       `.execute(db)
+      await sql`
+        DELETE FROM sys_attachment
+        WHERE owner_type = 'mfg_demand_item'
+          AND owner_id IN (SELECT id FROM mfg_demand_item WHERE demand_id = ${id}::uuid)
+      `.execute(db)
       await sql`DELETE FROM mfg_demand_item WHERE demand_id = ${id}::uuid`.execute(db)
       await sql`DELETE FROM mfg_demand WHERE id = ${id}::uuid`.execute(db)
     }
@@ -379,6 +387,11 @@ run('PG 集成（车间权限收口：需求单限定入口授权）', () => {
       await sql`
         DELETE FROM mfg_demand_arrangement
         WHERE demand_item_id IN (SELECT id FROM mfg_demand_item WHERE demand_id = ${id}::uuid)
+      `.execute(db)
+      await sql`
+        DELETE FROM sys_attachment
+        WHERE owner_type = 'mfg_demand_item'
+          AND owner_id IN (SELECT id FROM mfg_demand_item WHERE demand_id = ${id}::uuid)
       `.execute(db)
       await sql`DELETE FROM mfg_demand_item WHERE demand_id = ${id}::uuid`.execute(db)
       await sql`DELETE FROM mfg_demand WHERE id = ${id}::uuid`.execute(db)
@@ -536,6 +549,7 @@ run('PG 集成（车间权限收口：需求单限定入口授权）', () => {
     const created = await post('/demands', plannerHeaders, {
       companyId,
       demandNo: `WS2-${suffix}`,
+      assignType: 'STOCK',
     })
     expect(created.status).toBe(201)
     const demand = (await created.json()) as DemandDto
@@ -548,11 +562,13 @@ run('PG 集成（车间权限收口：需求单限定入口授权）', () => {
       materialId: productId,
       unitId,
       qty: '4',
+      needDate: '2026-08-01',
       salesOrderItemId: salesItemId,
     })
     expect(item.status).toBe(201)
     expect((await post(`/demands/${demand.id}/confirm`, plannerHeaders, {})).status).toBe(200)
     const dispatched = await post(`/demands/${demand.id}/dispatch`, plannerHeaders, {
+      assignType: 'MAKE',
       assignedDeptId: deptBId,
     })
     expect(dispatched.status).toBe(200)

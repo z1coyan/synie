@@ -785,6 +785,8 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
               companyId: z.string().uuid(),
               demandNo: z.string().max(32).nullable().optional(),
               demandDate: z.string().optional(),
+              assignType: z.string().min(1),
+              needDate: z.string().nullable().optional(),
               remarks: z.string().max(512).nullable().optional(),
               assignedDeptId: z.string().uuid().nullable().optional(),
             })
@@ -813,6 +815,8 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
             .object({
               demandNo: z.string().max(32).optional(),
               demandDate: z.string().optional(),
+              assignType: z.string().nullable().optional(),
+              needDate: z.string().nullable().optional(),
               remarks: z.string().max(512).nullable().optional(),
               assignedDeptId: z.string().uuid().nullable().optional(),
             })
@@ -825,6 +829,10 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
           const item = await demands.updateDemand(permitOf(c), c.req.valid('param').id, {
             demandNo: body.demandNo,
             demandDate: body.demandDate,
+            assignType: body.assignType,
+            assignTypePresent: present(raw, 'assignType'),
+            needDate: body.needDate,
+            needDatePresent: present(raw, 'needDate'),
             remarks: body.remarks,
             remarksPresent: present(raw, 'remarks'),
             assignedDeptId: body.assignedDeptId,
@@ -863,14 +871,20 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
         async (c) =>
           c.json(demandWire(await demands.voidDemand(permitOf(c), c.req.valid('param').id))),
       )
-      // 下发/改派车间：已确认未关闭才可用（状态守卫在服务层抛 conflict）
+      // 下发/改派：已确认未关闭才可用（状态守卫在服务层抛 conflict）；
+      // 可同时改指派类型与下发车间，合并后过联动校验
       .post(
         '/demands/:id/dispatch',
         demandGuard('dispatch'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
-          z.object({ assignedDeptId: z.string().uuid() }).strict(),
+          z
+            .object({
+              assignType: z.string().optional(),
+              assignedDeptId: z.string().uuid().nullable().optional(),
+            })
+            .strict(),
           validationHook,
         ),
         async (c) =>
@@ -879,7 +893,7 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
               await demands.dispatchDemand(
                 permitOf(c),
                 c.req.valid('param').id,
-                c.req.valid('json').assignedDeptId,
+                c.req.valid('json'),
               ),
             ),
           ),
@@ -916,7 +930,7 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
               salesOrderItemId: z.string().uuid().nullable().optional(),
               idx: z.number().int(),
               qty: z.string().min(1),
-              needDate: z.string().nullable().optional(),
+              needDate: z.string().min(1),
               fulfillmentMethod: z.string().optional(),
               remarks: z.string().max(512).nullable().optional(),
             })

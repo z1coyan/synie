@@ -34,18 +34,22 @@ export type ManufacturingDocumentResource =
 /**
  * 下发车间输入：候选按**本表单已选公司**收窄且只取启用中的部门，与后端同公司硬校验同口径。
  * 指派列不受操作者部门约束（计划员可下发任意车间），故不按 me.deptId 过滤。
+ * 指派类型=生产才可选（其余类型禁用并由 assignType 联动清空），与 service 联动校验同口径。
  */
 function AssignedDeptInput({ value, onChange, isDisabled, values }: FieldInputProps) {
   const companyId = values.companyId == null || values.companyId === '' ? null : String(values.companyId)
+  const isMake = values.assignType === 'MAKE'
   return (
     <RemoteSelect
       resource="sysDepartments"
       label="下发车间"
       labelField="name"
-      placeholder={companyId ? '选择本公司车间…' : '先选公司'}
+      placeholder={
+        !isMake ? '仅指派类型为生产时可填' : companyId ? '选择本公司车间…' : '先选公司'
+      }
       value={value == null || value === '' ? null : String(value)}
       onChange={(id) => onChange(id)}
-      isDisabled={isDisabled || companyId == null}
+      isDisabled={isDisabled || companyId == null || !isMake}
       filterState={
         companyId
           ? {
@@ -133,14 +137,23 @@ const DEFINITIONS = {
         placeholder: '留空自动编号',
       },
       demandDate: { order: 1, cols: 6, required: true },
-      // 草稿态可填可改；确认后改派走行动作 dispatch（本表单确认后整体不可编辑）
-      assignedDeptId: {
+      // 指派类型：纯路由声明；切离「生产」时联动清空下发车间
+      assignType: {
         order: 2,
+        cols: 6,
+        required: true,
+        effects: (value) => (value === 'MAKE' ? {} : { assignedDeptId: null }),
+      },
+      // 单头需求日：仅作新建行的行需求日默认值；「批量带入」按钮在需求行工具栏
+      needDate: { order: 3, cols: 6 },
+      // 草稿态可填可改（类型=生产才可选）；确认后改派走行动作 dispatch（本表单确认后整体不可编辑）
+      assignedDeptId: {
+        order: 4,
         cols: 6,
         label: '下发车间',
         input: (p) => <AssignedDeptInput {...p} />,
       },
-      remarks: { order: 3 },
+      remarks: { order: 5 },
     },
   },
   mfgWorkOrders: {

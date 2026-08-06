@@ -2,6 +2,8 @@
 
 export type DemandStatus = 'draft' | 'confirmed' | 'closed' | 'voided'
 export type DemandItemStatus = 'pending' | 'scheduled' | 'completed'
+/** 单头指派类型（纯路由声明）：采购/生产/库存/关闭；make ⇔ 下发车间非空 */
+export type DemandAssignType = 'purchase' | 'make' | 'stock' | 'close'
 /** @deprecated 行级履约方式已取消；存量只读兼容 */
 export type FulfillmentMethod = 'make' | 'buy' | 'outsource' | 'stock'
 export type WorkOrderStatus = 'in_progress' | 'completed' | 'voided'
@@ -101,6 +103,10 @@ export interface Demand {
   id: string
   demandNo: string
   demandDate: string
+  /** 指派类型（纯路由声明）：草稿保存即必填；make 时下发车间必填，其余类型必须为空 */
+  assignType: DemandAssignType
+  /** 单头需求日：新增行的行需求日默认值；改单头不追溯既有行 */
+  needDate: string | null
   remarks: string | null
   status: DemandStatus
   companyId: string
@@ -125,10 +131,12 @@ export interface DemandItem {
   arrangedQty: string
   completedQty: string
   remainingArrangeableQty: string
-  needDate: string | null
+  /** 需求日：必填（草稿保存即校验） */
+  needDate: string
   /** 存量兼容；新行为空 */
   fulfillmentMethod: FulfillmentMethod | null
   status: DemandItemStatus
+  /** 来源销售订单条目：创建时定型，更新路径不可改 */
   salesOrderItemId: string | null
   /** 来源生产工单（物料需求派生写入）：与销售来源互斥，派生行不占销售占用 */
   sourceWorkOrderId: string | null

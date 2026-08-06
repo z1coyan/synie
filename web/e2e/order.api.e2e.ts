@@ -123,8 +123,8 @@ function createFixture(): Fixture {
       FROM bom,byproduct,unit
     ),
     demand AS (
-      INSERT INTO mfg_demand(demand_no,demand_date,status,company_id,created_by_id)
-      SELECT '${prefix}D',CURRENT_DATE,'confirmed',company.id,demand_user.id
+      INSERT INTO mfg_demand(demand_no,demand_date,assign_type,status,company_id,created_by_id)
+      SELECT '${prefix}D',CURRENT_DATE,'purchase','confirmed',company.id,demand_user.id
       FROM company,demand_user
       RETURNING id
     ),

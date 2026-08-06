@@ -939,6 +939,8 @@ export function createWorkOrderService(
           demandNo: no,
           demandDate,
           remarks,
+          // 车间向派生单（已填下发车间）=生产；采购向（下发为空）=采购
+          assignType: deptId ? 'make' : 'purchase',
           assignedDeptId: deptId,
           lines: lines.map((p, i) => ({
             idx: i + 1,
@@ -946,7 +948,8 @@ export function createWorkOrderService(
             unitId: p.unitId,
             qty: p.qty,
             baseQty: p.baseQty,
-            needDate: wo.needDate,
+            // 行需求日必填：工单无需求日则落派生日
+            needDate: wo.needDate ?? demandDate,
             sourceWorkOrderId: wo.id,
             materialCode: p.projection.materialCode,
             materialName: p.projection.materialName,

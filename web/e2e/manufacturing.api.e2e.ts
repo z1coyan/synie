@@ -344,6 +344,7 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
         companyId: fixture.companyId,
         demandNo,
         demandDate: '2026-07-26',
+        assignType: 'PURCHASE',
       },
     )
     const demandItem = await post<Row>(
@@ -355,6 +356,7 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
         unitId: fixture.unitId,
         idx: 1,
         qty: '5',
+        needDate: '2026-07-30',
         remarks: `${prefix}需求行`,
       },
     )
@@ -367,6 +369,7 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
         companyId: fixture.companyId,
         demandNo: uiDemandNo,
         demandDate: '2026-07-26',
+        assignType: 'PURCHASE',
       },
     )
     await post<Row>(request, '/api/v1/manufacturing/demand-items', {
@@ -375,6 +378,7 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
       unitId: fixture.unitId,
       idx: 1,
       qty: '1',
+      needDate: '2026-07-30',
     })
 
     await post<Row>(

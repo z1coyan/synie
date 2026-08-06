@@ -5,8 +5,11 @@
  * 列表 `listAuthorized`、写前取行 `loadAuthorized`（不命中一律 not_found）、
  * create 走 `assertCompanyWritable`。模块内零鉴权代码。
  *
- * 下发车间（`assigned_dept_id`）是指派部门形态的业务字段：填写不受操作者部门约束
- * （计划员可下发任意车间），但必须与需求单同公司；草稿态随表单改，已确认后只能走 dispatch 动作。
+ * 指派类型（assign_type）是纯路由声明：不占量、不约束行级安排、类型=关闭不联动状态机。
+ * 联动不变量：类型=生产时下发车间（`assigned_dept_id`）必填，其余类型必须为空——
+ * 本服务硬校验（DB 另有 CHECK 兜底）。下发车间是指派部门形态的业务字段：填写不受
+ * 操作者部门约束（计划员可下发任意车间），但必须与需求单同公司；草稿态随表单改，
+ * 已确认后只能走 dispatch 动作（改派可同时改指派类型与下发车间，过同一联动校验）。
  * 状态前置条件（草稿才能改等）是领域不变量，留在本文件抛 conflict。
  */
 import { decimal, toDecimalString } from '@synie/shared'
@@ -16,6 +19,7 @@ import { listAuthorized } from '~/db/list.ts'
 import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
+import { syncDrawingAttachments } from '~/modules/trading/common.ts'
 import {
   auditCreated,
   auditDestroyed,
@@ -51,6 +55,7 @@ import {
 import { demandItemResourceMeta, demandResourceMeta } from './meta.ts'
 import type {
   Demand,
+  DemandAssignType,
   DemandItem,
   DemandItemStatus,
   DemandStatus,
@@ -67,6 +72,34 @@ const DEMAND_ITEM_TABLE = 'mfg_demand_item'
 const DEMAND_AUDIT = auditFieldsOf(demandResourceMeta())
 
 const ITEM_AUDIT = auditFieldsOf(demandItemResourceMeta())
+
+const ASSIGN_TYPES: readonly DemandAssignType[] = ['purchase', 'make', 'stock', 'close']
+
+/** 指派类型入参归一（接受大小写；空即缺）：草稿保存即必填 */
+export function parseAssignType(value: string | null | undefined): DemandAssignType {
+  const v = (value ?? '').trim().toLowerCase()
+  if ((ASSIGN_TYPES as readonly string[]).includes(v)) return v as DemandAssignType
+  throw ApiError.validation('履约需求单参数不合法', {
+    assignType: ['必填,只能为 采购/生产/库存/关闭'],
+  })
+}
+
+/** 指派类型 ⇔ 下发车间联动：生产必填车间，其余类型必须为空 */
+export function assertAssignLink(
+  assignType: DemandAssignType,
+  assignedDeptId: string | null,
+): void {
+  if (assignType === 'make' && assignedDeptId == null) {
+    throw ApiError.validation('履约需求单参数不合法', {
+      assignedDeptId: ['指派类型为生产时下发车间必填'],
+    })
+  }
+  if (assignType !== 'make' && assignedDeptId != null) {
+    throw ApiError.validation('履约需求单参数不合法', {
+      assignedDeptId: ['仅指派类型为生产时可填下发车间'],
+    })
+  }
+}
 
 export function createDemandService(
   db: Kysely<Database>,
@@ -98,6 +131,8 @@ export function createDemandService(
       companyId: string
       demandNo?: string | null
       demandDate?: string | null
+      assignType?: string | null
+      needDate?: string | null
       remarks?: string | null
       assignedDeptId?: string | null
     },
@@ -107,8 +142,10 @@ export function createDemandService(
     }
     assertCompanyWritable(permit, input.companyId, '公司不存在')
     validateRemarks(input.remarks)
+    const assignType = parseAssignType(input.assignType)
     return withTx(db, async (trx) => {
       const assignedDeptId = await resolveAssignedDept(trx, input.companyId, input.assignedDeptId)
+      assertAssignLink(assignType, assignedDeptId)
       const demandDate = input.demandDate ? toDateOnly(input.demandDate) : utcToday()
       let no = (input.demandNo ?? '').trim()
       if (!no) {
@@ -124,6 +161,8 @@ export function createDemandService(
           .values({
             demand_no: no,
             demand_date: demandDate,
+            assign_type: assignType,
+            need_date: input.needDate ? toDateOnly(input.needDate) : null,
             remarks: input.remarks ?? null,
             status: 'draft',
             company_id: input.companyId,
@@ -176,6 +215,10 @@ export function createDemandService(
     input: {
       demandNo?: string
       demandDate?: string
+      assignType?: string | null
+      assignTypePresent?: boolean
+      needDate?: string | null
+      needDatePresent?: boolean
       remarks?: string | null
       remarksPresent?: boolean
       assignedDeptId?: string | null
@@ -190,6 +233,11 @@ export function createDemandService(
       const after: Demand = { ...before }
       if (input.demandNo !== undefined) after.demandNo = input.demandNo.trim()
       if (input.demandDate !== undefined) after.demandDate = toDateOnly(input.demandDate)
+      if (input.assignTypePresent) after.assignType = parseAssignType(input.assignType)
+      // 单头需求日只影响之后新建行的默认值，不追溯既有行
+      if (input.needDatePresent) {
+        after.needDate = input.needDate ? toDateOnly(input.needDate) : null
+      }
       if (input.remarksPresent) after.remarks = input.remarks ?? null
       if (input.assignedDeptIdPresent) {
         after.assignedDeptId = await resolveAssignedDept(
@@ -198,6 +246,7 @@ export function createDemandService(
           input.assignedDeptId,
         )
       }
+      assertAssignLink(after.assignType, after.assignedDeptId)
       validateNo(after.demandNo, 'demandNo')
       validateRemarks(after.remarks)
       const changes = auditDiff(demandSnap(before), demandSnap(after), DEMAND_AUDIT)
@@ -208,6 +257,8 @@ export function createDemandService(
           .set({
             demand_no: after.demandNo,
             demand_date: after.demandDate,
+            assign_type: after.assignType,
+            need_date: after.needDate,
             remarks: after.remarks,
             assigned_dept_id: after.assignedDeptId,
             updated_at: sql`(now() AT TIME ZONE 'utc')`,
@@ -238,6 +289,12 @@ export function createDemandService(
         throw new ApiError('conflict', '仅草稿履约需求单可修改或删除')
       }
       try {
+        // 行随 FK 级联删除；行图纸挂接不是 FK，先按宿主清单显式清理
+        await sql`
+          DELETE FROM sys_attachment
+          WHERE owner_type = 'mfg_demand_item'
+            AND owner_id IN (SELECT id FROM mfg_demand_item WHERE demand_id = ${id}::uuid)
+        `.execute(trx)
         await trx.deleteFrom('mfg_demand').where('id', '=', id).execute()
       } catch (err) {
         throw mfgWriteError('删除履约需求单失败', err)
@@ -270,6 +327,10 @@ export function createDemandService(
     },
   ): Promise<DemandItem> {
     validateRemarks(input.remarks)
+    if (!input.needDate) {
+      throw ApiError.validation('需求行参数不合法', { needDate: ['必填'] })
+    }
+    const needDate = toDateOnly(input.needDate)
     return withTx(db, async (trx) => {
       const parent = await lockDemand(trx, permit, input.demandId)
       if (parent.status !== 'draft') {
@@ -293,7 +354,7 @@ export function createDemandService(
             unit_id: input.unitId,
             qty: toDecimalString(decimal(input.qty)),
             base_qty: projection.baseQty,
-            need_date: input.needDate ? toDateOnly(input.needDate) : null,
+            need_date: needDate,
             fulfillment_method: null,
             status: 'pending',
             sales_order_item_id: input.salesOrderItemId ?? null,
@@ -309,6 +370,14 @@ export function createDemandService(
           })
           .returningAll()
           .executeTakeFirstOrThrow()
+        // 行图纸快照：复制物料图纸挂接到行（挂接复制，非字节复制），仅作行内展示
+        await syncDrawingAttachments(
+          trx,
+          'mfg_demand_item',
+          row.id,
+          input.materialId,
+          parent.companyId,
+        )
         const result = mapDemandItem(row)
         await writeAudit(trx, permit.actor, {
           resource: 'mfg_demand_item',
@@ -387,11 +456,20 @@ export function createDemandService(
       if (input.unitId !== undefined) after.unitId = input.unitId
       if (input.qty !== undefined) after.qty = input.qty
       if (input.needDatePresent) {
-        after.needDate = input.needDate ? toDateOnly(input.needDate) : null
+        if (!input.needDate) {
+          throw ApiError.validation('需求行参数不合法', { needDate: ['必填'] })
+        }
+        after.needDate = toDateOnly(input.needDate)
       }
       // 行级履约方式已取消：忽略 fulfillmentMethod 写入
-      if (input.salesOrderItemIdPresent) {
-        after.salesOrderItemId = input.salesOrderItemId ?? null
+      // 来源字段创建时定型：更新路径一律拒绝变更（同值重放不算变更）
+      if (
+        input.salesOrderItemIdPresent &&
+        (input.salesOrderItemId ?? null) !== before.salesOrderItemId
+      ) {
+        throw ApiError.validation('需求行参数不合法', {
+          salesOrderItemId: ['来源销售订单条目创建后不可改'],
+        })
       }
       if (input.remarksPresent) after.remarks = input.remarks ?? null
       validateRemarks(after.remarks)
@@ -440,6 +518,16 @@ export function createDemandService(
         } catch (err) {
           throw mfgWriteError('更新需求行失败', err)
         }
+        // 改物料则重刷行图纸快照（删旧挂接再按新物料复制）
+        if (before.materialId !== after.materialId) {
+          await syncDrawingAttachments(
+            trx,
+            'mfg_demand_item',
+            id,
+            after.materialId,
+            after.companyId,
+          )
+        }
         await writeAudit(trx, permit.actor, {
           resource: 'mfg_demand_item',
           recordId: id,
@@ -461,6 +549,10 @@ export function createDemandService(
         throw new ApiError('conflict', '仅草稿履约需求单可编辑需求行')
       }
       const item = await lockItem(trx, permit, id)
+      await sql`
+        DELETE FROM sys_attachment
+        WHERE owner_type = 'mfg_demand_item' AND owner_id = ${id}::uuid
+      `.execute(trx)
       await trx.deleteFrom('mfg_demand_item').where('id', '=', id).execute()
       await writeAudit(trx, permit.actor, {
         resource: 'mfg_demand_item',
@@ -609,29 +701,37 @@ export function createDemandService(
   }
 
   /**
-   * 下发/改派车间：已确认未关闭才可用（状态守卫留在领域层，抛 conflict）。
+   * 下发/改派：已确认未关闭才可用（状态守卫留在领域层，抛 conflict）。
+   * 可同时改指派类型与下发车间（缺省字段保持原值），合并后过同一联动校验；
    * 车间必须与需求单同公司且未停用；不受操作者自身部门约束。
    */
   async function dispatchDemand(
     permit: Permit,
     id: string,
-    assignedDeptId: string,
+    input: { assignType?: string | null; assignedDeptId?: string | null },
   ): Promise<Demand> {
     return withTx(db, async (trx) => {
       const before = await lockDemand(trx, permit, id)
       if (before.status !== 'confirmed') {
-        throw new ApiError('conflict', '仅已确认未关闭履约需求单可下发或改派车间')
+        throw new ApiError('conflict', '仅已确认未关闭履约需求单可下发或改派')
       }
-      const deptId = await resolveAssignedDept(trx, before.companyId, assignedDeptId)
-      if (deptId === null) {
-        throw ApiError.validation('履约需求单参数不合法', { assignedDeptId: ['必填'] })
-      }
-      const after: Demand = { ...before, assignedDeptId: deptId }
+      const assignType =
+        input.assignType !== undefined ? parseAssignType(input.assignType) : before.assignType
+      const deptId =
+        input.assignedDeptId !== undefined
+          ? await resolveAssignedDept(trx, before.companyId, input.assignedDeptId)
+          : before.assignedDeptId
+      assertAssignLink(assignType, deptId)
+      const after: Demand = { ...before, assignType, assignedDeptId: deptId }
       const changes = auditDiff(demandSnap(before), demandSnap(after), DEMAND_AUDIT)
       if (Object.keys(changes).length === 0) return before
       await trx
         .updateTable('mfg_demand')
-        .set({ assigned_dept_id: deptId, updated_at: sql`(now() AT TIME ZONE 'utc')` })
+        .set({
+          assign_type: assignType,
+          assigned_dept_id: deptId,
+          updated_at: sql`(now() AT TIME ZONE 'utc')`,
+        })
         .where('id', '=', id)
         .execute()
       await writeAudit(trx, permit.actor, {
@@ -899,7 +999,7 @@ export interface DerivedDemandLine {
   unitId: string
   qty: string
   baseQty: string
-  needDate: string | null
+  needDate: string
   sourceWorkOrderId: string
   materialCode: string
   materialName: string
@@ -911,6 +1011,7 @@ export interface DerivedDemandLine {
  * 受信任写：工单「生成物料需求」动作内直接落需求单头+行（不走公开建单端点，
  * 不校验 mfg.demand:create——与「动作内系统写他域不另要码」先例同构）。
  * 调用方持事务（多张草稿单事务，任一失败整体回滚）；头/行走既有创建审计。
+ * 指派类型由去向决定：车间向（已填下发车间）=生产，采购向（下发为空）=采购。
  */
 export async function insertDerivedDemand(
   trx: DbHandle,
@@ -920,6 +1021,7 @@ export async function insertDerivedDemand(
     demandNo: string
     demandDate: string
     remarks: string
+    assignType: DemandAssignType
     assignedDeptId: string | null
     lines: DerivedDemandLine[]
   },
@@ -930,6 +1032,7 @@ export async function insertDerivedDemand(
       .values({
         demand_no: input.demandNo,
         demand_date: input.demandDate,
+        assign_type: input.assignType,
         remarks: input.remarks,
         status: 'draft',
         company_id: input.companyId,
@@ -976,6 +1079,7 @@ export async function insertDerivedDemand(
         })
         .returningAll()
         .executeTakeFirstOrThrow()
+      await syncDrawingAttachments(trx, 'mfg_demand_item', row.id, line.materialId, input.companyId)
       const item = mapDemandItem(row)
       await writeAudit(trx, actor, {
         resource: 'mfg_demand_item',
@@ -1022,6 +1126,11 @@ export async function cascadeDeleteDerivedDrafts(
       continue
     }
     if (head.status !== 'draft') continue
+    await sql`
+      DELETE FROM sys_attachment
+      WHERE owner_type = 'mfg_demand_item'
+        AND owner_id IN (SELECT id FROM mfg_demand_item WHERE demand_id = ${head.id}::uuid)
+    `.execute(trx)
     await trx.deleteFrom('mfg_demand').where('id', '=', head.id).execute()
     const demand = mapDemand(head)
     await writeAudit(trx, actor, {
@@ -1082,6 +1191,8 @@ function mapDemand(row: {
   id: string
   demand_no: string
   demand_date: Date | string
+  assign_type: string
+  need_date: Date | string | null
   remarks: string | null
   status: string
   company_id: string
@@ -1094,6 +1205,8 @@ function mapDemand(row: {
     id: row.id,
     demandNo: row.demand_no,
     demandDate: asDate(row.demand_date),
+    assignType: row.assign_type as DemandAssignType,
+    needDate: asDateOrNull(row.need_date),
     remarks: row.remarks,
     status: row.status as DemandStatus,
     companyId: row.company_id,
@@ -1109,6 +1222,8 @@ export function mapDemandRecord(r: Record<string, unknown>): Demand {
     id: String(r.id),
     demand_no: String(r.demand_no),
     demand_date: r.demand_date as Date,
+    assign_type: String(r.assign_type),
+    need_date: r.need_date as Date | null,
     remarks: r.remarks == null ? null : String(r.remarks),
     status: String(r.status),
     company_id: String(r.company_id),
@@ -1164,7 +1279,7 @@ function mapDemandItem(row: {
     arrangedQty,
     completedQty,
     remainingArrangeableQty: hardRemainingArrangeable(baseQty, arrangedQty),
-    needDate: asDateOrNull(row.need_date),
+    needDate: asDate(row.need_date),
     fulfillmentMethod: row.fulfillment_method
       ? (row.fulfillment_method as FulfillmentMethod)
       : null,
@@ -1225,6 +1340,8 @@ function demandSnap(item: Demand) {
   return {
     demand_no: item.demandNo,
     demand_date: item.demandDate,
+    assign_type: item.assignType,
+    need_date: item.needDate,
     remarks: item.remarks,
     status: item.status,
     company_id: item.companyId,

@@ -130,7 +130,7 @@ run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
     ownerDeptId: string | null
   }
 
-  /** 建一张需求单（含一行）；返回头与行 id */
+  /** 建一张需求单（含一行）；返回头与行 id。指派类型随下发车间联动：有车间=生产，无=库存 */
   async function seedDemand(
     no: string,
     assignedDeptId: string | null,
@@ -138,6 +138,7 @@ run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
     const created = await post('/demands', plannerHeaders, {
       companyId,
       demandNo: no,
+      assignType: assignedDeptId ? 'MAKE' : 'STOCK',
       ...(assignedDeptId ? { assignedDeptId } : {}),
     })
     expect(created.status).toBe(201)
@@ -149,6 +150,7 @@ run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
       materialId,
       unitId,
       qty: '10',
+      needDate: '2026-08-01',
     })
     expect(item.status).toBe(201)
     const { id: itemId } = (await item.json()) as { id: string }
@@ -158,6 +160,7 @@ run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
   async function confirmAndDispatch(demandId: string, deptId: string): Promise<DemandDto> {
     expect((await post(`/demands/${demandId}/confirm`, plannerHeaders, {})).status).toBe(200)
     const res = await post(`/demands/${demandId}/dispatch`, plannerHeaders, {
+      assignType: 'MAKE',
       assignedDeptId: deptId,
     })
     expect(res.status).toBe(200)
@@ -300,6 +303,11 @@ run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
         DELETE FROM mfg_demand_arrangement
         WHERE demand_item_id IN (SELECT id FROM mfg_demand_item WHERE demand_id = ${id}::uuid)
       `.execute(db)
+      await sql`
+        DELETE FROM sys_attachment
+        WHERE owner_type = 'mfg_demand_item'
+          AND owner_id IN (SELECT id FROM mfg_demand_item WHERE demand_id = ${id}::uuid)
+      `.execute(db)
       await sql`DELETE FROM mfg_demand_item WHERE demand_id = ${id}::uuid`.execute(db)
       await sql`DELETE FROM mfg_demand WHERE id = ${id}::uuid`.execute(db)
     }
@@ -328,13 +336,14 @@ run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
     expect(stampDemand.assignedDeptId).toBe(stampDeptId)
     expect(assemblyDemand.assignedDeptId).toBe(assemblyDeptId)
 
-    // 改派到装配再改回冲压：两次都留审计
+    // 改派到装配再改回冲压：两次都留审计（类型保持生产，只换车间）
     const reassigned = await post(`/demands/${stampDemand.id}/dispatch`, plannerHeaders, {
       assignedDeptId: assemblyDeptId,
     })
     expect(reassigned.status).toBe(200)
     expect(((await reassigned.json()) as DemandDto).assignedDeptId).toBe(assemblyDeptId)
     const back = await post(`/demands/${stampDemand.id}/dispatch`, plannerHeaders, {
+      assignType: 'MAKE',
       assignedDeptId: stampDeptId,
     })
     expect(back.status).toBe(200)
@@ -371,7 +380,9 @@ run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
     // 草稿可见于车间（行谓词只看指派列，不看状态）
     expect(await demandIds(shopHeaders)).toContain(withDept.demand.id)
 
+    // 清空车间须连带改类型（生产⇔车间必填联动的另一面）
     const cleared = await patch(`/demands/${withDept.demand.id}`, plannerHeaders, {
+      assignType: 'STOCK',
       assignedDeptId: null,
     })
     expect(cleared.status).toBe(200)

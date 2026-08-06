@@ -68,16 +68,16 @@ run('PG 集成（订单履约投影 / 容差）', () => {
       VALUES (${supplierId}::uuid, ${'SU' + suffix}, ${'供应商' + suffix}, ${'SU' + suffix.slice(0, 4)})
     `.execute(db)
     await sql`
-      INSERT INTO mfg_demand(id, demand_no, demand_date, status, company_id)
-      VALUES (${demandId}::uuid, ${'DEM' + suffix}, CURRENT_DATE, 'confirmed', ${companyId}::uuid)
+      INSERT INTO mfg_demand(id, demand_no, demand_date, assign_type, status, company_id)
+      VALUES (${demandId}::uuid, ${'DEM' + suffix}, CURRENT_DATE, 'purchase', 'confirmed', ${companyId}::uuid)
     `.execute(db)
     await sql`
       INSERT INTO mfg_demand_item(
-        id, idx, qty, base_qty, fulfillment_method, status,
+        id, idx, qty, base_qty, need_date, fulfillment_method, status,
         material_code, material_name, unit_name,
         demand_id, company_id, material_id, unit_id, received_qty
       ) VALUES (
-        ${demandLineId}::uuid, 1, 5, 5, 'buy', 'pending',
+        ${demandLineId}::uuid, 1, 5, 5, CURRENT_DATE, 'buy', 'pending',
         ${'MAT' + suffix}, ${'投影物料' + suffix}, ${'单位' + suffix},
         ${demandId}::uuid, ${companyId}::uuid, ${materialId}::uuid, ${unitId}::uuid, 0
       )

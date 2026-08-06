@@ -195,6 +195,13 @@ run('PG 集成（工单物料需求派生）', () => {
   async function cleanup(): Promise<void> {
     // 逆序清场：派生草稿（引用工单）→ 工单（引用来源需求行）→ 来源需求单
     for (const id of cleanupIds.derivedDemands) {
+      await db
+        .deleteFrom('sys_attachment')
+        .where('owner_type', '=', 'mfg_demand_item')
+        .where('owner_id', 'in', (qb) =>
+          qb.selectFrom('mfg_demand_item').select('id').where('demand_id', '=', id),
+        )
+        .execute()
       await db.deleteFrom('mfg_demand_item').where('demand_id', '=', id).execute()
       await db.deleteFrom('mfg_demand').where('id', '=', id).execute()
     }
@@ -265,6 +272,7 @@ run('PG 集成（工单物料需求派生）', () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
       demandNo: `DM${suffix}-${seq}`,
+      assignType: 'purchase',
     })
     cleanupIds.demands.push(demand.id)
     const line = await mfg.demands.createDemandItem(permit, {
@@ -381,8 +389,11 @@ run('PG 集成（工单物料需求派生）', () => {
     }
     const deptAHead = heads.find((h) => h.id === byDept.get(deptAId)!.id)!
     expect(deptAHead.assigned_dept_id).toBe(deptAId)
+    // 指派类型回填：车间向=生产，采购向=采购
+    expect(deptAHead.assign_type).toBe('make')
     const purchaseHead = heads.find((h) => h.id === byDept.get('purchase')!.id)!
     expect(purchaseHead.assigned_dept_id).toBeNull()
+    expect(purchaseHead.assign_type).toBe('purchase')
 
     // 行字段：来源工单 / 需求日=工单需求日 / 单位沿用配料行 / base 复算 / 无销售来源
     const items = await db

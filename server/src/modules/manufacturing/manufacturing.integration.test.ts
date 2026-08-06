@@ -53,6 +53,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
   const virtualMaterialId = crypto.randomUUID()
   const assetMaterialId = crypto.randomUUID()
   const warehouseId = crypto.randomUUID()
+  const workshopId = crypto.randomUUID()
 
   const cleanupIds = {
     operations: [] as string[],
@@ -135,6 +136,16 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
         allow_negative: false,
       })
       .execute()
+    await db
+      .insertInto('sys_department')
+      .values({
+        id: workshopId,
+        company_id: companyId,
+        code: `WS${suffix}`,
+        name: `制造车间-${suffix}`,
+        path: `/${workshopId}/`,
+      })
+      .execute()
   }
 
   async function cleanup(): Promise<void> {
@@ -159,6 +170,13 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     }
     for (const id of cleanupIds.demands) {
       await db.deleteFrom('sys_audit_log').where('record_id', '=', id).execute()
+      await db
+        .deleteFrom('sys_attachment')
+        .where('owner_type', '=', 'mfg_demand_item')
+        .where('owner_id', 'in', (qb) =>
+          qb.selectFrom('mfg_demand_item').select('id').where('demand_id', '=', id),
+        )
+        .execute()
       await db.deleteFrom('mfg_demand_item').where('demand_id', '=', id).execute()
       await db.deleteFrom('mfg_demand').where('id', '=', id).execute()
     }
@@ -179,6 +197,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       await db.deleteFrom('mfg_operation').where('id', '=', id).execute()
     }
     await db.deleteFrom('inv_warehouse').where('id', '=', warehouseId).execute()
+    await db.deleteFrom('sys_department').where('id', '=', workshopId).execute()
     await db
       .deleteFrom('inv_material')
       .where('id', 'in', [materialId, componentId, virtualMaterialId, assetMaterialId])
@@ -277,6 +296,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     // 工单选 BOM 快照
     const d = await mfg.demands.createDemand(permit, {
       companyId,
+      assignType: 'purchase',
       demandNo: `DBOM${suffix}`,
     })
     cleanupIds.demands.push(d.id)
@@ -286,6 +306,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       materialId,
       unitId,
       qty: '2',
+      needDate: '2026-08-01',
     })
     await mfg.demands.confirmDemand(permit, d.id)
     const woBom = await mfg.workOrders.createWorkOrder(permit, {
@@ -305,6 +326,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
   test('库存/关闭安排与双投影', async () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
+      assignType: 'purchase',
       demandNo: `DST${suffix}`,
       demandDate: '2026-07-20',
     })
@@ -343,9 +365,272 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     ).rejects.toMatchObject({ code: 'conflict' })
   })
 
+  test('指派类型：草稿保存即必填，与下发车间联动校验', async () => {
+    // 缺指派类型 → validation
+    await expect(
+      mfg.demands.createDemand(permit, { companyId, demandNo: `DA0${suffix}` }),
+    ).rejects.toMatchObject({ code: 'validation', fields: { assignType: expect.anything() } })
+    // 生产必须填下发车间
+    await expect(
+      mfg.demands.createDemand(permit, {
+        companyId,
+        demandNo: `DA1${suffix}`,
+        assignType: 'make',
+      }),
+    ).rejects.toMatchObject({
+      code: 'validation',
+      fields: { assignedDeptId: ['指派类型为生产时下发车间必填'] },
+    })
+    // 非生产不得填下发车间
+    await expect(
+      mfg.demands.createDemand(permit, {
+        companyId,
+        demandNo: `DA2${suffix}`,
+        assignType: 'stock',
+        assignedDeptId: workshopId,
+      }),
+    ).rejects.toMatchObject({
+      code: 'validation',
+      fields: { assignedDeptId: ['仅指派类型为生产时可填下发车间'] },
+    })
+
+    // 正常建单（采购，含单头需求日）；草稿态改派类型走表单 + 联动校验
+    const demand = await mfg.demands.createDemand(permit, {
+      companyId,
+      assignType: 'purchase',
+      demandNo: `DA3${suffix}`,
+      needDate: '2026-08-10',
+    })
+    cleanupIds.demands.push(demand.id)
+    expect(demand.assignType).toBe('purchase')
+    expect(demand.needDate).toBe('2026-08-10')
+    await expect(
+      mfg.demands.updateDemand(permit, demand.id, {
+        assignType: 'make',
+        assignTypePresent: true,
+      }),
+    ).rejects.toMatchObject({ code: 'validation' })
+    const made = await mfg.demands.updateDemand(permit, demand.id, {
+      assignType: 'make',
+      assignTypePresent: true,
+      assignedDeptId: workshopId,
+      assignedDeptIdPresent: true,
+    })
+    expect(made.assignType).toBe('make')
+    expect(made.assignedDeptId).toBe(workshopId)
+    // 改单头需求日不追溯既有行（行需求日独立保存）
+    const line = await mfg.demands.createDemandItem(permit, {
+      demandId: demand.id,
+      idx: 1,
+      materialId,
+      unitId,
+      qty: '1',
+      needDate: '2026-08-11',
+    })
+    await mfg.demands.updateDemand(permit, demand.id, {
+      needDate: '2026-08-20',
+      needDatePresent: true,
+    })
+    expect((await mfg.demands.getDemandItem(permit, line.id)).needDate).toBe('2026-08-11')
+  })
+
+  test('dispatch 改派：可同时改指派类型与下发车间，过同一联动校验', async () => {
+    const demand = await mfg.demands.createDemand(permit, {
+      companyId,
+      assignType: 'stock',
+      demandNo: `DD${suffix}`,
+    })
+    cleanupIds.demands.push(demand.id)
+    await mfg.demands.createDemandItem(permit, {
+      demandId: demand.id,
+      idx: 1,
+      materialId,
+      unitId,
+      qty: '2',
+      needDate: '2026-08-01',
+    })
+    await mfg.demands.confirmDemand(permit, demand.id)
+
+    // 库存 → 生产：类型与车间同改
+    const dispatched = await mfg.demands.dispatchDemand(permit, demand.id, {
+      assignType: 'MAKE',
+      assignedDeptId: workshopId,
+    })
+    expect(dispatched.assignType).toBe('make')
+    expect(dispatched.assignedDeptId).toBe(workshopId)
+
+    // 只给车间不给类型、原类型非生产 → 联动拦截
+    await expect(
+      mfg.demands.dispatchDemand(permit, demand.id, { assignType: 'PURCHASE' }),
+    ).rejects.toMatchObject({ code: 'validation' })
+
+    // 生产 → 采购：类型与清空车间同改
+    const back = await mfg.demands.dispatchDemand(permit, demand.id, {
+      assignType: 'purchase',
+      assignedDeptId: null,
+    })
+    expect(back.assignType).toBe('purchase')
+    expect(back.assignedDeptId).toBeNull()
+  })
+
+  test('需求行 need_date 必填：创建/更新保存即拦', async () => {
+    const demand = await mfg.demands.createDemand(permit, {
+      companyId,
+      assignType: 'purchase',
+      demandNo: `DN${suffix}`,
+    })
+    cleanupIds.demands.push(demand.id)
+    await expect(
+      mfg.demands.createDemandItem(permit, {
+        demandId: demand.id,
+        idx: 1,
+        materialId,
+        unitId,
+        qty: '1',
+      }),
+    ).rejects.toMatchObject({ code: 'validation', fields: { needDate: ['必填'] } })
+    const line = await mfg.demands.createDemandItem(permit, {
+      demandId: demand.id,
+      idx: 1,
+      materialId,
+      unitId,
+      qty: '1',
+      needDate: '2026-08-01',
+    })
+    await expect(
+      mfg.demands.updateDemandItem(permit, line.id, {
+        needDate: null,
+        needDatePresent: true,
+      }),
+    ).rejects.toMatchObject({ code: 'validation', fields: { needDate: ['必填'] } })
+  })
+
+  test('需求行来源字段创建后不可改（同值重放不算变更）', async () => {
+    const demand = await mfg.demands.createDemand(permit, {
+      companyId,
+      assignType: 'purchase',
+      demandNo: `DSRC${suffix}`,
+    })
+    cleanupIds.demands.push(demand.id)
+    const line = await mfg.demands.createDemandItem(permit, {
+      demandId: demand.id,
+      idx: 1,
+      materialId,
+      unitId,
+      qty: '1',
+      needDate: '2026-08-01',
+    })
+    // 手工行不可事后补挂来源
+    await expect(
+      mfg.demands.updateDemandItem(permit, line.id, {
+        salesOrderItemId: crypto.randomUUID(),
+        salesOrderItemIdPresent: true,
+      }),
+    ).rejects.toMatchObject({
+      code: 'validation',
+      fields: { salesOrderItemId: ['来源销售订单条目创建后不可改'] },
+    })
+    // 同值重放放行（整单草稿机制会回传原值）
+    const kept = await mfg.demands.updateDemandItem(permit, line.id, {
+      salesOrderItemId: null,
+      salesOrderItemIdPresent: true,
+      remarks: '改备注',
+      remarksPresent: true,
+    })
+    expect(kept.remarks).toBe('改备注')
+  })
+
+  test('需求行图纸快照：创建复制物料挂接，改物料重刷，删行/删单清理', async () => {
+    const fileId = crypto.randomUUID()
+    cleanupIds.files.push(fileId)
+    await db
+      .insertInto('sys_file')
+      .values({
+        id: fileId,
+        storage: 'local',
+        key: `mfg-di-draw-${suffix}`,
+        filename: `di-draw-${suffix}.png`,
+        content_type: 'image/png',
+        size: '12',
+        sha256: 'b'.repeat(64),
+      })
+      .execute()
+    await db
+      .insertInto('sys_attachment')
+      .values({
+        owner_type: 'inv_material',
+        owner_id: materialId,
+        category: 'drawing',
+        file_id: fileId,
+        company_id: null,
+      })
+      .execute()
+
+    const demand = await mfg.demands.createDemand(permit, {
+      companyId,
+      assignType: 'purchase',
+      demandNo: `DDR${suffix}`,
+    })
+    cleanupIds.demands.push(demand.id)
+    const line = await mfg.demands.createDemandItem(permit, {
+      demandId: demand.id,
+      idx: 1,
+      materialId,
+      unitId,
+      qty: '1',
+      needDate: '2026-08-01',
+    })
+    const drawingsOf = (ownerId: string) =>
+      db
+        .selectFrom('sys_attachment')
+        .selectAll()
+        .where('owner_type', '=', 'mfg_demand_item')
+        .where('owner_id', '=', ownerId)
+        .execute()
+    // 创建即复制（挂接复制：同一 file_id，固化公司）
+    let rows = await drawingsOf(line.id)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.file_id).toBe(fileId)
+    expect(rows[0]!.company_id).toBe(companyId)
+
+    // 改物料 → 重刷为新物料图纸（新物料无图即清空）
+    await mfg.demands.updateDemandItem(permit, line.id, { materialId: componentId })
+    rows = await drawingsOf(line.id)
+    expect(rows).toHaveLength(0)
+
+    // 改回有图物料 → 重新复制
+    await mfg.demands.updateDemandItem(permit, line.id, { materialId })
+    expect(await drawingsOf(line.id)).toHaveLength(1)
+
+    // 删行清理挂接
+    const line2 = await mfg.demands.createDemandItem(permit, {
+      demandId: demand.id,
+      idx: 2,
+      materialId,
+      unitId,
+      qty: '1',
+      needDate: '2026-08-01',
+    })
+    expect(await drawingsOf(line2.id)).toHaveLength(1)
+    await mfg.demands.deleteDemandItem(permit, line2.id)
+    expect(await drawingsOf(line2.id)).toHaveLength(0)
+
+    // 删单清理全部行挂接
+    await mfg.demands.deleteDemand(permit, demand.id)
+    expect(await drawingsOf(line.id)).toHaveLength(0)
+
+    // 物料主数据上的图纸挂接是跨用例共享夹具，用完即清（后续用例假设物料无图/单图）
+    await db
+      .deleteFrom('sys_attachment')
+      .where('owner_type', '=', 'inv_material')
+      .where('owner_id', '=', materialId)
+      .execute()
+  })
+
   test('履约需求确认/自制工单/生产入库完工联动', async () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
+      assignType: 'purchase',
       demandNo: `D${suffix}`,
       remarks: '集成测试',
     })
@@ -492,6 +777,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
   test('生产入库超入容差硬拦', async () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
+      assignType: 'purchase',
       demandNo: `DT${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
@@ -501,6 +787,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       materialId,
       unitId,
       qty: '10',
+      needDate: '2026-08-01',
     })
     await mfg.demands.confirmDemand(permit, demand.id)
     const wo = await mfg.workOrders.createWorkOrder(permit, {
@@ -544,6 +831,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       .execute()
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
+      assignType: 'purchase',
       demandNo: `DTM${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
@@ -553,6 +841,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       materialId: matId,
       unitId,
       qty: '5',
+      needDate: '2026-08-01',
     })
     await mfg.demands.confirmDemand(permit, demand.id)
     const wo = await mfg.workOrders.createWorkOrder(permit, {
@@ -597,6 +886,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
   test('兼容点完成→库存安排；改履约方式已取消', async () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
+      assignType: 'purchase',
       demandNo: `DS${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
@@ -606,6 +896,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       materialId,
       unitId,
       qty: '5',
+      needDate: '2026-08-01',
     })
     await mfg.demands.confirmDemand(permit, demand.id)
     const done = await mfg.demands.completeDemandItem(permit, stockLine.id)
@@ -615,6 +906,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
 
     const demand2 = await mfg.demands.createDemand(permit, {
       companyId,
+      assignType: 'purchase',
       demandNo: `DC${suffix}`,
     })
     cleanupIds.demands.push(demand2.id)
@@ -624,6 +916,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       materialId,
       unitId,
       qty: '3',
+      needDate: '2026-08-01',
     })
     await mfg.demands.confirmDemand(permit, demand2.id)
     await expect(mfg.demands.changeFulfillment(permit, buyLine.id, 'MAKE')).rejects.toMatchObject({
@@ -659,6 +952,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
 
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
+      assignType: 'purchase',
       demandNo: `DDRAW${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
@@ -668,6 +962,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       materialId,
       unitId,
       qty: '8',
+      needDate: '2026-08-01',
     })
     await mfg.demands.confirmDemand(permit, demand.id)
     const wo = await mfg.workOrders.createWorkOrder(permit, {
@@ -696,6 +991,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       .execute()
     const demand2 = await mfg.demands.createDemand(permit, {
       companyId,
+      assignType: 'purchase',
       demandNo: `DNODRAW${suffix}`,
     })
     cleanupIds.demands.push(demand2.id)
@@ -705,6 +1001,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       materialId,
       unitId,
       qty: '1',
+      needDate: '2026-08-01',
     })
     await mfg.demands.confirmDemand(permit, demand2.id)
     const wo2 = await mfg.workOrders.createWorkOrder(permit, {
@@ -738,6 +1035,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     })
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
+      assignType: 'purchase',
       demandNo: `DCR${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
@@ -747,6 +1045,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       materialId,
       unitId,
       qty: '6',
+      needDate: '2026-08-01',
     })
     await mfg.demands.confirmDemand(permit, demand.id)
     const wo = await mfg.workOrders.createWorkOrder(permit, {
@@ -765,6 +1064,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
   test('工单内嵌创建 BOM：启用态 + 立即选入快照', async () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
+      assignType: 'purchase',
       demandNo: `DINL${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
@@ -774,6 +1074,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       materialId,
       unitId,
       qty: '12',
+      needDate: '2026-08-01',
     })
     await mfg.demands.confirmDemand(permit, demand.id)
     const wo = await mfg.workOrders.createWorkOrder(permit, {
@@ -810,6 +1111,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const { recomputeDemandItemProjections } = await import('./arrangement.ts')
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
+      assignType: 'purchase',
       demandNo: `DMX${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
@@ -819,6 +1121,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       materialId,
       unitId,
       qty: '100',
+      needDate: '2026-08-01',
     })
     await mfg.demands.confirmDemand(permit, demand.id)
 
@@ -961,6 +1264,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     // 需求行不限类型；但生成工单与库存安排限库存类
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
+      assignType: 'purchase',
       demandNo: `DMT${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
@@ -970,6 +1274,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       materialId: virtualMaterialId,
       unitId,
       qty: '10',
+      needDate: '2026-08-01',
     })
     await mfg.demands.confirmDemand(permit, demand.id)
     await expect(
