@@ -24,7 +24,6 @@ export {
   deleteAddressesForParty,
   type PartyAddressService,
 } from './address-service.ts'
-export { employeeRoutes } from './routes.ts'
 export {
   allPartyResourceMetas,
   partyAddressResourceMeta,

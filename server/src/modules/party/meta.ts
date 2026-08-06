@@ -165,24 +165,51 @@ export function employeeResourceMeta(): ResourceMeta {
     authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('code', 'code', 'string', '员工编号', { filterable: true, sortable: true }),
-      field('name', 'name', 'string', '员工姓名', { required: true, filterable: true, sortable: true }),
+      // 留空自动取号（meta.numbering）；列 NOT NULL 故不可 null，空串即视为未提供
+      field('code', 'code', 'string', '员工编号', { maxLength: 32, filterable: true, sortable: true }),
+      field('name', 'name', 'string', '员工姓名', {
+        required: true,
+        maxLength: 64,
+        filterable: true,
+        sortable: true,
+      }),
       field('attendance_no', 'attendanceNo', 'string', '考勤设备编号', {
+        nullable: true,
+        maxLength: 64,
         filterable: true,
         sortable: true,
       }),
-      field('id_number', 'idNumber', 'string', '身份证号', { filterable: true, sortable: true }),
+      field('id_number', 'idNumber', 'string', '身份证号', {
+        nullable: true,
+        maxLength: 32,
+        filterable: true,
+        sortable: true,
+      }),
       field('household_registration', 'householdRegistration', 'string', '户籍', {
+        nullable: true,
+        maxLength: 128,
         filterable: true,
         sortable: true,
       }),
-      field('phone', 'phone', 'string', '手机号码', { filterable: true, sortable: true }),
+      field('phone', 'phone', 'string', '手机号码', {
+        nullable: true,
+        maxLength: 32,
+        filterable: true,
+        sortable: true,
+      }),
       field('current_address', 'currentAddress', 'string', '现居住地', {
+        nullable: true,
+        maxLength: 256,
         filterable: true,
         sortable: true,
       }),
-      field('daily_wage', 'dailyWage', 'decimal', '日薪', { filterable: true, sortable: true }),
+      field('daily_wage', 'dailyWage', 'decimal', '日薪', {
+        nullable: true,
+        filterable: true,
+        sortable: true,
+      }),
       field('monthly_allowance', 'monthlyAllowance', 'decimal', '月补贴', {
+        nullable: true,
         filterable: true,
         sortable: true,
       }),
@@ -201,7 +228,7 @@ export function employeeResourceMeta(): ResourceMeta {
         sortable: true,
       }),
     ],
-    actions: crud,
+    actions: standardActions,
     // 身份证影像：Presentation Extension
     form: {
       kind: 'extension',

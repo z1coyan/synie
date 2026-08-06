@@ -1,9 +1,12 @@
 import { afterAll, describe, expect, test } from 'bun:test'
+import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
+import { withTx } from '~/db/tx.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+import { deriveWireSchemas } from '~/platform/standard/wire.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createCustomerService, createEmployeeService, createSupplierService } from './party-service.ts'
 import { testActor } from '~/platform/authz/testing.ts'
@@ -38,10 +41,24 @@ run('PG 集成（party 客商员工）', () => {
   const customerIds: string[] = []
   const supplierIds: string[] = []
   const employeeIds: string[] = []
+  /** 用例内已删除的员工（审计行仍在，afterAll 一并清） */
+  const employeeAuditIds: string[] = []
+  /** 自动取号用例自建的编号规则（共享库已有启用规则则复用，不新插） */
+  let employeeRuleId = ''
+
+  /** 用例内自删员工：从存活清单摘出，审计行留给 afterAll 清 */
+  function forgetEmployee(id: string): void {
+    employeeIds.splice(employeeIds.indexOf(id), 1)
+    employeeAuditIds.push(id)
+  }
 
   afterAll(async () => {
+    for (const id of employeeAuditIds) {
+      await db.deleteFrom('sys_audit_log').where('resource', '=', 'hr_employees').where('record_id', '=', id).execute()
+    }
     for (const id of employeeIds) {
-      await db.deleteFrom('sys_audit_log').where('resource', '=', 'hr_employee').where('record_id', '=', id).execute()
+      // 标准派生后审计 resource 即表名（hr_employees），不再是历史单数 hr_employee
+      await db.deleteFrom('sys_audit_log').where('resource', '=', 'hr_employees').where('record_id', '=', id).execute()
       await db.deleteFrom('hr_employees').where('id', '=', id).execute()
     }
     for (const id of customerIds) {
@@ -52,6 +69,10 @@ run('PG 集成（party 客商员工）', () => {
     for (const id of supplierIds) {
       await db.deleteFrom('sys_audit_log').where('resource', '=', 'pur_supplier').where('record_id', '=', id).execute()
       await db.deleteFrom('pur_supplier').where('id', '=', id).execute()
+    }
+    if (employeeRuleId) {
+      await db.deleteFrom('sys_numbering_counter').where('rule_id', '=', employeeRuleId).execute()
+      await db.deleteFrom('sys_numbering_rule').where('id', '=', employeeRuleId).execute()
     }
     await db.destroy()
   })
@@ -117,7 +138,151 @@ run('PG 集成（party 客商员工）', () => {
     })
     expect(filtered.results.some((r) => r.id === emp.id)).toBe(true)
 
+    // 审计键即表名（内核统一口径）；库内参保类型小写
+    const audit = await db
+      .selectFrom('sys_audit_log')
+      .select(['resource', 'action_type'])
+      .where('resource', '=', 'hr_employees')
+      .where('record_id', '=', emp.id)
+      .execute()
+    expect(audit.some((row) => row.action_type === 'create')).toBe(true)
+    const raw = await db
+      .selectFrom('hr_employees')
+      .select('insurance_types')
+      .where('id', '=', emp.id)
+      .executeTakeFirstOrThrow()
+    expect(raw.insurance_types).toEqual(['social_injury', 'housing_fund'])
+
     await employees.remove(permit('hrEmployees', 'delete'), emp.id)
-    employeeIds.splice(employeeIds.indexOf(emp.id), 1)
+    forgetEmployee(emp.id)
+  })
+
+  test('员工：空串文本归一 null、参保去重、非负工钱', async () => {
+    const emp = await employees.create(permit('hrEmployees', 'create'), {
+      code: `E3${suffix}`,
+      name: `员工空-${suffix}`,
+      attendanceNo: '',
+      idNumber: '',
+      phone: '',
+      insuranceTypes: ['SOCIAL_MEDICAL', 'SOCIAL_MEDICAL'],
+    })
+    employeeIds.push(emp.id)
+    // 唯一索引压在 attendance_no/id_number 上：空串必须归一为 null，否则第二个员工即撞车
+    expect(emp.attendanceNo).toBeNull()
+    expect(emp.idNumber).toBeNull()
+    expect(emp.phone).toBeNull()
+    expect(emp.insuranceTypes).toEqual(['SOCIAL_MEDICAL'])
+
+    const second = await employees.create(permit('hrEmployees', 'create'), {
+      code: `E4${suffix}`,
+      name: `员工空二-${suffix}`,
+      attendanceNo: '',
+      idNumber: '',
+    })
+    employeeIds.push(second.id)
+
+    await expect(
+      employees.update(permit('hrEmployees', 'update'), emp.id, { dailyWage: '-1' }),
+    ).rejects.toMatchObject({ code: 'validation' })
+    await expect(
+      employees.update(permit('hrEmployees', 'update'), emp.id, { code: '' }),
+    ).rejects.toMatchObject({ code: 'validation' })
+
+    for (const id of [emp.id, second.id]) {
+      await employees.remove(permit('hrEmployees', 'delete'), id)
+      forgetEmployee(id)
+    }
+  })
+
+  test('员工：留空自动取号 + 考勤自动建档接缝(审计键=表名)', async () => {
+    // 编号规则夹具（资源键即 permissionPrefix hr.employee）
+    const existing = await db
+      .selectFrom('sys_numbering_rule')
+      .select('id')
+      .where('resource', '=', 'hr.employee')
+      .where('enabled', '=', true)
+      .executeTakeFirst()
+    const prefix = `PE${suffix.slice(0, 4).toUpperCase()}-`
+    if (!existing) {
+      // 段用 jsonb_build_object 拼：绑定参数走 ::jsonb 会被当成 JSON 字符串（双重编码）
+      const rule = await sql<{ id: string }>`
+        INSERT INTO sys_numbering_rule(resource, name, segments, per_company, enabled)
+        VALUES ('hr.employee', ${`员工规则-${suffix}`},
+                ARRAY[jsonb_build_object('type', 'text', 'value', ${prefix}::text),
+                      '{"type":"seq","padding":4}'::jsonb],
+                false, true) RETURNING id
+      `.execute(db)
+      employeeRuleId = rule.rows[0]!.id
+    }
+
+    const auto = await employees.create(permit('hrEmployees', 'create'), {
+      name: `员工号-${suffix}`,
+    })
+    employeeIds.push(auto.id)
+    expect(auto.code).toBeTruthy()
+    if (employeeRuleId) expect(auto.code.startsWith(prefix)).toBe(true)
+
+    // 考勤导入接缝：调用方持 trx，本函数只消费凭证
+    const seeded = await withTx(db, (trx) =>
+      employees.autoCreateForAttendance(trx, permit('hrEmployees', 'create'), `SEAM${suffix}`),
+    )
+    employeeIds.push(seeded.id)
+    expect(seeded.name).toBe('[未知]')
+    expect(seeded.attendanceNo).toBe(`SEAM${suffix}`)
+    const seamAudit = await db
+      .selectFrom('sys_audit_log')
+      .select('id')
+      .where('resource', '=', 'hr_employees')
+      .where('record_id', '=', seeded.id)
+      .execute()
+    expect(seamAudit).toHaveLength(1)
+
+    // 同考勤号再自动建档 → 唯一冲突文案
+    await expect(
+      withTx(db, (trx) =>
+        employees.autoCreateForAttendance(trx, permit('hrEmployees', 'create'), `SEAM${suffix}`),
+      ),
+    ).rejects.toMatchObject({ code: 'conflict', message: '考勤机编号已存在' })
+
+    for (const id of [auto.id, seeded.id]) {
+      await employees.remove(permit('hrEmployees', 'delete'), id)
+      forgetEmployee(id)
+    }
+  })
+
+  test('员工 wire schema 派生：冻结既有请求形状', () => {
+    // 标准路由要求完整词表（standardRoutes 装配期同款断言）
+    const declared = new Set(employees.meta.actions.map((a) => a.key))
+    for (const action of ['read', 'create', 'update', 'delete', 'batch_update', 'batch_delete']) {
+      expect(declared.has(action), `缺动作 ${action}`).toBe(true)
+    }
+    const schemas = deriveWireSchemas(employees.meta, employees.stampedColumns)
+    // 创建：编号可缺省（自动取号）/空串；可空文本与金额收 null；参保类型大写 token 数组
+    expect(schemas.create.safeParse({ name: '张三' }).success).toBe(true)
+    expect(schemas.create.safeParse({ code: '', name: '张三' }).success).toBe(true)
+    expect(
+      schemas.create.safeParse({
+        name: '张三',
+        attendanceNo: null,
+        idNumber: null,
+        householdRegistration: null,
+        phone: null,
+        currentAddress: null,
+        dailyWage: null,
+        monthlyAllowance: null,
+        insuranceTypes: [],
+      }).success,
+    ).toBe(true)
+    expect(schemas.create.safeParse({ name: '张三', dailyWage: '100.5' }).success).toBe(true)
+    // name 必填、未知键拒绝、未知参保类型拒绝、编号显式 null 拒绝（列 NOT NULL）
+    expect(schemas.create.safeParse({}).success).toBe(false)
+    expect(schemas.create.safeParse({ name: '张三', bogus: 1 }).success).toBe(false)
+    expect(schemas.create.safeParse({ name: '张三', insuranceTypes: ['NOPE'] }).success).toBe(false)
+    expect(schemas.create.safeParse({ code: null, name: '张三' }).success).toBe(false)
+    // 更新：present-key 语义（出现即写、null 清空、缺省不动）
+    expect(schemas.update.safeParse({}).success).toBe(true)
+    expect(schemas.update.safeParse({ attendanceNo: null }).success).toBe(true)
+    expect(schemas.update.safeParse({ insuranceTypes: ['HOUSING_FUND'] }).success).toBe(true)
+    expect(schemas.update.safeParse({ name: '' }).success).toBe(false)
   })
 })
