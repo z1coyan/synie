@@ -13,6 +13,7 @@ import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createJournalService } from '~/modules/accounting/journal-service.ts'
 import { createBankingService } from './banking-service.ts'
+import { createBankAccountService } from './banking-accounts.ts'
 import { createExpenseService } from './expense-service.ts'
 import { createBillService } from './bill-service.ts'
 import { createVatInvoiceService } from './invoice-service.ts'
@@ -42,6 +43,7 @@ run('PG 集成（财务运营 12）', () => {
     journals: createJournalService(db, numbering, gl, numberingRegistry),
     registry: numberingRegistry,
   })
+  const bankAccounts = createBankAccountService(db, numberingRegistry)
   const expenses = createExpenseService(db, numbering, gl, numberingRegistry)
   const bills = createBillService(db, numbering, { gl, registry: numberingRegistry })
   const invoices = createVatInvoiceService(db, numbering, {
@@ -191,7 +193,7 @@ run('PG 集成（财务运营 12）', () => {
   })
 
   test('银行对账：状态派生 + 解除重建', async () => {
-    const account = await banking.createAccount(permit('accBankAccounts'), {
+    const account = await bankAccounts.create(permit('accBankAccounts'), {
       alias: prefix + '户',
       bankName: '测试银行',
       holderName: '持有人',
@@ -332,7 +334,7 @@ run('PG 集成（财务运营 12）', () => {
   })
 
   test('票据：接收审核 → 持有段；转让后不可再作废接收', async () => {
-    const bankAcct = await banking.createAccount(permit('accBankAccounts'), {
+    const bankAcct = await bankAccounts.create(permit('accBankAccounts'), {
       alias: prefix + '票户',
       bankName: '承兑银行',
       holderName: '持有人',

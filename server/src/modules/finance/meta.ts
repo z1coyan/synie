@@ -367,6 +367,13 @@ const crudActions = [
   { key: 'delete', label: '删除', scope: 'row' as const, isDanger: true },
 ]
 
+/** 标准派生资源的动作词表：CRUD + 批量（批量端点由 platform/standard 派生） */
+const standardActions = [
+  ...crudActions,
+  { key: 'batch_update', label: '批量编辑', scope: 'bulk' as const },
+  { key: 'batch_delete', label: '批量删除', scope: 'bulk' as const, isDanger: true },
+]
+
 export function bankAccountResourceMeta(): ResourceMeta {
   return {
     name: 'accBankAccounts',
@@ -378,13 +385,25 @@ export function bankAccountResourceMeta(): ResourceMeta {
     authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('alias', 'alias', 'string', '账户别名', { filterable: true, sortable: true }),
-      field('bank_name', 'bankName', 'string', '所属银行', { filterable: true, sortable: true }),
-      field('branch_name', 'branchName', 'string', '开户支行', { filterable: true, sortable: true }),
-      field('holder_name', 'holderName', 'string', '户名', { filterable: true, sortable: true }),
-      field('account_no', 'accountNo', 'string', '银行账号', { filterable: true, sortable: true }),
+      field('alias', 'alias', 'string', '账户别名', {
+        required: true, maxLength: 64, filterable: true, sortable: true,
+      }),
+      field('bank_name', 'bankName', 'string', '所属银行', {
+        required: true, maxLength: 128, filterable: true, sortable: true,
+      }),
+      field('branch_name', 'branchName', 'string', '开户支行', {
+        nullable: true, maxLength: 128, filterable: true, sortable: true,
+      }),
+      field('holder_name', 'holderName', 'string', '户名', {
+        required: true, maxLength: 128, filterable: true, sortable: true,
+      }),
+      field('account_no', 'accountNo', 'string', '银行账号', {
+        required: true, maxLength: 64, filterable: true, sortable: true,
+      }),
       field('active', 'active', 'boolean', '启用', { filterable: true, sortable: true }),
-      field('note', 'note', 'string', '备注', { filterable: true, sortable: true }),
+      field('note', 'note', 'string', '备注', {
+        nullable: true, maxLength: 255, filterable: true, sortable: true,
+      }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', { readonly: true, filterable: true, sortable: true }),
       field('updated_at', 'updatedAt', 'datetime', '更新时间', { readonly: true, filterable: true, sortable: true }),
       field('company_id', 'companyId', 'fk', '公司', {
@@ -392,15 +411,15 @@ export function bankAccountResourceMeta(): ResourceMeta {
         ref: { resource: 'basCompanies', relation: 'company', labelField: 'name' },
       }),
       field('currency_id', 'currencyId', 'fk', '货币', {
-        filterable: true, sortable: true,
+        required: true, filterable: true, sortable: true,
         ref: { resource: 'basCurrencies', relation: 'currency', labelField: 'name' },
       }),
       field('account_id', 'accountId', 'fk', '绑定科目', {
-        filterable: true, sortable: true,
+        nullable: true, filterable: true, sortable: true,
         ref: { resource: 'basAccounts', relation: 'account', labelField: 'name' },
       }),
     ],
-    actions: crudActions,
+    actions: standardActions,
     form: {
       kind: 'basic',
       exclude: ['id', 'active', 'insertedAt', 'updatedAt'],

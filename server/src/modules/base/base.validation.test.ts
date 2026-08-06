@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { ApiError } from '~/platform/http/errors.ts'
 import { normalizeCreate, validateInput } from './account-service.ts'
-import { normalize } from './unit-service.ts'
 import { createRegistry } from '~/platform/meta/registry.ts'
-import { allBaseResourceMetas } from './meta.ts'
+import { deriveWireSchemas } from '~/platform/standard/wire.ts'
+import { allBaseResourceMetas, unitResourceMeta } from './meta.ts'
 
 describe('base 校验与 Meta', () => {
   test('Meta 四资源可注册', () => {
@@ -17,17 +17,30 @@ describe('base 校验与 Meta', () => {
     expect(registry.get('basAccounts')?.permissionPrefix).toBe('base.account')
   })
 
-  test('计量单位 normalize：四类/ratio>0/基准=1', () => {
-    const ok = normalize(' weight ', ' 千克 ', ' kg ', '0.001', false)
-    expect(ok.unitType).toBe('weight')
+  test('计量单位派生 schema：trim/枚举/长度/未知键', () => {
+    const schemas = deriveWireSchemas(unitResourceMeta(), new Set())
+
+    const ok = schemas.create.parse({
+      unitType: 'WEIGHT',
+      name: ' 千克 ',
+      symbol: ' kg ',
+      ratio: '0.001',
+    }) as Record<string, unknown>
     expect(ok.name).toBe('千克')
     expect(ok.symbol).toBe('kg')
     expect(ok.ratio).toBe('0.001')
 
-    expect(() => normalize('volume', '升', 'L', '1', false)).toThrow(ApiError)
-    expect(() => normalize('quantity', '件', 'pcs', '0', false)).toThrow(ApiError)
-    expect(() => normalize('length', '米', 'm', '1000', true)).toThrow(ApiError)
-    expect(() => normalize('area', 'x'.repeat(33), 'm2', '1', false)).toThrow(ApiError)
+    // 未知枚举值 / 超长 / 未知键 / 空必填
+    expect(schemas.create.safeParse({ unitType: 'VOLUME', name: '升', symbol: 'L', ratio: '1' }).success).toBe(false)
+    expect(
+      schemas.create.safeParse({ unitType: 'AREA', name: 'x'.repeat(33), symbol: 'm2', ratio: '1' }).success,
+    ).toBe(false)
+    expect(
+      schemas.create.safeParse({ unitType: 'AREA', name: '平米', symbol: 'm2', ratio: '1', bogus: 1 }).success,
+    ).toBe(false)
+    expect(schemas.create.safeParse({ unitType: 'AREA', name: '  ', symbol: 'm2', ratio: '1' }).success).toBe(false)
+    // 非十进制 ratio 由 decimalStringSchema 拦截
+    expect(schemas.create.safeParse({ unitType: 'AREA', name: '平米', symbol: 'm2', ratio: 'abc' }).success).toBe(false)
   })
 
   test('会计科目：方向/角色/汇总清 role', () => {

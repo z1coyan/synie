@@ -24,6 +24,13 @@ const crudActions: ResourceMeta['actions'] = [
   { key: 'delete', label: '删除', scope: 'row', isDanger: true },
 ]
 
+/** 标准派生资源的动作词表：CRUD + 批量（批量端点由 platform/standard 派生） */
+const standardActions: ResourceMeta['actions'] = [
+  ...crudActions,
+  { key: 'batch_update', label: '批量编辑', scope: 'bulk' },
+  { key: 'batch_delete', label: '批量删除', scope: 'bulk', isDanger: true },
+]
+
 export const CURRENCY_RESOURCE_NAME = 'basCurrencies'
 export const COMPANY_RESOURCE_NAME = 'basCompanies'
 export const UNIT_RESOURCE_NAME = 'basUnits'
@@ -41,14 +48,24 @@ export function currencyResourceMeta(): ResourceMeta {
     authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('name', 'name', 'string', '货币名称', { required: true, filterable: true, sortable: true }),
+      field('name', 'name', 'string', '货币名称', {
+        required: true,
+        maxLength: 64,
+        filterable: true,
+        sortable: true,
+      }),
       field('iso_code', 'isoCode', 'string', 'ISO 编码', {
         required: true,
         createOnly: true,
         filterable: true,
         sortable: true,
       }),
-      field('symbol', 'symbol', 'string', '符号', { filterable: true, sortable: true }),
+      field('symbol', 'symbol', 'string', '符号', {
+        nullable: true,
+        maxLength: 8,
+        filterable: true,
+        sortable: true,
+      }),
       field('active', 'active', 'boolean', '启用', { filterable: true, sortable: true }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         readonly: true,
@@ -61,7 +78,7 @@ export function currencyResourceMeta(): ResourceMeta {
         sortable: true,
       }),
     ],
-    actions: crudActions,
+    actions: standardActions,
     form: {
       kind: 'basic',
       exclude: ['id', 'active', 'insertedAt', 'updatedAt'],
@@ -165,9 +182,15 @@ export function unitResourceMeta(): ResourceMeta {
         sortable: true,
       }),
       field('is_base', 'isBase', 'boolean', '基准单位', { filterable: true, sortable: true }),
-      field('name', 'name', 'string', '单位名称', { required: true, filterable: true, sortable: true }),
+      field('name', 'name', 'string', '单位名称', {
+        required: true,
+        maxLength: 32,
+        filterable: true,
+        sortable: true,
+      }),
       field('symbol', 'symbol', 'string', '单位符号', {
         required: true,
+        maxLength: 16,
         filterable: true,
         sortable: true,
       }),
@@ -187,7 +210,7 @@ export function unitResourceMeta(): ResourceMeta {
         sortable: true,
       }),
     ],
-    actions: crudActions,
+    actions: standardActions,
     form: {
       kind: 'basic',
       exclude: ['id', 'insertedAt', 'updatedAt'],

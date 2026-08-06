@@ -1,8 +1,9 @@
 /**
- * 银行账户 + 银行流水。
+ * 银行账户（标准派生） + 银行流水（手写：对账联动的领域流程）。
  *
- * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
- * 列表 `listAuthorized`、写前取行 `loadAuthorized`、create 走 `assertCompanyWritable`。
+ * 银行账户 CRUD/批量/审计/授权由 platform/standard 按 meta 派生，本文件只声明
+ * 引用校验与对账保护两条领域不变量（钩子）。
+ * 流水的收支换边/对账额度联动是跨资源流程，按钩子纪律留在手写服务。
  */
 import { type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -19,11 +20,9 @@ import type { Registry } from '~/platform/meta/registry.ts'
 import { listAuthorized } from '~/db/list.ts'
 import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import {
-  asIso, conflict, lower, notFound,
-  upper, validateOptionalText, validateRequiredText, validation,
-} from './common.ts'
-import { bankAccountResourceMeta, bankTransactionResourceMeta } from './meta.ts'
+import { conflict, lower, validation } from './common.ts'
+import { createStandardService, type StandardService } from '~/platform/standard/service.ts'
+import { bankTransactionResourceMeta } from './meta.ts'
 import {
   hasReconForBankAccount,
   hasReconForTransaction,
@@ -51,62 +50,19 @@ export {
   validateTxnShape,
 } from './banking-shared.ts'
 
-export interface BankAccount {
-  id: string; alias: string; bankName: string; branchName: string | null
-  holderName: string; accountNo: string; active: boolean; note: string | null
-  insertedAt: string; updatedAt: string; companyId: string; currencyId: string
-  accountId: string | null
-}
-
 export const BANK_ACCOUNT_RESOURCE = 'accBankAccounts'
 export const BANK_TRANSACTION_RESOURCE = 'accBankTransactions'
 
-const ACCOUNT_TABLE = 'acc_bank_account'
 const TXN_TABLE = 'acc_bank_transaction'
-const ACCOUNT_SELECT = sql`SELECT id,alias,bank_name,branch_name,holder_name,account_no,active,note,
-  inserted_at,updated_at,company_id,currency_id,account_id`
-const ACCOUNT_SOURCE = sql` FROM acc_bank_account`
 const TXN_SELECT = sql`SELECT id,occurred_at,income,expense,balance,counterparty_name,counterparty_account,
   summary,note,reconciled_amount,unreconciled_amount,reconcile_status,inserted_at,updated_at,company_id,bank_account_id`
 const TXN_SOURCE = sql` FROM acc_bank_transaction`
 
-const ACCOUNT_AUDIT = auditFieldsOf(bankAccountResourceMeta())
 const TXN_AUDIT = auditFieldsOf(bankTransactionResourceMeta())
 const WRITE_MAP = [
   { code: '23505', message: '银行业务记录冲突' },
   { code: '23503', message: '银行业务引用不存在' },
 ] as const
-
-export function mapAccount(row: Record<string, unknown>): BankAccount {
-  return {
-    id: String(row.id), alias: String(row.alias), bankName: String(row.bank_name),
-    branchName: row.branch_name == null ? null : String(row.branch_name),
-    holderName: String(row.holder_name), accountNo: String(row.account_no),
-    active: Boolean(row.active),
-    note: row.note == null ? null : String(row.note),
-    insertedAt: asIso(row.inserted_at), updatedAt: asIso(row.updated_at),
-    companyId: String(row.company_id), currencyId: String(row.currency_id),
-    accountId: row.account_id == null ? null : String(row.account_id),
-  }
-}
-
-export function accountSnap(a: BankAccount): Record<string, unknown> {
-  return {
-    alias: a.alias, bank_name: a.bankName, branch_name: a.branchName,
-    holder_name: a.holderName, account_no: a.accountNo, active: a.active,
-    note: a.note, company_id: a.companyId, currency_id: a.currencyId, account_id: a.accountId,
-  }
-}
-
-export async function loadAccount(db: DbHandle, id: string, lock: boolean): Promise<BankAccount> {
-  const rows = await sql<Record<string, unknown>>`
-    SELECT id,alias,bank_name,branch_name,holder_name,account_no,active,note,
-      inserted_at,updated_at,company_id,currency_id,account_id
-    FROM acc_bank_account WHERE id=${id}::uuid ${lock ? sql`FOR UPDATE` : sql``}
-  `.execute(db)
-  if (!rows.rows[0]) throw notFound('银行账户')
-  return mapAccount(rows.rows[0])
-}
 
 export async function validateOwnBankAccount(
   db: DbHandle, companyId: string, bankAccountId: string, checkActive: boolean,
@@ -151,20 +107,42 @@ export async function validateAccountRefs(
   }
 }
 
-export function createAccountAndTxnOps(db: Kysely<Database>, registry: Registry) {
-  const accountTarget = registry.authzTarget(BANK_ACCOUNT_RESOURCE)
-  const txnTarget = registry.authzTarget(BANK_TRANSACTION_RESOURCE)
+/**
+ * 银行账户——标准派生服务。
+ * 领域不变量：引用完整性（货币/绑定科目须同公司、叶子、启用、币种一致）与
+ * 对账保护（有对账记录不许换绑定科目）。
+ */
+export function createBankAccountService(db: Kysely<Database>, registry: Registry): StandardService {
+  return createStandardService({
+    db,
+    registry,
+    resource: BANK_ACCOUNT_RESOURCE,
+    notFound: '银行账户不存在',
+    defaultOrder: sql`"id"`,
+    writeErrors: WRITE_MAP,
+    hooks: {
+      beforeWrite: async (trx, { action, draft, before }) => {
+        await validateAccountRefs(
+          trx,
+          String(draft.companyId),
+          String(draft.currencyId),
+          (draft.accountId as string | null) ?? null,
+        )
+        if (action === 'update' && before) {
+          const changed = ((before.accountId as string | null) ?? null) !== ((draft.accountId as string | null) ?? null)
+          if (changed && (await hasReconForBankAccount(trx, String(draft.id)))) {
+            throw conflict('账户名下流水存在对账记录,不允许更换绑定科目,请先解除对账')
+          }
+        }
+      },
+    },
+  })
+}
 
-  /** 按 Permit 取账户（可锁）；不命中一律 not_found */
-  async function authorizedAccount(
-    handle: DbHandle, permit: Permit, id: string, forUpdate: boolean,
-  ): Promise<BankAccount> {
-    const row = await loadAuthorized({
-      db: handle, permit, target: accountTarget, table: ACCOUNT_TABLE, id, forUpdate,
-      notFoundMessage: '银行账户不存在',
-    })
-    return mapAccount(row)
-  }
+export type BankAccountService = ReturnType<typeof createBankAccountService>
+
+export function createAccountAndTxnOps(db: Kysely<Database>, registry: Registry) {
+  const txnTarget = registry.authzTarget(BANK_TRANSACTION_RESOURCE)
 
   /** 按 Permit 取流水（可锁）；不命中一律 not_found */
   async function authorizedTransaction(
@@ -175,138 +153,6 @@ export function createAccountAndTxnOps(db: Kysely<Database>, registry: Registry)
       notFoundMessage: '银行流水不存在',
     })
     return mapTransaction(row)
-  }
-
-  async function listAccounts(permit: Permit, query: Partial<ListQuery>) {
-    return listAuthorized({
-      db, permit, target: accountTarget, alias: ACCOUNT_TABLE,
-      resource: bankAccountResourceMeta(),
-      source: ACCOUNT_SOURCE,
-      select: ACCOUNT_SELECT,
-      defaultOrder: sql`"id"`, query, mapRow: mapAccount,
-    })
-  }
-
-  async function getAccount(permit: Permit, id: string) {
-    return authorizedAccount(db, permit, id, false)
-  }
-
-  async function createAccount(permit: Permit, input: {
-    alias: string; bankName: string; holderName: string; accountNo: string
-    branchName?: string | null; note?: string | null; active?: boolean | null
-    companyId: string; currencyId: string; accountId?: string | null
-  }) {
-    const actor = permit.actor
-    const fields: Record<string, string[]> = {}
-    const alias = validateRequiredText(fields, 'alias', input.alias, 64)
-    const bankName = validateRequiredText(fields, 'bankName', input.bankName, 128)
-    const holderName = validateRequiredText(fields, 'holderName', input.holderName, 128)
-    const accountNo = validateRequiredText(fields, 'accountNo', input.accountNo, 64)
-    const branchName = validateOptionalText(fields, 'branchName', input.branchName, 128)
-    const note = validateOptionalText(fields, 'note', input.note, 255)
-    if (!input.companyId) fields.companyId = ['必填']
-    if (!input.currencyId) fields.currencyId = ['必填']
-    if (Object.keys(fields).length) throw validation('银行账户', fields)
-    // 入参校验（400）先于公司边界（404）
-    assertCompanyWritable(permit, input.companyId)
-    const active = input.active ?? true
-    return withTx(db, async (trx) => {
-      await validateAccountRefs(trx, input.companyId, input.currencyId, input.accountId ?? null)
-      try {
-        const ins = await sql<{ id: string }>`
-          INSERT INTO acc_bank_account(alias,bank_name,branch_name,holder_name,account_no,active,note,company_id,currency_id,account_id)
-          VALUES (${alias},${bankName},${branchName},${holderName},${accountNo},${active},${note},
-            ${input.companyId}::uuid,${input.currencyId}::uuid,${input.accountId ?? null}::uuid)
-          RETURNING id
-        `.execute(trx)
-        const item = await loadAccount(trx, ins.rows[0]!.id, false)
-        await writeAudit(trx, actor, {
-          resource: 'acc_bank_account', recordId: item.id, recordLabel: item.alias,
-          companyId: item.companyId, actionType: 'create', actionName: 'create',
-          changes: auditCreated(accountSnap(item), ACCOUNT_AUDIT),
-        })
-        return item
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '创建银行账户失败', WRITE_MAP)
-      }
-    })
-  }
-
-  async function updateAccount(permit: Permit, id: string, input: {
-    alias?: string; bankName?: string; holderName?: string; accountNo?: string
-    branchName?: string | null; branchNamePresent?: boolean
-    note?: string | null; notePresent?: boolean
-    active?: boolean; currencyId?: string
-    accountId?: string | null; accountIdPresent?: boolean
-  }) {
-    const actor = permit.actor
-    return withTx(db, async (trx) => {
-      const before = await authorizedAccount(trx, permit, id, true)
-      const after = { ...before }
-      if (input.alias !== undefined) after.alias = input.alias
-      if (input.bankName !== undefined) after.bankName = input.bankName
-      if (input.branchNamePresent) after.branchName = input.branchName ?? null
-      if (input.holderName !== undefined) after.holderName = input.holderName
-      if (input.accountNo !== undefined) after.accountNo = input.accountNo
-      if (input.active !== undefined) after.active = input.active
-      if (input.notePresent) after.note = input.note ?? null
-      if (input.currencyId !== undefined) after.currencyId = input.currencyId
-      const accountChanged = input.accountIdPresent && (before.accountId ?? null) !== (input.accountId ?? null)
-      if (input.accountIdPresent) after.accountId = input.accountId ?? null
-      const fields: Record<string, string[]> = {}
-      after.alias = validateRequiredText(fields, 'alias', after.alias, 64)
-      after.bankName = validateRequiredText(fields, 'bankName', after.bankName, 128)
-      after.holderName = validateRequiredText(fields, 'holderName', after.holderName, 128)
-      after.accountNo = validateRequiredText(fields, 'accountNo', after.accountNo, 64)
-      after.branchName = validateOptionalText(fields, 'branchName', after.branchName, 128)
-      after.note = validateOptionalText(fields, 'note', after.note, 255)
-      if (Object.keys(fields).length) throw validation('银行账户', fields)
-      await validateAccountRefs(trx, after.companyId, after.currencyId, after.accountId)
-      if (accountChanged) {
-        if (await hasReconForBankAccount(trx, id)) {
-          throw conflict('账户名下流水存在对账记录,不允许更换绑定科目,请先解除对账')
-        }
-      }
-      const changes = auditDiff(accountSnap(before), accountSnap(after), ACCOUNT_AUDIT)
-      if (Object.keys(changes).length === 0) return before
-      try {
-        await sql`
-          UPDATE acc_bank_account SET
-            alias=${after.alias},bank_name=${after.bankName},branch_name=${after.branchName},
-            holder_name=${after.holderName},account_no=${after.accountNo},active=${after.active},
-            note=${after.note},currency_id=${after.currencyId}::uuid,account_id=${after.accountId}::uuid,
-            updated_at=timezone('utc',now()) WHERE id=${id}::uuid
-        `.execute(trx)
-        const item = await loadAccount(trx, id, false)
-        await writeAudit(trx, actor, {
-          resource: 'acc_bank_account', recordId: id, recordLabel: item.alias,
-          companyId: item.companyId, actionType: 'update', actionName: 'update', changes,
-        })
-        return item
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '更新银行账户失败', WRITE_MAP)
-      }
-    })
-  }
-
-  async function deleteAccount(permit: Permit, id: string) {
-    const actor = permit.actor
-    return withTx(db, async (trx) => {
-      const item = await authorizedAccount(trx, permit, id, true)
-      try {
-        await sql`DELETE FROM acc_bank_account WHERE id=${id}::uuid`.execute(trx)
-        await writeAudit(trx, actor, {
-          resource: 'acc_bank_account', recordId: id, recordLabel: item.alias,
-          companyId: item.companyId, actionType: 'destroy', actionName: 'destroy',
-          changes: auditDestroyed(accountSnap(item), ACCOUNT_AUDIT),
-        })
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '删除银行账户失败', WRITE_MAP)
-      }
-    })
   }
 
   async function listTransactions(permit: Permit, query: Partial<ListQuery>) {
@@ -458,7 +304,6 @@ export function createAccountAndTxnOps(db: Kysely<Database>, registry: Registry)
   }
 
   return {
-    listAccounts, getAccount, createAccount, updateAccount, deleteAccount,
     listTransactions, getTransaction, createTransaction, updateTransaction, deleteTransaction,
     createTransactionInTx, authorizedTransaction,
   }

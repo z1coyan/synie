@@ -12,7 +12,7 @@ export async function seedFinance(
   sales: SalesResult,
   purchase: PurchaseResult,
 ): Promise<FinanceResult> {
-  const bankAccount = await deps.banking.createAccount(permitFor(deps, actor, 'accBankAccounts', 'create'), {
+  const bankAccount = await deps.bankAccounts.create(permitFor(deps, actor, 'accBankAccounts', 'create'), {
     alias: '基本户',
     bankName: '中国银行',
     branchName: '台州分行营业部',

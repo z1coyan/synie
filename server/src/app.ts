@@ -67,8 +67,8 @@ import {
 } from './modules/manufacturing/index.ts'
 import {
   ACC_RESOURCE_NAME,
+  BANK_ACCOUNT_RESOURCE,
   vatInvoiceRoutes,
-  bankAccountRoutes,
   bankTransactionRoutes,
   bankImportTemplateRoutes,
   bankImportRoutes,
@@ -81,6 +81,7 @@ import {
   billHoldingRoutes,
   type VatInvoiceService,
   type BankingService,
+  type BankAccountService,
   type ExpenseService,
   type BillService,
 } from './modules/finance/index.ts'
@@ -92,6 +93,8 @@ import { notFound, onError } from './platform/http/errors.ts'
 import { logJson, serializeError } from './platform/http/log.ts'
 import { metaRoutes } from './platform/meta/routes.ts'
 import type { Registry } from './platform/meta/registry.ts'
+import { standardRoutes } from './platform/standard/routes.ts'
+import { CURRENCY_RESOURCE_NAME, UNIT_RESOURCE_NAME } from './modules/base/meta.ts'
 import { auditRoutes } from './platform/audit/routes.ts'
 import type { AuditService } from './platform/audit/service.ts'
 import { fileRoutes, storageRoutes } from './platform/files/routes.ts'
@@ -161,6 +164,7 @@ export interface AppDeps {
   invoices: VatInvoiceService
   // 工单 12 银行/票据/报销
   banking: BankingService
+  bankAccounts: BankAccountService
   expenses: ExpenseService
   bills: BillService
   todos: TodoService
@@ -254,10 +258,29 @@ export function buildApp(deps: AppDeps) {
       baseRoutes({
         auth: deps.auth,
         authz: deps.authz,
-        currencies: deps.currencies,
         companies: deps.companies,
-        units: deps.units,
         accounts: deps.accounts,
+      }),
+    )
+    // —— 标准派生路由（platform/standard）：URL 形状与手写路由逐字一致 ——
+    .route(
+      '/base/currencies',
+      standardRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        registry: deps.registry,
+        resource: CURRENCY_RESOURCE_NAME,
+        service: deps.currencies,
+      }),
+    )
+    .route(
+      '/base/units',
+      standardRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        registry: deps.registry,
+        resource: UNIT_RESOURCE_NAME,
+        service: deps.units,
       }),
     )
     .route(
@@ -359,7 +382,13 @@ export function buildApp(deps: AppDeps) {
     )
     .route(
       '/finance/bank-accounts',
-      bankAccountRoutes({ auth: deps.auth, authz: deps.authz, banking: deps.banking }),
+      standardRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        registry: deps.registry,
+        resource: BANK_ACCOUNT_RESOURCE,
+        service: deps.bankAccounts,
+      }),
     )
     .route(
       '/finance/bank-transactions',

@@ -11,6 +11,7 @@ import type { ReconciliationService } from '~/modules/trading/reconciliation/ser
 import type { JournalService } from '~/modules/accounting/journal-service.ts'
 import { createVatInvoiceService } from './invoice-service.ts'
 import { createBankingService } from './banking-service.ts'
+import { createBankAccountService } from './banking-accounts.ts'
 import { createExpenseService } from './expense-service.ts'
 import { createBillService } from './bill-service.ts'
 import { allFinanceResourceMetas } from './meta.ts'
@@ -32,6 +33,7 @@ export {
   BANK_TRANSACTION_RESOURCE,
   type BankingService,
 } from './banking-service.ts'
+export { createBankAccountService, type BankAccountService } from './banking-accounts.ts'
 export {
   createExpenseService,
   EXPENSE_REPORT_ITEM_RESOURCE,
@@ -47,7 +49,6 @@ export {
 } from './bill-service.ts'
 export { vatInvoiceRoutes } from './routes.ts'
 export {
-  bankAccountRoutes,
   bankTransactionRoutes,
   bankImportTemplateRoutes,
   bankImportRoutes,
@@ -138,6 +139,7 @@ export function createFinanceServices(
       files: deps.files ?? null,
       registry,
     }),
+    bankAccounts: createBankAccountService(db, registry),
     expenses: createExpenseService(db, numbering, gl, registry),
     bills: createBillService(db, numbering, { gl, files: deps.files ?? null, registry }),
   }

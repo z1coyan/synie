@@ -21,7 +21,6 @@ export {
   BANK_IMPORT_TEMPLATE_RESOURCE,
 } from './banking-import.ts'
 export { BANK_RECONCILIATION_RESOURCE } from './banking-recon.ts'
-export type { BankAccount } from './banking-accounts.ts'
 export type { BankTransaction } from './banking-shared.ts'
 export type {
   BankImport, BankImportItem, BankImportTemplate,

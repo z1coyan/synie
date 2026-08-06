@@ -57,53 +57,7 @@ function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
 
 const dec = z.string().nullable().optional()
 
-export function bankAccountRoutes(deps: {
-  auth: AuthService; authz: AuthzEnforcer; banking: BankingService
-}) {
-  const { auth, authz, banking } = deps
-  const guard = (action: string) => authz.guard(BANK_ACCOUNT_RESOURCE, action)
-  return new Hono<AppEnv>()
-    .use('*', requireAuth(auth))
-    .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const result = await banking.listAccounts(permitOf(c), toList(c.req.valid('json')))
-      return c.json(result)
-    })
-    .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
-      return c.json(await banking.getAccount(permitOf(c), c.req.valid('param').id))
-    })
-    .post('/', guard('create'), zValidator('json', z.object({
-      alias: z.string(), bankName: z.string(), holderName: z.string(), accountNo: z.string(),
-      branchName: z.string().nullable().optional(), note: z.string().nullable().optional(),
-      active: z.boolean().nullable().optional(),
-      companyId: z.string().uuid(), currencyId: z.string().uuid(),
-      accountId: z.string().uuid().nullable().optional(),
-    }).strict(), validationHook), async (c) => {
-      const item = await banking.createAccount(permitOf(c), c.req.valid('json'))
-      return c.json(item, 201)
-    })
-    .patch('/:id', guard('update'), zValidator('param', idParam, validationHook),
-      zValidator('json', z.object({
-        alias: z.string().optional(), bankName: z.string().optional(),
-        holderName: z.string().optional(), accountNo: z.string().optional(),
-        branchName: z.string().nullable().optional(), note: z.string().nullable().optional(),
-        active: z.boolean().optional(), currencyId: z.string().uuid().optional(),
-        accountId: z.string().uuid().nullable().optional(),
-      }).strict(), validationHook), async (c) => {
-      const raw = (await c.req.json()) as Record<string, unknown>
-      const body = c.req.valid('json')
-      const item = await banking.updateAccount(permitOf(c), c.req.valid('param').id, {
-        ...body,
-        branchNamePresent: present(raw, 'branchName'),
-        notePresent: present(raw, 'note'),
-        accountIdPresent: present(raw, 'accountId'),
-      })
-      return c.json(item)
-    })
-    .delete('/:id', guard('delete'), zValidator('param', idParam, validationHook), async (c) => {
-      await banking.deleteAccount(permitOf(c), c.req.valid('param').id)
-      return c.body(null, 204)
-    })
-}
+// 银行账户路由已迁 platform/standard 派生（见 app.ts /finance/bank-accounts）
 
 export function bankTransactionRoutes(deps: {
   auth: AuthService; authz: AuthzEnforcer; banking: BankingService

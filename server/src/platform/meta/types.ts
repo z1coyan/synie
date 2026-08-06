@@ -36,6 +36,10 @@ export interface FieldMeta {
   filterable?: boolean
   sortable?: boolean
   decimalScale?: number
+  /** wire 字符串长度上限（按 Unicode 码点计）：标准动作派生校验消费 */
+  maxLength?: number
+  /** wire 可写 null（列可空才声明）：标准动作派生 create/update schema 消费 */
+  nullable?: boolean
   /** 计算/投影字段（非物理列）：打印字段目录一层关联展开时跳过 */
   calculated?: boolean
   /** 仅打印字段目录可见：不进 Grid 文档，不参与筛选/排序 */
