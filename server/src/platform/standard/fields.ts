@@ -94,12 +94,18 @@ export function snapshot(
   return snap
 }
 
-/** wire item → HTTP DTO（datetime 转 ISO 字符串，其余原样） */
+/** wire item → HTTP DTO（datetime 转 ISO 字符串，其余原样；投影附加键透传） */
 export function toDto(meta: ResourceMeta, item: Record<string, unknown>): Record<string, unknown> {
+  const physical = new Set<string>()
   const dto: Record<string, unknown> = {}
   for (const field of physicalFields(meta)) {
+    physical.add(field.apiName)
     const value = item[field.apiName]
     dto[field.apiName] = field.type === 'datetime' && value instanceof Date ? value.toISOString() : value
+  }
+  for (const [key, value] of Object.entries(item)) {
+    if (physical.has(key) || value === undefined) continue
+    dto[key] = value instanceof Date ? value.toISOString() : value
   }
   return dto
 }
