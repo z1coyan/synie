@@ -33,6 +33,8 @@ import {
 import {
   EXPENSE_REPORT_ITEM_RESOURCE,
   EXPENSE_REPORT_RESOURCE,
+  type ExpenseReport,
+  type ExpenseReportItem,
   type ExpenseService,
 } from './expense-service.ts'
 import {
@@ -40,6 +42,7 @@ import {
   BILL_RESOURCE,
   BILL_TRANSACTION_RESOURCE,
   type BillService,
+  type BillTransaction,
 } from './bill-service.ts'
 import { present } from './common.ts'
 
@@ -56,6 +59,79 @@ function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
 }
 
 const dec = z.string().nullable().optional()
+
+/**
+ * 报销单 DTO：内核 wire 的 datetime 是 Date，HTTP 面恒 ISO 字符串（与迁移前逐字一致）。
+ * 行 DTO 同时挡住投影附加列（reportDocNo 只服务审计标签，不进 wire）。
+ */
+function expenseReportDto(item: ExpenseReport) {
+  return {
+    id: item.id,
+    docNo: item.docNo,
+    expenseDate: item.expenseDate,
+    postingDate: item.postingDate,
+    remarks: item.remarks,
+    status: item.status,
+    auditedAt: item.auditedAt === null ? null : item.auditedAt.toISOString(),
+    insertedAt: item.insertedAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+    companyId: item.companyId,
+    employeeId: item.employeeId,
+    paymentAccountId: item.paymentAccountId,
+    createdById: item.createdById,
+    auditedById: item.auditedById,
+  }
+}
+
+function expenseReportItemDto(item: ExpenseReportItem) {
+  return {
+    id: item.id,
+    idx: item.idx,
+    kind: item.kind,
+    summary: item.summary,
+    amount: item.amount,
+    remarks: item.remarks,
+    insertedAt: item.insertedAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+    reportId: item.reportId,
+    companyId: item.companyId,
+    invoiceId: item.invoiceId,
+    expenseAccountId: item.expenseAccountId,
+  }
+}
+
+function billTransactionDto(item: BillTransaction) {
+  return {
+    id: item.id,
+    docNo: item.docNo,
+    transactionType: item.transactionType,
+    occurredOn: item.occurredOn,
+    subStart: item.subStart,
+    subEnd: item.subEnd,
+    amount: item.amount,
+    partyType: item.partyType,
+    partyId: item.partyId,
+    discountOrg: item.discountOrg,
+    discountRate: item.discountRate,
+    interest: item.interest,
+    netAmount: item.netAmount,
+    postingDate: item.postingDate,
+    status: item.status,
+    auditedAt: item.auditedAt === null ? null : item.auditedAt.toISOString(),
+    remarks: item.remarks,
+    insertedAt: item.insertedAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+    companyId: item.companyId,
+    bankAccountId: item.bankAccountId,
+    toBankAccountId: item.toBankAccountId,
+    billId: item.billId,
+    billAccountId: item.billAccountId,
+    settleAccountId: item.settleAccountId,
+    interestAccountId: item.interestAccountId,
+    createdById: item.createdById,
+    auditedById: item.auditedById,
+  }
+}
 
 // 银行账户路由已迁 platform/standard 派生（见 app.ts /finance/bank-accounts）
 
@@ -288,10 +364,11 @@ export function expenseReportRoutes(deps: {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      return c.json(await expenses.listReports(permitOf(c), toList(c.req.valid('json'))))
+      const result = await expenses.listReports(permitOf(c), toList(c.req.valid('json')))
+      return c.json({ count: result.count, results: result.results.map(expenseReportDto) })
     })
     .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
-      return c.json(await expenses.getReport(permitOf(c), c.req.valid('param').id))
+      return c.json(expenseReportDto(await expenses.getReport(permitOf(c), c.req.valid('param').id)))
     })
     .post('/', guard('create'), zValidator('json', z.object({
       companyId: z.string().uuid(), docNo: z.string().nullable().optional(),
@@ -300,7 +377,7 @@ export function expenseReportRoutes(deps: {
       employeeId: z.string().uuid(), paymentAccountId: z.string().uuid(),
     }).strict(), validationHook), async (c) => {
       const item = await expenses.createReport(permitOf(c), c.req.valid('json'))
-      return c.json(item, 201)
+      return c.json(expenseReportDto(item), 201)
     })
     .patch('/:id', guard('update'), zValidator('param', idParam, validationHook),
       zValidator('json', z.object({
@@ -308,15 +385,9 @@ export function expenseReportRoutes(deps: {
         postingDate: z.string().nullable().optional(), remarks: z.string().nullable().optional(),
         employeeId: z.string().uuid().optional(), paymentAccountId: z.string().uuid().optional(),
       }).strict(), validationHook), async (c) => {
-      const raw = (await c.req.json()) as Record<string, unknown>
-      const body = c.req.valid('json')
-      const item = await expenses.updateReport(permitOf(c), c.req.valid('param').id, {
-        ...body,
-        docNoPresent: present(raw, 'docNo'),
-        postingDatePresent: present(raw, 'postingDate'),
-        remarksPresent: present(raw, 'remarks'),
-      })
-      return c.json(item)
+      // 出现即写、缺省不动：内核 present-key 语义取代旧的 *Present 布尔
+      const item = await expenses.updateReport(permitOf(c), c.req.valid('param').id, c.req.valid('json'))
+      return c.json(expenseReportDto(item))
     })
     .delete('/:id', guard('delete'), zValidator('param', idParam, validationHook), async (c) => {
       await expenses.deleteReport(permitOf(c), c.req.valid('param').id)
@@ -324,10 +395,13 @@ export function expenseReportRoutes(deps: {
     })
     .post('/:id/audit', guard('audit'), zValidator('param', idParam, validationHook),
       zValidator('json', z.object({ postingDate: z.string() }).strict(), validationHook), async (c) => {
-      return c.json(await expenses.auditReport(permitOf(c), c.req.valid('param').id, c.req.valid('json').postingDate))
+      const item = await expenses.auditReport(
+        permitOf(c), c.req.valid('param').id, c.req.valid('json').postingDate,
+      )
+      return c.json(expenseReportDto(item))
     })
     .post('/:id/void', guard('void'), zValidator('param', idParam, validationHook), async (c) => {
-      return c.json(await expenses.voidReport(permitOf(c), c.req.valid('param').id))
+      return c.json(expenseReportDto(await expenses.voidReport(permitOf(c), c.req.valid('param').id)))
     })
 }
 
@@ -340,10 +414,11 @@ export function expenseReportItemRoutes(deps: {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      return c.json(await expenses.listItems(permitOf(c), toList(c.req.valid('json'))))
+      const result = await expenses.listItems(permitOf(c), toList(c.req.valid('json')))
+      return c.json({ count: result.count, results: result.results.map(expenseReportItemDto) })
     })
     .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
-      return c.json(await expenses.getItem(permitOf(c), c.req.valid('param').id))
+      return c.json(expenseReportItemDto(await expenses.getItem(permitOf(c), c.req.valid('param').id)))
     })
     .post('/', guard('create'), zValidator('json', z.object({
       reportId: z.string().uuid(), idx: z.number().int(), kind: z.string(),
@@ -352,7 +427,7 @@ export function expenseReportItemRoutes(deps: {
       expenseAccountId: z.string().uuid().nullable().optional(),
     }).strict(), validationHook), async (c) => {
       const item = await expenses.createItem(permitOf(c), c.req.valid('json'))
-      return c.json(item, 201)
+      return c.json(expenseReportItemDto(item), 201)
     })
     .patch('/:id', guard('update'), zValidator('param', idParam, validationHook),
       zValidator('json', z.object({
@@ -362,17 +437,9 @@ export function expenseReportItemRoutes(deps: {
         invoiceId: z.string().uuid().nullable().optional(),
         expenseAccountId: z.string().uuid().nullable().optional(),
       }).strict(), validationHook), async (c) => {
-      const raw = (await c.req.json()) as Record<string, unknown>
-      const body = c.req.valid('json')
-      const item = await expenses.updateItem(permitOf(c), c.req.valid('param').id, {
-        ...body,
-        summaryPresent: present(raw, 'summary'),
-        amountPresent: present(raw, 'amount'),
-        remarksPresent: present(raw, 'remarks'),
-        invoiceIdPresent: present(raw, 'invoiceId'),
-        expenseAccountIdPresent: present(raw, 'expenseAccountId'),
-      })
-      return c.json(item)
+      // 出现即写、缺省不动：内核 present-key 语义取代旧的 *Present 布尔
+      const item = await expenses.updateItem(permitOf(c), c.req.valid('param').id, c.req.valid('json'))
+      return c.json(expenseReportItemDto(item))
     })
     .delete('/:id', guard('delete'), zValidator('param', idParam, validationHook), async (c) => {
       await expenses.deleteItem(permitOf(c), c.req.valid('param').id)
@@ -411,10 +478,11 @@ export function billTransactionRoutes(deps: {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      return c.json(await bills.listTransactions(permitOf(c), toList(c.req.valid('json'))))
+      const result = await bills.listTransactions(permitOf(c), toList(c.req.valid('json')))
+      return c.json({ count: result.count, results: result.results.map(billTransactionDto) })
     })
     .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
-      return c.json(await bills.getTransaction(permitOf(c), c.req.valid('param').id))
+      return c.json(billTransactionDto(await bills.getTransaction(permitOf(c), c.req.valid('param').id)))
     })
     .post('/', guard('create'), zValidator('json', z.object({
       docNo: z.string().nullable().optional(),
@@ -436,11 +504,13 @@ export function billTransactionRoutes(deps: {
         ...body,
         billAttrs: body.billAttrs as never,
       })
-      return c.json(item, 201)
+      return c.json(billTransactionDto(item), 201)
     })
     .patch('/:id', guard('update'), zValidator('param', idParam, validationHook),
       zValidator('json', z.record(z.string(), z.unknown()), validationHook), async (c) => {
-      return c.json(await bills.updateTransaction(permitOf(c), c.req.valid('param').id, c.req.valid('json')))
+      // 出现即写、缺省不动：内核 present-key 语义
+      const item = await bills.updateTransaction(permitOf(c), c.req.valid('param').id, c.req.valid('json'))
+      return c.json(billTransactionDto(item))
     })
     .delete('/:id', guard('delete'), zValidator('param', idParam, validationHook), async (c) => {
       await bills.deleteTransaction(permitOf(c), c.req.valid('param').id)
@@ -448,12 +518,13 @@ export function billTransactionRoutes(deps: {
     })
     .post('/:id/audit', guard('audit'), zValidator('param', idParam, validationHook),
       zValidator('json', z.object({ postingDate: z.string().nullable().optional() }).strict(), validationHook), async (c) => {
-      return c.json(await bills.auditTransaction(
+      const item = await bills.auditTransaction(
         permitOf(c), c.req.valid('param').id, c.req.valid('json').postingDate,
-      ))
+      )
+      return c.json(billTransactionDto(item))
     })
     .post('/:id/void', guard('void'), zValidator('param', idParam, validationHook), async (c) => {
-      return c.json(await bills.voidTransaction(permitOf(c), c.req.valid('param').id))
+      return c.json(billTransactionDto(await bills.voidTransaction(permitOf(c), c.req.valid('param').id)))
     })
     // OCR 预填是「为建交易读票面影像」：本资源 create（文件行级可达性归平台）
     .post('/ocr', guard('create'), zValidator('json', z.object({

@@ -1,124 +1,87 @@
 /**
- * 费用报销单：挂票/无票行、审核/作废走总账过账骨架。
+ * 费用报销单：单头 + 报销行走标准动作内核（CRUD + workflow 转移），
+ * 审核/作废两个转移的 effect 直调 GL 引擎（取代 posting/skeleton 的编排 spec）。
  *
  * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
- * 列表 `listAuthorized`、写前取行 `loadAuthorized`、create 走 `assertCompanyWritable`。
- * 行（accExpenseReportItems）是 via(母单)，判定递归母单。
+ * 内核内部走 listAuthorized / loadAuthorized(forUpdate) / assertCompanyWritable。
+ * 行（accExpenseReportItems）是 via(母单)，判定递归母单；母单锁 + 草稿门由子行内核编排。
+ *
+ * 内核之外只剩一层薄壳（wrapper）：日期/十进制的**格式**校验必须先于内核
+ * 规范化跑（内核 normalizeInput 直接 `decimal()`，脏值会炸成 500），
+ * 审核入参 postingDate 的校验亦先于状态门——两处顺序与迁移前逐字一致。
  */
-import { decimal, type ListQuery } from '@synie/shared'
+import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import { withTx, type DbHandle } from '~/db/tx.ts'
+import type { DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import type { GlEngine, GlEntry } from '~/engines/gl/index.ts'
-import {
-  auditCreated, auditDiff, writeAudit,
-} from '~/platform/audit/write.ts'
-import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
-import { listAuthorized } from '~/db/list.ts'
-import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
-import { mapWriteError } from '~/db/dberr.ts'
-import { auditGlDocInTx, voidGlDocInTx } from '~/platform/posting/skeleton.ts'
-import {
-  actorUserId, asDateOnly, asDateOnlyOrNull, asIso, asIsoOrNull, conflict, lower,
-  notFound, parseDecimal, requireDate, upper,
-  wireDec, wireEnum,
-} from './common.ts'
-import { expenseReportItemResourceMeta, expenseReportResourceMeta } from './meta.ts'
+import { createStandardChildService } from '~/platform/standard/child.ts'
+import { auditStamp, createStandardService } from '~/platform/standard/service.ts'
+import { conflict, parseDecimal, requireDate, upper } from './common.ts'
 
 export const EXPENSE_REPORT_RESOURCE = 'accExpenseReports'
 export const EXPENSE_REPORT_ITEM_RESOURCE = 'accExpenseReportItems'
 
-const REPORT_TABLE = 'acc_expense_report'
-const REPORT_ITEM_TABLE = 'acc_expense_report_item'
+const LABEL = '费用报销单'
+const ITEM_LABEL = '报销行'
+const VOUCHER = 'acc.expense_report'
 
-export interface ExpenseReport {
-  id: string; docNo: string; expenseDate: string; postingDate: string | null
-  remarks: string | null; status: string; auditedAt: string | null
-  insertedAt: string; updatedAt: string; companyId: string; employeeId: string
-  paymentAccountId: string; createdById: string | null; auditedById: string | null
-}
-
-export interface ExpenseReportItem {
-  id: string; idx: number; kind: string; summary: string | null; amount: string | null
-  remarks: string | null; insertedAt: string; updatedAt: string; reportId: string
-  companyId: string; invoiceId: string | null; expenseAccountId: string | null
-}
-
-const REPORT_AUDIT = auditFieldsOf(expenseReportResourceMeta())
-const ITEM_AUDIT = auditFieldsOf(expenseReportItemResourceMeta())
 const WRITE_MAP = [
   { code: '23505', message: '报销单编号冲突' },
   { code: '23503', message: '报销单引用不存在' },
 ] as const
-const VOUCHER = 'acc.expense_report'
 
-function mapReport(row: Record<string, unknown>): ExpenseReport {
-  return {
-    id: String(row.id), docNo: String(row.doc_no),
-    expenseDate: asDateOnly(row.expense_date),
-    postingDate: asDateOnlyOrNull(row.posting_date),
-    remarks: row.remarks == null ? null : String(row.remarks),
-    status: wireEnum(row.status), auditedAt: asIsoOrNull(row.audited_at),
-    insertedAt: asIso(row.inserted_at), updatedAt: asIso(row.updated_at),
-    companyId: String(row.company_id), employeeId: String(row.employee_id),
-    paymentAccountId: String(row.payment_account_id),
-    createdById: row.created_by_id == null ? null : String(row.created_by_id),
-    auditedById: row.audited_by_id == null ? null : String(row.audited_by_id),
-  }
+/** wire 形单头（内核口径：date 为 YYYY-MM-DD 字符串，datetime 为 Date） */
+export interface ExpenseReport {
+  id: string
+  docNo: string
+  expenseDate: string
+  postingDate: string | null
+  remarks: string | null
+  status: 'DRAFT' | 'AUDITED' | 'VOIDED'
+  auditedAt: Date | null
+  insertedAt: Date
+  updatedAt: Date
+  companyId: string
+  employeeId: string
+  paymentAccountId: string
+  createdById: string | null
+  auditedById: string | null
+  [key: string]: unknown
 }
 
-function mapItem(row: Record<string, unknown>): ExpenseReportItem {
-  return {
-    id: String(row.id), idx: Number(row.idx), kind: wireEnum(row.kind),
-    summary: row.summary == null ? null : String(row.summary),
-    amount: wireDec(row.amount),
-    remarks: row.remarks == null ? null : String(row.remarks),
-    insertedAt: asIso(row.inserted_at), updatedAt: asIso(row.updated_at),
-    reportId: String(row.report_id), companyId: String(row.company_id),
-    invoiceId: row.invoice_id == null ? null : String(row.invoice_id),
-    expenseAccountId: row.expense_account_id == null ? null : String(row.expense_account_id),
-  }
+export interface ExpenseReportItem {
+  id: string
+  idx: number
+  kind: 'INVOICED' | 'MANUAL'
+  summary: string | null
+  amount: string | null
+  remarks: string | null
+  insertedAt: Date
+  updatedAt: Date
+  reportId: string
+  companyId: string
+  invoiceId: string | null
+  expenseAccountId: string | null
+  /** 投影列：母单编号（审计 record_label `单号#行号` 用；不进 HTTP DTO） */
+  reportDocNo: string
+  [key: string]: unknown
 }
 
-function reportSnap(r: ExpenseReport): Record<string, unknown> {
-  return {
-    doc_no: r.docNo, expense_date: r.expenseDate, posting_date: r.postingDate,
-    remarks: r.remarks, status: r.status, company_id: r.companyId,
-    employee_id: r.employeeId, payment_account_id: r.paymentAccountId,
-  }
-}
-
-function itemSnap(i: ExpenseReportItem): Record<string, unknown> {
-  return {
-    idx: i.idx, kind: i.kind, summary: i.summary, amount: i.amount, remarks: i.remarks,
-    report_id: i.reportId, company_id: i.companyId, invoice_id: i.invoiceId,
-    expense_account_id: i.expenseAccountId,
-  }
-}
-
-async function loadReport(db: DbHandle, id: string, lock: boolean): Promise<ExpenseReport> {
-  const rows = await sql<Record<string, unknown>>`
-    SELECT id,doc_no,expense_date,posting_date,remarks,status,audited_at,inserted_at,updated_at,
-      company_id,employee_id,payment_account_id,created_by_id,audited_by_id
-    FROM acc_expense_report WHERE id=${id}::uuid ${lock ? sql`FOR UPDATE` : sql``}
-  `.execute(db)
-  if (!rows.rows[0]) throw notFound('费用报销单')
-  return mapReport(rows.rows[0])
-}
-
-async function loadItem(db: DbHandle, id: string): Promise<ExpenseReportItem> {
-  const rows = await sql<Record<string, unknown>>`
-    SELECT id,idx,kind,summary,amount,remarks,inserted_at,updated_at,report_id,company_id,invoice_id,expense_account_id
-    FROM acc_expense_report_item WHERE id=${id}::uuid
-  `.execute(db)
-  if (!rows.rows[0]) throw notFound('报销行')
-  return mapItem(rows.rows[0])
-}
+/** 行投影：母单编号随行带出（子行自己没有名称列） */
+const ITEM_SOURCE = sql`
+  FROM (
+    SELECT i.*, r.doc_no AS report_doc_no
+    FROM acc_expense_report_item i
+    JOIN acc_expense_report r ON r.id = i.report_id
+  ) acc_expense_report_item
+`
+const ITEM_SELECT_EXTRA = sql`report_doc_no`
 
 async function validateEmployeeAndAccount(
   db: DbHandle, companyId: string, employeeId: string, accountId: string,
@@ -130,7 +93,18 @@ async function validateEmployeeAndAccount(
         AND active AND NOT is_group) AS account
   `.execute(db)
   if (!rows.rows[0]?.employee || !rows.rows[0]?.account) {
-    throw ApiError.validation('费用报销单参数不合法', { references: ['员工或付款科目不合法'] })
+    throw ApiError.validation(`${LABEL}参数不合法`, { references: ['员工或付款科目不合法'] })
+  }
+}
+
+/**
+ * 十进制格式前置闸：内核 normalizeInput 会直接 `decimal()`，脏值将抛出非 ApiError。
+ * 文案与 `parseDecimal` 的首个分支逐字一致（正数校验仍留在领域钩子里）。
+ */
+function assertDecimalShape(value: unknown, field: string): void {
+  if (value === null || value === undefined) return
+  if (typeof value !== 'string' || !isDecimalString(value.trim())) {
+    throw ApiError.validation('数值参数不合法', { [field]: ['必须是十进制字符串'] })
   }
 }
 
@@ -142,161 +116,10 @@ export function createExpenseService(
   gl: GlEngine,
   registry: Registry,
 ) {
-  const reportTarget = registry.authzTarget(EXPENSE_REPORT_RESOURCE)
-  const itemTarget = registry.authzTarget(EXPENSE_REPORT_ITEM_RESOURCE)
-
-  /** 按 Permit 取报销单（可锁）；不命中一律 not_found */
-  async function authorizedReport(
-    handle: DbHandle, permit: Permit, id: string, forUpdate: boolean,
-  ): Promise<ExpenseReport> {
-    const row = await loadAuthorized({
-      db: handle, permit, target: reportTarget, table: REPORT_TABLE, id, forUpdate,
-      notFoundMessage: '费用报销单不存在',
-    })
-    return mapReport(row)
-  }
-
-  /** 按 Permit 取报销行；via 链递归母单 */
-  async function authorizedItem(
-    handle: DbHandle, permit: Permit, id: string,
-  ): Promise<ExpenseReportItem> {
-    const row = await loadAuthorized({
-      db: handle, permit, target: itemTarget, table: REPORT_ITEM_TABLE, id,
-      notFoundMessage: '报销行不存在',
-    })
-    return mapItem(row)
-  }
-
-  async function listReports(permit: Permit, query: Partial<ListQuery>) {
-    return listAuthorized({
-      db, permit, target: reportTarget, alias: REPORT_TABLE,
-      resource: expenseReportResourceMeta(),
-      source: sql` FROM acc_expense_report`,
-      select: sql`SELECT id,doc_no,expense_date,posting_date,remarks,status,audited_at,inserted_at,updated_at,
-        company_id,employee_id,payment_account_id,created_by_id,audited_by_id`,
-      defaultOrder: sql`"id"`, query, mapRow: mapReport,
-    })
-  }
-
-  async function getReport(permit: Permit, id: string) {
-    return authorizedReport(db, permit, id, false)
-  }
-
-  async function createReport(permit: Permit, input: {
-    companyId: string; docNo?: string | null; expenseDate: string
-    postingDate?: string | null; remarks?: string | null
-    employeeId: string; paymentAccountId: string
-  }) {
-    const actor = permit.actor
-    // 入参校验（400）先于公司边界（404）
-    const expenseDate = requireDate(input.expenseDate, 'expenseDate')
-    if (!input.employeeId || !input.paymentAccountId) {
-      throw ApiError.validation('费用报销单参数不合法', { references: ['员工与付款科目必填'] })
-    }
-    const postingDate = input.postingDate ? requireDate(input.postingDate, 'postingDate') : null
-    assertCompanyWritable(permit, input.companyId, '费用报销单不存在')
-    return withTx(db, async (trx) => {
-      await validateEmployeeAndAccount(trx, input.companyId, input.employeeId, input.paymentAccountId)
-      let docNo = (input.docNo ?? '').trim()
-      if (!docNo) {
-        docNo = await numbering.nextInTx(trx, {
-          resource: 'acc.expense_report',
-          values: { company_id: input.companyId, posting_date: expenseDate },
-        })
-      }
-      try {
-        const ins = await sql<{ id: string }>`
-          INSERT INTO acc_expense_report(doc_no,expense_date,posting_date,remarks,company_id,employee_id,payment_account_id,created_by_id)
-          VALUES (${docNo},${expenseDate}::date,${postingDate}::date,${input.remarks ?? null},
-            ${input.companyId}::uuid,${input.employeeId}::uuid,${input.paymentAccountId}::uuid,${actorUserId(actor)}::uuid)
-          RETURNING id
-        `.execute(trx)
-        const result = await loadReport(trx, ins.rows[0]!.id, false)
-        await writeAudit(trx, actor, {
-          resource: 'acc_expense_report', recordId: result.id, recordLabel: docNo,
-          companyId: result.companyId, actionType: 'create', actionName: 'create',
-          changes: auditCreated(reportSnap(result), REPORT_AUDIT),
-        })
-        return result
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '创建费用报销单失败', WRITE_MAP)
-      }
-    })
-  }
-
-  async function updateReport(permit: Permit, id: string, input: {
-    docNo?: string | null; docNoPresent?: boolean
-    expenseDate?: string
-    postingDate?: string | null; postingDatePresent?: boolean
-    remarks?: string | null; remarksPresent?: boolean
-    employeeId?: string; paymentAccountId?: string
-  }) {
-    const actor = permit.actor
-    return withTx(db, async (trx) => {
-      const before = await authorizedReport(trx, permit, id, true)
-      if (before.status !== 'DRAFT') throw conflict('仅草稿报销单可修改或删除')
-      let docNo = before.docNo
-      let expenseDate = before.expenseDate
-      let postingDate = before.postingDate
-      let remarks = before.remarks
-      let employeeId = before.employeeId
-      let paymentAccountId = before.paymentAccountId
-      if (input.docNoPresent) {
-        if (!input.docNo || !input.docNo.trim()) {
-          throw ApiError.validation('费用报销单参数不合法', { docNo: ['不能为空'] })
-        }
-        docNo = input.docNo.trim()
-      }
-      if (input.expenseDate !== undefined) expenseDate = requireDate(input.expenseDate, 'expenseDate')
-      if (input.postingDatePresent) {
-        postingDate = input.postingDate ? requireDate(input.postingDate, 'postingDate') : null
-      }
-      if (input.remarksPresent) remarks = input.remarks ?? null
-      if (input.employeeId !== undefined) employeeId = input.employeeId
-      if (input.paymentAccountId !== undefined) paymentAccountId = input.paymentAccountId
-      await validateEmployeeAndAccount(trx, before.companyId, employeeId, paymentAccountId)
-      try {
-        await sql`
-          UPDATE acc_expense_report SET doc_no=${docNo},expense_date=${expenseDate}::date,
-            posting_date=${postingDate}::date,remarks=${remarks},employee_id=${employeeId}::uuid,
-            payment_account_id=${paymentAccountId}::uuid,updated_at=(now() AT TIME ZONE 'utc')
-          WHERE id=${id}::uuid
-        `.execute(trx)
-        const result = await loadReport(trx, id, false)
-        await writeAudit(trx, actor, {
-          resource: 'acc_expense_report', recordId: id, recordLabel: result.docNo,
-          companyId: result.companyId, actionType: 'update', actionName: 'update',
-          changes: auditDiff(reportSnap(before), reportSnap(result), REPORT_AUDIT),
-        })
-        return result
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '更新费用报销单失败', WRITE_MAP)
-      }
-    })
-  }
-
-  async function deleteReport(permit: Permit, id: string) {
-    const actor = permit.actor
-    return withTx(db, async (trx) => {
-      const before = await authorizedReport(trx, permit, id, true)
-      if (before.status !== 'DRAFT') throw conflict('仅草稿报销单可修改或删除')
-      try {
-        await sql`DELETE FROM acc_expense_report WHERE id=${id}::uuid`.execute(trx)
-        await writeAudit(trx, actor, {
-          resource: 'acc_expense_report', recordId: id, recordLabel: before.docNo,
-          companyId: before.companyId, actionType: 'delete', actionName: 'delete',
-          changes: auditDiff(reportSnap(before), {}, REPORT_AUDIT),
-        })
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '删除费用报销单失败', WRITE_MAP)
-      }
-    })
-  }
-
-  async function expenseEntries(trx: DbHandle, report: ExpenseReport): Promise<{ entries: GlEntry[]; total: ReturnType<typeof decimal> }> {
+  /** 报销单过账分录（挂票行取发票价税合计，无票行取行金额） */
+  async function expenseEntries(
+    trx: DbHandle, report: ExpenseReport,
+  ): Promise<{ entries: GlEntry[]; total: ReturnType<typeof decimal> }> {
     const rows = await sql<{
       kind: string; amount: string | null; expense_account_id: string | null; invoice_id: string | null
     }>`
@@ -341,67 +164,88 @@ export function createExpenseService(
     return { entries, total }
   }
 
-  async function auditReport(permit: Permit, id: string, postingDate: string) {
-    const actor = permit.actor
-    const posting = requireDate(postingDate, 'postingDate')
-    return withTx(db, async (trx) =>
-      auditGlDocInTx(trx, actor, gl, {
-        voucherType: VOUCHER,
-        headTable: 'acc_expense_report',
-        conflictMessage: '报销单已被并发处理',
-        lockDraft: async (t) => {
-          const before = await authorizedReport(t, permit, id, true)
-          if (before.status !== 'DRAFT') throw conflict('仅草稿报销单可审核')
-          return before
+  const reports = createStandardService<ExpenseReport>({
+    db,
+    registry,
+    resource: EXPENSE_REPORT_RESOURCE,
+    defaultOrder: sql`"id"`,
+    writeErrors: [...WRITE_MAP],
+    hooks: {
+      beforeWrite: async (trx, { action, draft }) => {
+        await validateEmployeeAndAccount(
+          trx, String(draft.companyId), String(draft.employeeId), String(draft.paymentAccountId),
+        )
+        // 取号留在钩子（同事务）：values 口径与迁移前逐字一致——报销日冒充 posting_date；
+        // 内核 numbering 只会按 draft 派生 values，口径会漂
+        if (action === 'create' && !String(draft.docNo ?? '').trim()) {
+          draft.docNo = await numbering.nextInTx(trx, {
+            resource: 'acc.expense_report',
+            values: { company_id: draft.companyId, posting_date: draft.expenseDate },
+          })
+        }
+      },
+      // created_by_id 是 readonly 列且本资源不声明 owner 绑定：随 INSERT 落库，保审计快照完整
+      insertColumns: ({ permit }) => ({ created_by_id: permit.actor.userId || null }),
+    },
+    workflow: {
+      mutableMessage: '仅草稿报销单可修改或删除',
+      transitions: [
+        {
+          key: 'audit',
+          label: '审核',
+          from: ['DRAFT'],
+          to: 'AUDITED',
+          guardMessage: '仅草稿报销单可审核',
+          stamps: ({ permit, input }) => ({
+            ...auditStamp(permit),
+            posting_date: input.postingDate,
+          }),
+          effect: async (trx, { before, input }) => {
+            const report = before as ExpenseReport
+            await validateEmployeeAndAccount(
+              trx, report.companyId, report.employeeId, report.paymentAccountId,
+            )
+            const { entries, total } = await expenseEntries(trx, report)
+            if (total.isZero()) throw conflict('报销单必须至少有一行')
+            // 金额口径 Decimal|string（引擎 interface 瘦身后）
+            entries.push({ accountId: report.paymentAccountId, debit: '0', credit: total })
+            await gl.post(
+              trx,
+              {
+                type: VOUCHER,
+                id: report.id,
+                no: report.docNo,
+                companyId: report.companyId,
+                postingDate: String(input.postingDate),
+              },
+              entries,
+            )
+          },
         },
-        collect: async (t, before) => {
-          await validateEmployeeAndAccount(t, before.companyId, before.employeeId, before.paymentAccountId)
-          const { entries, total } = await expenseEntries(t, before)
-          if (total.isZero()) throw conflict('报销单必须至少有一行')
-          // 金额口径 Decimal|string（引擎 interface 瘦身后）
-          entries.push({ accountId: before.paymentAccountId, debit: '0', credit: total })
-          return { entries, postingDate: posting }
+        {
+          key: 'void',
+          label: '作废',
+          from: ['AUDITED'],
+          to: 'VOIDED',
+          guardMessage: '仅已审核报销单可作废',
+          effect: async (trx, { before }) => {
+            await gl.cancel(trx, { type: VOUCHER, id: String(before.id) })
+          },
         },
-        voucherOf: (h) => ({ id: h.id, no: h.docNo, companyId: h.companyId }),
-        reload: (t, headId) => loadReport(t, headId, false),
-        snapshot: reportSnap,
-        auditFields: REPORT_AUDIT,
-      }),
-    )
-  }
+      ],
+    },
+  })
 
-  async function voidReport(permit: Permit, id: string) {
-    const actor = permit.actor
-    return withTx(db, async (trx) =>
-      voidGlDocInTx(trx, actor, gl, {
-        voucherType: VOUCHER,
-        headTable: 'acc_expense_report',
-        lockAudited: async (t) => {
-          const before = await authorizedReport(t, permit, id, true)
-          if (before.status !== 'AUDITED') throw conflict('仅已审核报销单可作废')
-          return before
-        },
-        voucherOf: (h) => ({ id: h.id, no: h.docNo, companyId: h.companyId }),
-        reload: (t, headId) => loadReport(t, headId, false),
-        snapshot: reportSnap,
-        auditFields: REPORT_AUDIT,
-      }),
-    )
-  }
-
+  /** 挂票/无票行的领域校验（母单已锁、已过草稿门）；返回落库用的规范值 */
   async function validateExpenseItem(
     trx: DbHandle, report: ExpenseReport,
-    input: {
-      idx: number; kind: string; summary?: string | null; amount?: string | null
-      invoiceId?: string | null; expenseAccountId?: string | null
-    },
+    input: Record<string, unknown>,
     ownId: string | null,
   ): Promise<{ kind: string; amount: string | null }> {
-    const kind = upper(input.kind)
-    if (input.idx < 1) throw ApiError.validation('报销行参数不合法', { idx: ['必须大于零'] })
+    const kind = upper(String(input.kind ?? ''))
     if (kind === 'INVOICED') {
       if (!input.invoiceId || input.summary != null || input.amount != null || input.expenseAccountId != null) {
-        throw ApiError.validation('报销行参数不合法', { kind: ['挂票行仅允许发票与备注'] })
+        throw ApiError.validation(`${ITEM_LABEL}参数不合法`, { kind: ['挂票行仅允许发票与备注'] })
       }
       const inv = await sql<{
         company_id: string; party_type: string; party_id: string; direction: string; status: string; claimed: boolean
@@ -411,7 +255,7 @@ export function createExpenseService(
             JOIN acc_expense_report r ON r.id=other.report_id
             WHERE other.invoice_id=inv.id AND other.id<>${ownId ?? '00000000-0000-0000-0000-000000000000'}::uuid
               AND r.status<>'voided') AS claimed
-        FROM acc_vat_invoice inv WHERE id=${input.invoiceId}::uuid FOR UPDATE
+        FROM acc_vat_invoice inv WHERE id=${String(input.invoiceId)}::uuid FOR UPDATE
       `.execute(trx)
       const row = inv.rows[0]
       if (
@@ -424,139 +268,143 @@ export function createExpenseService(
       return { kind, amount: null }
     }
     if (kind === 'MANUAL') {
-      if (input.invoiceId != null || !input.summary?.trim() || !input.amount || !input.expenseAccountId) {
-        throw ApiError.validation('报销行参数不合法', { kind: ['无票行须填写摘要、正金额与费用科目'] })
+      const summary = typeof input.summary === 'string' ? input.summary : null
+      if (input.invoiceId != null || !summary?.trim() || !input.amount || !input.expenseAccountId) {
+        throw ApiError.validation(`${ITEM_LABEL}参数不合法`, { kind: ['无票行须填写摘要、正金额与费用科目'] })
       }
-      const amount = parseDecimal(input.amount, 'amount', true, false)
+      const amount = parseDecimal(String(input.amount), 'amount', true, false)
       const valid = await sql<{ e: boolean }>`
-        SELECT EXISTS(SELECT 1 FROM bas_account WHERE id=${input.expenseAccountId}::uuid
+        SELECT EXISTS(SELECT 1 FROM bas_account WHERE id=${String(input.expenseAccountId)}::uuid
           AND company_id=${report.companyId}::uuid AND active AND NOT is_group) AS e
       `.execute(trx)
       if (!valid.rows[0]?.e) {
-        throw ApiError.validation('报销行参数不合法', { expenseAccountId: ['费用科目不合法'] })
+        throw ApiError.validation(`${ITEM_LABEL}参数不合法`, { expenseAccountId: ['费用科目不合法'] })
       }
       return { kind, amount: amount.toFixed() }
     }
-    throw ApiError.validation('报销行参数不合法', { kind: ['只允许 INVOICED 或 MANUAL'] })
+    throw ApiError.validation(`${ITEM_LABEL}参数不合法`, { kind: ['只允许 INVOICED 或 MANUAL'] })
   }
 
-  async function listItems(permit: Permit, query: Partial<ListQuery>) {
-    return listAuthorized({
-      db, permit, target: itemTarget, alias: REPORT_ITEM_TABLE,
-      resource: expenseReportItemResourceMeta(),
-      source: sql` FROM acc_expense_report_item`,
-      select: sql`SELECT id,idx,kind,summary,amount,remarks,inserted_at,updated_at,report_id,company_id,invoice_id,expense_account_id`,
-      defaultOrder: sql`"id"`, query, mapRow: mapItem,
+  const items = createStandardChildService<ExpenseReportItem>({
+    db,
+    registry,
+    resource: EXPENSE_REPORT_ITEM_RESOURCE,
+    notFound: `${ITEM_LABEL}不存在`,
+    defaultOrder: sql`"id"`,
+    writeErrors: [...WRITE_MAP],
+    projection: {
+      source: ITEM_SOURCE,
+      selectExtra: ITEM_SELECT_EXTRA,
+      mapExtra: (row) => ({ reportDocNo: String(row.report_doc_no) }),
+    },
+    // 行审计标签 `单号#行号`（迁移前逐字）
+    recordLabel: (item) => `${String(item.reportDocNo)}#${String(item.idx)}`,
+    parent: {
+      resource: EXPENSE_REPORT_RESOURCE,
+      fkField: 'reportId',
+      notFound: `${LABEL}不存在`,
+      inheritFields: ['companyId'],
+      gate: (report) => {
+        if (report.status !== 'DRAFT') throw conflict('仅草稿报销单可增删改行')
+      },
+    },
+    hooks: {
+      validate: ({ draft }) => {
+        if (Number(draft.idx) < 1) {
+          throw ApiError.validation(`${ITEM_LABEL}参数不合法`, { idx: ['必须大于零'] })
+        }
+      },
+      beforeWrite: async (trx, { draft, parent, before }) => {
+        const normalized = await validateExpenseItem(
+          trx, parent as ExpenseReport, draft, before ? String(before.id) : null,
+        )
+        draft.kind = normalized.kind
+        draft.amount = normalized.amount
+      },
+    },
+  })
+
+  // —— 单头（wrapper 只做格式前置校验，其余全归内核） ——
+
+  async function createReport(permit: Permit, input: {
+    companyId: string; docNo?: string | null; expenseDate: string
+    postingDate?: string | null; remarks?: string | null
+    employeeId: string; paymentAccountId: string
+  }): Promise<ExpenseReport> {
+    // 入参校验（400）先于公司边界（404）
+    const expenseDate = requireDate(input.expenseDate, 'expenseDate')
+    if (!input.employeeId || !input.paymentAccountId) {
+      throw ApiError.validation(`${LABEL}参数不合法`, { references: ['员工与付款科目必填'] })
+    }
+    const postingDate = input.postingDate ? requireDate(input.postingDate, 'postingDate') : null
+    const docNo = (input.docNo ?? '').trim()
+    return reports.create(permit, {
+      companyId: input.companyId,
+      docNo: docNo === '' ? undefined : docNo,
+      expenseDate,
+      postingDate,
+      remarks: input.remarks ?? null,
+      employeeId: input.employeeId,
+      paymentAccountId: input.paymentAccountId,
     })
   }
 
-  async function getItem(permit: Permit, id: string) {
-    return authorizedItem(db, permit, id)
+  /** present-key 语义：出现即写、null 清空、缺省不动（取代旧的 *Present 布尔） */
+  async function updateReport(
+    permit: Permit, id: string, patch: Record<string, unknown>,
+  ): Promise<ExpenseReport> {
+    const next: Record<string, unknown> = { ...patch }
+    if ('docNo' in patch) {
+      const docNo = typeof patch.docNo === 'string' ? patch.docNo.trim() : ''
+      if (docNo === '') throw ApiError.validation(`${LABEL}参数不合法`, { docNo: ['不能为空'] })
+      next.docNo = docNo
+    }
+    if (patch.expenseDate !== undefined) {
+      next.expenseDate = requireDate(String(patch.expenseDate), 'expenseDate')
+    }
+    if ('postingDate' in patch) {
+      next.postingDate = patch.postingDate ? requireDate(String(patch.postingDate), 'postingDate') : null
+    }
+    if ('remarks' in patch) next.remarks = patch.remarks ?? null
+    return reports.update(permit, id, next)
   }
 
-  async function createItem(permit: Permit, input: {
-    reportId: string; idx: number; kind: string
-    summary?: string | null; amount?: string | null; remarks?: string | null
-    invoiceId?: string | null; expenseAccountId?: string | null
-  }) {
-    const actor = permit.actor
-    return withTx(db, async (trx) => {
-      // 加锁顺序：母单先行（授权 + 草稿门）
-      const report = await authorizedReport(trx, permit, input.reportId, true)
-      if (report.status !== 'DRAFT') throw conflict('仅草稿报销单可增删改行')
-      const normalized = await validateExpenseItem(trx, report, input, null)
-      try {
-        const ins = await sql<{ id: string }>`
-          INSERT INTO acc_expense_report_item(idx,kind,summary,amount,remarks,report_id,company_id,invoice_id,expense_account_id)
-          VALUES (${input.idx},${lower(normalized.kind)},${input.summary ?? null},${normalized.amount},
-            ${input.remarks ?? null},${report.id}::uuid,${report.companyId}::uuid,
-            ${input.invoiceId ?? null}::uuid,${input.expenseAccountId ?? null}::uuid)
-          RETURNING id
-        `.execute(trx)
-        const result = await loadItem(trx, ins.rows[0]!.id)
-        await writeAudit(trx, actor, {
-          resource: 'acc_expense_report_item', recordId: result.id,
-          recordLabel: `${report.docNo}#${result.idx}`,
-          companyId: result.companyId, actionType: 'create', actionName: 'create',
-          changes: auditCreated(itemSnap(result), ITEM_AUDIT),
-        })
-        return result
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '创建报销行失败', WRITE_MAP)
-      }
-    })
+  /** 审核：过账日期校验先于状态门（与迁移前顺序一致） */
+  async function auditReport(permit: Permit, id: string, postingDate: string): Promise<ExpenseReport> {
+    const posting = requireDate(postingDate, 'postingDate')
+    return reports.transition(permit, id, 'audit', { postingDate: posting })
   }
 
-  async function updateItem(permit: Permit, id: string, input: {
-    idx?: number; kind?: string
-    summary?: string | null; summaryPresent?: boolean
-    amount?: string | null; amountPresent?: boolean
-    remarks?: string | null; remarksPresent?: boolean
-    invoiceId?: string | null; invoiceIdPresent?: boolean
-    expenseAccountId?: string | null; expenseAccountIdPresent?: boolean
-  }) {
-    const actor = permit.actor
-    return withTx(db, async (trx) => {
-      // 加锁顺序：先取行定位母单，再锁母单（授权 + 草稿门）
-      const before = await authorizedItem(trx, permit, id)
-      const report = await authorizedReport(trx, permit, before.reportId, true)
-      if (report.status !== 'DRAFT') throw conflict('仅草稿报销单可增删改行')
-      const merged = {
-        idx: input.idx ?? before.idx,
-        kind: input.kind ?? before.kind,
-        summary: input.summaryPresent ? (input.summary ?? null) : before.summary,
-        amount: input.amountPresent ? (input.amount ?? null) : before.amount,
-        remarks: input.remarksPresent ? (input.remarks ?? null) : before.remarks,
-        invoiceId: input.invoiceIdPresent ? (input.invoiceId ?? null) : before.invoiceId,
-        expenseAccountId: input.expenseAccountIdPresent ? (input.expenseAccountId ?? null) : before.expenseAccountId,
-      }
-      const normalized = await validateExpenseItem(trx, report, merged, id)
-      try {
-        await sql`
-          UPDATE acc_expense_report_item SET idx=${merged.idx},kind=${lower(normalized.kind)},
-            summary=${merged.summary},amount=${normalized.amount},remarks=${merged.remarks},
-            invoice_id=${merged.invoiceId}::uuid,expense_account_id=${merged.expenseAccountId}::uuid,
-            updated_at=(now() AT TIME ZONE 'utc') WHERE id=${id}::uuid
-        `.execute(trx)
-        const result = await loadItem(trx, id)
-        await writeAudit(trx, actor, {
-          resource: 'acc_expense_report_item', recordId: id,
-          recordLabel: `${report.docNo}#${result.idx}`,
-          companyId: result.companyId, actionType: 'update', actionName: 'update',
-          changes: auditDiff(itemSnap(before), itemSnap(result), ITEM_AUDIT),
-        })
-        return result
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '更新报销行失败', WRITE_MAP)
-      }
-    })
+  async function voidReport(permit: Permit, id: string): Promise<ExpenseReport> {
+    return reports.transition(permit, id, 'void')
   }
 
-  async function deleteItem(permit: Permit, id: string) {
-    const actor = permit.actor
-    return withTx(db, async (trx) => {
-      const before = await authorizedItem(trx, permit, id)
-      const report = await authorizedReport(trx, permit, before.reportId, true)
-      if (report.status !== 'DRAFT') throw conflict('仅草稿报销单可增删改行')
-      try {
-        await sql`DELETE FROM acc_expense_report_item WHERE id=${id}::uuid`.execute(trx)
-        await writeAudit(trx, actor, {
-          resource: 'acc_expense_report_item', recordId: id,
-          recordLabel: `${report.docNo}#${before.idx}`,
-          companyId: before.companyId, actionType: 'delete', actionName: 'delete',
-          changes: auditDiff(itemSnap(before), {}, ITEM_AUDIT),
-        })
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '删除报销行失败', WRITE_MAP)
-      }
-    })
+  // —— 行 ——
+
+  async function createItem(permit: Permit, input: Record<string, unknown>): Promise<ExpenseReportItem> {
+    assertDecimalShape(input.amount, 'amount')
+    return items.create(permit, input)
+  }
+
+  async function updateItem(
+    permit: Permit, id: string, patch: Record<string, unknown>,
+  ): Promise<ExpenseReportItem> {
+    if ('amount' in patch) assertDecimalShape(patch.amount, 'amount')
+    return items.update(permit, id, patch)
   }
 
   return {
-    listReports, getReport, createReport, updateReport, deleteReport, auditReport, voidReport,
-    listItems, getItem, createItem, updateItem, deleteItem,
+    listReports: (permit: Permit, query: Partial<ListQuery>) => reports.list(permit, query),
+    getReport: (permit: Permit, id: string) => reports.get(permit, id),
+    createReport,
+    updateReport,
+    deleteReport: (permit: Permit, id: string) => reports.remove(permit, id),
+    auditReport,
+    voidReport,
+    listItems: (permit: Permit, query: Partial<ListQuery>) => items.list(permit, query),
+    getItem: (permit: Permit, id: string) => items.get(permit, id),
+    createItem,
+    updateItem,
+    deleteItem: (permit: Permit, id: string) => items.remove(permit, id),
   }
 }

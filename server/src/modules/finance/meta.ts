@@ -128,7 +128,9 @@ export function vatInvoiceResourceMeta(): ResourceMeta {
       }),
       field('buyer_address_phone', 'buyerAddressPhone', 'string', '购方地址、电话'),
       field('buyer_bank_account', 'buyerBankAccount', 'string', '购方开户行及账号'),
-      field('items', 'items', 'json', '发票明细', { readonly: true }),
+      // jsonb[]：postgres.js 双向直通（读回 JS 数组、写入按数组编码）。
+      // wire 一直可写（create/update 都收 items），meta 与之对齐才是唯一事实源。
+      field('items', 'items', 'json', '发票明细'),
       field('net_total', 'netTotal', 'decimal', '不含税金额', {
         filterable: true,
         sortable: true,
@@ -263,27 +265,14 @@ export function vatInvoiceResourceMeta(): ResourceMeta {
     ],
     // OCR / 动态联动 / 附件：Presentation Extension，不走 Basic Form
     form: { kind: 'extension' },
-    // exclude 保留历史审计面：OCR 抬头块/红冲镜像/审核落章等不进审计 diff
+    /**
+     * exclude 只留 readonly 盖章列：内核 update 的「无差异不落库」以审计白名单为准，
+     * 可写列若被 exclude，只改这些列的 PATCH 会被静默吞掉（丢写）。
+     * 故 OCR 抬头块/红冲号/对向发票等可写列一律进审计面。
+     */
     audit: {
       enabled: true,
-      exclude: [
-        'seller_name',
-        'seller_tax_no',
-        'seller_address_phone',
-        'seller_bank_account',
-        'buyer_name',
-        'buyer_tax_no',
-        'buyer_address_phone',
-        'buyer_bank_account',
-        'issuer',
-        'reviewer',
-        'payee',
-        'red_invoice_no',
-        'audited_at',
-        'mirror_invoice_id',
-        'created_by_id',
-        'audited_by_id',
-      ],
+      exclude: ['audited_at', 'created_by_id', 'audited_by_id'],
     },
 
   }
@@ -954,8 +943,9 @@ export function billTransactionResourceMeta(): ResourceMeta {
         key: 'void', label: '作废', scope: 'row', isDanger: true,
       },
     ],
-    // exclude 保留历史审计面：审核落章/经办人/备注不进审计 diff
-    audit: { enabled: true, exclude: ['audited_at', 'remarks', 'created_by_id', 'audited_by_id'] },
+    // exclude 只留 readonly 盖章列：remarks 是可写列，被 exclude 会让「只改备注」的
+    // PATCH 在内核无差异判定处被吞掉（见发票 meta 同款说明）
+    audit: { enabled: true, exclude: ['audited_at', 'created_by_id', 'audited_by_id'] },
 
   }
 }
