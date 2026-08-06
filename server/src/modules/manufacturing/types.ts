@@ -7,7 +7,8 @@ export type DemandAssignType = 'purchase' | 'make' | 'stock' | 'close'
 /** @deprecated 行级履约方式已取消；存量只读兼容 */
 export type FulfillmentMethod = 'make' | 'buy' | 'outsource' | 'stock'
 export type WorkOrderStatus = 'in_progress' | 'completed' | 'voided'
-export type OutputStatus = 'draft' | 'audited' | 'voided'
+/** 生产入库已迁标准动作内核：Output/OutputItem 是 wire 形（枚举大写，库内仍小写） */
+export type OutputStatus = 'DRAFT' | 'AUDITED' | 'VOIDED'
 export type BomStatus = 'draft' | 'active' | 'inactive'
 export type ArrangementType = 'make' | 'purchase' | 'outsource' | 'stock' | 'close'
 
@@ -190,6 +191,8 @@ export interface Output {
   auditedById: string | null
   insertedAt: Date
   updatedAt: Date
+  /** 标准动作内核的 StandardItem 约束（meta 派生记录，键即 apiName） */
+  [key: string]: unknown
 }
 
 export interface OutputItem {
@@ -214,6 +217,8 @@ export interface OutputItem {
   outputStatus: OutputStatus | null
   insertedAt: Date
   updatedAt: Date
+  /** 标准动作内核的 StandardItem 约束（meta 派生记录，键即 apiName） */
+  [key: string]: unknown
 }
 
 export interface SalesOccupancy {

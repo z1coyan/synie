@@ -802,13 +802,24 @@ export function outputResourceMeta(): ResourceMeta {
     authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('output_no', 'outputNo', 'string', '入库单号', { filterable: true, sortable: true }),
+      field('output_no', 'outputNo', 'string', '入库单号', {
+        maxLength: 32,
+        filterable: true,
+        sortable: true,
+      }),
       field('output_date', 'outputDate', 'date', '入库日期(库存分录业务日)', {
         filterable: true,
         sortable: true,
       }),
-      field('remarks', 'remarks', 'string', '备注', { filterable: true, sortable: true }),
+      field('remarks', 'remarks', 'string', '备注', {
+        maxLength: 512,
+        nullable: true,
+        filterable: true,
+        sortable: true,
+      }),
+      // 状态只由审核/作废转移翻转，wire 不可写
       field('status', 'status', 'enum', '状态', {
+        readonly: true,
         filterable: true,
         sortable: true,
         enumOptions: outputStatusOptions,
@@ -828,10 +839,20 @@ export function outputResourceMeta(): ResourceMeta {
         filterable: true,
         sortable: true,
       }),
-      fk('company_id', 'companyId', '公司', 'basCompanies', 'company', 'name'),
-      fk('warehouse_id', 'warehouseId', '默认仓库(可空,仅新建行预填)', 'invWarehouses', 'warehouse', 'name'),
-      fk('created_by_id', 'createdById', '录入人', 'sysUsers', 'createdBy', 'name'),
-      fk('audited_by_id', 'auditedById', '审核人', 'sysUsers', 'auditedBy', 'name'),
+      fk('company_id', 'companyId', '公司', 'basCompanies', 'company', 'name', {
+        required: true,
+        createOnly: true,
+      }),
+      fk('warehouse_id', 'warehouseId', '默认仓库(可空,仅新建行预填)', 'invWarehouses', 'warehouse', 'name', {
+        nullable: true,
+      }),
+      // 录入人/审核人由平台盖章（创建落库、审核转移写），wire 不可写
+      fk('created_by_id', 'createdById', '录入人', 'sysUsers', 'createdBy', 'name', {
+        readonly: true,
+      }),
+      fk('audited_by_id', 'auditedById', '审核人', 'sysUsers', 'auditedBy', 'name', {
+        readonly: true,
+      }),
     ],
     actions: [
       ...headCrud,
@@ -851,30 +872,46 @@ export function outputItemResourceMeta(): ResourceMeta {
     classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'mfg.output',
     permissionLabel: '生产入库单',
+    // 行与单头共用权限组，但错误文案/审计标签按行自称
+    label: '生产入库行',
     table: 'mfg_output_item',
     authz: { kind: 'via', parent: 'mfgOutputs', fk: 'output_id' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('idx', 'idx', 'integer', '行号', { filterable: true, sortable: true }),
-      field('qty', 'qty', 'decimal', '数量', { filterable: true, sortable: true }),
+      field('idx', 'idx', 'integer', '行号', { required: true, filterable: true, sortable: true }),
+      field('qty', 'qty', 'decimal', '数量', { required: true, filterable: true, sortable: true }),
+      // base_qty 与物料/单位快照均为服务端派生列（工单快照 + 单位折算），wire 不可写
       field('base_qty', 'baseQty', 'decimal', '折算默认单位数量', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
       field('material_code', 'materialCode', 'string', '物料编号快照', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
       field('material_name', 'materialName', 'string', '物料名称快照', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
       field('material_spec', 'materialSpec', 'string', '物料规格快照', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
-      field('unit_name', 'unitName', 'string', '单位名称快照', { filterable: true, sortable: true }),
-      field('remarks', 'remarks', 'string', '行备注', { filterable: true, sortable: true }),
+      field('unit_name', 'unitName', 'string', '单位名称快照', {
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('remarks', 'remarks', 'string', '行备注', {
+        maxLength: 512,
+        nullable: true,
+        filterable: true,
+        sortable: true,
+      }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         readonly: true,
         filterable: true,
@@ -885,12 +922,22 @@ export function outputItemResourceMeta(): ResourceMeta {
         filterable: true,
         sortable: true,
       }),
-      fk('output_id', 'outputId', '生产入库单', 'mfgOutputs', 'output', 'outputNo'),
-      fk('company_id', 'companyId', '公司', 'basCompanies', 'company', 'name'),
-      fk('work_order_id', 'workOrderId', '生产工单', 'mfgWorkOrders', 'workOrder', 'workOrderNo'),
-      fk('material_id', 'materialId', '物料', 'invMaterials', 'material', 'name'),
-      fk('unit_id', 'unitId', '单位', 'basUnits', 'unit', 'name'),
-      fk('warehouse_id', 'warehouseId', '入库仓库', 'invWarehouses', 'warehouse', 'name'),
+      fk('output_id', 'outputId', '生产入库单', 'mfgOutputs', 'output', 'outputNo', {
+        required: true,
+        createOnly: true,
+      }),
+      // 公司由母单带入；物料由工单带出——两者 wire 均不可写
+      fk('company_id', 'companyId', '公司', 'basCompanies', 'company', 'name', { readonly: true }),
+      fk('work_order_id', 'workOrderId', '生产工单', 'mfgWorkOrders', 'workOrder', 'workOrderNo', {
+        required: true,
+      }),
+      fk('material_id', 'materialId', '物料', 'invMaterials', 'material', 'name', {
+        readonly: true,
+      }),
+      fk('unit_id', 'unitId', '单位', 'basUnits', 'unit', 'name', { required: true }),
+      fk('warehouse_id', 'warehouseId', '入库仓库', 'invWarehouses', 'warehouse', 'name', {
+        required: true,
+      }),
       // 母单投影：list 子查询 join mfg_output 暴露同名列，供条目 tab 筛/排/展示（同履约条目先例）
       field('output_no', 'outputNo', 'string', '入库单号', {
         readonly: true,

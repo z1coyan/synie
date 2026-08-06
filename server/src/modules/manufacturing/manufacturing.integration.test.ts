@@ -715,8 +715,9 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demandsPage = await mfg.demands.listDemands(permit, { companyId })
     expect(demandsPage.results.some((r) => r.id === demand.id)).toBe(true)
 
+    // 生产入库已迁标准动作内核：服务返回 wire 形（状态大写），HTTP 经 outputWire 不变
     const audited1 = await mfg.outputs.auditOutput(permit, output.id)
-    expect(audited1.status).toBe('audited')
+    expect(audited1.status).toBe('AUDITED')
 
     const woMid = await mfg.workOrders.getWorkOrder(permit, wo.id)
     expect(woMid.receivedBaseQty).toBe('30')
@@ -813,6 +814,120 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     })
     await expect(mfg.outputs.auditOutput(permit, output.id)).rejects.toMatchObject({
       code: 'conflict',
+    })
+  })
+
+  test('生产入库草稿 CRUD：单头改/清仓、行改数重算、审核后不可改删', async () => {
+    const demand = await mfg.demands.createDemand(permit, {
+      companyId,
+      assignType: 'purchase',
+      demandNo: `DOC${suffix}`,
+    })
+    cleanupIds.demands.push(demand.id)
+    const line = await mfg.demands.createDemandItem(permit, {
+      demandId: demand.id,
+      idx: 1,
+      materialId,
+      unitId,
+      qty: '10',
+      needDate: '2026-08-01',
+    })
+    await mfg.demands.confirmDemand(permit, demand.id)
+    const wo = await mfg.workOrders.createWorkOrder(permit, {
+      demandItemId: line.id,
+      workOrderNo: `WOOC${suffix}`,
+    })
+    cleanupIds.workOrders.push(wo.id)
+
+    const output = await mfg.outputs.createOutput(permit, {
+      companyId,
+      outputNo: `OC${suffix}`,
+      warehouseId,
+      remarks: '初稿',
+    })
+    cleanupIds.outputs.push(output.id)
+    expect(output.status).toBe('DRAFT')
+
+    // 单头 PATCH 的 present-key 语义：备注改写 + 默认仓清空
+    const patched = await mfg.outputs.updateOutput(permit, output.id, {
+      remarks: '改后',
+      remarksPresent: true,
+      warehouseId: null,
+      warehouseIdPresent: true,
+    })
+    expect(patched.remarks).toBe('改后')
+    expect(patched.warehouseId).toBeNull()
+    // 无差异 PATCH 不落库（updated_at 不 bump）
+    const same = await mfg.outputs.updateOutput(permit, output.id, {
+      remarks: '改后',
+      remarksPresent: true,
+    })
+    expect(same.updatedAt.getTime()).toBe(patched.updatedAt.getTime())
+
+    // 行：工单快照带出 + 折算派生；单条读写不带母单投影
+    const item = await mfg.outputs.createOutputItem(permit, {
+      outputId: output.id,
+      idx: 1,
+      workOrderId: wo.id,
+      unitId,
+      warehouseId,
+      qty: '3',
+    })
+    expect(item.companyId).toBe(companyId)
+    expect(item.materialId).toBe(wo.materialId)
+    expect(item.materialCode).toBe(wo.materialCode)
+    expect(item.baseQty).toBe('3')
+    expect(item.outputNo).toBeNull()
+    const itemPatched = await mfg.outputs.updateOutputItem(permit, item.id, {
+      qty: '4',
+      remarks: '行备注',
+      remarksPresent: true,
+    })
+    expect(itemPatched.baseQty).toBe('4')
+    expect(itemPatched.remarks).toBe('行备注')
+    expect((await mfg.outputs.getOutputItem(permit, item.id)).qty).toBe('4')
+
+    // 审核后单头与行都锁死
+    await mfg.outputs.auditOutput(permit, output.id)
+    await expect(
+      mfg.outputs.updateOutput(permit, output.id, { remarks: 'x', remarksPresent: true }),
+    ).rejects.toMatchObject({ code: 'conflict', message: '仅草稿生产入库单可修改或删除' })
+    await expect(mfg.outputs.deleteOutputItem(permit, item.id)).rejects.toMatchObject({
+      code: 'conflict',
+      message: '仅草稿生产入库单可编辑单据行',
+    })
+    await expect(mfg.outputs.auditOutput(permit, output.id)).rejects.toMatchObject({
+      code: 'conflict',
+      message: '仅草稿生产入库单可审核',
+    })
+
+    // 作废回滚工单投影，作废态仍不可改删
+    await mfg.outputs.voidOutput(permit, output.id)
+    expect((await mfg.workOrders.getWorkOrder(permit, wo.id)).receivedBaseQty).toBe('0')
+    await expect(mfg.outputs.voidOutput(permit, output.id)).rejects.toMatchObject({
+      code: 'conflict',
+      message: '仅已审核生产入库单可作废',
+    })
+    await expect(mfg.outputs.deleteOutput(permit, output.id)).rejects.toMatchObject({
+      code: 'conflict',
+    })
+
+    // 草稿单可删（连带行 ON DELETE CASCADE）
+    const draft = await mfg.outputs.createOutput(permit, { companyId, outputNo: `OD${suffix}` })
+    cleanupIds.outputs.push(draft.id)
+    const draftItem = await mfg.outputs.createOutputItem(permit, {
+      outputId: draft.id,
+      idx: 1,
+      workOrderId: wo.id,
+      unitId,
+      warehouseId,
+      qty: '1',
+    })
+    await mfg.outputs.deleteOutputItem(permit, draftItem.id)
+    await mfg.outputs.deleteOutput(permit, draft.id)
+    await expect(mfg.outputs.getOutput(permit, draft.id)).rejects.toMatchObject({
+      code: 'not_found',
+      message: '生产入库单不存在',
     })
   })
 
