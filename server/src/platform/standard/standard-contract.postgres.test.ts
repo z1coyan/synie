@@ -17,6 +17,12 @@ import { createDb } from '~/db/index.ts'
 import { createCurrencyService } from '~/modules/base/currency-service.ts'
 import { createUnitService } from '~/modules/base/unit-service.ts'
 import { createBankAccountService } from '~/modules/finance/banking-accounts.ts'
+import { createInstrumentService } from '~/modules/base/market/index.ts'
+import { createMaterialService } from '~/modules/inventory/material-service.ts'
+import { createPartyAddressService } from '~/modules/party/address-service.ts'
+import { createCustomerService, createSupplierService } from '~/modules/party/party-service.ts'
+import { buildNumberingCatalog } from '~/platform/numbering/catalog.ts'
+import { createNumberingService } from '~/platform/numbering/service.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
@@ -69,7 +75,73 @@ const CASES: ContractCase[] = [
     valid: () => ({ name: `合同币-${crypto.randomUUID().slice(0, 8)}`, isoCode: letters(3) }),
     patch: () => ({ name: `合同币改-${crypto.randomUUID().slice(0, 8)}` }),
   },
+  {
+    title: '客户',
+    resource: 'salCustomers',
+    make: (db, registry) => createCustomerService(db, registry),
+    valid: () => ({ code: `CT${crypto.randomUUID().slice(0, 8)}`, name: `合同客户-${crypto.randomUUID().slice(0, 8)}` }),
+    patch: () => ({ name: `合同客户改-${crypto.randomUUID().slice(0, 8)}` }),
+  },
+  {
+    title: '供应商',
+    resource: 'purSuppliers',
+    make: (db, registry) => createSupplierService(db, registry),
+    valid: () => ({ code: `ST${crypto.randomUUID().slice(0, 8)}`, name: `合同供应商-${crypto.randomUUID().slice(0, 8)}` }),
+    patch: () => ({ name: `合同供应商改-${crypto.randomUUID().slice(0, 8)}` }),
+  },
+  {
+    title: '对手地址',
+    resource: 'basPartyAddresses',
+    make: (db, registry) => createPartyAddressService(db, registry),
+    // isDefault 缺省：避免批量用例的两行撞默认地址部分唯一索引；OTHER 用途避开发货默认联动
+    valid: () => ({
+      partyType: 'CUSTOMER',
+      partyId: contractPartyId,
+      name: `合同地址-${crypto.randomUUID().slice(0, 8)}`,
+      purpose: 'OTHER',
+      province: '上海市',
+      city: '市辖区',
+      district: '黄浦区',
+      address: `合同路 ${crypto.randomUUID().slice(0, 4)} 号`,
+    }),
+    patch: () => ({ name: `合同地址改-${crypto.randomUUID().slice(0, 8)}` }),
+  },
+  {
+    title: '物料',
+    resource: 'invMaterials',
+    make: (db, registry) =>
+      createMaterialService(db, createNumberingService(db, buildNumberingCatalog(registry), registry), registry),
+    // code 自动取号（夹具规则），载荷天然不撞
+    valid: () => ({
+      name: `合同料-${crypto.randomUUID().slice(0, 8)}`,
+      categoryId: materialFixture.categoryId,
+      defaultUnitId: materialFixture.unitId,
+    }),
+    patch: () => ({ name: `合同料改-${crypto.randomUUID().slice(0, 8)}` }),
+  },
+  {
+    title: '行情品种',
+    resource: 'basMarketInstruments',
+    make: (db, registry) => createInstrumentService(db, registry),
+    // code 全局唯一，10 位大写随机防撞
+    valid: () => ({
+      code: `CT${crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`,
+      name: `合同品种-${crypto.randomUUID().slice(0, 8)}`,
+      sourceType: 'EXCHANGE',
+      defaultPriceKind: 'SETTLEMENT',
+      currencyId: marketFixture.currencyId,
+      unitId: marketFixture.unitId,
+    }),
+    patch: () => ({ name: `合同品种改-${crypto.randomUUID().slice(0, 8)}` }),
+  },
 ]
+
+/** 地址描述符的往来主体夹具（beforeAll 填充；valid() 惰性读取） */
+let contractPartyId = ''
+/** 行情品种描述符的币种/单位夹具 */
+const marketFixture = { currencyId: '', unitId: '' }
+/** 物料描述符的分类/单位/编号规则夹具 */
+const materialFixture = { categoryId: '', unitId: '', ruleId: '' }
 
 run('标准动作合同（postgres）', () => {
   const db = createDb(url!)
@@ -97,6 +169,47 @@ run('标准动作合同（postgres）', () => {
     return rows.length
   }
 
+  beforeAll(async () => {
+    const row = await sql<{ id: string }>`
+      INSERT INTO sal_customers(code, name) VALUES (${`PC${suffix}`}, ${`合同地址主体-${suffix}`}) RETURNING id
+    `.execute(db)
+    contractPartyId = row.rows[0]!.id
+    const cur = await sql<{ id: string }>`
+      INSERT INTO bas_currency(name, iso_code) VALUES (${`合同行情币-${suffix}`}, ${letters(3)}) RETURNING id
+    `.execute(db)
+    marketFixture.currencyId = cur.rows[0]!.id
+    const unit = await sql<{ id: string }>`
+      INSERT INTO bas_unit(unit_type, is_base, name, symbol, ratio)
+      VALUES ('quantity', false, ${`合同行情单位-${suffix}`}, ${`ct${suffix.slice(0, 6)}`}, 1) RETURNING id
+    `.execute(db)
+    marketFixture.unitId = unit.rows[0]!.id
+    const category = await sql<{ id: string }>`
+      INSERT INTO inv_material_category(code, name, is_leaf, active)
+      VALUES (${`CTC-${suffix}`}, ${`合同分类-${suffix}`}, true, true) RETURNING id
+    `.execute(db)
+    materialFixture.categoryId = category.rows[0]!.id
+    const mUnit = await sql<{ id: string }>`
+      INSERT INTO bas_unit(unit_type, is_base, name, symbol, ratio)
+      VALUES ('quantity', false, ${`合同料单位-${suffix}`}, ${`mt${suffix.slice(0, 6)}`}, 1) RETURNING id
+    `.execute(db)
+    materialFixture.unitId = mUnit.rows[0]!.id
+    // 物料自动取号规则（同资源唯一启用；共享库已有则复用，不新插）
+    const existing = await sql<{ id: string }>`
+      SELECT id FROM sys_numbering_rule WHERE resource = 'base.material' AND enabled
+    `.execute(db)
+    if (existing.rows.length > 0) {
+      materialFixture.ruleId = ''
+    } else {
+      const rule = await sql<{ id: string }>`
+        INSERT INTO sys_numbering_rule(resource, name, segments, per_company, enabled)
+        VALUES ('base.material', ${`合同料规则-${suffix}`},
+                ARRAY['{"type":"text","value":"CT-"}'::jsonb, '{"type":"seq","padding":6}'::jsonb],
+                false, true) RETURNING id
+      `.execute(db)
+      materialFixture.ruleId = rule.rows[0]!.id
+    }
+  })
+
   afterAll(async () => {
     for (const entry of created.reverse()) {
       await db.deleteFrom('sys_audit_log').where('resource', '=', entry.table).where('record_id', '=', entry.id).execute()
@@ -104,6 +217,17 @@ run('标准动作合同（postgres）', () => {
         .deleteFrom(entry.table as 'bas_unit')
         .where('id', '=', entry.id)
         .execute()
+    }
+    await db.deleteFrom('bas_party_address').where('party_id', '=', contractPartyId).execute()
+    await db.deleteFrom('sal_customers').where('id', '=', contractPartyId).execute()
+    await db.deleteFrom('bas_market_instrument').where('currency_id', '=', marketFixture.currencyId).execute()
+    await db.deleteFrom('bas_unit').where('id', '=', marketFixture.unitId).execute()
+    await db.deleteFrom('bas_currency').where('id', '=', marketFixture.currencyId).execute()
+    await db.deleteFrom('inv_material').where('category_id', '=', materialFixture.categoryId).execute()
+    await db.deleteFrom('inv_material_category').where('id', '=', materialFixture.categoryId).execute()
+    await db.deleteFrom('bas_unit').where('id', '=', materialFixture.unitId).execute()
+    if (materialFixture.ruleId) {
+      await db.deleteFrom('sys_numbering_rule').where('id', '=', materialFixture.ruleId).execute()
     }
     await db.destroy()
   })
