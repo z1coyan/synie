@@ -2,6 +2,20 @@
  * 销售/采购报价单：头/条目/价格档 + 订单套档解析。
  * 行为对齐 server-go/internal/domain/trading/quotation。
  *
+ * 单头走标准动作内核（platform/standard）：get / list / remove + workflow 两转移
+ * （audit/void）。转移取代 posting/skeleton 的 flipDocStatusInTx——effect 只做
+ * 「条目非空 + 数量梯度条目必有价格档」的领域校验，状态翻转/盖章/审计交内核。
+ *
+ * 按动作弹射（原因见 docs/migration/standard-migration-decisions.md）：
+ * - 头/条目/价格档的 create/update/delete：本资源的创建与更新 wire 是**整单聚合**
+ *   （POST `/` 与 PUT `/:id` 一次提交头+条目+档位，测试钉死「任一子记录失败不残留」），
+ *   内核动作各自 `withTx` 开事务且只收 Permit，无法在同一事务内组合；故保留在途手写
+ *   实现（`*InTx`），单行端点是其 `withTx` 包装——一份实现两个入口，不引入第二套语义。
+ * - 价格档是孙级资源（头 → 条目 → 价格档）：子行内核只有一层，且草稿门要读到祖父单头。
+ *
+ * 字段映射与审计快照一律由 meta 派生（platform/standard/fields 的 mapRow/snapshot），
+ * 读投影的物理列亦按 meta 拼装——meta 是唯一事实源。
+ *
  * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
  * 列表 `listAuthorized`、单条 `loadAuthorizedFrom`（与列表共用投影）、
  * 写前取行/加锁 `loadAuthorized(forUpdate)`、create 走 `assertCompanyWritable`。
@@ -9,29 +23,29 @@
  */
 import type { ListQuery } from '@synie/shared'
 import { decimal, type Decimal } from '@synie/shared'
-import { sql } from 'kysely'
+import { sql, type RawBuilder } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withReadSnapshot, withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import {
-  auditCreated,
-  auditDestroyed,
-  auditDiff,
-  writeAudit,
-} from '~/platform/audit/write.ts'
-import { auditFieldsOf, mergeAuditFields } from '~/platform/audit/spec.ts'
+import { auditCreated, auditDestroyed, auditDiff, writeAudit } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { AuthzTarget } from '~/platform/meta/resource-authz.ts'
+import type { ResourceMeta } from '~/platform/meta/types.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
+import { mapRow, physicalFields, snapshot } from '~/platform/standard/fields.ts'
+import {
+  auditStamp,
+  createStandardService,
+  type StandardService,
+} from '~/platform/standard/service.ts'
 import { listAuthorized } from '~/db/list.ts'
 import { assertCompanyWritable, loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
-import { mapWriteError } from '~/db/dberr.ts'
+import { mapWriteError, type PgWriteMapping } from '~/db/dberr.ts'
 import {
   asDate,
-  asDateTime,
-  asOptionalString,
   codeNamedRef,
   guardCustomerMaterial,
   guardMaterialType,
@@ -44,34 +58,10 @@ import {
   toDateOnly,
   type TradingSide,
   upperStatus,
-  wireDecimal,
   wireRequiredDecimal,
 } from '../common.ts'
 import { utcToday } from '~/db/dates.ts'
-import {
-  quotationHeadMeta,
-  quotationItemMeta,
-  quotationSpec,
-  quotationTierMeta,
-  type QuotationSideSpec,
-} from './spec.ts'
-import { flipDocStatusInTx } from '~/platform/posting/skeleton.ts'
-
-// 双侧共用引擎：白名单取两侧 meta 派生并集（保留历史共享清单行为）
-const HEAD_AUDIT = mergeAuditFields(
-  auditFieldsOf(quotationHeadMeta('sales')),
-  auditFieldsOf(quotationHeadMeta('purchase')),
-)
-
-const ITEM_AUDIT = mergeAuditFields(
-  auditFieldsOf(quotationItemMeta('sales')),
-  auditFieldsOf(quotationItemMeta('purchase')),
-)
-
-const TIER_AUDIT = mergeAuditFields(
-  auditFieldsOf(quotationTierMeta('sales')),
-  auditFieldsOf(quotationTierMeta('purchase')),
-)
+import { quotationSpec, type QuotationSideSpec } from './spec.ts'
 
 /**
  * 三条读路径的投影常量：列表、单条 get、写后 reload 共用同一份 source/select，
@@ -82,9 +72,11 @@ const HEAD_ALIAS = 'quotation_heads'
 const ITEM_ALIAS = 'quotation_items'
 const TIER_ALIAS = 'quotation_tiers'
 
-const HEAD_SELECT = sql`SELECT id,quotation_no,quotation_date,valid_until,party_type,party_id,terms,remarks,
-  status,audited_at,inserted_at,updated_at,company_id,currency_id,created_by_id,audited_by_id,
-  company_name,currency_code,currency_name,created_by_name,audited_by_name`
+/** 投影附加列（物理列由 meta 派生，此处只列 join/聚合出来的） */
+const HEAD_EXTRA = sql`company_name,currency_code,currency_name,created_by_name,audited_by_name`
+const ITEM_EXTRA = sql`tier_count,quotation_date,valid_until,quotation_status,party_type,
+  currency_code,currency_id,quotation_no,company_name,material_live_name,unit_live_name`
+const TIER_EXTRA = sql`company_name`
 
 function headSource(spec: QuotationSideSpec) {
   return sql` FROM (
@@ -100,11 +92,6 @@ function headSource(spec: QuotationSideSpec) {
     LEFT JOIN sys_user auditor ON auditor.id=q.audited_by_id
   ) quotation_heads`
 }
-
-const ITEM_SELECT = sql`SELECT id,idx,pricing_mode,price,tax_rate,material_code,material_name,material_spec,
-  customer_part_no,unit_name,remarks,inserted_at,updated_at,quotation_id,company_id,material_id,
-  unit_id,tier_count,quotation_date,valid_until,quotation_status,party_type,party_id,currency_code,
-  currency_id,quotation_no,company_name,material_live_name,unit_live_name`
 
 function itemSource(spec: QuotationSideSpec) {
   return sql` FROM (
@@ -124,8 +111,6 @@ function itemSource(spec: QuotationSideSpec) {
   ) quotation_items`
 }
 
-const TIER_SELECT = sql`SELECT id,min_qty,price,inserted_at,updated_at,item_id,company_id,company_name`
-
 function tierSource(spec: QuotationSideSpec) {
   return sql` FROM (
     SELECT t.id,t.min_qty,t.price,t.inserted_at,t.updated_at,t.item_id,t.company_id,
@@ -134,6 +119,28 @@ function tierSource(spec: QuotationSideSpec) {
     JOIN bas_company c ON c.id=t.company_id
   ) quotation_tiers`
 }
+
+/** 物理列自 meta 派生（与内核 SELECT 拼装同口径），附加列跟在其后 */
+function selectOf(meta: ResourceMeta, extra: RawBuilder<unknown>): RawBuilder<unknown> {
+  const cols = sql.join(physicalFields(meta).map((f) => sql.id(f.dbColumn)))
+  return sql`SELECT ${cols}, ${extra}`
+}
+
+const QUOTATION_WRITE_ERRORS: readonly PgWriteMapping[] = [
+  { code: '23505', constraint: 'quotation_unique_quotation_no', message: '报价单号已存在' },
+  {
+    code: '23505',
+    constraint: 'quotation_item_unique_material_unit',
+    message: '同一物料与单位在本报价单已有报价行',
+  },
+  {
+    code: '23505',
+    constraint: 'quotation_tier_unique_item_min_qty',
+    message: '同一起订量档已存在',
+  },
+  { code: '23505', message: '报价数据已存在' },
+  { code: '23503', message: '报价数据已被业务引用,不可删除' },
+]
 
 export interface Quotation {
   id: string
@@ -145,9 +152,9 @@ export interface Quotation {
   terms: string | null
   remarks: string | null
   status: string
-  auditedAt: string | null
-  insertedAt: string
-  updatedAt: string
+  auditedAt: Date | null
+  insertedAt: Date
+  updatedAt: Date
   companyId: string
   currencyId: string
   createdById: string | null
@@ -156,6 +163,7 @@ export interface Quotation {
   currency: { id: string; code: string; name: string }
   createdBy: { id: string; name: string } | null
   auditedBy: { id: string; name: string } | null
+  [key: string]: unknown
 }
 
 export interface QuotationItem {
@@ -170,8 +178,8 @@ export interface QuotationItem {
   customerPartNo: string | null
   unitName: string
   remarks: string | null
-  insertedAt: string
-  updatedAt: string
+  insertedAt: Date
+  updatedAt: Date
   quotationId: string
   companyId: string
   materialId: string
@@ -187,17 +195,19 @@ export interface QuotationItem {
   company: { id: string; name: string }
   material: { id: string; code: string; name: string }
   unit: { id: string; name: string }
+  [key: string]: unknown
 }
 
 export interface QuotationTier {
   id: string
   minQty: string
   price: string
-  insertedAt: string
-  updatedAt: string
+  insertedAt: Date
+  updatedAt: Date
   itemId: string
   companyId: string
   company: { id: string; name: string }
+  [key: string]: unknown
 }
 
 export interface QuotationHeadCreateInput {
@@ -287,26 +297,215 @@ export interface ResolveOrderResult {
 
 type Numberer = Pick<NumberingService, 'nextInTx'>
 
+/** 单侧装配：meta / 审计白名单 / 投影 / 判定归宿 / 内核单头服务 */
+interface SideCtx {
+  spec: QuotationSideSpec
+  headMeta: ResourceMeta
+  itemMeta: ResourceMeta
+  tierMeta: ResourceMeta
+  headAudit: readonly string[]
+  itemAudit: readonly string[]
+  tierAudit: readonly string[]
+  headSelect: RawBuilder<unknown>
+  itemSelect: RawBuilder<unknown>
+  tierSelect: RawBuilder<unknown>
+  headFrom: RawBuilder<unknown>
+  itemFrom: RawBuilder<unknown>
+  tierFrom: RawBuilder<unknown>
+  headTarget: AuthzTarget
+  itemTarget: AuthzTarget
+  tierTarget: AuthzTarget
+  heads: StandardService<Quotation>
+}
+
 export function createQuotationService(
   db: Kysely<Database>,
   numberer: Numberer,
   registry: Registry,
 ) {
-  /** 判定归宿按 side 预解析（Registry 内已记忆化）；资源名唯一事实源是 spec */
-  const targets: Record<TradingSide, { head: AuthzTarget; item: AuthzTarget; tier: AuthzTarget }> =
-    {
-      sales: sideTargets('sales'),
-      purchase: sideTargets('purchase'),
-    }
+  /** 判定归宿/meta 按 side 预解析（Registry 内已记忆化）；资源名唯一事实源是 spec */
+  const sides: Record<TradingSide, SideCtx> = {
+    sales: buildSide('sales'),
+    purchase: buildSide('purchase'),
+  }
 
-  function sideTargets(side: TradingSide) {
+  function metaOf(name: string): ResourceMeta {
+    const meta = registry.get(name)
+    if (!meta) throw new Error(`报价服务：未知 Meta 资源 ${name}`)
+    return meta
+  }
+
+  function buildSide(side: TradingSide): SideCtx {
     const spec = quotationSpec(side)
+    const headMeta = metaOf(spec.headResource)
+    const itemMeta = metaOf(spec.itemResource)
+    const tierMeta = metaOf(spec.tierResource)
+    const headFrom = headSource(spec)
+    /**
+     * 单头内核：get/list/remove + audit/void 两转移。
+     * 「仅草稿可修改或删除」由 workflow.mutableStatuses 缺省（DRAFT）承担，
+     * 文案逐字冻结；create/update 弹射（见文件头）故不声明写钩子。
+     */
+    const heads = createStandardService<Quotation>({
+      db,
+      registry,
+      resource: spec.headResource,
+      notFound: `${spec.label}不存在`,
+      defaultOrder: sql`"quotation_date" DESC, "id" ASC`,
+      writeErrors: QUOTATION_WRITE_ERRORS,
+      projection: {
+        source: headFrom,
+        alias: HEAD_ALIAS,
+        selectExtra: HEAD_EXTRA,
+        mapExtra: headExtras,
+      },
+      workflow: {
+        mutableMessage: '仅草稿报价单可修改或删除',
+        transitions: [
+          {
+            key: 'audit',
+            label: '审核',
+            from: ['DRAFT'],
+            to: 'AUDITED',
+            guardMessage: '仅草稿报价单可审核',
+            stamps: ({ permit }) => auditStamp(permit),
+            effect: async (trx, { before }) => {
+              await assertAuditable(trx, spec, String(before.id))
+            },
+          },
+          {
+            key: 'void',
+            label: '作废',
+            from: ['AUDITED'],
+            to: 'VOIDED',
+            guardMessage: '仅已审核报价单可作废',
+          },
+        ],
+      },
+    })
     return {
-      head: registry.authzTarget(spec.headResource),
-      item: registry.authzTarget(spec.itemResource),
-      tier: registry.authzTarget(spec.tierResource),
+      spec,
+      headMeta,
+      itemMeta,
+      tierMeta,
+      headAudit: auditFieldsOf(headMeta),
+      itemAudit: auditFieldsOf(itemMeta),
+      tierAudit: auditFieldsOf(tierMeta),
+      headSelect: selectOf(headMeta, HEAD_EXTRA),
+      itemSelect: selectOf(itemMeta, ITEM_EXTRA),
+      tierSelect: selectOf(tierMeta, TIER_EXTRA),
+      headFrom,
+      itemFrom: itemSource(spec),
+      tierFrom: tierSource(spec),
+      headTarget: registry.authzTarget(spec.headResource),
+      itemTarget: registry.authzTarget(spec.itemResource),
+      tierTarget: registry.authzTarget(spec.tierResource),
+      heads,
     }
   }
+
+  /** 审核前置：条目非空 + 数量梯度条目必须有价格档（内核转移 effect） */
+  async function assertAuditable(
+    trx: TrxHandle,
+    spec: QuotationSideSpec,
+    id: string,
+  ): Promise<void> {
+    const count = await sql<{ c: string }>`
+      SELECT count(*)::text AS c FROM ${ident(spec.itemTable)} WHERE quotation_id=${id}::uuid
+    `.execute(trx)
+    if (Number(count.rows[0]?.c ?? 0) === 0) {
+      throw new ApiError('conflict', '审核前必须至少填写一行条目')
+    }
+    const missing = await sql<{ e: boolean }>`
+      SELECT EXISTS(
+        SELECT 1 FROM ${ident(spec.itemTable)} i
+        WHERE i.quotation_id=${id}::uuid AND i.pricing_mode='qty_tiered'
+          AND NOT EXISTS(SELECT 1 FROM ${ident(spec.tierTable)} t WHERE t.item_id=i.id)
+      ) AS e
+    `.execute(trx)
+    if (missing.rows[0]?.e) {
+      throw new ApiError('conflict', '数量梯度条目必须至少填写一个价格档')
+    }
+  }
+
+  // ─── 投影读取（写后 reload 与聚合草稿共用；授权已在上游完成） ─────────
+
+  async function loadHeadRow(
+    handle: DbHandle,
+    ctx: SideCtx,
+    id: string,
+  ): Promise<Record<string, unknown> | undefined> {
+    const rows = await sql<Record<string, unknown>>`
+      ${ctx.headSelect}${ctx.headFrom} WHERE quotation_heads.id=${id}::uuid
+    `.execute(handle)
+    return rows.rows[0]
+  }
+
+  async function loadItemRow(
+    handle: DbHandle,
+    ctx: SideCtx,
+    id: string,
+  ): Promise<Record<string, unknown> | undefined> {
+    const rows = await sql<Record<string, unknown>>`
+      ${ctx.itemSelect}${ctx.itemFrom} WHERE quotation_items.id=${id}::uuid
+    `.execute(handle)
+    return rows.rows[0]
+  }
+
+  async function loadTierRow(
+    handle: DbHandle,
+    ctx: SideCtx,
+    id: string,
+  ): Promise<Record<string, unknown> | undefined> {
+    const rows = await sql<Record<string, unknown>>`
+      ${ctx.tierSelect}${ctx.tierFrom} WHERE quotation_tiers.id=${id}::uuid
+    `.execute(handle)
+    return rows.rows[0]
+  }
+
+  async function loadItemRowsForQuotation(
+    handle: DbHandle,
+    ctx: SideCtx,
+    quotationId: string,
+  ): Promise<Record<string, unknown>[]> {
+    const rows = await sql<Record<string, unknown>>`
+      ${ctx.itemSelect}${ctx.itemFrom}
+      WHERE quotation_items.quotation_id=${quotationId}::uuid
+      ORDER BY quotation_items.idx,quotation_items.id
+    `.execute(handle)
+    return rows.rows
+  }
+
+  async function loadTierRowsForQuotation(
+    handle: DbHandle,
+    ctx: SideCtx,
+    quotationId: string,
+  ): Promise<Record<string, unknown>[]> {
+    const rows = await sql<Record<string, unknown>>`
+      SELECT t.id,t.min_qty,t.price,t.inserted_at,t.updated_at,t.item_id,t.company_id,
+        c.name AS company_name
+      FROM ${ident(ctx.spec.tierTable)} t
+      JOIN ${ident(ctx.spec.itemTable)} i ON i.id=t.item_id
+      JOIN bas_company c ON c.id=t.company_id
+      WHERE i.quotation_id=${quotationId}::uuid
+      ORDER BY i.idx,t.min_qty,t.id
+    `.execute(handle)
+    return rows.rows
+  }
+
+  function mapHead(ctx: SideCtx, row: Record<string, unknown>): Quotation {
+    return { ...mapRow(ctx.headMeta, row), ...headExtras(row) } as Quotation
+  }
+
+  function mapItem(ctx: SideCtx, row: Record<string, unknown>): QuotationItem {
+    return { ...mapRow(ctx.itemMeta, row), ...itemExtras(row) } as unknown as QuotationItem
+  }
+
+  function mapTier(ctx: SideCtx, row: Record<string, unknown>): QuotationTier {
+    return { ...mapRow(ctx.tierMeta, row), ...tierExtras(row) } as unknown as QuotationTier
+  }
+
+  // ─── 单头写路径（弹射：整单聚合要求单事务，见文件头） ────────────────
 
   /** 按 Permit 锁裸表头行（授权 + FOR UPDATE），再取 join 投影（子查询不能 FOR UPDATE） */
   async function lockHead(
@@ -315,17 +514,17 @@ export function createQuotationService(
     side: TradingSide,
     id: string,
   ): Promise<Record<string, unknown>> {
-    const spec = quotationSpec(side)
+    const ctx = sides[side]
     await loadAuthorized({
       db: handle,
       permit,
-      target: targets[side].head,
-      table: spec.headTable,
+      target: ctx.headTarget,
+      table: ctx.spec.headTable,
       id,
       forUpdate: true,
-      notFoundMessage: `${spec.label}不存在`,
+      notFoundMessage: `${ctx.spec.label}不存在`,
     })
-    return (await loadHeadRow(handle, spec, id))!
+    return (await loadHeadRow(handle, ctx, id))!
   }
 
   /** 锁草稿单头：条目/价格档编辑与整单替换的公共前置（授权 → 状态守卫） */
@@ -353,9 +552,9 @@ export function createQuotationService(
     side: TradingSide,
     itemId: string,
   ): Promise<Record<string, unknown>> {
-    const spec = quotationSpec(side)
+    const ctx = sides[side]
     const existing = await sql<{ quotation_id: string }>`
-      SELECT quotation_id FROM ${ident(spec.itemTable)} WHERE id=${itemId}::uuid
+      SELECT quotation_id FROM ${ident(ctx.spec.itemTable)} WHERE id=${itemId}::uuid
     `.execute(trx)
     if (!existing.rows[0]) throw new ApiError('not_found', '报价条目不存在')
     return lockDraftHead(trx, permit, side, existing.rows[0].quotation_id, 'item')
@@ -374,35 +573,26 @@ export function createQuotationService(
     if (!rows.rows[0]) throw new ApiError('not_found', notFound)
   }
 
+  // ─── 单头：读/删/审核/作废走内核 ──────────────────────────────────
+
   async function listHeads(permit: Permit, side: TradingSide, query: Partial<ListQuery>) {
-    const spec = quotationSpec(side)
-    return listAuthorized({
-      db,
-      permit,
-      target: targets[side].head,
-      alias: HEAD_ALIAS,
-      resource: quotationHeadMeta(side),
-      source: headSource(spec),
-      select: HEAD_SELECT,
-      defaultOrder: sql`"quotation_date" DESC, "id" ASC`,
-      query,
-      mapRow: (r) => mapHead(r),
-    })
+    return sides[side].heads.list(permit, query)
   }
 
   async function getHead(permit: Permit, side: TradingSide, id: string): Promise<Quotation> {
-    const spec = quotationSpec(side)
-    return loadAuthorizedFrom({
-      db,
-      permit,
-      target: targets[side].head,
-      alias: HEAD_ALIAS,
-      source: headSource(spec),
-      select: HEAD_SELECT,
-      id,
-      mapRow: (r) => mapHead(r),
-      notFoundMessage: `${spec.label}不存在`,
-    })
+    return sides[side].heads.get(permit, id)
+  }
+
+  async function deleteHead(permit: Permit, side: TradingSide, id: string): Promise<void> {
+    await sides[side].heads.remove(permit, id)
+  }
+
+  async function auditHead(permit: Permit, side: TradingSide, id: string): Promise<Quotation> {
+    return sides[side].heads.transition(permit, id, 'audit')
+  }
+
+  async function voidHead(permit: Permit, side: TradingSide, id: string): Promise<Quotation> {
+    return sides[side].heads.transition(permit, id, 'void')
   }
 
   async function createHead(
@@ -410,10 +600,10 @@ export function createQuotationService(
     side: TradingSide,
     input: QuotationHeadCreateInput,
   ): Promise<Quotation> {
-    const spec = quotationSpec(side)
+    const ctx = sides[side]
     // 入参校验（400）先于公司边界（404）：错误语义唯一规则只管后者
     if (!input.companyId) {
-      throw ApiError.validation(`${spec.label}参数不合法`, { companyId: ['必填'] })
+      throw ApiError.validation(`${ctx.spec.label}参数不合法`, { companyId: ['必填'] })
     }
     assertCompanyWritable(permit, input.companyId, '公司不存在')
     return withTx(db, (trx) => createHeadInTx(trx, permit, side, input))
@@ -425,7 +615,8 @@ export function createQuotationService(
     side: TradingSide,
     input: QuotationHeadCreateInput,
   ): Promise<Quotation> {
-    const spec = quotationSpec(side)
+    const ctx = sides[side]
+    const spec = ctx.spec
     const company = await trx
       .selectFrom('bas_company')
       .select(['id', 'base_currency_id'])
@@ -477,16 +668,15 @@ export function createQuotationService(
         ) RETURNING id
       `.execute(trx)
       const id = inserted.rows[0]!.id
-      const row = await loadHeadRow(trx, spec, id)
-      const item = mapHead(row!)
+      const item = mapHead(ctx, (await loadHeadRow(trx, ctx, id))!)
       await writeAudit(trx, permit.actor, {
-        resource: spec.headAudit,
+        resource: ctx.headMeta.table,
         recordId: id,
         recordLabel: item.quotationNo,
         companyId: item.companyId,
         actionType: 'create',
         actionName: 'create',
-        changes: auditCreated(headSnap(item), HEAD_AUDIT),
+        changes: auditCreated(snapshot(ctx.headMeta, item, ctx.headAudit), ctx.headAudit),
       })
       return item
     } catch (err) {
@@ -510,9 +700,10 @@ export function createQuotationService(
     id: string,
     input: QuotationHeadUpdateInput,
   ): Promise<Quotation> {
-    const spec = quotationSpec(side)
+    const ctx = sides[side]
+    const spec = ctx.spec
     const locked = await lockDraftHead(trx, permit, side, id, '')
-    const before = mapHead(locked)
+    const before = mapHead(ctx, locked)
     const after: Quotation = {
       ...before,
       quotationNo: input.quotationNo !== undefined ? input.quotationNo.trim() : before.quotationNo,
@@ -553,7 +744,11 @@ export function createQuotationService(
     if (!(await partyExists(trx, after.partyType, after.partyId))) {
       throw ApiError.validation('报价参数不合法', { partyId: ['对手不存在'] })
     }
-    const changes = auditDiff(headSnap(before), headSnap(after), HEAD_AUDIT)
+    const changes = auditDiff(
+      snapshot(ctx.headMeta, before, ctx.headAudit),
+      snapshot(ctx.headMeta, after, ctx.headAudit),
+      ctx.headAudit,
+    )
     if (Object.keys(changes).length === 0) return before
     try {
       await sql`
@@ -569,10 +764,9 @@ export function createQuotationService(
           updated_at=(now() AT TIME ZONE 'utc')
         WHERE id=${id}::uuid
       `.execute(trx)
-      const row = await loadHeadRow(trx, spec, id)
-      const item = mapHead(row!)
+      const item = mapHead(ctx, (await loadHeadRow(trx, ctx, id))!)
       await writeAudit(trx, permit.actor, {
-        resource: spec.headAudit,
+        resource: ctx.headMeta.table,
         recordId: id,
         recordLabel: item.quotationNo,
         companyId: item.companyId,
@@ -586,134 +780,35 @@ export function createQuotationService(
     }
   }
 
-  async function deleteHead(permit: Permit, side: TradingSide, id: string): Promise<void> {
-    const spec = quotationSpec(side)
-    await withTx(db, async (trx) => {
-      const locked = await lockDraftHead(trx, permit, side, id, '')
-      const item = mapHead(locked)
-      await writeAudit(trx, permit.actor, {
-        resource: spec.headAudit,
-        recordId: id,
-        recordLabel: item.quotationNo,
-        companyId: item.companyId,
-        actionType: 'destroy',
-        actionName: 'destroy',
-        changes: auditDestroyed(headSnap(item), HEAD_AUDIT),
-      })
-      try {
-        await sql`DELETE FROM ${ident(spec.headTable)} WHERE id=${id}::uuid`.execute(trx)
-      } catch (err) {
-        throw mapQuotationWrite('删除报价单失败', err)
-      }
-    })
-  }
-
-  async function auditHead(permit: Permit, side: TradingSide, id: string): Promise<Quotation> {
-    const spec = quotationSpec(side)
-    return withTx(db, async (trx) => {
-      try {
-        const after = await flipDocStatusInTx(trx, permit.actor, {
-          headTable: spec.headTable,
-          targetStatus: 'audited',
-          actionName: 'audit',
-          stampAuditor: true,
-          lock: async (t) => {
-            const locked = await lockHead(t, permit, side, id)
-            if (String(locked.status).toLowerCase() !== 'draft') {
-              throw new ApiError('conflict', '仅草稿报价单可审核')
-            }
-            return locked
-          },
-          validate: async (t) => {
-            const count = await sql<{ c: string }>`
-              SELECT count(*)::text AS c FROM ${ident(spec.itemTable)} WHERE quotation_id=${id}::uuid
-            `.execute(t)
-            if (Number(count.rows[0]?.c ?? 0) === 0) {
-              throw new ApiError('conflict', '审核前必须至少填写一行条目')
-            }
-            const missing = await sql<{ e: boolean }>`
-              SELECT EXISTS(
-                SELECT 1 FROM ${ident(spec.itemTable)} i
-                WHERE i.quotation_id=${id}::uuid AND i.pricing_mode='qty_tiered'
-                  AND NOT EXISTS(SELECT 1 FROM ${ident(spec.tierTable)} t WHERE t.item_id=i.id)
-              ) AS e
-            `.execute(t)
-            if (missing.rows[0]?.e) {
-              throw new ApiError('conflict', '数量梯度条目必须至少填写一个价格档')
-            }
-          },
-          voucherOf: (row) => {
-            const h = mapHead(row)
-            return { id: h.id, no: h.quotationNo, companyId: h.companyId }
-          },
-          reload: async (t, headId) => (await loadHeadRow(t, spec, headId))!,
-          snapshot: (row) => headSnap(mapHead(row)),
-          auditFields: HEAD_AUDIT,
-        })
-        return mapHead(after)
-      } catch (err) {
-        throw mapQuotationWrite('审核报价单失败', err)
-      }
-    })
-  }
-
-  async function voidHead(permit: Permit, side: TradingSide, id: string): Promise<Quotation> {
-    const spec = quotationSpec(side)
-    return withTx(db, async (trx) => {
-      try {
-        const after = await flipDocStatusInTx(trx, permit.actor, {
-          headTable: spec.headTable,
-          targetStatus: 'voided',
-          actionName: 'void',
-          lock: async (t) => {
-            const locked = await lockHead(t, permit, side, id)
-            if (String(locked.status).toLowerCase() !== 'audited') {
-              throw new ApiError('conflict', '仅已审核报价单可作废')
-            }
-            return locked
-          },
-          voucherOf: (row) => {
-            const h = mapHead(row)
-            return { id: h.id, no: h.quotationNo, companyId: h.companyId }
-          },
-          reload: async (t, headId) => (await loadHeadRow(t, spec, headId))!,
-          snapshot: (row) => headSnap(mapHead(row)),
-          auditFields: HEAD_AUDIT,
-        })
-        return mapHead(after)
-      } catch (err) {
-        throw mapQuotationWrite('作废报价单失败', err)
-      }
-    })
-  }
+  // ─── 条目 ────────────────────────────────────────────────────────
 
   async function listItems(permit: Permit, side: TradingSide, query: Partial<ListQuery>) {
-    const spec = quotationSpec(side)
+    const ctx = sides[side]
     return listAuthorized({
       db,
       permit,
-      target: targets[side].item,
+      target: ctx.itemTarget,
       alias: ITEM_ALIAS,
-      resource: quotationItemMeta(side),
-      source: itemSource(spec),
-      select: ITEM_SELECT,
+      resource: ctx.itemMeta,
+      source: ctx.itemFrom,
+      select: ctx.itemSelect,
       defaultOrder: sql`"quotation_date" DESC, "idx" ASC, "id" ASC`,
       query,
-      mapRow: (r) => mapItem(r),
+      mapRow: (r) => mapItem(ctx, r),
     })
   }
 
   async function getItem(permit: Permit, side: TradingSide, id: string): Promise<QuotationItem> {
-    const spec = quotationSpec(side)
+    const ctx = sides[side]
     return loadAuthorizedFrom({
       db,
       permit,
-      target: targets[side].item,
+      target: ctx.itemTarget,
       alias: ITEM_ALIAS,
-      source: itemSource(spec),
-      select: ITEM_SELECT,
+      source: ctx.itemFrom,
+      select: ctx.itemSelect,
       id,
-      mapRow: (r) => mapItem(r),
+      mapRow: (r) => mapItem(ctx, r),
       notFoundMessage: '报价条目不存在',
     })
   }
@@ -732,7 +827,8 @@ export function createQuotationService(
     side: TradingSide,
     input: QuotationItemCreateInput,
   ): Promise<QuotationItem> {
-    const spec = quotationSpec(side)
+    const ctx = sides[side]
+    const spec = ctx.spec
     const parent = await lockDraftHead(trx, permit, side, input.quotationId, 'item')
     const { mode, price, taxRate } = normalizeItemShape(
       input.pricingMode,
@@ -744,12 +840,7 @@ export function createQuotationService(
     )
     const snap = await loadMaterialSnap(trx, input.materialId, input.unitId)
     if (spec.customerMaterialGuard) {
-      guardCustomerMaterial(
-        side,
-        String(parent.party_type),
-        String(parent.party_id),
-        snap,
-      )
+      guardCustomerMaterial(side, String(parent.party_type), String(parent.party_id), snap)
       guardMaterialType(snap, ['STOCK', 'VIRTUAL'], '报价条目')
     }
     try {
@@ -766,16 +857,15 @@ export function createQuotationService(
         ) RETURNING id
       `.execute(trx)
       const id = inserted.rows[0]!.id
-      const row = await loadItemRow(trx, spec, id)
-      const item = mapItem(row!)
+      const item = mapItem(ctx, (await loadItemRow(trx, ctx, id))!)
       await writeAudit(trx, permit.actor, {
-        resource: spec.itemAudit,
+        resource: ctx.itemMeta.table,
         recordId: id,
         recordLabel: String(item.idx),
         companyId: item.companyId,
         actionType: 'create',
         actionName: 'create',
-        changes: auditCreated(itemSnap(item), ITEM_AUDIT),
+        changes: auditCreated(snapshot(ctx.itemMeta, item, ctx.itemAudit), ctx.itemAudit),
       })
       return item
     } catch (err) {
@@ -799,17 +889,16 @@ export function createQuotationService(
     id: string,
     input: QuotationItemUpdateInput,
   ): Promise<QuotationItem> {
-    const spec = quotationSpec(side)
+    const ctx = sides[side]
+    const spec = ctx.spec
     // 母单先行加锁（授权 + 草稿门），再锁子行
     const parent = await itemParent(trx, permit, side, id)
     await lockChildRow(trx, spec.itemTable, id, '报价条目不存在')
-    const beforeRow = await loadItemRow(trx, spec, id)
+    const beforeRow = await loadItemRow(trx, ctx, id)
     if (!beforeRow) throw new ApiError('not_found', '报价条目不存在')
-    const before = mapItem(beforeRow)
+    const before = mapItem(ctx, beforeRow)
     const afterMode = input.pricingMode ?? before.pricingMode
-    const afterPrice = input.pricePresent
-      ? input.price
-      : before.price
+    const afterPrice = input.pricePresent ? input.price : before.price
     const { mode, price, taxRate } = normalizeItemShape(
       afterMode,
       afterPrice,
@@ -840,7 +929,11 @@ export function createQuotationService(
       unitName: snap.unitName,
       remarks: input.remarksPresent ? (input.remarks ?? null) : before.remarks,
     }
-    const changes = auditDiff(itemSnap(before), itemSnap(after), ITEM_AUDIT)
+    const changes = auditDiff(
+      snapshot(ctx.itemMeta, before, ctx.itemAudit),
+      snapshot(ctx.itemMeta, after, ctx.itemAudit),
+      ctx.itemAudit,
+    )
     if (Object.keys(changes).length === 0) return before
     try {
       await sql`
@@ -855,12 +948,11 @@ export function createQuotationService(
         WHERE id=${id}::uuid
       `.execute(trx)
       if (before.pricingMode === 'QTY_TIERED' && mode === 'FIXED') {
-        await purgeTiers(trx, permit, spec, id)
+        await purgeTiers(trx, permit, ctx, id)
       }
-      const row = await loadItemRow(trx, spec, id)
-      const item = mapItem(row!)
+      const item = mapItem(ctx, (await loadItemRow(trx, ctx, id))!)
       await writeAudit(trx, permit.actor, {
-        resource: spec.itemAudit,
+        resource: ctx.itemMeta.table,
         recordId: id,
         recordLabel: String(item.idx),
         companyId: item.companyId,
@@ -884,21 +976,22 @@ export function createQuotationService(
     side: TradingSide,
     id: string,
   ): Promise<void> {
-    const spec = quotationSpec(side)
+    const ctx = sides[side]
+    const spec = ctx.spec
     // 母单先行加锁（授权 + 草稿门），再锁子行
     await itemParent(trx, permit, side, id)
     await lockChildRow(trx, spec.itemTable, id, '报价条目不存在')
-    const row = await loadItemRow(trx, spec, id)
+    const row = await loadItemRow(trx, ctx, id)
     if (!row) throw new ApiError('not_found', '报价条目不存在')
-    const item = mapItem(row)
+    const item = mapItem(ctx, row)
     await writeAudit(trx, permit.actor, {
-      resource: spec.itemAudit,
+      resource: ctx.itemMeta.table,
       recordId: id,
       recordLabel: String(item.idx),
       companyId: item.companyId,
       actionType: 'destroy',
       actionName: 'destroy',
-      changes: auditDestroyed(itemSnap(item), ITEM_AUDIT),
+      changes: auditDestroyed(snapshot(ctx.itemMeta, item, ctx.itemAudit), ctx.itemAudit),
     })
     try {
       await sql`DELETE FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid`.execute(trx)
@@ -907,33 +1000,35 @@ export function createQuotationService(
     }
   }
 
+  // ─── 价格档（孙级资源：整体弹射保留手写） ─────────────────────────
+
   async function listTiers(permit: Permit, side: TradingSide, query: Partial<ListQuery>) {
-    const spec = quotationSpec(side)
+    const ctx = sides[side]
     return listAuthorized({
       db,
       permit,
-      target: targets[side].tier,
+      target: ctx.tierTarget,
       alias: TIER_ALIAS,
-      resource: quotationTierMeta(side),
-      source: tierSource(spec),
-      select: TIER_SELECT,
+      resource: ctx.tierMeta,
+      source: ctx.tierFrom,
+      select: ctx.tierSelect,
       defaultOrder: sql`"min_qty" ASC, "id" ASC`,
       query,
-      mapRow: (r) => mapTier(r),
+      mapRow: (r) => mapTier(ctx, r),
     })
   }
 
   async function getTier(permit: Permit, side: TradingSide, id: string): Promise<QuotationTier> {
-    const spec = quotationSpec(side)
+    const ctx = sides[side]
     return loadAuthorizedFrom({
       db,
       permit,
-      target: targets[side].tier,
+      target: ctx.tierTarget,
       alias: TIER_ALIAS,
-      source: tierSource(spec),
-      select: TIER_SELECT,
+      source: ctx.tierFrom,
+      select: ctx.tierSelect,
       id,
-      mapRow: (r) => mapTier(r),
+      mapRow: (r) => mapTier(ctx, r),
       notFoundMessage: '报价价格档不存在',
     })
   }
@@ -952,7 +1047,8 @@ export function createQuotationService(
     side: TradingSide,
     input: { itemId: string; minQty: string; price: string },
   ): Promise<QuotationTier> {
-    const spec = quotationSpec(side)
+    const ctx = sides[side]
+    const spec = ctx.spec
     const minQty = decimal(input.minQty)
     const price = decimal(input.price)
     validateTierShape(minQty, price)
@@ -971,16 +1067,15 @@ export function createQuotationService(
         RETURNING id
       `.execute(trx)
       const id = inserted.rows[0]!.id
-      const row = await loadTierRow(trx, spec, id)
-      const item = mapTier(row!)
+      const item = mapTier(ctx, (await loadTierRow(trx, ctx, id))!)
       await writeAudit(trx, permit.actor, {
-        resource: spec.tierAudit,
+        resource: ctx.tierMeta.table,
         recordId: id,
         recordLabel: item.minQty,
         companyId: item.companyId,
         actionType: 'create',
         actionName: 'create',
-        changes: auditCreated(tierSnap(item), TIER_AUDIT),
+        changes: auditCreated(snapshot(ctx.tierMeta, item, ctx.tierAudit), ctx.tierAudit),
       })
       return item
     } catch (err) {
@@ -1004,7 +1099,8 @@ export function createQuotationService(
     id: string,
     input: { minQty?: string; price?: string },
   ): Promise<QuotationTier> {
-    const spec = quotationSpec(side)
+    const ctx = sides[side]
+    const spec = ctx.spec
     const owner = await tierOwnerItem(trx, spec, id)
     const parent = await tierParent(trx, spec, owner)
     // 母单先行加锁（授权 + 草稿门），再锁子行
@@ -1015,16 +1111,20 @@ export function createQuotationService(
         itemId: ['仅数量梯度条目可维护价格档'],
       })
     }
-    const beforeRow = await loadTierRow(trx, spec, id)
+    const beforeRow = await loadTierRow(trx, ctx, id)
     if (!beforeRow) throw new ApiError('not_found', '报价价格档不存在')
-    const before = mapTier(beforeRow)
+    const before = mapTier(ctx, beforeRow)
     const after: QuotationTier = {
       ...before,
       minQty: input.minQty !== undefined ? wireRequiredDecimal(input.minQty) : before.minQty,
       price: input.price !== undefined ? wireRequiredDecimal(input.price) : before.price,
     }
     validateTierShape(decimal(after.minQty), decimal(after.price))
-    const changes = auditDiff(tierSnap(before), tierSnap(after), TIER_AUDIT)
+    const changes = auditDiff(
+      snapshot(ctx.tierMeta, before, ctx.tierAudit),
+      snapshot(ctx.tierMeta, after, ctx.tierAudit),
+      ctx.tierAudit,
+    )
     if (Object.keys(changes).length === 0) return before
     try {
       await sql`
@@ -1033,10 +1133,9 @@ export function createQuotationService(
           updated_at=(now() AT TIME ZONE 'utc')
         WHERE id=${id}::uuid
       `.execute(trx)
-      const row = await loadTierRow(trx, spec, id)
-      const item = mapTier(row!)
+      const item = mapTier(ctx, (await loadTierRow(trx, ctx, id))!)
       await writeAudit(trx, permit.actor, {
-        resource: spec.tierAudit,
+        resource: ctx.tierMeta.table,
         recordId: id,
         recordLabel: item.minQty,
         companyId: item.companyId,
@@ -1060,7 +1159,8 @@ export function createQuotationService(
     side: TradingSide,
     id: string,
   ): Promise<void> {
-    const spec = quotationSpec(side)
+    const ctx = sides[side]
+    const spec = ctx.spec
     const owner = await tierOwnerItem(trx, spec, id)
     const parent = await tierParent(trx, spec, owner)
     // 母单先行加锁（授权 + 草稿门），再锁子行
@@ -1071,17 +1171,17 @@ export function createQuotationService(
         itemId: ['仅数量梯度条目可维护价格档'],
       })
     }
-    const row = await loadTierRow(trx, spec, id)
+    const row = await loadTierRow(trx, ctx, id)
     if (!row) throw new ApiError('not_found', '报价价格档不存在')
-    const item = mapTier(row)
+    const item = mapTier(ctx, row)
     await writeAudit(trx, permit.actor, {
-      resource: spec.tierAudit,
+      resource: ctx.tierMeta.table,
       recordId: id,
       recordLabel: item.minQty,
       companyId: item.companyId,
       actionType: 'destroy',
       actionName: 'destroy',
-      changes: auditDestroyed(tierSnap(item), TIER_AUDIT),
+      changes: auditDestroyed(snapshot(ctx.tierMeta, item, ctx.tierAudit), ctx.tierAudit),
     })
     try {
       await sql`DELETE FROM ${ident(spec.tierTable)} WHERE id=${id}::uuid`.execute(trx)
@@ -1090,29 +1190,60 @@ export function createQuotationService(
     }
   }
 
+  /** 定价模式由数量梯度改回固定价：清档并逐行留审计（actionName=purge） */
+  async function purgeTiers(
+    handle: DbHandle,
+    permit: Permit,
+    ctx: SideCtx,
+    itemId: string,
+  ): Promise<void> {
+    const rows = await sql<Record<string, unknown>>`
+      ${ctx.tierSelect}${ctx.tierFrom}
+      WHERE quotation_tiers.item_id=${itemId}::uuid
+      ORDER BY quotation_tiers.min_qty, quotation_tiers.id
+    `.execute(handle)
+    await sql`DELETE FROM ${ident(ctx.spec.tierTable)} WHERE item_id=${itemId}::uuid`.execute(
+      handle,
+    )
+    for (const row of rows.rows) {
+      const item = mapTier(ctx, row)
+      await writeAudit(handle, permit.actor, {
+        resource: ctx.tierMeta.table,
+        recordId: item.id,
+        recordLabel: item.minQty,
+        companyId: item.companyId,
+        actionType: 'destroy',
+        actionName: 'purge',
+        changes: auditDestroyed(snapshot(ctx.tierMeta, item, ctx.tierAudit), ctx.tierAudit),
+      })
+    }
+  }
+
+  // ─── 整单聚合（本资源的 create/update wire：单事务全成全败） ──────────
+
   async function loadDraft(
     handle: DbHandle,
     permit: Permit,
     side: TradingSide,
     id: string,
   ): Promise<QuotationSavedDraft> {
-    const spec = quotationSpec(side)
+    const ctx = sides[side]
     const head = await loadAuthorizedFrom({
       db: handle,
       permit,
-      target: targets[side].head,
+      target: ctx.headTarget,
       alias: HEAD_ALIAS,
-      source: headSource(spec),
-      select: HEAD_SELECT,
+      source: ctx.headFrom,
+      select: ctx.headSelect,
       id,
-      mapRow: (r) => mapHead(r),
-      notFoundMessage: `${spec.label}不存在`,
+      mapRow: (r) => mapHead(ctx, r),
+      notFoundMessage: `${ctx.spec.label}不存在`,
     })
-    const itemRows = await loadItemRowsForQuotation(handle, spec, id)
-    const tierRows = await loadTierRowsForQuotation(handle, spec, id)
+    const itemRows = await loadItemRowsForQuotation(handle, ctx, id)
+    const tierRows = await loadTierRowsForQuotation(handle, ctx, id)
     const tiersByItem = new Map<string, QuotationTier[]>()
     for (const row of tierRows) {
-      const tier = mapTier(row)
+      const tier = mapTier(ctx, row)
       const tiers = tiersByItem.get(tier.itemId) ?? []
       tiers.push(tier)
       tiersByItem.set(tier.itemId, tiers)
@@ -1120,7 +1251,7 @@ export function createQuotationService(
     return {
       ...head,
       items: itemRows.map((row) => {
-        const item = mapItem(row)
+        const item = mapItem(ctx, row)
         return { ...item, tiers: tiersByItem.get(item.id) ?? [] }
       }),
     }
@@ -1132,7 +1263,7 @@ export function createQuotationService(
     side: TradingSide,
     id: string,
   ): Promise<QuotationSavedDraft> {
-    return withReadSnapshot(db, (snapshot) => loadDraft(snapshot, permit, side, id))
+    return withReadSnapshot(db, (snap) => loadDraft(snap, permit, side, id))
   }
 
   async function createDraft(
@@ -1181,9 +1312,10 @@ export function createQuotationService(
     id: string,
     input: QuotationDraftInput,
   ): Promise<QuotationSavedDraft> {
-    const spec = quotationSpec(side)
+    const ctx = sides[side]
+    const spec = ctx.spec
     return withTx(db, async (trx) => {
-      const before = mapHead(await lockDraftHead(trx, permit, side, id, ''))
+      const before = mapHead(ctx, await lockDraftHead(trx, permit, side, id, ''))
       if (input.companyId !== before.companyId) {
         throw ApiError.validation('报价草稿参数不合法', {
           'header.companyId': ['创建后不可修改公司'],
@@ -1407,6 +1539,60 @@ export function createQuotationService(
 
 export type QuotationService = ReturnType<typeof createQuotationService>
 
+// ─── 投影附加键（join 出来的引用与计算列；物理列由 meta 派生） ──────────
+
+function headExtras(row: Record<string, unknown>): Record<string, unknown> {
+  const companyId = String(row.company_id)
+  const currencyId = String(row.currency_id)
+  const createdById = row.created_by_id ? String(row.created_by_id) : null
+  const auditedById = row.audited_by_id ? String(row.audited_by_id) : null
+  return {
+    company: namedRef(companyId, String(row.company_name)),
+    currency: codeNamedRef(
+      currencyId,
+      String(row.currency_code),
+      String(row.currency_name),
+    ),
+    createdBy: createdById
+      ? namedRef(createdById, String(row.created_by_name ?? ''))
+      : null,
+    auditedBy: auditedById
+      ? namedRef(auditedById, String(row.audited_by_name ?? ''))
+      : null,
+  }
+}
+
+function itemExtras(row: Record<string, unknown>): Record<string, unknown> {
+  const quotationId = String(row.quotation_id)
+  const companyId = String(row.company_id)
+  const materialId = String(row.material_id)
+  const unitId = String(row.unit_id)
+  return {
+    tierCount: Number(row.tier_count ?? 0),
+    quotationDate: asDate(row.quotation_date),
+    validUntil: asDate(row.valid_until),
+    quotationStatus: upperStatus(String(row.quotation_status)),
+    partyType: upperStatus(String(row.party_type)),
+    currencyCode: String(row.currency_code),
+    quotation: { id: quotationId, quotationNo: String(row.quotation_no) },
+    company: namedRef(companyId, String(row.company_name)),
+    material: codeNamedRef(
+      materialId,
+      String(row.material_code),
+      String(row.material_live_name ?? row.material_name),
+    ),
+    unit: namedRef(unitId, String(row.unit_live_name ?? row.unit_name)),
+  }
+}
+
+function tierExtras(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    company: namedRef(String(row.company_id), String(row.company_name ?? '')),
+  }
+}
+
+// ─── 领域校验（头/条目/价格档形状 + 聚合子记录身份） ─────────────────
+
 async function withIndexedFields<T>(
   prefix: string,
   run: () => Promise<T>,
@@ -1570,70 +1756,6 @@ function validateTierShape(minQty: Decimal, price: Decimal) {
   }
 }
 
-/** 写后 reload：授权已在 loadAuthorized/loadAuthorizedFrom 完成，此处只取投影 */
-async function loadHeadRow(
-  db: DbHandle,
-  spec: QuotationSideSpec,
-  id: string,
-): Promise<Record<string, unknown> | undefined> {
-  const rows = await sql<Record<string, unknown>>`
-    ${HEAD_SELECT}${headSource(spec)} WHERE quotation_heads.id=${id}::uuid
-  `.execute(db)
-  return rows.rows[0]
-}
-
-async function loadItemRow(
-  db: DbHandle,
-  spec: QuotationSideSpec,
-  id: string,
-): Promise<Record<string, unknown> | undefined> {
-  const rows = await sql<Record<string, unknown>>`
-    ${ITEM_SELECT}${itemSource(spec)} WHERE quotation_items.id=${id}::uuid
-  `.execute(db)
-  return rows.rows[0]
-}
-
-async function loadItemRowsForQuotation(
-  db: DbHandle,
-  spec: QuotationSideSpec,
-  quotationId: string,
-): Promise<Record<string, unknown>[]> {
-  const rows = await sql<Record<string, unknown>>`
-    ${ITEM_SELECT}${itemSource(spec)}
-    WHERE quotation_items.quotation_id=${quotationId}::uuid
-    ORDER BY quotation_items.idx,quotation_items.id
-  `.execute(db)
-  return rows.rows
-}
-
-async function loadTierRow(
-  db: DbHandle,
-  spec: QuotationSideSpec,
-  id: string,
-): Promise<Record<string, unknown> | undefined> {
-  const rows = await sql<Record<string, unknown>>`
-    ${TIER_SELECT}${tierSource(spec)} WHERE quotation_tiers.id=${id}::uuid
-  `.execute(db)
-  return rows.rows[0]
-}
-
-async function loadTierRowsForQuotation(
-  db: DbHandle,
-  spec: QuotationSideSpec,
-  quotationId: string,
-): Promise<Record<string, unknown>[]> {
-  const rows = await sql<Record<string, unknown>>`
-    SELECT t.id,t.min_qty,t.price,t.inserted_at,t.updated_at,t.item_id,t.company_id,
-      c.name AS company_name
-    FROM ${ident(spec.tierTable)} t
-    JOIN ${ident(spec.itemTable)} i ON i.id=t.item_id
-    JOIN bas_company c ON c.id=t.company_id
-    WHERE i.quotation_id=${quotationId}::uuid
-    ORDER BY i.idx,t.min_qty,t.id
-  `.execute(db)
-  return rows.rows
-}
-
 /** 价格档所属条目 id（母单先行加锁前的定位读，不加锁） */
 async function tierOwnerItem(
   db: DbHandle,
@@ -1670,191 +1792,6 @@ async function tierParent(
   }
 }
 
-async function purgeTiers(
-  db: DbHandle,
-  permit: Permit,
-  spec: QuotationSideSpec,
-  itemId: string,
-): Promise<void> {
-  const rows = await sql<Record<string, unknown>>`
-    ${TIER_SELECT}${tierSource(spec)}
-    WHERE quotation_tiers.item_id=${itemId}::uuid
-    ORDER BY quotation_tiers.min_qty, quotation_tiers.id
-  `.execute(db)
-  await sql`DELETE FROM ${ident(spec.tierTable)} WHERE item_id=${itemId}::uuid`.execute(db)
-  for (const row of rows.rows) {
-    const item = mapTier(row)
-    await writeAudit(db, permit.actor, {
-      resource: spec.tierAudit,
-      recordId: item.id,
-      recordLabel: item.minQty,
-      companyId: item.companyId,
-      actionType: 'destroy',
-      actionName: 'purge',
-      changes: auditDestroyed(tierSnap(item), TIER_AUDIT),
-    })
-  }
-}
-
-function mapHead(row: Record<string, unknown>): Quotation {
-  const id = String(row.id)
-  const companyId = String(row.company_id)
-  const currencyId = String(row.currency_id)
-  const createdById = row.created_by_id ? String(row.created_by_id) : null
-  const auditedById = row.audited_by_id ? String(row.audited_by_id) : null
-  return {
-    id,
-    quotationNo: String(row.quotation_no),
-    quotationDate: asDate(row.quotation_date),
-    validUntil: asDate(row.valid_until),
-    partyType: upperStatus(String(row.party_type)),
-    partyId: String(row.party_id),
-    terms: asOptionalString(row.terms),
-    remarks: asOptionalString(row.remarks),
-    status: upperStatus(String(row.status)),
-    auditedAt: asDateTime(row.audited_at),
-    insertedAt: asDateTime(row.inserted_at)!,
-    updatedAt: asDateTime(row.updated_at)!,
-    companyId,
-    currencyId,
-    createdById,
-    auditedById,
-    company: namedRef(companyId, String(row.company_name)),
-    currency: codeNamedRef(
-      currencyId,
-      String(row.currency_code),
-      String(row.currency_name),
-    ),
-    createdBy: createdById
-      ? namedRef(createdById, String(row.created_by_name ?? ''))
-      : null,
-    auditedBy: auditedById
-      ? namedRef(auditedById, String(row.audited_by_name ?? ''))
-      : null,
-  }
-}
-
-function mapItem(row: Record<string, unknown>): QuotationItem {
-  const id = String(row.id)
-  const companyId = String(row.company_id)
-  const materialId = String(row.material_id)
-  const unitId = String(row.unit_id)
-  const quotationId = String(row.quotation_id)
-  const price =
-    row.price === null || row.price === undefined ? null : wireRequiredDecimal(String(row.price))
-  return {
-    id,
-    idx: Number(row.idx),
-    pricingMode: upperStatus(String(row.pricing_mode)),
-    price,
-    taxRate: wireRequiredDecimal(String(row.tax_rate)),
-    materialCode: String(row.material_code),
-    materialName: String(row.material_name),
-    materialSpec: asOptionalString(row.material_spec),
-    customerPartNo: asOptionalString(row.customer_part_no),
-    unitName: String(row.unit_name),
-    remarks: asOptionalString(row.remarks),
-    insertedAt: asDateTime(row.inserted_at)!,
-    updatedAt: asDateTime(row.updated_at)!,
-    quotationId,
-    companyId,
-    materialId,
-    unitId,
-    tierCount: Number(row.tier_count ?? 0),
-    quotationDate: asDate(row.quotation_date),
-    validUntil: asDate(row.valid_until),
-    quotationStatus: upperStatus(String(row.quotation_status)),
-    partyType: upperStatus(String(row.party_type)),
-    partyId: String(row.party_id),
-    currencyCode: String(row.currency_code),
-    quotation: { id: quotationId, quotationNo: String(row.quotation_no) },
-    company: namedRef(companyId, String(row.company_name)),
-    material: codeNamedRef(
-      materialId,
-      String(row.material_code),
-      String(row.material_live_name ?? row.material_name),
-    ),
-    unit: namedRef(unitId, String(row.unit_live_name ?? row.unit_name)),
-  }
-}
-
-function mapTier(row: Record<string, unknown>): QuotationTier {
-  const companyId = String(row.company_id)
-  return {
-    id: String(row.id),
-    minQty: wireRequiredDecimal(String(row.min_qty)),
-    price: wireRequiredDecimal(String(row.price)),
-    insertedAt: asDateTime(row.inserted_at)!,
-    updatedAt: asDateTime(row.updated_at)!,
-    itemId: String(row.item_id),
-    companyId,
-    company: namedRef(companyId, String(row.company_name ?? '')),
-  }
-}
-
-function headSnap(item: Quotation): Record<string, unknown> {
-  return {
-    quotation_no: item.quotationNo,
-    quotation_date: item.quotationDate,
-    valid_until: item.validUntil,
-    party_type: lowerParty(item.partyType),
-    party_id: item.partyId,
-    terms: item.terms,
-    remarks: item.remarks,
-    status: item.status.toLowerCase(),
-    audited_at: item.auditedAt,
-    company_id: item.companyId,
-    currency_id: item.currencyId,
-    created_by_id: item.createdById,
-    audited_by_id: item.auditedById,
-  }
-}
-
-function itemSnap(item: QuotationItem): Record<string, unknown> {
-  return {
-    idx: item.idx,
-    pricing_mode: item.pricingMode.toLowerCase(),
-    price: item.price,
-    tax_rate: item.taxRate,
-    material_code: item.materialCode,
-    material_name: item.materialName,
-    material_spec: item.materialSpec,
-    customer_part_no: item.customerPartNo,
-    unit_name: item.unitName,
-    remarks: item.remarks,
-    quotation_id: item.quotationId,
-    company_id: item.companyId,
-    material_id: item.materialId,
-    unit_id: item.unitId,
-  }
-}
-
-function tierSnap(item: QuotationTier): Record<string, unknown> {
-  return {
-    min_qty: item.minQty,
-    price: item.price,
-    item_id: item.itemId,
-    company_id: item.companyId,
-  }
-}
-
 function mapQuotationWrite(message: string, err: unknown): ApiError {
-  return mapWriteError(err, message, [
-    { code: '23505', constraint: 'quotation_unique_quotation_no', message: '报价单号已存在' },
-    {
-      code: '23505',
-      constraint: 'quotation_item_unique_material_unit',
-      message: '同一物料与单位在本报价单已有报价行',
-    },
-    {
-      code: '23505',
-      constraint: 'quotation_tier_unique_item_min_qty',
-      message: '同一起订量档已存在',
-    },
-    { code: '23505', message: '报价数据已存在' },
-    { code: '23503', message: '报价数据已被业务引用,不可删除' },
-  ])
+  return mapWriteError(err, message, QUOTATION_WRITE_ERRORS)
 }
-
-// silence unused import if any
-void wireDecimal
