@@ -48,7 +48,7 @@ run('PG 集成（对手地址）', () => {
     for (const id of customerIds) {
       await db
         .deleteFrom('sys_audit_log')
-        .where('resource', '=', 'sal_customer')
+        .where('resource', '=', 'sal_customers')
         .where('record_id', '=', id)
         .execute()
       await db.deleteFrom('bas_party_address').where('party_id', '=', id).execute()
@@ -115,6 +115,16 @@ run('PG 集成（对手地址）', () => {
     // 不同用途互不影响
     const stillDefault = await addresses.get(permit('basPartyAddresses', 'read'), a2.id)
     expect(stillDefault.isDefault).toBe(true)
+
+    // 更新改判默认：同主体同用途的旧默认让位；联系人空串归一为 null
+    const backToA1 = await addresses.update(permit('basPartyAddresses', 'update'), a1.id, {
+      isDefault: true,
+      contactName: '',
+    })
+    expect(backToA1.isDefault).toBe(true)
+    expect(backToA1.contactName).toBeNull()
+    const demoted = await addresses.get(permit('basPartyAddresses', 'read'), a2.id)
+    expect(demoted.isDefault).toBe(false)
 
     await expect(
       addresses.create(permit('basPartyAddresses', 'create'), {

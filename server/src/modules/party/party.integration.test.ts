@@ -45,7 +45,8 @@ run('PG 集成（party 客商员工）', () => {
       await db.deleteFrom('hr_employees').where('id', '=', id).execute()
     }
     for (const id of customerIds) {
-      await db.deleteFrom('sys_audit_log').where('resource', '=', 'sal_customer').where('record_id', '=', id).execute()
+      // 标准派生后审计 resource 即表名（sal_customers），不再是历史单数 sal_customer
+      await db.deleteFrom('sys_audit_log').where('resource', '=', 'sal_customers').where('record_id', '=', id).execute()
       await db.deleteFrom('sal_customers').where('id', '=', id).execute()
     }
     for (const id of supplierIds) {
@@ -69,6 +70,16 @@ run('PG 集成（party 客商员工）', () => {
     supplierIds.push(s.id)
     const listed = await customers.list(permit('salCustomers', 'read'), { limit: 10, offset: 0, search: suffix })
     expect(listed.results.some((r) => r.id === c.id)).toBe(true)
+
+    // present-key 语义：缺省不动、空串与 null 均清空（简称归一）
+    const renamed = await customers.update(permit('salCustomers', 'update'), c.id, {
+      name: `客户改-${suffix}`,
+    })
+    expect(renamed.name).toBe(`客户改-${suffix}`)
+    expect(renamed.shortName).toBe('客户')
+    const cleared = await customers.update(permit('salCustomers', 'update'), c.id, { shortName: '' })
+    expect(cleared.shortName).toBeNull()
+
     await customers.remove(permit('salCustomers', 'delete'), c.id)
     customerIds.splice(customerIds.indexOf(c.id), 1)
     await suppliers.remove(permit('purSuppliers', 'delete'), s.id)

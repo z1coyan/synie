@@ -1,9 +1,15 @@
 /**
  * 客户 / 供应商 / 员工（全局主数据，无公司列 → global 形态）。
  *
- * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ * 客户与供应商：`platform/standard` 派生服务（CRUD/批量/审计/授权按 meta 派生），
+ * 本文件只留两条领域不变量——简称空串归一、删除前的关联物料保护与地址级联清理。
+ *
+ * 员工：弹射保留手写。`insurance_types` 是 `enumArray`，标准内核的 wire/值派生
+ * 显式不支持（注册期即抛错，见 platform/standard/wire.ts），且考勤自动建档 seam
+ * （`autoCreateForAttendance`）不在标准词表内。
+ *
+ * 员工侧授权仍全由平台承担：路由挂 `guard(资源, 动作)`，服务只收 Permit——
  * 列表 `listAuthorized`、单条/写前取行 `loadAuthorized`。
- * 关联物料/唯一约束是领域不变量，留在本文件。
  */
 import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -16,12 +22,12 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
-import { auditFieldsOf, auditSpecOf } from '~/platform/audit/spec.ts'
+import { auditSpecOf } from '~/platform/audit/spec.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
-import type { AuthzTarget } from '~/platform/meta/resource-authz.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
+import { createStandardService, type StandardService } from '~/platform/standard/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listAuthorized } from '~/db/list.ts'
 import { loadAuthorized } from '~/db/load.ts'
@@ -30,10 +36,8 @@ import {
   CUSTOMER_RESOURCE_NAME,
   EMPLOYEE_RESOURCE_NAME,
   SUPPLIER_RESOURCE_NAME,
-  customerResourceMeta,
   employeeResourceMeta,
   INSURANCE_WIRE,
-  supplierResourceMeta,
 } from './meta.ts'
 
 export interface Party {
@@ -43,6 +47,7 @@ export interface Party {
   shortName: string | null
   insertedAt: Date
   updatedAt: Date
+  [key: string]: unknown
 }
 
 export interface Employee {
@@ -61,214 +66,76 @@ export interface Employee {
   updatedAt: Date
 }
 
-// 客户/供应商审计白名单同构：任一侧 meta 派生即可（spec.test 断言两侧一致）
-const PARTY_AUDIT = auditFieldsOf(customerResourceMeta())
 const EMP_AUDIT_SPEC = auditSpecOf(employeeResourceMeta())
 const EMP_AUDIT = EMP_AUDIT_SPEC.fields
 
-export function createCustomerService(db: Kysely<Database>, registry: Registry) {
-  return createPartyKind(db, {
-    table: 'sal_customers',
-    resource: 'sal_customer',
+export function createCustomerService(db: Kysely<Database>, registry: Registry): StandardService<Party> {
+  return createPartyKind(db, registry, {
+    resource: CUSTOMER_RESOURCE_NAME,
     label: '客户',
-    target: registry.authzTarget(CUSTOMER_RESOURCE_NAME),
-    meta: customerResourceMeta(),
     notFound: '客户不存在',
     materialCheck: true,
     addressPartyType: 'CUSTOMER',
   })
 }
 
-export function createSupplierService(db: Kysely<Database>, registry: Registry) {
-  return createPartyKind(db, {
-    table: 'pur_supplier',
-    resource: 'pur_supplier',
+export function createSupplierService(db: Kysely<Database>, registry: Registry): StandardService<Party> {
+  return createPartyKind(db, registry, {
+    resource: SUPPLIER_RESOURCE_NAME,
     label: '供应商',
-    target: registry.authzTarget(SUPPLIER_RESOURCE_NAME),
-    meta: supplierResourceMeta(),
     notFound: '供应商不存在',
     materialCheck: false,
     addressPartyType: 'SUPPLIER',
   })
 }
 
+/**
+ * 客户/供应商共用的标准派生工厂（两侧字段与不变量同构，仅文案与删除保护不同）。
+ *
+ * 领域不变量：
+ * - 简称空串归一为 null（手写 normalizeParty 的既有语义；zod 已 trim）
+ * - 客户删除前查关联物料（inv_material.customer_id）
+ * - 删除主体级联清多态地址（无 DB 外键）
+ */
 function createPartyKind(
   db: Kysely<Database>,
+  registry: Registry,
   opts: {
-    table: 'sal_customers' | 'pur_supplier'
     resource: string
     label: string
-    target: AuthzTarget
-    meta: ReturnType<typeof customerResourceMeta>
     notFound: string
     materialCheck: boolean
     addressPartyType: 'CUSTOMER' | 'SUPPLIER'
   },
-) {
-  async function get(permit: Permit, id: string): Promise<Party> {
-    const row = await loadAuthorized({
-      db,
-      permit,
-      target: opts.target,
-      table: opts.table,
-      id,
-      notFoundMessage: opts.notFound,
-    })
-    return mapParty(row as never)
-  }
-
-  async function list(permit: Permit, query: Partial<ListQuery>) {
-    return listAuthorized({
-      db,
-      permit,
-      target: opts.target,
-      alias: opts.table,
-      resource: opts.meta,
-      source: sql` FROM ${sql.table(opts.table)}`,
-      select: sql`SELECT id, code, name, short_name, inserted_at, updated_at`,
-      defaultOrder: sql`"code" ASC, "id" ASC`,
-      query,
-      mapRow: (r) =>
-        mapParty({
-          id: String(r.id),
-          code: String(r.code),
-          name: String(r.name),
-          short_name: r.short_name == null ? null : String(r.short_name),
-          inserted_at: r.inserted_at as Date,
-          updated_at: r.updated_at as Date,
-        }),
-    })
-  }
-
-  async function create(
-    permit: Permit,
-    input: { code: string; name: string; shortName?: string | null },
-  ): Promise<Party> {
-    const { code, name, shortName } = normalizeParty(input.code, input.name, input.shortName)
-    return withTx(db, async (trx) => {
-      try {
-        const row = await trx
-          .insertInto(opts.table)
-          .values({ code, name, short_name: shortName })
-          .returningAll()
-          .executeTakeFirstOrThrow()
-        const item = mapParty(row)
-        await writeAudit(trx, permit.actor, {
-          resource: opts.resource,
-          recordId: item.id,
-          recordLabel: item.name,
-          actionType: 'create',
-          actionName: 'create',
-          changes: auditCreated(partySnap(item), PARTY_AUDIT),
-        })
-        return item
-      } catch (err) {
-        throw mapWriteError(err, `创建${opts.label}失败`, [
-          { code: '23505', message: `${opts.label}编号已存在` },
-        ])
-      }
-    })
-  }
-
-  async function update(
-    permit: Permit,
-    id: string,
-    input: {
-      code?: string
-      name?: string
-      shortName?: string | null
-      shortNamePresent?: boolean
+): StandardService<Party> {
+  return createStandardService<Party>({
+    db,
+    registry,
+    resource: opts.resource,
+    notFound: opts.notFound,
+    defaultOrder: sql`"code" ASC, "id" ASC`,
+    writeErrors: [
+      { code: '23505', message: `${opts.label}编号已存在` },
+      { code: '23503', message: `${opts.label}已被业务数据引用,不可删除` },
+    ],
+    hooks: {
+      validate: ({ draft }) => {
+        if (draft.shortName === '') draft.shortName = null
+      },
+      beforeDelete: async (trx, { item }) => {
+        const id = String(item.id)
+        if (opts.materialCheck) {
+          const linked = await trx
+            .selectFrom('inv_material')
+            .select('id')
+            .where('customer_id', '=', id)
+            .executeTakeFirst()
+          if (linked) throw new ApiError('conflict', '存在关联物料,不能删除')
+        }
+        await deleteAddressesForParty(trx, opts.addressPartyType, id)
+      },
     },
-  ): Promise<Party> {
-    return withTx(db, async (trx) => {
-      const locked = await loadAuthorized({
-        db: trx,
-        permit,
-        target: opts.target,
-        table: opts.table,
-        id,
-        forUpdate: true,
-        notFoundMessage: opts.notFound,
-      })
-      const before = mapParty(locked as never)
-      const { code, name, shortName } = normalizeParty(
-        input.code ?? before.code,
-        input.name ?? before.name,
-        input.shortNamePresent ? input.shortName : before.shortName,
-      )
-      const after = { ...before, code, name, shortName }
-      const changes = auditDiff(partySnap(before), partySnap(after), PARTY_AUDIT)
-      if (Object.keys(changes).length === 0) return before
-      try {
-        const row = await trx
-          .updateTable(opts.table)
-          .set({
-            code,
-            name,
-            short_name: shortName,
-            updated_at: sql`(now() AT TIME ZONE 'utc')`,
-          })
-          .where('id', '=', id)
-          .returningAll()
-          .executeTakeFirstOrThrow()
-        const item = mapParty(row)
-        await writeAudit(trx, permit.actor, {
-          resource: opts.resource,
-          recordId: item.id,
-          recordLabel: item.name,
-          actionType: 'update',
-          actionName: 'update',
-          changes,
-        })
-        return item
-      } catch (err) {
-        throw mapWriteError(err, `更新${opts.label}失败`, [
-          { code: '23505', message: `${opts.label}编号已存在` },
-        ])
-      }
-    })
-  }
-
-  async function remove(permit: Permit, id: string): Promise<void> {
-    await withTx(db, async (trx) => {
-      const locked = await loadAuthorized({
-        db: trx,
-        permit,
-        target: opts.target,
-        table: opts.table,
-        id,
-        forUpdate: true,
-        notFoundMessage: opts.notFound,
-      })
-      if (opts.materialCheck) {
-        const linked = await trx
-          .selectFrom('inv_material')
-          .select('id')
-          .where('customer_id', '=', id)
-          .executeTakeFirst()
-        if (linked) throw new ApiError('conflict', '存在关联物料,不能删除')
-      }
-      const item = mapParty(locked as never)
-      await deleteAddressesForParty(trx, opts.addressPartyType, id)
-      try {
-        await trx.deleteFrom(opts.table).where('id', '=', id).execute()
-      } catch (err) {
-        throw mapWriteError(err, `删除${opts.label}失败`, [
-          { code: '23503', message: `${opts.label}已被业务数据引用,不可删除` },
-        ])
-      }
-      await writeAudit(trx, permit.actor, {
-        resource: opts.resource,
-        recordId: item.id,
-        recordLabel: item.name,
-        actionType: 'destroy',
-        actionName: 'destroy',
-        changes: auditDestroyed(partySnap(item), PARTY_AUDIT),
-      })
-    })
-  }
-
-  return { get, list, create, update, remove }
+  })
 }
 
 export type CustomerService = ReturnType<typeof createCustomerService>
@@ -555,24 +422,6 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
 
 export type EmployeeService = ReturnType<typeof createEmployeeService>
 
-function normalizeParty(code: string, name: string, shortName?: string | null) {
-  code = code.trim()
-  name = name.trim()
-  const fields: Record<string, string[]> = {}
-  if (!code || [...code].length > 32) fields.code = ['不能为空且最多 32 个字符']
-  if (!name || [...name].length > 128) fields.name = ['不能为空且最多 128 个字符']
-  let sn: string | null = null
-  if (shortName !== undefined && shortName !== null) {
-    const t = shortName.trim()
-    sn = t === '' ? null : t
-    if (sn && [...sn].length > 64) fields.shortName = ['最多 64 个字符']
-  }
-  if (Object.keys(fields).length > 0) {
-    throw ApiError.validation('参数不合法', fields)
-  }
-  return { code, name, shortName: sn }
-}
-
 function normalizeEmployee(input: {
   code: string
   name: string
@@ -642,24 +491,6 @@ function lowerInsurance(types: string[]): string[] {
   return types.map((t) => t.toLowerCase())
 }
 
-function mapParty(row: {
-  id: string
-  code: string
-  name: string
-  short_name: string | null
-  inserted_at: Date | string
-  updated_at: Date | string
-}): Party {
-  return {
-    id: row.id,
-    code: row.code,
-    name: row.name,
-    shortName: row.short_name,
-    insertedAt: toDate(row.inserted_at),
-    updatedAt: toDate(row.updated_at),
-  }
-}
-
 function mapEmployee(row: {
   id: string
   code: string
@@ -691,10 +522,6 @@ function mapEmployee(row: {
     insertedAt: toDate(row.inserted_at),
     updatedAt: toDate(row.updated_at),
   }
-}
-
-function partySnap(p: Party): Record<string, unknown> {
-  return { code: p.code, name: p.name, short_name: p.shortName }
 }
 
 function empSnap(e: Employee): Record<string, unknown> {
