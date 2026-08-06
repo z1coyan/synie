@@ -25,6 +25,11 @@ import {
 import { ORDER_MATERIAL_RESOURCE } from './outsourced-config.ts'
 import { orderSpec } from './spec.ts'
 import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
+import {
+  ATTACHMENT_RESOURCE_NAME,
+  buildOwnerRegistryFromMeta,
+  createFileService,
+} from '~/platform/files/index.ts'
 
 
 /** 编号服务需要 sealed registry（授权归宿解析） */
@@ -58,6 +63,7 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
   const material2Id = crypto.randomUUID()
   const rawMaterialId = crypto.randomUUID()
   const byproductId = crypto.randomUUID()
+  const drawingFileId = crypto.randomUUID()
 
   const actor: Actor = testActor({
     userId: '',
@@ -67,6 +73,12 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
+  })
+  /** 与生产一致：宿主白名单自 Meta 派生；读侧 listAttachments 走此路径 */
+  const files = createFileService({
+    db,
+    owners: buildOwnerRegistryFromMeta(numberingRegistry.list()),
+    authz,
   })
   /** 凭证一律现取（actor 会随用例切换）：superAdmin 的 rowFilter 恒全集 */
   const permit = (resource: string, action: string, who: Actor = actor) => {
@@ -249,6 +261,18 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
         (${rawMaterialId}::uuid, ${'R' + suffix}, ${prefix + '原料'}, ${categoryId}::uuid, ${unitId}::uuid, true),
         (${byproductId}::uuid, ${'B' + suffix}, ${prefix + '副产物'}, ${categoryId}::uuid, ${unitId}::uuid, true)
     `.execute(db)
+    // 主物料图纸：订单条目保存时 syncDrawingAttachments 复制挂接到行
+    await sql`
+      INSERT INTO sys_file(id, storage, key, filename, content_type, size, sha256)
+      VALUES (
+        ${drawingFileId}::uuid, 'local', ${'od-draw-' + suffix},
+        ${'draw-' + suffix + '.png'}, 'image/png', 12, ${'a'.repeat(64)}
+      )
+    `.execute(db)
+    await sql`
+      INSERT INTO sys_attachment(owner_type, owner_id, category, file_id, company_id)
+      VALUES ('inv_material', ${materialId}::uuid, 'drawing', ${drawingFileId}::uuid, null)
+    `.execute(db)
   })
 
   afterAll(async () => {
@@ -261,6 +285,11 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
           SELECT id FROM pur_order_item WHERE company_id=${companyId}::uuid
         )
     `.execute(db)
+    await sql`
+      DELETE FROM sys_attachment
+      WHERE owner_type = 'inv_material' AND owner_id = ${materialId}::uuid
+    `.execute(db)
+    await sql`DELETE FROM sys_file WHERE id = ${drawingFileId}::uuid`.execute(db)
     await sql`DELETE FROM sys_audit_log WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sal_order WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM pur_order WHERE company_id=${companyId}::uuid`.execute(db)
@@ -629,5 +658,56 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
     const newByproductCreated = await lineAudit('pur_order_item_byproduct', newLine.id)
     expect(newByproductCreated.rows.map((r) => r.action_name)).toEqual(['create'])
     expect(newByproductCreated.rows[0]?.record_label).toBe('M' + suffix)
+  })
+
+  test('条目图纸挂接写后读侧可达（宿主白名单自 meta.attachments 派生）', async () => {
+    // 回归：曾写侧 SQL 复制挂接，但条目 meta 未声明 attachments → listAttachments 永远空
+    for (const side of ['sales', 'purchase'] as const) {
+      const created = await orders.createDraft(
+        headPermit(side, 'create'),
+        side,
+        draftInput(side, `${prefix}-${side}-DRAW`),
+      )
+      const itemId = created.items[0]!.id
+      const ownerType = orderSpec(side).itemOwnerType
+
+      // DB 已有行挂接（写侧 syncDrawingAttachments）
+      const dbRows = await sql<{ file_id: string; company_id: string | null }>`
+        SELECT file_id::text, company_id::text
+        FROM sys_attachment
+        WHERE owner_type = ${ownerType} AND owner_id = ${itemId}::uuid AND category = 'drawing'
+      `.execute(db)
+      expect(dbRows.rows).toHaveLength(1)
+      expect(dbRows.rows[0]!.file_id).toBe(drawingFileId)
+      expect(dbRows.rows[0]!.company_id).toBe(companyId)
+
+      // 读侧经 files 服务（与前端 MaterialCell 同源）须可达
+      const listed = await files.listAttachments(permit(ATTACHMENT_RESOURCE_NAME, 'read'), {
+        ownerType,
+        ownerId: itemId,
+        category: 'drawing',
+      })
+      expect(listed.count).toBe(1)
+      expect(listed.results[0]?.fileId).toBe(drawingFileId)
+      expect(listed.results[0]?.companyId).toBe(companyId)
+
+      // 无宿主读码 → 不可达（空列表，不泄露）
+      const noHost = testActor({
+        userId: actor.userId,
+        username: 'no-order-read',
+        name: null,
+        superAdmin: false,
+        allCompanies: true,
+        permissions: new Set(['sys.file:read']),
+        companyIds: [],
+      })
+      const denied = await files.listAttachments(permit(ATTACHMENT_RESOURCE_NAME, 'read', noHost), {
+        ownerType,
+        ownerId: itemId,
+        category: 'drawing',
+      })
+      expect(denied.count).toBe(0)
+      expect(denied.results).toHaveLength(0)
+    }
   })
 })

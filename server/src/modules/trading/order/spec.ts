@@ -431,6 +431,8 @@ export function orderItemMeta(side: TradingSide): ResourceMeta {
   return {
     name: spec.itemResource,
     classification: { presentation: 'none', interactive: false },
+    /** 行图纸快照只读展示宿主：保存时从物料复制挂接，删行/删单清理（ownerType=表名） */
+    attachments: {},
     permissionPrefix: spec.prefix,
     permissionLabel: spec.label,
     table: spec.itemTable,

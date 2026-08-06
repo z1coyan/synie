@@ -109,6 +109,16 @@ describe('fulfillment item list source columns', () => {
     }
   })
 
+  test('条目声明 attachments（图纸快照宿主，ownerType 默认表名）', () => {
+    for (const side of ['sales', 'purchase'] as const) {
+      const item = fulfillmentItemMeta(side)
+      expect(item.attachments).toEqual({})
+      expect(item.table).toBe(
+        side === 'sales' ? 'sal_delivery_item' : 'pur_receipt_item',
+      )
+    }
+  })
+
   test('装箱行 via 链两级：pack_line → pack_box → sal_delivery', () => {
     const target = resolveAuthzTarget(PACK_LINE_RESOURCE, lookup)
     expect(target.rootResource).toBe(fulfillmentHeadMeta('sales').name)
