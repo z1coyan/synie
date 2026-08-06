@@ -145,6 +145,8 @@ export function createStandardChildService<TItem extends StandardItem = Standard
   const stampedColumns = new Set(inheritFields.map((f) => f.dbColumn))
   const writable = writableFields(meta, stampedColumns)
   const writableByApi = new Map(writable.map((f) => [f.apiName, f]))
+  /** 无差异判定的列面：可写列 + 派生列。审计白名单只管审计记录（可写列被 exclude 不得丢写） */
+  const WRITE_COLS = [...writable, ...derivedFields].map((f) => f.dbColumn)
 
   const labelField = meta.lookup?.labelField
     ? byName(meta.lookup.labelField)

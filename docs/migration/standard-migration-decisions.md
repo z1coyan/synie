@@ -54,3 +54,27 @@
 | invStockDocs/Transfers/Counts | 审计 changes 里日期列出 ISO | 出 YYYY-MM-DD(toDbValue 规范形) | 仅 sys_audit_log 内容;无 wire 字段 |
 | invStockTransfers | shipped_at/received_at 由 JS new Date() 写入 | (now() AT TIME ZONE 'utc') | 与 audited_at 同口径;非 UTC 主机旧值会漂 |
 | invStockDocs/Transfers/Counts | 无差异 PATCH 仍复校(可 422);delete DB 错裸 500 | 无差异返回现值;`删除X失败`兜底 | 内核合同与兜底 |
+| accGlJournals | skeleton 例外(createAndAuditJournal 无闸 seam) | 单头迁内核 workflow(audit 带 postingDate 输入/cancel),行迁子内核(derivedFields 币种);list 弹射(EXISTS 行筛选,内核缺 extraWhere);createAndAuditJournal 弹射(外部 trx seam) | 守卫文案逐字;路由保留手写(单挂载点混载 gl-entries/报表+词表门槛) |
+| accGlJournals | submitted_at 由 JS new Date() 写 | (now() AT TIME ZONE 'utc') | 与盖章列同口径 |
+| accGlJournals | 审计 changes 内 status/party_type 大写 | 库内小写(snapshot 走 toDbValue) | 仅 sys_audit_log 可见 |
+| accGlJournals | 行越母单可达 404`会计凭证行不存在` | 404`会计凭证不存在` | 子行内核先解析母单;invMaterialUnits 先例 |
+| accGlJournals | create 长度 422 先于公司边界 404 | 公司边界 404 先于长度 422 | 内核 create 内置 assertCompanyWritable 先行 |
+| hrPayrolls/hrEmployeeLoans | 手写 CRUD | CRUD 迁内核(工资单投影 paid_total/派生金额 insertColumns+afterWrite 补写;借款 created_by_id 盖章不声明 owner) | 发放核算(锁内核算+跨资源 effects)、按月生成、月汇总、balances 聚合弹射保留手写;路由保留手写(词表门槛+派生列不可暴露成可写) |
+| hrPayrolls | 十进制字段空串当 0 | 空串 422 | 内核 normalizeInput 先跑 decimal;web 恒回填 |
+| hrPayrolls | 无差异 PATCH 仍 UPDATE(bump updated_at) | 返回现值不落库 | 内核合同 |
+| hrPayrolls/hrEmployeeLoans | 数值/日期非法服务层文案 | 路由 zod`请求参数错误`;负数校验留钩子文案逐字 | 约束进 schema |
+| hrPayrolls | meta 大量列谎称 readonly(实际 PATCH 可写) | 修正为可写;month/employeeId 改 required+createOnly | meta 成唯一事实源 |
+| salQuotations/purQuotations | 审核/作废走 flipDocStatusInTx | 内核 workflow 两转移(effect=条目非空+梯度完整校验);flipDocStatusInTx 全库零消费方 | 守卫文案/盖章/actionName 逐字冻结 |
+| salQuotations/purQuotations | 整单聚合 create/update(头+条目+档位单事务) | **弹射保留手写**(单行端点为 withTx 包装);价格档孙级弹射(子行内核仅一层) | 内核动作自开事务,无在途事务变体——交易域五聚合写资源的唯一硬阻断 |
+| salQuotations/purQuotations | delete 先审计后 DELETE;兜底`删除报价单失败` | 内核序(先 DELETE 后审计);兜底`删除{销售/采购}报价单失败` | 内核合同;409 文案冻结 |
+| accExpenseReports(+行)/accVatInvoices/accBillTransactions | skeleton 编排 | 单头迁内核 workflow(audit 带 postingDate/void/红冲 reverse),行迁子内核;accBills/accBillHoldings 整弹射(EXISTS 派生可见性,内核无 extraWhere);交易 create 弹射(billAttrs 联动建档) | 守卫/文案/actionName 冻结;路由保留手写 |
+| finance 四资源 | 删除审计写 delete/delete | destroy/destroy | 全站 60 处已是 destroy,finance 是仅有偏离;仅 sys_audit_log 值 |
+| accVatInvoices/accBillTransactions | audit.exclude 含可写列(OCR 抬头/红冲号/remarks 等 13+1 列) | exclude 收窄至三个盖章列,审计面只增不减 | **内核丢写缺陷诱因**:无差异判定曾按审计白名单算——已根治(见内核条目) |
+| (内核) | 无差异判定按审计白名单算 diff(可写列被 exclude 时 PATCH 丢写) | 按可写列判定;审计白名单只管审计记录(写落库但审计面无变化时不写审计行) | 判官级缺陷,finance 代理发现;合同测试钉死 |
+| accVatInvoices | meta items 谎称 readonly | 可写(jsonb[] postgres.js 双向直通) | meta 唯一事实源 |
+| accExpenseReports/VatInvoices | 审核先翻状态再调引擎 | 先引擎再翻状态 | 内核 transition 顺序;GL 引擎不读单头 |
+| finance 三单据 | 取号 values 手拼(posting_date 口径特殊) | 仍在 beforeWrite 手拼(不用 options.numbering) | 单号逐字不变优先 |
+| mfgOutputs/mfgOutputItems | skeleton 编排 | 单头迁 workflow(audit/void,effect=引擎+工单投影回写),行迁子内核(derivedFields 工单快照);两处 list 与路由弹射(extraWhere 缺失/词表门槛/行 DELETE 用 update 码+allOf) | 文案/actionName 冻结 |
+| mfgOutputs | 服务返回 status 小写 | wire 大写(HTTP 经 upper() 不变) | 内核 wire 口径 |
+| mfgOutputs | 跨公司 create 404`公司不存在` | `生产入库单不存在` | 内核统一文案先例 |
+| mfgMoldDesigns | — | 整资源弹射,零改动 | 1:1 伴生物料的编排实体(级联建/删物料+双审计面);update 入参是 join 列,内核 normalizeInput 会丢弃 |

@@ -42,20 +42,20 @@ export const POSTING_SHAPES = {
     'inventory-doc',
     'actionName=approve/cancel，voidStatus=cancelled；已迁 platform/standard workflow，不再走本骨架',
   ),
-  'mfg.output': entry('inventory-doc', 'postProjection 回写工单完工与需求行'),
+  'mfg.output': entry('inventory-doc', 'postProjection 回写工单完工与需求行；已迁 platform/standard workflow，不再走本骨架'),
   'purchase.outsourced_issue': entry(
     'inventory-doc',
     '投影行键为 orderItemMaterialId（非履约 PostingProjectionLine），经闭包 postProjection 注入',
   ),
 
   // ---- 总账单据：仅 GL 引擎 ----
-  'acc.expense_report': entry('gl-doc'),
-  'acc.bill': entry('gl-doc', 'REALLOCATE 经 skipGl；作废含 replayBill'),
-  'acc.vat_invoice': entry('gl-doc', '红冲经 resolveGlEnd=reverse；flipToEnded 清对账关联'),
+  'acc.expense_report': entry('gl-doc', '已迁 platform/standard workflow，不再走本骨架'),
+  'acc.bill': entry('gl-doc', 'REALLOCATE 由 effect 不调引擎实现；作废含 replayBill；已迁 platform/standard workflow'),
+  'acc.vat_invoice': entry('gl-doc', '红冲经 gl.reverse；对账结单/重开挂 after；已迁 platform/standard workflow'),
 
   // ---- 状态翻转：无引擎段 ----
-  'sales.quotation': entry('status-flip', '审核校验条目非空与梯度完整'),
-  'purchase.quotation': entry('status-flip', '同销售报价'),
+  'sales.quotation': entry('status-flip', '审核校验条目非空与梯度完整；已迁 platform/standard workflow，不再走本骨架'),
+  'purchase.quotation': entry('status-flip', '同销售报价；已迁 platform/standard workflow，不再走本骨架'),
 
   // ---- 例外：不套骨架（原因写在 note） ----
   'inv.stock_transfer': entry(

@@ -65,6 +65,7 @@ function docMeta(): ResourceMeta {
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('doc_no', 'docNo', 'string', '单号', { maxLength: 32, nullable: true, filterable: true, sortable: true }),
       field('name', 'name', 'string', '名称', { required: true, maxLength: 64, filterable: true, sortable: true }),
+      field('scratch', 'scratch', 'string', '便签', { nullable: true, maxLength: 64 }),
       field('tags', 'tags', 'enumArray', '标签', {
         enumOptions: [
           { value: 'RED', label: '红' },
@@ -84,7 +85,8 @@ function docMeta(): ResourceMeta {
       { key: 'audit', label: '审核', scope: 'row' as const },
       { key: 'void', label: '作废', scope: 'row' as const },
     ],
-    audit: { enabled: true },
+    // scratch 可写但排除出审计白名单：钉「无差异判定按可写列算,不得丢写」
+    audit: { enabled: true, exclude: ['scratch'] },
   }
 }
 
@@ -245,6 +247,7 @@ run('标准动作内核 v2（postgres）', () => {
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         doc_no varchar(32),
         name varchar(64) NOT NULL,
+        scratch varchar(64),
         stamped_note varchar(32),
         tags text[] NOT NULL DEFAULT '{}',
         status varchar(16) NOT NULL DEFAULT 'draft',
@@ -290,6 +293,28 @@ run('标准动作内核 v2（postgres）', () => {
   async function createDraft(name = `单-${crypto.randomUUID().slice(0, 6)}`) {
     return docs.create(p('create'), { docNo: `NO-${crypto.randomUUID().slice(0, 8)}`, name, companyId })
   }
+
+  describe('无差异判定按可写列（审计白名单外的可写列不得丢写）', () => {
+    test('只改 audit.exclude 可写列：落库、不写审计;审计面变化才写审计行', async () => {
+      const doc = await createDraft()
+      const updated = await docs.update(p('update'), doc.id, { scratch: '便签一' })
+      expect(updated.scratch).toBe('便签一')
+      const raw = await sql<{ scratch: string | null }>`
+        SELECT scratch FROM std_v2_doc WHERE id = ${doc.id}::uuid
+      `.execute(db)
+      expect(raw.rows[0]!.scratch).toBe('便签一')
+      expect(await auditRows('std_v2_doc', doc.id, 'update')).toBe(0)
+
+      // 审计面内列变化 → 落库且写审计
+      await docs.update(p('update'), doc.id, { name: '审计面变化' })
+      expect(await auditRows('std_v2_doc', doc.id, 'update')).toBe(1)
+
+      // 同值补丁(含 exclude 列)仍是无差异:不落库不审计
+      const noop = await docs.update(p('update'), doc.id, { scratch: '便签一', name: '审计面变化' })
+      expect(await auditRows('std_v2_doc', doc.id, 'update')).toBe(1)
+      expect(noop.scratch).toBe('便签一')
+    })
+  })
 
   describe('enumArray', () => {
     test('wire 大写往返、库内小写;同值补丁无差异不审计', async () => {

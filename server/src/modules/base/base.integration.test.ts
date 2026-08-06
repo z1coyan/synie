@@ -235,9 +235,9 @@ run('PG 集成（base 主数据）', () => {
     expect(updated.name).toContain('已更新')
     expect(updated.ratio).toBe('0.000002')
 
+    // 删除后 not_found 由 standard-contract 的计量单位描述符继承
     await units.remove(permitOf(actor, 'basUnits', 'delete'), child.id)
     createdUnitIds.splice(createdUnitIds.indexOf(child.id), 1)
-    await expect(units.get(permitOf(actor, 'basUnits', 'read'), child.id)).rejects.toMatchObject({ code: 'not_found' })
 
     await units.remove(permitOf(actor, 'basUnits', 'delete'), base.id)
     createdUnitIds.splice(createdUnitIds.indexOf(base.id), 1)

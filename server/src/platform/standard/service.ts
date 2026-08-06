@@ -233,6 +233,8 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
   const writeErrors = options.writeErrors ?? []
   const writable = writableFields(meta, stampedColumns)
   const writableByApi = new Map(writable.map((f) => [f.apiName, f]))
+  /** 无差异判定的列面：可写列全集。审计白名单只管审计记录——可写列被 audit.exclude 时不得丢写 */
+  const WRITE_COLS = writable.map((f) => f.dbColumn)
 
   // recordLabel 字段：镜像 catalog-normalize 的 lookup 缺省（name → label → code → 首个字符串字段）
   const byName = (n: string) => meta.fields.find((f) => f.name === n || f.apiName === n)
@@ -551,8 +553,9 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
     assertMutable(before)
     const draft: Record<string, unknown> = { ...before, ...normalizeInput(patch) }
     hooks.validate?.({ action: 'update', permit, draft, before })
+    const writeChanges = auditDiff(snapshot(meta, before, WRITE_COLS), snapshot(meta, draft, WRITE_COLS), WRITE_COLS)
+    if (Object.keys(writeChanges).length === 0) return reload(trx, permit, before)
     const changes = auditDiff(snapshot(meta, before, AUDIT), snapshot(meta, draft, AUDIT), AUDIT)
-    if (Object.keys(changes).length === 0) return reload(trx, permit, before)
     await hooks.beforeWrite?.(trx, { action: 'update', permit, draft, before })
 
     let pathRewrite: { oldPath: string; newPath: string } | null = null
@@ -586,16 +589,18 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
         WHERE ${sql.id(tree.pathColumn)} LIKE ${pathRewrite.oldPath} || '%'
       `.execute(trx)
     }
-    await writeAudit(trx, permit.actor, {
-      resource: TABLE,
-      recordId: id,
-      recordLabel: recordLabel(item),
-      actionType: 'update',
-      actionName: 'update',
-      companyId: auditCompanyId(item),
-      changes,
-      sensitiveFields: meta.audit?.sensitiveFields,
-    })
+    if (Object.keys(changes).length > 0) {
+      await writeAudit(trx, permit.actor, {
+        resource: TABLE,
+        recordId: id,
+        recordLabel: recordLabel(item),
+        actionType: 'update',
+        actionName: 'update',
+        companyId: auditCompanyId(item),
+        changes,
+        sensitiveFields: meta.audit?.sensitiveFields,
+      })
+    }
     await hooks.afterWrite?.(trx, { action: 'update', permit, item, before })
     return reload(trx, permit, item)
   }

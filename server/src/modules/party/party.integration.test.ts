@@ -8,7 +8,7 @@ import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { deriveWireSchemas } from '~/platform/standard/wire.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
-import { createCustomerService, createEmployeeService, createSupplierService } from './party-service.ts'
+import { createCustomerService, createEmployeeService } from './party-service.ts'
 import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
@@ -20,7 +20,6 @@ run('PG 集成（party 客商员工）', () => {
   const authz = createAuthzEnforcer(registry)
   const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
   const customers = createCustomerService(db, registry)
-  const suppliers = createSupplierService(db, registry)
   const employees = createEmployeeService(db, numbering, registry)
   const actor: Actor = testActor({
     userId: crypto.randomUUID(),
@@ -39,7 +38,6 @@ run('PG 集成（party 客商员工）', () => {
   }
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
   const customerIds: string[] = []
-  const supplierIds: string[] = []
   const employeeIds: string[] = []
   /** 用例内已删除的员工（审计行仍在，afterAll 一并清） */
   const employeeAuditIds: string[] = []
@@ -66,10 +64,6 @@ run('PG 集成（party 客商员工）', () => {
       await db.deleteFrom('sys_audit_log').where('resource', '=', 'sal_customers').where('record_id', '=', id).execute()
       await db.deleteFrom('sal_customers').where('id', '=', id).execute()
     }
-    for (const id of supplierIds) {
-      await db.deleteFrom('sys_audit_log').where('resource', '=', 'pur_supplier').where('record_id', '=', id).execute()
-      await db.deleteFrom('pur_supplier').where('id', '=', id).execute()
-    }
     if (employeeRuleId) {
       await db.deleteFrom('sys_numbering_counter').where('rule_id', '=', employeeRuleId).execute()
       await db.deleteFrom('sys_numbering_rule').where('id', '=', employeeRuleId).execute()
@@ -77,18 +71,15 @@ run('PG 集成（party 客商员工）', () => {
     await db.destroy()
   })
 
-  test('客户/供应商 CRUD', async () => {
+  // 机械 CRUD（建/删/审计/批量/越权）由 standard-contract 的客户与供应商描述符继承；
+  // 本用例只留检索与 present-key 归一这两条不在合同里的语义。
+  test('客户：检索命中 + present-key 简称归一', async () => {
     const c = await customers.create(permit('salCustomers', 'create'), {
       code: `C${suffix}`,
       name: `客户-${suffix}`,
       shortName: '客户',
     })
     customerIds.push(c.id)
-    const s = await suppliers.create(permit('purSuppliers', 'create'), {
-      code: `S${suffix}`,
-      name: `供应商-${suffix}`,
-    })
-    supplierIds.push(s.id)
     const listed = await customers.list(permit('salCustomers', 'read'), { limit: 10, offset: 0, search: suffix })
     expect(listed.results.some((r) => r.id === c.id)).toBe(true)
 
@@ -103,8 +94,6 @@ run('PG 集成（party 客商员工）', () => {
 
     await customers.remove(permit('salCustomers', 'delete'), c.id)
     customerIds.splice(customerIds.indexOf(c.id), 1)
-    await suppliers.remove(permit('purSuppliers', 'delete'), s.id)
-    supplierIds.splice(supplierIds.indexOf(s.id), 1)
   })
 
   test('员工：参保多选 + 考勤机唯一', async () => {
@@ -138,14 +127,7 @@ run('PG 集成（party 客商员工）', () => {
     })
     expect(filtered.results.some((r) => r.id === emp.id)).toBe(true)
 
-    // 审计键即表名（内核统一口径）；库内参保类型小写
-    const audit = await db
-      .selectFrom('sys_audit_log')
-      .select(['resource', 'action_type'])
-      .where('resource', '=', 'hr_employees')
-      .where('record_id', '=', emp.id)
-      .execute()
-    expect(audit.some((row) => row.action_type === 'create')).toBe(true)
+    // 库内参保类型小写（create 审计由 standard-contract 的员工描述符继承）
     const raw = await db
       .selectFrom('hr_employees')
       .select('insurance_types')
@@ -274,9 +256,9 @@ run('PG 集成（party 客商员工）', () => {
       }).success,
     ).toBe(true)
     expect(schemas.create.safeParse({ name: '张三', dailyWage: '100.5' }).success).toBe(true)
-    // name 必填、未知键拒绝、未知参保类型拒绝、编号显式 null 拒绝（列 NOT NULL）
+    // name 必填、未知参保类型拒绝、编号显式 null 拒绝（列 NOT NULL）
+    // 未知键拒绝已由 standard-contract 的员工描述符继承
     expect(schemas.create.safeParse({}).success).toBe(false)
-    expect(schemas.create.safeParse({ name: '张三', bogus: 1 }).success).toBe(false)
     expect(schemas.create.safeParse({ name: '张三', insuranceTypes: ['NOPE'] }).success).toBe(false)
     expect(schemas.create.safeParse({ code: null, name: '张三' }).success).toBe(false)
     // 更新：present-key 语义（出现即写、null 清空、缺省不动）

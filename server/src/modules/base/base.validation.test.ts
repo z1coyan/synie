@@ -21,7 +21,9 @@ describe('base 校验与 Meta', () => {
     expect(registry.get('basAccounts')?.permissionPrefix).toBe('base.account')
   })
 
-  test('计量单位派生 schema：trim/枚举/长度/未知键', () => {
+  // 未知键拒绝与 createOnly 不进 update 由 standard-contract 的单位/科目描述符继承；
+  // 本文件只留字段级的 trim / 枚举 / 长度 / 十进制这些不在合同里的裁量。
+  test('计量单位派生 schema：trim/枚举/长度', () => {
     const schemas = deriveWireSchemas(unitResourceMeta(), new Set())
 
     const ok = schemas.create.parse({
@@ -34,20 +36,17 @@ describe('base 校验与 Meta', () => {
     expect(ok.symbol).toBe('kg')
     expect(ok.ratio).toBe('0.001')
 
-    // 未知枚举值 / 超长 / 未知键 / 空必填
+    // 未知枚举值 / 超长 / 空必填
     expect(schemas.create.safeParse({ unitType: 'VOLUME', name: '升', symbol: 'L', ratio: '1' }).success).toBe(false)
     expect(
       schemas.create.safeParse({ unitType: 'AREA', name: 'x'.repeat(33), symbol: 'm2', ratio: '1' }).success,
-    ).toBe(false)
-    expect(
-      schemas.create.safeParse({ unitType: 'AREA', name: '平米', symbol: 'm2', ratio: '1', bogus: 1 }).success,
     ).toBe(false)
     expect(schemas.create.safeParse({ unitType: 'AREA', name: '  ', symbol: 'm2', ratio: '1' }).success).toBe(false)
     // 非十进制 ratio 由 decimalStringSchema 拦截
     expect(schemas.create.safeParse({ unitType: 'AREA', name: '平米', symbol: 'm2', ratio: 'abc' }).success).toBe(false)
   })
 
-  test('会计科目派生 schema：方向/角色枚举、编码与名称长度、未知键', () => {
+  test('会计科目派生 schema：方向/角色枚举、编码与名称长度', () => {
     const schemas = deriveWireSchemas(accountResourceMeta(), new Set())
     const companyId = '00000000-0000-0000-0000-000000000001'
 
@@ -72,16 +71,13 @@ describe('base 校验与 Meta', () => {
       { code: '1', name: 'x', direction: 'sideways', companyId },
       { code: '1', name: 'x', direction: 'debit', companyId },
       { code: '1', name: 'x', direction: 'DEBIT', role: 'NOT_A_ROLE', companyId },
-      { code: '1', name: 'x', direction: 'DEBIT', companyId, bogus: 1 },
       { code: '1', name: 'x', direction: 'DEBIT' },
     ]
     for (const input of bad) {
       expect(schemas.create.safeParse(input).success).toBe(false)
     }
 
-    // 编码/公司 createOnly：不进 update schema
-    expect(schemas.update.safeParse({ code: '2' }).success).toBe(false)
-    expect(schemas.update.safeParse({ companyId }).success).toBe(false)
+    // 上级可空：present-key 下 parentId 显式 null 进 update
     expect(schemas.update.safeParse({ name: '改名', parentId: null }).success).toBe(true)
   })
 
