@@ -8,6 +8,9 @@
  * - 带入列（company_id 等）：inheritFields 声明，wire 不可写，创建时从母单带入
  * - 无批量/工作流/树形/编号（单据行不需要；需要即弹射回手写）
  *
+ * 投影（projection）与标准服务同口径：列表/单条/**写后返回值**共用一份 join 投影，
+ * 审计 record_label 亦取投影后的记录（子行的名称在引用上，可用 recordLabel 覆盖）。
+ *
  * 钩子纪律同标准服务；行内充实（物料快照投影等）放 beforeWrite。
  */
 import type { ListQuery } from '@synie/shared'
@@ -73,6 +76,11 @@ export interface StandardChildServiceOptions {
   writeErrors?: readonly PgWriteMapping[]
   hooks?: ChildHooks
   projection?: StandardProjection
+  /**
+   * 审计 record_label 覆盖：子行常无自己的名称列（label 在 join 出来的引用上），
+   * meta 派生取不到时由模块给出（item 为投影后的 wire 形）。
+   */
+  recordLabel?: (item: Record<string, unknown>) => string | null
 }
 
 export interface StandardChildService<TItem extends StandardItem = StandardItem> {
@@ -145,6 +153,7 @@ export function createStandardChildService<TItem extends StandardItem = Standard
   }
 
   function recordLabel(item: Record<string, unknown>): string | null {
+    if (options.recordLabel) return options.recordLabel(item)
     if (!labelField) return null
     const value = item[labelField.apiName]
     return value === null || value === undefined ? null : String(value)
@@ -199,19 +208,30 @@ export function createStandardChildService<TItem extends StandardItem = Standard
     return mapRow(meta, result.rows[0]!) as TItem
   }
 
+  /** 投影单条（get 与写后重载共用） */
+  async function loadProjected(handle: DbHandle, permit: Permit, id: string): Promise<TItem> {
+    return loadAuthorizedFrom({
+      db: handle,
+      permit,
+      target,
+      alias: ALIAS,
+      source: SOURCE,
+      select: SELECT,
+      id,
+      mapRow: mapRowFull,
+      notFoundMessage: notFound,
+    })
+  }
+
+  /** 写后返回值：有投影则按投影重载（同事务），无投影直接映射 RETURNING 行 */
+  async function reload(trx: TrxHandle, permit: Permit, fallback: TItem): Promise<TItem> {
+    if (!projection) return fallback
+    return loadProjected(trx, permit, fallback.id)
+  }
+
   async function get(permit: Permit, id: string): Promise<TItem> {
     if (projection) {
-      return loadAuthorizedFrom({
-        db,
-        permit,
-        target,
-        alias: ALIAS,
-        source: SOURCE,
-        select: SELECT,
-        id,
-        mapRow: mapRowFull,
-        notFoundMessage: notFound,
-      })
+      return loadProjected(db, permit, id)
     }
     const row = await loadAuthorized({ db, permit, target, table: TABLE, id, notFoundMessage: notFound })
     return mapRow(meta, row as Record<string, unknown>) as TItem
@@ -272,10 +292,11 @@ export function createStandardChildService<TItem extends StandardItem = Standard
       } catch (err) {
         throw mapWriteError(err, `保存${label}失败`, writeErrors)
       }
+      const projected = await reload(trx, permit, item)
       await writeAudit(trx, permit.actor, {
         resource: TABLE,
         recordId: item.id,
-        recordLabel: recordLabel(item),
+        recordLabel: recordLabel(projected),
         actionType: 'create',
         actionName: 'create',
         companyId: auditCompanyId(item),
@@ -283,7 +304,7 @@ export function createStandardChildService<TItem extends StandardItem = Standard
         sensitiveFields: meta.audit?.sensitiveFields,
       })
       await hooks.afterWrite?.(trx, { action: 'create', permit, item, parent: parentWire })
-      return item
+      return projected
     })
   }
 
@@ -295,7 +316,7 @@ export function createStandardChildService<TItem extends StandardItem = Standard
       hooks.validate?.({ action: 'update', permit, draft, parent: parentWire, before })
       await hooks.beforeWrite?.(trx, { action: 'update', permit, draft, parent: parentWire, before })
       const changes = auditDiff(snapshot(meta, before, AUDIT), snapshot(meta, draft, AUDIT), AUDIT)
-      if (Object.keys(changes).length === 0) return before
+      if (Object.keys(changes).length === 0) return reload(trx, permit, before)
       const sets = writable.map((f) => sql`${sql.id(f.dbColumn)} = ${toDbValue(f, draft[f.apiName])}`)
       sets.push(sql`updated_at = (now() AT TIME ZONE 'utc')`)
       let item: TItem
@@ -305,10 +326,11 @@ export function createStandardChildService<TItem extends StandardItem = Standard
       } catch (err) {
         throw mapWriteError(err, `保存${label}失败`, writeErrors)
       }
+      const projected = await reload(trx, permit, item)
       await writeAudit(trx, permit.actor, {
         resource: TABLE,
         recordId: id,
-        recordLabel: recordLabel(item),
+        recordLabel: recordLabel(projected),
         actionType: 'update',
         actionName: 'update',
         companyId: auditCompanyId(item),
@@ -316,7 +338,7 @@ export function createStandardChildService<TItem extends StandardItem = Standard
         sensitiveFields: meta.audit?.sensitiveFields,
       })
       await hooks.afterWrite?.(trx, { action: 'update', permit, item, parent: parentWire, before })
-      return item
+      return projected
     })
   }
 
@@ -324,6 +346,8 @@ export function createStandardChildService<TItem extends StandardItem = Standard
     await withTx(db, async (trx) => {
       const parentWire = await parentOf(trx, permit, id)
       const item = await lockRow(trx, id)
+      // 标签取自投影（引用名在 join 上），须在 DELETE 前取
+      const projected = await reload(trx, permit, item)
       await hooks.beforeDelete?.(trx, { permit, item, parent: parentWire })
       try {
         await sql`DELETE FROM ${sql.id(TABLE)} WHERE id = ${id}::uuid`.execute(trx)
@@ -333,7 +357,7 @@ export function createStandardChildService<TItem extends StandardItem = Standard
       await writeAudit(trx, permit.actor, {
         resource: TABLE,
         recordId: id,
-        recordLabel: recordLabel(item),
+        recordLabel: recordLabel(projected),
         actionType: 'destroy',
         actionName: 'destroy',
         companyId: auditCompanyId(item),

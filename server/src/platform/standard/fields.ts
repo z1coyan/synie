@@ -32,7 +32,8 @@ export function toDbValue(field: FieldMeta, value: unknown): unknown {
   if (value === null || value === undefined) return null
   switch (field.type) {
     case 'enum':
-      return String(value).toLowerCase()
+      // 库内大小写按 meta 声明；缺省小写（全站约定），'upper' 是历史遗留列的逃生舱
+      return field.enumStorage === 'upper' ? String(value).toUpperCase() : String(value).toLowerCase()
     case 'decimal':
       return decimal(String(value)).toFixed()
     case 'string':

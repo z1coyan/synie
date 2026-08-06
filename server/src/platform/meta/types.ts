@@ -32,6 +32,11 @@ export interface FieldMeta {
   createOnly?: boolean
   sensitive?: boolean
   enumOptions?: GridEnumOption[]
+  /**
+   * 枚举库内大小写：全站约定小写（缺省），历史遗留大写列（`inv_material.material_type`
+   * 带 CHECK 大写白名单）声明 `'upper'`。wire 恒为大写 token，本声明只影响落库值。
+   */
+  enumStorage?: 'lower' | 'upper'
   ref?: GridColumnRef
   filterable?: boolean
   sortable?: boolean
