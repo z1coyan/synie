@@ -6,6 +6,7 @@ import {
   decodeCurrencyUpdate,
   useCatalogBasicForm,
   requireWriter,
+  resourceLabel,
 } from '~/lib/resources/catalog'
 import { ensureDefaultGridPage } from '~/lib/route-prefetch'
 import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
@@ -67,7 +68,7 @@ function CurrenciesPage() {
           if (mode === 'create') {
             const input = decodeCurrencyCreate(values)
             const saved = await requireWriter(binding, 'create', '币种')({ ...input })
-            toast.success('货币已创建')
+            toast.success(`${resourceLabel('basCurrencies')}已创建`)
             invalidate()
             return saved.id as string
           }
@@ -75,7 +76,7 @@ function CurrenciesPage() {
           const saved = await requireWriter(binding, 'update', '币种')(String(drawer!.recordId), {
             ...input,
           })
-          toast.success('货币已更新')
+          toast.success(`${resourceLabel('basCurrencies')}已更新`)
           invalidate()
           return saved.id as string
         }}

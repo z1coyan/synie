@@ -1,42 +1,15 @@
 /**
  * 目标资源 lookup 的前端消费。
- * 优先用已缓存的 ResourceDocument.lookup；否则使用与服务端模块 meta.lookup 对齐的种子，
+ * 优先用已缓存的 ResourceDocument.lookup（actor 投影）；否则读资源事实清单
+ * （server meta.lookup 的构建期派生物，ADR 2026-08-07-resource-manifest），
  * 保证 RemoteSelect 在 Meta 尚未拉取时行为不退化。
  */
 import type { ResourceLookupMeta, SortState } from '@synie/shared'
+import { RESOURCE_MANIFEST } from '@synie/shared/generated/resource-manifest'
 import { getCachedDocument } from './cache'
 
-/** 与 server 各模块 meta.lookup 对齐的种子 */
-export const LOOKUP_SEEDS: Record<string, ResourceLookupMeta> = {
-  hrEmployees: {
-    labelField: 'name',
-    searchFields: ['name', 'code', 'attendanceNo'],
-    subtitleFields: ['code', 'attendanceNo'],
-  },
-  invMaterialCategories: {
-    labelField: 'name',
-    searchFields: ['name', 'code'],
-    subtitleFields: ['code'],
-  },
-  invMaterials: {
-    labelField: 'name',
-    searchFields: ['name', 'code', 'spec'],
-    subtitleFields: ['code', 'spec'],
-  },
-  basUnits: {
-    labelField: 'name',
-    searchFields: ['name', 'symbol'],
-    subtitleFields: ['symbol'],
-  },
-  basCurrencies: {
-    labelField: 'name',
-    searchFields: ['name', 'isoCode'],
-    subtitleFields: ['isoCode'],
-  },
-}
-
 /**
- * 解析目标资源 lookup：catalog cache > 种子 > 通用 name 兜底。
+ * 解析目标资源 lookup：catalog cache > 资源事实清单 > 通用 name 兜底。
  */
 export function resolveResourceLookup(
   resource: string,
@@ -44,8 +17,8 @@ export function resolveResourceLookup(
 ): ResourceLookupMeta {
   const cached = getCachedDocument(resource)?.lookup
   if (cached) return cached
-  const seed = LOOKUP_SEEDS[resource]
-  if (seed) return seed
+  const manifest = RESOURCE_MANIFEST[resource]?.lookup
+  if (manifest) return manifest
   return {
     labelField: fallbackLabelField,
     searchFields: [fallbackLabelField],

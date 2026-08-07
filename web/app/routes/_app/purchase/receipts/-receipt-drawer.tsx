@@ -8,6 +8,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, NumberField, TextField, toast } from '@heroui/react'
 import { companyClient } from '~/lib/resources/companies'
+import { resourceLabel } from '~/lib/resources/catalog'
 import {
   purchaseReceiptItemClient,
 } from '~/lib/resources/fulfillment'
@@ -713,13 +714,13 @@ export function ReceiptDrawerProvider({
           let saved: Row
           if (mode === 'create') {
             saved = await purchaseReceiptDraft.createDraft(draft)
-            toast.success('采购入库单已创建')
+            toast.success(`${resourceLabel('purReceipts')}已创建`)
           } else {
             saved = await purchaseReceiptDraft.replaceDraft(
               rowId!,
               draft,
             )
-            toast.success('采购入库单已更新')
+            toast.success(`${resourceLabel('purReceipts')}已更新`)
           }
           await Promise.all([
             purchaseReceiptBinding.cache.invalidateAll(queryClient),

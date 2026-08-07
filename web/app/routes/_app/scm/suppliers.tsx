@@ -6,6 +6,7 @@ import {
   decodeSupplierUpdate,
   useCatalogBasicForm,
   requireWriter,
+  resourceLabel,
 } from '~/lib/resources/catalog'
 import { ensureDefaultGridPage } from '~/lib/route-prefetch'
 import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
@@ -77,16 +78,16 @@ function SuppliersPage() {
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             const input = decodeSupplierCreate(values)
-            const saved = await requireWriter(binding, 'create', '供应商')({ ...input })
-            toast.success('供应商已创建')
+            const saved = await requireWriter(binding, 'create')({ ...input })
+            toast.success(`${resourceLabel('purSuppliers')}已创建`)
             invalidate()
             return saved.id as string
           }
           const input = decodeSupplierUpdate(values)
-          const saved = await requireWriter(binding, 'update', '供应商')(String(drawer!.recordId), {
+          const saved = await requireWriter(binding, 'update')(String(drawer!.recordId), {
             ...input,
           })
-          toast.success('供应商已更新')
+          toast.success(`${resourceLabel('purSuppliers')}已更新`)
           invalidate()
           return saved.id as string
         }}

@@ -1,6 +1,6 @@
 # 聚合单据内核·行为变更与设计决策日志
 
-迁移分支：`feat/aggregate-kernel`（由 `feat/aggregate-kernel-w0` 改名延续；基线 `main` @ 638235fb；计划见 `.scratch/aggregate-kernel/plan.md` / `/tmp/aggregate-kernel-plan-20260807.md`）。
+迁移分支：`feat/aggregate-kernel`（由 `feat/aggregate-kernel-w0` 改名延续；基线 `main` @ 638235fb；计划见 [`aggregate-kernel-plan.md`](aggregate-kernel-plan.md)）。
 
 铁律：红测试 = 显式决策点；每一条有意的行为变更在此记一行（资源/旧行为/新行为/理由）。
 报错文案与 wire 字节不变——调用点原有 code/status/字段键/中文文案逐字保留（用 label/字段参数化，不要统一成一种文案）。
@@ -378,8 +378,8 @@ export interface ControlledProjectionSpec {
 - 不动 `engines/gl` | `engines/inventory` interface。
 - 不做路由词表收口；wire URL/DTO/错误码字节冻结。
 - mfgOutputItems list 仍弹射（母单投影 join，非 extraWhere 能单独解锁）。
-- 本波不对账路由新增草稿三连 URL（前端仍逐条 CRUD；聚合服务已就绪供合同/后续）。
-- 本波不对委外路由新增草稿三连 URL（聚合服务已就绪供合同/后续）。
+- ~~本波不对账路由新增草稿三连 URL（前端仍逐条 CRUD；聚合服务已就绪供合同/后续）。~~ **已于 W8 落地**（见末节）。
+- ~~本波不对委外路由新增草稿三连 URL（聚合服务已就绪供合同/后续）。~~ **已于 W8 落地**（见末节）。
 - mfgWorkOrders **不做**聚合草稿三连（D12）；子表非用户 CRUD。
 
 ---
@@ -429,4 +429,36 @@ export interface ControlledProjectionSpec {
 
 ### 本迁移明确不做 / 遗留（非阻断）
 
-见下节「非目标」与 ADR「后续」；判官终审 **无已知丢写/锁序/platform→domain 阻断**。后续独立决策：路由词表收口、对账/委外/制造草稿 URL 上线、`mfgOutputItems` list 弹射、engines interface 演进等——**不在本分支范围**。
+见下节「非目标」与 ADR「后续」；判官终审 **无已知丢写/锁序/platform→domain 阻断**。后续独立决策：路由词表收口、制造资源草稿 URL 上线、`mfgOutputItems` list 弹射、engines interface 演进等——**不在本分支范围**。
+
+---
+
+## W8 · 对账/委外草稿三连 URL 扩面（2026-08-07）
+
+ADR「另议」项落地：`salReconciliations` / `purReconciliations` / `purOutsourcedIssues` / `purOutsourcedReceipts` 四资源上线整单草稿三连，前端抽屉由逐行 diff 切到 `replaceDraft`。聚合服务与合同 CASES 此前已就绪，本波只接 wire 与页面。
+
+### 新增/变更端点（与报价/订单/履约先例逐字同形）
+
+| 资源 | 端点 | 说明 |
+|------|------|------|
+| 四资源头 | `POST /api/v1/<sales\|purchase>/reconciliations`、`POST /api/v1/purchase/outsourced-issues`、`POST /api/v1/purchase/outsourced-receipts` | 头创建改为**草稿创建**：schema 增 `items`（`.default([])`，空表头兼容语义与先例一致），handler 走 `createDraft`，响应多出 `items` 键；validation 错误字段键改按先例 `header.*` 前缀 |
+| 四资源头 | `GET …/:id/draft` | **新端点**；`read` 码；一致读快照返回头+子树，注册于 `GET /:id` 之前 |
+| 四资源头 | `PUT …/:id` | **新端点**；整单全量替换 `replaceDraft`；码级门控 `update ∧ create ∧ delete`（同先例 `aggregateReplaceGuard`）；`items` 必须显式提交（缺失 400 `validation`） |
+
+其余既有端点（/query、GET /:id、PATCH、DELETE、工作流动作、子行/孙级 CRUD）字节冻结。`outsourced` 服务新增公开 `getIssueDraft/createIssueDraft/replaceIssueDraft` 与 `getReceiptDraft/createReceiptDraft/replaceReceiptDraft`（薄包装 `issueAggregate`/`receiptAggregate`，payload 构造口径与原头 create 一致）；`reconciliation` 服务的 `getDraft/createDraft/replaceDraft` 此前已暴露，直接接线。委外入库草稿树仍只含成品行——材料扣减/副产物行由 carry 比例带出、独立 CRUD，不进草稿嵌套（空数组会抹掉 carry）。
+
+### 前端切换
+
+- 新增 `web/app/lib/resources/reconciliation-draft.ts`（sal/pur 对账）与 `outsourced-draft.ts`（委外发料/入库）：一律 `aggregateDraftTransport` 工厂 + `options.wire`（qty decimal 字符串化），挂 `registry.ts` 的 `DRAFT_ADAPTERS`——四资源 writer 随之按 `AGGREGATE_WRITER_OPTIONS` 收 create/update（仅留 delete），页面不再调 writer.create/update。
+- 四个抽屉（`sales/reconciliations`、`purchase/reconciliations`、`purchase/outsourced-issues`、`purchase/outsourced-receipts` 的 `-*.tsx`）：`loadDraft` 委托聚合 Adapter（对账/委外入库把预热缓存与侧行集组装进 draft 返回），条目初始化走「drawer.draft 派生 effect」（`[drawer.draft, drawer.generation]`），`onSubmit` 经 `assertAggregateDraftReady` 闸门后走 `createDraft`/`replaceDraft`，编辑态补 `isSubmitDisabled`。
+- 委外入库抽屉的**材料扣减/副产物行不进整单草稿**（与后端草稿树一致），仍走 `persistChildRows` 逐行 diff；被删成品行的侧行由 DB 级联清理（`skipDelete` 保留）。
+
+### 行为变化（有意，逐条记）
+
+| 资源 | 旧行为 | 新行为 | 理由 |
+|------|--------|--------|------|
+| 四资源头 `POST /` | 仅创建空表头，响应无 `items` 键；校验错误字段键无前缀 | 草稿创建（`items` 缺省 `[]`），响应带 `items`；校验错误字段键 `header.*`（先例口径） | 与六资源先例三连逐字对齐；空表头请求语义不变 |
+| 四资源抽屉保存 | 头 create/update + `persistChildRows` 逐行 diff，部分行失败仅 toast 警告（已落库行不回滚） | 头+条目单事务整单 create/replace；任一行失败整单回滚，错误直接中断提交 | D4 原子保存；消除「部分保存」中间态 |
+| 对账抽屉编辑保存 | 条目按 compareKeys diff（改 qty 发 PATCH） | 全量快照 replace，后端按差异增/改/删逐行授权与审计 | 已有整单 replaceDraft 的资源勿回退逐行 diff（项目守则） |
+
+**验收**：`aggregate-draft-routes.test.ts` 扩四资源 wire 病例（PUT 显式集合、decimal 拒绝、POST 空表头缺省）；server 全量 910 绿（含 aggregate-contract 与 reconciliation/outsourced PG 集成）；web 全量 322 绿。

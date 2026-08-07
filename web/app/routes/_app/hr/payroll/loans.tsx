@@ -141,9 +141,9 @@ function EmployeeLoansPage() {
           }
 
           if (mode === 'create') {
-            await requireWriter(binding, 'create', '员工借款')(input)
+            await requireWriter(binding, 'create')(input)
           } else {
-            await requireWriter(binding, 'update', '员工借款')(
+            await requireWriter(binding, 'update')(
               String(drawer!.recordId),
               input,
             )

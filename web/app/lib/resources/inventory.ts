@@ -38,9 +38,7 @@ export const stockEntryClient = restTransport(
 
 export const stockDocClient = restTransport(
   'invStockDocs',
-  api.inventory['stock-docs'],
-  { dateTimeFields: ['docDate'] },
-)
+  api.inventory['stock-docs'])
 
 async function auditStockDoc(id: string) {
   return apiData(api.inventory['stock-docs'][':id'].audit.$post({ param: { id } }))
@@ -68,9 +66,7 @@ export const stockDocItemClient = restTransport(
 
 export const stockTransferClient = restTransport(
   'invStockTransfers',
-  api.inventory['stock-transfers'],
-  { dateTimeFields: ['docDate'] },
-)
+  api.inventory['stock-transfers'])
 
 async function shipStockTransfer(id: string) {
   return apiData(api.inventory['stock-transfers'][':id'].ship.$post({ param: { id } }))
@@ -102,9 +98,7 @@ export const stockTransferItemClient = restTransport(
 
 export const stockCountClient = restTransport(
   'invStockCounts',
-  api.inventory['stock-counts'],
-  { dateTimeFields: ['postingDate'] },
-)
+  api.inventory['stock-counts'])
 
 async function approveStockCount(id: string) {
   return apiData(api.inventory['stock-counts'][':id'].approve.$post({ param: { id } }))

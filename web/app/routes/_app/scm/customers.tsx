@@ -6,6 +6,7 @@ import {
   decodeCustomerUpdate,
   useCatalogBasicForm,
   requireWriter,
+  resourceLabel,
 } from '~/lib/resources/catalog'
 import { ensureDefaultGridPage } from '~/lib/route-prefetch'
 import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
@@ -77,16 +78,16 @@ function CustomersPage() {
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             const input = decodeCustomerCreate(values)
-            const saved = await requireWriter(binding, 'create', '客户')({ ...input })
-            toast.success('客户已创建')
+            const saved = await requireWriter(binding, 'create')({ ...input })
+            toast.success(`${resourceLabel('salCustomers')}已创建`)
             invalidate()
             return saved.id as string
           }
           const input = decodeCustomerUpdate(values)
-          const saved = await requireWriter(binding, 'update', '客户')(String(drawer!.recordId), {
+          const saved = await requireWriter(binding, 'update')(String(drawer!.recordId), {
             ...input,
           })
-          toast.success('客户已更新')
+          toast.success(`${resourceLabel('salCustomers')}已更新`)
           invalidate()
           return saved.id as string
         }}

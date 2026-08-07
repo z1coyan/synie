@@ -7,13 +7,18 @@ import {
 } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, ListBox, NumberField, Select, TextField, toast } from '@heroui/react'
+import { resourceLabel } from '~/lib/resources/catalog'
 import { companyClient } from '~/lib/resources/companies'
 import {
-  purchaseOutsourcedReceiptClient,
   purchaseOutsourcedReceiptItemByproductClient,
   purchaseOutsourcedReceiptItemClient,
   purchaseOutsourcedReceiptItemMaterialClient,
 } from '~/lib/resources/fulfillment'
+import {
+  buildOutsourcedReceiptDraft,
+  type OutsourcedReceiptSavedDraft,
+} from '~/lib/resources/outsourced-draft'
+import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
 import { queryOutsourcedWarehouses } from '~/lib/resources/inventory'
 import {
   purchaseOrderItemByproductClient,
@@ -24,7 +29,10 @@ import {
   persistChildRows,
   type ChildRowWriter,
 } from '~/lib/resources/persist-child-rows'
-import { resourceBindingFor } from '~/lib/resources/registry'
+import {
+  aggregateDraftFor,
+  resourceBindingFor,
+} from '~/lib/resources/registry'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
@@ -43,6 +51,8 @@ import {
   createDocumentDrawerOpenBridge,
   useDocumentDrawer,
 } from '~/lib/use-document-drawer'
+
+const purchaseOutsourcedReceiptDraft = aggregateDraftFor('purOutsourcedReceipts')
 
 export interface ReceiptRef {
   id: string
@@ -88,19 +98,6 @@ const {
 export { useReceiptDrawer }
 
 
-/** 提交 mutation:物料/单位由订单条目锁定带出,后端再快照与折算 */
-function itemInput(row: Row) {
-  return {
-    idx: row.idx,
-    orderItemId: row.orderItemId,
-    materialId: row.materialId,
-    unitId: row.unitId,
-    qty: row.qty,
-    warehouseId: row.warehouseId,
-    remarks: row.remarks ?? null,
-  }
-}
-
 function materialRowInput(row: Row) {
   return {
     idx: row.idx,
@@ -143,30 +140,6 @@ async function persistSideChildRows(opts: {
     inputOf: opts.inputOf,
     skipDelete: (old) =>
       opts.deletedItemIds.has(String(old.receiptItemId ?? '')),
-  })
-}
-
-async function persistItemRows(
-  receiptId: string,
-  current: Row[],
-  snapshot: Row[],
-): Promise<string[]> {
-  return persistChildRows({
-    current,
-    snapshot,
-    client: purchaseOutsourcedReceiptItemClient,
-    parentIdField: 'receiptId',
-    parentId: receiptId,
-    compareKeys: [
-      'idx',
-      'orderItemId',
-      'materialId',
-      'unitId',
-      'qty',
-      'warehouseId',
-      'remarks',
-    ],
-    inputOf: itemInput,
   })
 }
 
@@ -382,9 +355,8 @@ function OutsourcedWarehouseSelect({
  */
 const ITEMS_RESET_FIELDS = ['companyId', 'partyType', 'partyId'] as const
 
-/** 三类行集合的装载快照(骨架 loadDraft 的返回形) */
-interface ReceiptLinesDraft {
-  items: Row[]
+/** 整单草稿(头+成品行) + 两类侧行集合的装载快照(骨架 loadDraft 的返回形) */
+type ReceiptDrawerDraft = OutsourcedReceiptSavedDraft & {
   materialRows: Row[]
   byproductRows: Row[]
 }
@@ -403,19 +375,13 @@ export function ReceiptDrawerProvider({
   urlSync?: boolean
 }) {
   // 单据抽屉骨架:双态状态机、URL 身份→行集合装载(竞态安全)、深链补拉全部收口进 hook
-  const drawer = useDocumentDrawer<ReceiptLinesDraft>({
+  const drawer = useDocumentDrawer<ReceiptDrawerDraft>({
     resource: 'purOutsourcedReceipts',
     urlSync,
     loadDraft: async (receiptId) => {
-      const itemResult = await purchaseOutsourcedReceiptItemClient.query({
-        limit: 200,
-        offset: 0,
-        sort: { column: 'idx', direction: 'ascending' },
-        filter: {
-          receiptId: { kind: 'fk', op: 'in', values: [receiptId], labels: [] },
-        },
-      })
-      const itemIds = itemResult.results.map((item) => String(item.id))
+      // 整单草稿:头+成品行一次一致读快照;材料扣减/副产物行不进草稿树(carry 带出、独立 CRUD),另行组装
+      const draft = await purchaseOutsourcedReceiptDraft.loadDraft(receiptId)
+      const itemIds = draft.items.map((item) => String(item.id))
       const childFilter: FilterState = {
         receiptItemId: { kind: 'fk', op: 'in', values: itemIds, labels: [] },
       }
@@ -437,7 +403,7 @@ export function ReceiptDrawerProvider({
               }),
             ])
       return {
-        items: itemResult.results,
+        ...draft,
         materialRows: materialResult.results,
         byproductRows: byproductResult.results,
       }
@@ -457,6 +423,7 @@ export function ReceiptDrawerProvider({
   // 清单行缓存(材料/副产物共用):选择时写入完整行,带出材料/单位快照名
   const linesRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
+  const draftHeadRef = useRef<Row | null>(null)
 
   const companies = useQuery({
     queryKey: ['purOutsourcedReceipts', 'companies'],
@@ -475,8 +442,9 @@ export function ReceiptDrawerProvider({
   const resetItems = useCallback(() => setItems((cur) => (cur.length === 0 ? cur : [])), [])
 
   // 草稿 → 行集合派生:draft 变化(含关闭/新建清空为 null)时初始化三类行集合、
-  // 各自保存比对基线,并预热订单条目/清单行缓存
+  // 各自保存比对基线(侧行仍走逐行 diff),写 draftHeadRef,并预热订单条目/清单行缓存
   useEffect(() => {
+    draftHeadRef.current = drawer.draft
     const rows = drawer.draft?.items ?? []
     const materialList = drawer.draft?.materialRows ?? []
     const byproductList = drawer.draft?.byproductRows ?? []
@@ -600,6 +568,7 @@ export function ReceiptDrawerProvider({
         {...drawerCfg}
         mode={mode}
         isOpen={isOpen}
+        isSubmitDisabled={mode === 'edit' && !drawer.detailLoaded}
         onOpenChange={(open) => {
           if (!open) drawer.close()
         }}
@@ -1314,70 +1283,68 @@ export function ReceiptDrawerProvider({
           )
         }}
         onSubmit={async (values, mode) => {
+          assertAggregateDraftReady(mode, drawer.detailLoaded, '委外入库明细')
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
-          let savedId: string
-          const deletedItemIds = new Set(
-            itemsSnapshot
-              .filter((old) => !items.some((r) => !isLocalRow(r) && r.id === old.id))
-              .map((old) => String(old.id)),
+          const draft = buildOutsourcedReceiptDraft(
+            { ...draftHeadRef.current, ...values },
+            items,
           )
-          const persistSideRows = () =>
-            Promise.all([
-              persistSideChildRows({
-                current: materialRows,
-                snapshot: materialRowsSnapshot,
-                deletedItemIds,
-                inputOf: materialRowInput,
-                compareKeys: [
-                  'idx',
-                  'orderItemMaterialId',
-                  'qty',
-                  'outsourcedWarehouseId',
-                  'remarks',
-                ],
-                client: purchaseOutsourcedReceiptItemMaterialClient,
-              }),
-              persistSideChildRows({
-                current: byproductRows,
-                snapshot: byproductRowsSnapshot,
-                deletedItemIds,
-                inputOf: byproductRowInput,
-                compareKeys: [
-                  'idx',
-                  'orderItemByproductId',
-                  'qty',
-                  'warehouseId',
-                  'remarks',
-                ],
-                client: purchaseOutsourcedReceiptItemByproductClient,
-              }),
-            ]).then(([a, b]) => [...a, ...b])
-
+          let saved: Row
           if (mode === 'create') {
-            const saved = await purchaseOutsourcedReceiptClient.create(values)
-            const receiptId = String(saved.id)
-            const itemErrors = await persistItemRows(receiptId, items, [])
-            if (itemErrors.length > 0) {
-              toast.danger('入库单已创建,但部分条目保存失败', {
-                description: itemErrors.join('; '),
-              })
-            } else {
-              toast.success('委外入库单已创建')
-            }
-            savedId = receiptId
+            // 成品行 create 触发后端 carry 按比例带出材料/副产物行
+            saved = await purchaseOutsourcedReceiptDraft.createDraft(draft)
+            toast.success(`${resourceLabel('purOutsourcedReceipts')}已创建`)
           } else {
-            await purchaseOutsourcedReceiptClient.update(rowId!, values)
-            const itemErrors = await persistItemRows(rowId!, items, itemsSnapshot)
-            const rowErrors = await persistSideRows()
-            const allErrors = [...itemErrors, ...rowErrors]
-            if (allErrors.length > 0) {
+            saved = await purchaseOutsourcedReceiptDraft.replaceDraft(rowId!, draft)
+            // 材料扣减/副产物行不进聚合草稿树(空数组会抹掉 carry),仍按逐行 diff 落库;
+            // 被删成品行的侧行已随 replaceDraft 由 DB 级联清理(skipDelete 跳过)
+            const deletedItemIds = new Set(
+              itemsSnapshot
+                .filter(
+                  (old) =>
+                    !items.some((r) => !isLocalRow(r) && r.id === old.id),
+                )
+                .map((old) => String(old.id)),
+            )
+            const rowErrors = (
+              await Promise.all([
+                persistSideChildRows({
+                  current: materialRows,
+                  snapshot: materialRowsSnapshot,
+                  deletedItemIds,
+                  inputOf: materialRowInput,
+                  compareKeys: [
+                    'idx',
+                    'orderItemMaterialId',
+                    'qty',
+                    'outsourcedWarehouseId',
+                    'remarks',
+                  ],
+                  client: purchaseOutsourcedReceiptItemMaterialClient,
+                }),
+                persistSideChildRows({
+                  current: byproductRows,
+                  snapshot: byproductRowsSnapshot,
+                  deletedItemIds,
+                  inputOf: byproductRowInput,
+                  compareKeys: [
+                    'idx',
+                    'orderItemByproductId',
+                    'qty',
+                    'warehouseId',
+                    'remarks',
+                  ],
+                  client: purchaseOutsourcedReceiptItemByproductClient,
+                }),
+              ])
+            ).flat()
+            if (rowErrors.length > 0) {
               toast.danger('入库单已更新,但部分行保存失败', {
-                description: allErrors.join('; '),
+                description: rowErrors.join('; '),
               })
             } else {
-              toast.success('委外入库单已更新')
+              toast.success(`${resourceLabel('purOutsourcedReceipts')}已更新`)
             }
-            savedId = rowId!
           }
           await Promise.all([
             resourceBindingFor(
@@ -1396,7 +1363,7 @@ export function ReceiptDrawerProvider({
               queryClient,
             ),
           ])
-          return savedId
+          return String(saved.id)
         }}
       />
     </ReceiptDrawerOpenProvider>

@@ -98,12 +98,10 @@ describe('restTransport', () => {
     ).rejects.toThrow('币种 REST 资源不支持 fixedFilter')
   })
 
-  test('decimalFields 与 dateTimeFields 只作用于 create/update 的 wire body', async () => {
+  test('decimal/date 写编码由资源事实清单派生，只作用于 create/update 的 wire body', async () => {
     const { endpoints, calls } = fakeCrudEndpoints()
-    const client = restTransport('salOrders', endpoints, {
-      decimalFields: ['exchangeRate'],
-      dateTimeFields: ['orderDate'],
-    })
+    // salOrders：manifest 由 server FieldMeta.type 派生 exchangeRate(decimal)/orderDate(date)
+    const client = restTransport('salOrders', endpoints)
     await client.create({ exchangeRate: 7.2, orderDate: '2026-08-01', note: 'n' })
     expect(calls.create[0].args).toEqual({
       json: { exchangeRate: '7.2', orderDate: '2026-08-01T00:00:00Z', note: 'n' },
@@ -112,6 +110,15 @@ describe('restTransport', () => {
     expect(calls.update[0].args).toEqual({
       param: { id: 'r1' },
       json: { exchangeRate: null, orderDate: '2026-08-02T00:00:00Z' },
+    })
+  })
+
+  test('decimalZero 资源空值发 0（借贷金额口径，server FieldMeta.decimalEmpty 派生）', async () => {
+    const { endpoints, calls } = fakeCrudEndpoints()
+    const client = restTransport('accGlJournalLines', endpoints)
+    await client.create({ debit: '', credit: 5 })
+    expect(calls.create[0].args).toEqual({
+      json: { debit: '0', credit: '5' },
     })
   })
 

@@ -351,6 +351,8 @@ export function createOutputService(
     deleteOutputItem: (permit: Permit, id: string) => items.remove(permit, id),
     auditOutput: (permit: Permit, id: string) => base.transition(permit, id, 'audit'),
     voidOutput: (permit: Permit, id: string) => base.transition(permit, id, 'void'),
+
+    _headsForContract: (): StandardService => base as unknown as StandardService,
   }
 }
 

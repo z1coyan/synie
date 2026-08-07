@@ -39,7 +39,7 @@ function MaterialCategoriesPage() {
           rowActions={statusToggleActions({
             field: 'active',
             update: (id, input) => {
-              return requireWriter(binding, 'update', '物料分类')(id, input)
+              return requireWriter(binding, 'update')(id, input)
             },
             // 树的子层缓存在组件本地,refetch 只刷根层,remount 一并清子层
             onDone: () => setReloadKey((k) => k + 1),
@@ -59,9 +59,9 @@ function MaterialCategoriesPage() {
         onEdit={() => setMode('edit')}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
-            await requireWriter(binding, 'create', '物料分类')(values)
+            await requireWriter(binding, 'create')(values)
           } else {
-            await requireWriter(binding, 'update', '物料分类')(String(drawer!.recordId), values)
+            await requireWriter(binding, 'update')(String(drawer!.recordId), values)
           }
           toast.success(mode === 'create' ? '分类已创建' : '分类已更新')
           await binding.cache.invalidateAll(queryClient)

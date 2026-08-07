@@ -82,9 +82,7 @@ export const glJournalClient = restTransport(
 
 export const glJournalLineClient = restTransport(
   'accGlJournalLines',
-  api.accounting['gl-journal-lines'],
-  { decimalFields: ['debit', 'credit'], decimalOptions: { empty: '0' } },
-)
+  api.accounting['gl-journal-lines'])
 
 export function fetchARAPReport(companyId: string, asOf: string): Promise<ARAPReport> {
   return apiData(

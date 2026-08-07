@@ -1,4 +1,5 @@
 import type { FilterState, ListQuery } from '@synie/shared'
+import { RESOURCE_MANIFEST } from '@synie/shared/generated/resource-manifest'
 import type { ResourceQuery } from './types'
 
 export interface ResourceListWireOptions {
@@ -124,4 +125,35 @@ export function dateTimeWireInput(
     result[field] = dateTimeWireValue(input[field])
   }
   return result
+}
+
+/**
+ * 按资源事实清单（ADR 2026-08-07-resource-manifest）编码写体：
+ * decimal 出现的键收口为 wire string（decimalZero 成员空值发 '0'，其余空值发 null），
+ * date/datetime 出现的 YYYY-MM-DD 键转 ISO datetime。只对输入里出现的键生效；
+ * 资源不在清单（custom/in-memory 局部读模型等）时原样返回。
+ */
+export function encodeResourceWrite(
+  resource: string,
+  input: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const wire = RESOURCE_MANIFEST[resource]?.wire
+  if (!wire) return input
+  const decimal = new Set(wire.decimal)
+  const decimalZero = new Set(wire.decimalZero)
+  const date = new Set(wire.date)
+  let body: Record<string, unknown> | null = null
+  for (const key of Object.keys(input)) {
+    let value = input[key]
+    if (decimal.has(key)) {
+      value = value == null || value === '' ? (decimalZero.has(key) ? '0' : null) : String(value)
+    } else if (date.has(key)) {
+      value = dateTimeWireValue(value)
+    }
+    if (value !== input[key]) {
+      body ??= { ...input }
+      body[key] = value
+    }
+  }
+  return body ?? input
 }

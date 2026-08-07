@@ -35,6 +35,7 @@ import {
   billTransactionClient,
   ocrBillTransaction,
 } from '~/lib/resources/finance-operations'
+import { resourceLabel } from '~/lib/resources/catalog'
 import { fileClient } from '~/lib/resources/files'
 
 /**
@@ -984,7 +985,7 @@ export function AcceptanceTransactionDrawer({
           toast.success(`承兑${TX_TYPE_LABEL[(txType ?? 'RECEIVE') as TxType] ?? '交易'}已创建`)
         } else {
           await billTransactionClient.update(row!.id, input)
-          toast.success('承兑交易已更新')
+          toast.success(`${resourceLabel('accBillTransactions')}已更新`)
           savedId = row!.id
         }
         onMutated()

@@ -50,6 +50,14 @@ import {
 } from './fulfillment'
 import { purchaseReceiptDraftAdapter } from './purchase-receipt-draft'
 import {
+  purchaseReconciliationDraftAdapter,
+  salesReconciliationDraftAdapter,
+} from './reconciliation-draft'
+import {
+  purchaseOutsourcedIssueDraftAdapter,
+  purchaseOutsourcedReceiptDraftAdapter,
+} from './outsourced-draft'
+import {
   purchaseQuotationDraftAdapter,
   salesQuotationDraftAdapter,
 } from './quotation-draft'
@@ -294,11 +302,15 @@ const SEMANTIC_COMMAND_ADAPTERS: Record<string, CommandAdapter> = {
 
 const DRAFT_ADAPTERS = {
   purOrders: purchaseOrderDraftAdapter,
+  purOutsourcedIssues: purchaseOutsourcedIssueDraftAdapter,
+  purOutsourcedReceipts: purchaseOutsourcedReceiptDraftAdapter,
   purQuotations: purchaseQuotationDraftAdapter,
   purReceipts: purchaseReceiptDraftAdapter,
+  purReconciliations: purchaseReconciliationDraftAdapter,
   salDeliveries: salesDeliveryDraftAdapter,
   salOrders: salesOrderDraftAdapter,
   salQuotations: salesQuotationDraftAdapter,
+  salReconciliations: salesReconciliationDraftAdapter,
 } satisfies Record<string, AggregateDraftAdapter<unknown, unknown>>
 
 type AggregateDraftResource = keyof typeof DRAFT_ADAPTERS

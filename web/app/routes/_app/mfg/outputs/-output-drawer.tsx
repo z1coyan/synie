@@ -18,6 +18,7 @@ import {
   outputItemClient,
   workOrderClient,
 } from '~/lib/resources/manufacturing'
+import { resourceLabel } from '~/lib/resources/catalog'
 import {
   auditMaterialCell,
   type AuditDocConfig,
@@ -479,7 +480,7 @@ export function OutputDrawerProvider({
             const id = created.id
             const lineErrors = await persistItems(id, items, itemsSnapshot)
             if (lineErrors.length) throw new Error(lineErrors.join('; '))
-            toast.success('生产入库单已创建')
+            toast.success(`${resourceLabel('mfgOutputs')}已创建`)
             savedId = id
           } else {
             savedId = String(rowId)
@@ -488,7 +489,7 @@ export function OutputDrawerProvider({
               const lineErrors = await persistItems(savedId, items, itemsSnapshot)
               if (lineErrors.length) throw new Error(lineErrors.join('; '))
             }
-            toast.success('生产入库单已更新')
+            toast.success(`${resourceLabel('mfgOutputs')}已更新`)
           }
           await Promise.all([
             resourceBindingFor('mfgOutputs').cache.invalidateGrid(queryClient),

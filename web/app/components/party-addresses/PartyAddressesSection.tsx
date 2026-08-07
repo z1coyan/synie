@@ -7,7 +7,7 @@ import { hasCapability } from '@synie/shared'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Chip, Spinner, Table, toast } from '@heroui/react'
-import { useCatalogBasicForm, requireWriter } from '~/lib/resources/catalog'
+import { useCatalogBasicForm, requireWriter, resourceLabel } from '~/lib/resources/catalog'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { RowActionsMenu } from '~/components/synie-data-grid/row-menu'
 import type { ResolvedAction } from '~/components/synie-data-grid/use-grid-actions'
@@ -80,9 +80,9 @@ export function PartyAddressesSection(props: {
 
   const remove = async (row: Row) => {
     try {
-      const del = requireWriter(binding, 'delete', '地址')
+      const del = requireWriter(binding, 'delete')
       await del(String(row.id))
-      toast.success('地址已删除')
+      toast.success(`${resourceLabel('basPartyAddresses')}已删除`)
       refresh()
     } catch (e) {
       toastError('删除地址失败')(e)
@@ -260,19 +260,19 @@ export function PartyAddressesSection(props: {
         onEdit={() => drawer?.id && setDrawer({ mode: 'edit', id: drawer.id })}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
-            const saved = await requireWriter(binding, 'create', '地址')({
+            const saved = await requireWriter(binding, 'create')({
               ...values,
               partyType,
               partyId,
             })
-            toast.success('地址已创建')
+            toast.success(`${resourceLabel('basPartyAddresses')}已创建`)
             refresh()
             return String(saved.id)
           }
-          const saved = await requireWriter(binding, 'update', '地址')(String(drawer!.id), {
+          const saved = await requireWriter(binding, 'update')(String(drawer!.id), {
             ...values,
           })
-          toast.success('地址已更新')
+          toast.success(`${resourceLabel('basPartyAddresses')}已更新`)
           refresh()
           return String(saved.id)
         }}

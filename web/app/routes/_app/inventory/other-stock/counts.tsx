@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Label, NumberField, Switch, toast } from '@heroui/react'
 import { companyClient } from '~/lib/resources/companies'
+import { resourceLabel } from '~/lib/resources/catalog'
 import {
   refreshStockCount,
   stockCountClient,
@@ -402,14 +403,14 @@ function StockCountsTab() {
               loadAll,
               items: loadAll ? undefined : items.map(itemInput),
             })
-            toast.success('库存盘点单已创建')
+            toast.success(`${resourceLabel('invStockCounts')}已创建`)
           } else {
             await stockCountClient.update(rowId!, values)
             const itemErrors = await persistItems(rowId!, items, itemsSnapshot)
             if (itemErrors.length > 0) {
               toast.danger('库存盘点单已更新,但部分盘点行保存失败', { description: itemErrors.join('; ') })
             } else {
-              toast.success('库存盘点单已更新')
+              toast.success(`${resourceLabel('invStockCounts')}已更新`)
             }
           }
           invalidateGrids()

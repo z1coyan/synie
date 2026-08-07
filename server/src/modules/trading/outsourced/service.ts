@@ -4,7 +4,7 @@
  * W4 聚合迁移：头/子行/孙级与整单草稿由 platform/standard 派生——
  * createStandardService + createStandardChildService + createAggregateService；
  * audit/void → workflow（D7），effect 内联原 skeleton 库存/履约编排。
- * 三向收料与 carryReceiptChildren 留钩子；路由手写 URL/DTO 冻结。
+ * 三向收料与 carryReceiptChildren 留钩子；路由手写（整单草稿三连与先例同形，其余 URL/DTO 冻结）。
  */
 import type { ListQuery } from '@synie/shared'
 import { decimal } from '@synie/shared'
@@ -121,6 +121,71 @@ function applyDerived(draft: Record<string, unknown>, derived: Record<string, un
       draft[k] = v
     }
   }
+}
+
+/** 发料整单草稿 wire → 聚合入参（头字段与 createIssue 口径一致，编号仅非空透传） */
+function issueDraftPayload(input: Record<string, unknown>): Record<string, unknown> {
+  const head: Record<string, unknown> = {
+    companyId: input.companyId,
+    partyType: input.partyType,
+    partyId: input.partyId,
+    remarks: input.remarks ?? null,
+    fromWarehouseId: input.fromWarehouseId ?? null,
+    outsourcedWarehouseId: input.outsourcedWarehouseId ?? null,
+  }
+  if (input.issueDate != null) head.issueDate = input.issueDate
+  if (input.issueNo != null && String(input.issueNo).trim() !== '') {
+    head.issueNo = input.issueNo
+  }
+  const items = Array.isArray(input.items)
+    ? (input.items as Array<Record<string, unknown>>).map((item) => {
+        const payload: Record<string, unknown> = {
+          idx: item.idx,
+          qty: item.qty,
+          orderItemMaterialId: item.orderItemMaterialId,
+          fromWarehouseId: item.fromWarehouseId ?? null,
+          outsourcedWarehouseId: item.outsourcedWarehouseId ?? null,
+          remarks: item.remarks ?? null,
+        }
+        if (item.id !== undefined) payload.id = item.id
+        return payload
+      })
+    : input.items
+  return { ...head, items }
+}
+
+/** 入库整单草稿 wire → 聚合入参（头字段与 createReceipt 口径一致；材料/副产物不进草稿树） */
+function receiptDraftPayload(input: Record<string, unknown>): Record<string, unknown> {
+  const head: Record<string, unknown> = {
+    companyId: input.companyId,
+    partyType: input.partyType,
+    partyId: input.partyId,
+    remarks: input.remarks ?? null,
+    warehouseId: input.warehouseId ?? null,
+    outsourcedWarehouseId: input.outsourcedWarehouseId ?? null,
+    postingDate: input.postingDate ?? null,
+  }
+  if (input.receiptDate != null) head.receiptDate = input.receiptDate
+  if (input.debitAccountId != null) head.debitAccountId = input.debitAccountId
+  if (input.creditAccountId != null) head.creditAccountId = input.creditAccountId
+  if (input.receiptNo != null && String(input.receiptNo).trim() !== '') {
+    head.receiptNo = input.receiptNo
+  }
+  const items = Array.isArray(input.items)
+    ? (input.items as Array<Record<string, unknown>>).map((item) => {
+        const payload: Record<string, unknown> = {
+          idx: item.idx,
+          qty: item.qty,
+          orderItemId: item.orderItemId,
+          unitId: item.unitId ?? null,
+          warehouseId: item.warehouseId ?? null,
+          remarks: item.remarks ?? null,
+        }
+        if (item.id !== undefined) payload.id = item.id
+        return payload
+      })
+    : input.items
+  return { ...head, items }
 }
 
 export function createOutsourcedService(
@@ -794,6 +859,13 @@ export function createOutsourcedService(
     auditIssue: (p: Permit, id: string) => issueHeads.transition(p, id, 'audit'),
     voidIssue: (p: Permit, id: string) => issueHeads.transition(p, id, 'void'),
 
+    /** 发料整单草稿三连（聚合内核派生；wire 形状与报价/订单先例一致） */
+    getIssueDraft: (p: Permit, id: string) => issueAggregate.loadDraft(p, id),
+    createIssueDraft: (p: Permit, input: Record<string, unknown>) =>
+      issueAggregate.createDraft(p, issueDraftPayload(input)),
+    replaceIssueDraft: (p: Permit, id: string, input: Record<string, unknown>) =>
+      issueAggregate.replaceDraft(p, id, issueDraftPayload(input)),
+
     listIssueItems: (p: Permit, q: Partial<ListQuery>) => issueItems.list(p, q),
     getIssueItem: (p: Permit, id: string) => issueItems.get(p, id),
     createIssueItem: (
@@ -925,6 +997,13 @@ export function createOutsourcedService(
         postingDate: input.postingDate,
       }),
     voidReceipt: (p: Permit, id: string) => receiptHeads.transition(p, id, 'void'),
+
+    /** 入库整单草稿三连（仅成品行进草稿树；材料/副产物由 carry 带出、独立 CRUD） */
+    getReceiptDraft: (p: Permit, id: string) => receiptAggregate.loadDraft(p, id),
+    createReceiptDraft: (p: Permit, input: Record<string, unknown>) =>
+      receiptAggregate.createDraft(p, receiptDraftPayload(input)),
+    replaceReceiptDraft: (p: Permit, id: string, input: Record<string, unknown>) =>
+      receiptAggregate.replaceDraft(p, id, receiptDraftPayload(input)),
 
     listReceiptItems: (p: Permit, q: Partial<ListQuery>) => receiptItems.list(p, q),
     getReceiptItem: (p: Permit, id: string) => receiptItems.get(p, id),

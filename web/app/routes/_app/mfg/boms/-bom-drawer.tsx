@@ -18,6 +18,7 @@ import {
   bomComponentClient,
   bomRouteClient,
 } from '~/lib/resources/manufacturing'
+import { resourceLabel } from '~/lib/resources/catalog'
 import type { Row } from '~/components/synie-data-grid/types'
 import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import { resourceBindingFor } from '~/lib/resources/registry'
@@ -518,7 +519,7 @@ export function BomDrawerProvider({
                 description: lineErrors.join('; '),
               })
             } else {
-              toast.success('BOM 已更新')
+              toast.success(`${resourceLabel('mfgBoms')} 已更新`)
             }
           }
           await resourceBindingFor('mfgBoms').cache.invalidateAll(queryClient)

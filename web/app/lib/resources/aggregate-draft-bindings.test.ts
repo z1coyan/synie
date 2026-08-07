@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  purchaseOutsourcedIssueCommandAdapter,
+  purchaseOutsourcedReceiptCommandAdapter,
   purchaseReceiptCommandAdapter,
   salesDeliveryCommandAdapter,
   salesDeliveryDraftAdapter,
@@ -12,6 +14,10 @@ import {
   purchaseQuotationCommandAdapter,
   salesQuotationCommandAdapter,
 } from './quotations'
+import {
+  purchaseReconciliationCommandAdapter,
+  salesReconciliationCommandAdapter,
+} from './reconciliations'
 import { purchaseReceiptDraftAdapter } from './purchase-receipt-draft'
 import {
   purchaseQuotationDraftAdapter,
@@ -22,6 +28,14 @@ import {
   salesOrderDraftAdapter,
 } from './order-draft'
 import {
+  purchaseReconciliationDraftAdapter,
+  salesReconciliationDraftAdapter,
+} from './reconciliation-draft'
+import {
+  purchaseOutsourcedIssueDraftAdapter,
+  purchaseOutsourcedReceiptDraftAdapter,
+} from './outsourced-draft'
+import {
   aggregateDraftFor,
   resourceBindingFor,
 } from './registry'
@@ -31,6 +45,14 @@ const aggregateResources = {
     draft: purchaseOrderDraftAdapter,
     commands: purchaseOrderCommandAdapter,
   },
+  purOutsourcedIssues: {
+    draft: purchaseOutsourcedIssueDraftAdapter,
+    commands: purchaseOutsourcedIssueCommandAdapter,
+  },
+  purOutsourcedReceipts: {
+    draft: purchaseOutsourcedReceiptDraftAdapter,
+    commands: purchaseOutsourcedReceiptCommandAdapter,
+  },
   purQuotations: {
     draft: purchaseQuotationDraftAdapter,
     commands: purchaseQuotationCommandAdapter,
@@ -38,6 +60,10 @@ const aggregateResources = {
   purReceipts: {
     draft: purchaseReceiptDraftAdapter,
     commands: purchaseReceiptCommandAdapter,
+  },
+  purReconciliations: {
+    draft: purchaseReconciliationDraftAdapter,
+    commands: purchaseReconciliationCommandAdapter,
   },
   salDeliveries: {
     draft: salesDeliveryDraftAdapter,
@@ -51,10 +77,14 @@ const aggregateResources = {
     draft: salesQuotationDraftAdapter,
     commands: salesQuotationCommandAdapter,
   },
+  salReconciliations: {
+    draft: salesReconciliationDraftAdapter,
+    commands: salesReconciliationCommandAdapter,
+  },
 } as const
 
 describe('Aggregate Draft ResourceBinding 能力边界', () => {
-  test('六个聚合头只经 draft 创建/替换，普通 writer 仅保留删除', () => {
+  test('十个聚合头只经 draft 创建/替换，普通 writer 仅保留删除', () => {
     for (const [resource, expected] of Object.entries(aggregateResources)) {
       const key = resource as keyof typeof aggregateResources
       const binding = resourceBindingFor(key)

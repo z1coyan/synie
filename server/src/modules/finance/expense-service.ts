@@ -21,7 +21,7 @@ import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { createStandardChildService } from '~/platform/standard/child.ts'
-import { auditStamp, createStandardService } from '~/platform/standard/service.ts'
+import { auditStamp, createStandardService, type StandardService } from '~/platform/standard/service.ts'
 import { conflict, parseDecimal, requireDate, upper } from './common.ts'
 
 export const EXPENSE_REPORT_RESOURCE = 'accExpenseReports'
@@ -401,5 +401,7 @@ export function createExpenseService(
     createItem,
     updateItem,
     deleteItem: (permit: Permit, id: string) => items.remove(permit, id),
+
+    _reportsForContract: (): StandardService => reports as unknown as StandardService,
   }
 }

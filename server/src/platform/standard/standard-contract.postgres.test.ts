@@ -14,13 +14,21 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
+import { createGlEngine } from '~/engines/gl/index.ts'
+import { createInventoryEngine } from '~/engines/inventory/index.ts'
+import { createJournalService } from '~/modules/accounting/journal-service.ts'
 import { createAccountService } from '~/modules/base/account-service.ts'
 import { createCurrencyService } from '~/modules/base/currency-service.ts'
 import { createUnitService } from '~/modules/base/unit-service.ts'
 import { createBankAccountService } from '~/modules/finance/banking-accounts.ts'
+import { createExpenseService } from '~/modules/finance/expense-service.ts'
+import { createPayrollService } from '~/modules/hr/payroll-service.ts'
+import { createDepartmentService } from '~/modules/iam/department-service.ts'
 import { createInstrumentService } from '~/modules/base/market/index.ts'
 import { createMaterialCategoryService } from '~/modules/inventory/category-service.ts'
 import { createMaterialService } from '~/modules/inventory/material-service.ts'
+import { createMasterService } from '~/modules/manufacturing/master-service.ts'
+import { createOutputService } from '~/modules/manufacturing/output-service.ts'
 import { createPartyAddressService } from '~/modules/party/address-service.ts'
 import { createCustomerService, createEmployeeService, createSupplierService } from '~/modules/party/party-service.ts'
 import { buildNumberingCatalog } from '~/platform/numbering/catalog.ts'
@@ -170,6 +178,98 @@ const CASES: ContractCase[] = [
     }),
     patch: () => ({ name: `合同品种改-${crypto.randomUUID().slice(0, 8)}` }),
   },
+  {
+    title: '部门',
+    resource: 'sysDepartments',
+    make: (db, registry) =>
+      createDepartmentService(db, createNumberingService(db, buildNumberingCatalog(registry), registry), registry),
+    // 部门编码系统生成（夹具规则 sys.department）：载荷不带 code
+    valid: () => ({
+      companyId: accountFixture.companyId,
+      name: `合同部门-${crypto.randomUUID().slice(0, 8)}`,
+    }),
+    patch: () => ({ name: `合同部门改-${crypto.randomUUID().slice(0, 8)}` }),
+  },
+  {
+    title: '工序',
+    resource: 'mfgOperations',
+    make: (db, registry) =>
+      createMasterService(db, createNumberingService(db, buildNumberingCatalog(registry), registry), registry)._operationsForContract(),
+    // 工序编号系统生成（夹具规则 mfg.operation）
+    valid: () => ({ name: `合同工序-${crypto.randomUUID().slice(0, 8)}` }),
+    patch: () => ({ name: `合同工序改-${crypto.randomUUID().slice(0, 8)}` }),
+  },
+  {
+    title: '生产入库单',
+    resource: 'mfgOutputs',
+    make: (db, registry) =>
+      createOutputService(
+        db,
+        createNumberingService(db, buildNumberingCatalog(registry), registry),
+        createInventoryEngine(),
+        registry,
+      )._headsForContract(),
+    // 默认仓库可空（仅新建行预填）；入库日期缺省当日；单号系统生成
+    valid: () => ({ companyId: accountFixture.companyId }),
+    patch: () => ({ remarks: `合同入库改-${crypto.randomUUID().slice(0, 8)}` }),
+  },
+  {
+    title: '会计凭证',
+    resource: 'accGlJournals',
+    make: (db, registry) =>
+      createJournalService(
+        db,
+        createNumberingService(db, buildNumberingCatalog(registry), registry),
+        createGlEngine(),
+        registry,
+      ),
+    // 凭证号系统生成；草稿凭证无需分录行
+    valid: () => ({ companyId: accountFixture.companyId, date: '2026-01-04' }),
+    patch: () => ({ remarks: `合同凭证改-${crypto.randomUUID().slice(0, 8)}` }),
+  },
+  {
+    title: '费用报销单',
+    resource: 'accExpenseReports',
+    make: (db, registry) =>
+      createExpenseService(
+        db,
+        createNumberingService(db, buildNumberingCatalog(registry), registry),
+        createGlEngine(),
+        registry,
+      )._reportsForContract(),
+    // 员工与付款科目（同公司叶子启用）夹具；单号系统生成
+    valid: () => ({
+      companyId: accountFixture.companyId,
+      expenseDate: '2026-01-05',
+      employeeId: employeeIds[0]!,
+      paymentAccountId: expenseFixture.accountId,
+    }),
+    patch: () => ({ remarks: `合同报销改-${crypto.randomUUID().slice(0, 8)}` }),
+  },
+  {
+    title: '工资单',
+    resource: 'hrPayrolls',
+    make: (db, registry) => createPayrollService({ db, registry })._payrollsForContract(),
+    // (员工,月份) 唯一索引：valid() 从员工池取一名未用过的员工
+    valid: () => {
+      const employeeId = payrollEmployeePool.shift()
+      if (!employeeId) throw new Error('工资单员工池耗尽')
+      return { employeeId, month: '2026-01' }
+    },
+    patch: () => ({ bonus: `${(Number(`0${crypto.randomUUID().replace(/\D/g, '')}`) % 900) + 100}.5` }),
+  },
+  {
+    title: '员工借款',
+    resource: 'hrEmployeeLoans',
+    make: (db, registry) => createPayrollService({ db, registry })._loansForContract(),
+    valid: () => ({
+      employeeId: employeeIds[1]!,
+      kind: 'BORROW',
+      occurredOn: '2026-01-03',
+      amount: '10',
+    }),
+    patch: () => ({ remarks: `合同借款改-${crypto.randomUUID().slice(0, 8)}` }),
+  },
 ]
 
 /** 地址描述符的往来主体夹具（beforeAll 填充；valid() 惰性读取） */
@@ -182,6 +282,16 @@ const materialFixture = { categoryId: '', unitId: '', ruleId: '' }
 const employeeFixture = { ruleId: '' }
 /** 会计科目描述符的公司夹具（裸插入，避开公司服务的建仓联动） */
 const accountFixture = { companyId: '', currencyId: '' }
+/** 员工夹具 id（裸插入；[0] 报销/发票共用、[1] 借款、其余进工资单池） */
+const employeeIds: string[] = []
+/** 工资单描述符的员工池（(员工,月份) 唯一，valid() 逐个消耗） */
+const payrollEmployeePool: string[] = []
+/** 报销单描述符的付款科目夹具（accountFixture 公司下的叶子启用科目） */
+const expenseFixture = { accountId: '' }
+/** 本 run 新插的编号规则 id（共享库已有启用规则则复用不记）；afterAll 清理 */
+const insertedRuleIds: string[] = []
+/** admin actor 的真实用户 id（created_by_id 外键盖章用；beforeAll 填充） */
+let adminUserId = ''
 
 run('标准动作合同（postgres）', () => {
   const db = createDb(url!)
@@ -196,7 +306,8 @@ run('标准动作合同（postgres）', () => {
     return decision.permit
   }
 
-  const admin = testActor({ username: `std-contract-${suffix}`, superAdmin: true, allCompanies: true })
+  // beforeAll 落真实 sys_user 后重挂 userId（created_by_id 外键盖章）；测试体运行时读取
+  let admin = testActor({ username: `std-contract-${suffix}`, superAdmin: true, allCompanies: true })
 
   async function auditCount(table: string, recordId: string, actionType: string): Promise<number> {
     const rows = await db
@@ -207,6 +318,22 @@ run('标准动作合同（postgres）', () => {
       .where('action_type', '=', actionType)
       .execute()
     return rows.length
+  }
+
+  /** 同资源唯一启用规则：共享库已有则复用，否则新插（text 前缀 + seq）并记清理 */
+  async function ensureNumberingRule(resource: string, prefix: string, name: string): Promise<void> {
+    const existing = await sql<{ id: string }>`
+      SELECT id FROM sys_numbering_rule WHERE resource = ${resource} AND enabled
+    `.execute(db)
+    if (existing.rows.length > 0) return
+    // segments 须内联字面量：绑参会被驱动 JSON 编码成字符串型 jsonb，渲染为空（与上方物料/员工先例同形）
+    const segments = sql.raw(`ARRAY['{"type":"text","value":"${prefix}"}'::jsonb, '{"type":"seq","padding":6}'::jsonb]`)
+    const rule = await sql<{ id: string }>`
+      INSERT INTO sys_numbering_rule(resource, name, segments, per_company, enabled)
+      VALUES (${resource}, ${name}, ${segments}, false, true)
+      RETURNING id
+    `.execute(db)
+    insertedRuleIds.push(rule.rows[0]!.id)
   }
 
   beforeAll(async () => {
@@ -273,6 +400,33 @@ run('标准动作合同（postgres）', () => {
       `.execute(db)
       employeeFixture.ruleId = rule.rows[0]!.id
     }
+    // 其余编号规则（部门/工序/入库单/报销单/凭证）：同资源唯一启用，有则复用
+    await ensureNumberingRule('sys.department', 'CD-', `合同部门规则-${suffix}`)
+    await ensureNumberingRule('mfg.operation', 'CO-', `合同工序规则-${suffix}`)
+    await ensureNumberingRule('mfg.output', 'CU-', `合同入库规则-${suffix}`)
+    await ensureNumberingRule('acc.expense_report', 'CE-', `合同报销规则-${suffix}`)
+    await ensureNumberingRule('acc.gl_journal', 'CJ-', `合同凭证规则-${suffix}`)
+    // admin 的真实用户行：报销/入库/凭证等服务的 created_by_id 盖章有 sys_user 外键
+    const user = await sql<{ id: string }>`
+      INSERT INTO sys_user(username, hashed_password) VALUES (${`std-contract-${suffix}`}, 'contract-fixture') RETURNING id
+    `.execute(db)
+    adminUserId = user.rows[0]!.id
+    admin = testActor({ username: `std-contract-${suffix}`, superAdmin: true, allCompanies: true, userId: adminUserId })
+    // 员工夹具（裸插入：报销对象/发票对手/借款/工资单池共用 8 名）
+    for (let i = 0; i < 8; i += 1) {
+      const emp = await sql<{ id: string }>`
+        INSERT INTO hr_employees(code, name) VALUES (${`PE${suffix}${i}`}, ${`合同员工夹具-${suffix}-${i}`}) RETURNING id
+      `.execute(db)
+      employeeIds.push(emp.rows[0]!.id)
+    }
+    payrollEmployeePool.push(...employeeIds.slice(2))
+    // 报销单付款科目（accountFixture 公司下叶子启用；清理随该公司的科目整批删除）
+    const payAccount = await sql<{ id: string }>`
+      INSERT INTO bas_account(code, name, direction, company_id)
+      VALUES (${`PA${suffix.toUpperCase()}`}, ${`合同付款科目-${suffix}`}, 'DEBIT', ${accountFixture.companyId}::uuid)
+      RETURNING id
+    `.execute(db)
+    expenseFixture.accountId = payAccount.rows[0]!.id
   })
 
   afterAll(async () => {
@@ -300,6 +454,15 @@ run('标准动作合同（postgres）', () => {
     await db.deleteFrom('bas_account').where('company_id', '=', accountFixture.companyId).execute()
     await db.deleteFrom('bas_company').where('id', '=', accountFixture.companyId).execute()
     await db.deleteFrom('bas_currency').where('id', '=', accountFixture.currencyId).execute()
+    if (employeeIds.length > 0) {
+      await db.deleteFrom('hr_employees').where('id', 'in', employeeIds).execute()
+    }
+    for (const ruleId of insertedRuleIds) {
+      await db.deleteFrom('sys_numbering_rule').where('id', '=', ruleId).execute()
+    }
+    if (adminUserId) {
+      await db.deleteFrom('sys_user').where('id', '=', adminUserId).execute()
+    }
     await db.destroy()
   })
 

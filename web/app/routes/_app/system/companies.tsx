@@ -6,6 +6,7 @@ import {
   decodeCompanyUpdate,
   useCatalogBasicForm,
   requireWriter,
+  resourceLabel,
 } from '~/lib/resources/catalog'
 import { ensureDefaultGridPage } from '~/lib/route-prefetch'
 import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
@@ -69,15 +70,15 @@ function CompaniesPage() {
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             const input = decodeCompanyCreate(values)
-            await requireWriter(binding, 'create', '公司')({ ...input })
+            await requireWriter(binding, 'create')({ ...input })
             toast.success('公司已创建,并初始化 3 个默认仓库')
             invalidate()
             return
           }
-          await requireWriter(binding, 'update', '公司')(String(drawer!.recordId), {
+          await requireWriter(binding, 'update')(String(drawer!.recordId), {
             ...decodeCompanyUpdate(values),
           })
-          toast.success('公司已更新')
+          toast.success(`${resourceLabel('basCompanies')}已更新`)
           invalidate()
         }}
       />

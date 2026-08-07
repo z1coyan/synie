@@ -41,6 +41,7 @@ export {
 } from './commands'
 export { gridMetaFromDocument } from './grid-from-document'
 export { requireWriter } from './require-writer'
+export { resourceLabel } from './resource-label'
 export {
   basicFormDrawerProps,
   decodeCurrencyCreate,
@@ -68,5 +69,5 @@ export {
 } from './basic-form'
 export { useResourceDocument } from './use-resource-document'
 export { useCatalogBasicForm } from './use-catalog-basic-form'
-export { LOOKUP_SEEDS, resolveResourceLookup, lookupDefaultSort } from './lookups'
+export { resolveResourceLookup, lookupDefaultSort } from './lookups'
 export { createReferencePresentation, type ReferencePresentation } from './reference-presentation'

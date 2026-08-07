@@ -129,9 +129,7 @@ export const salesReconciliationClient = restTransport(
 
 export const salesReconciliationItemClient = restTransport(
   'salReconciliationItems',
-  api.sales['reconciliation-items'],
-  { decimalFields: ['qty'] },
-)
+  api.sales['reconciliation-items'])
 
 export const purchaseReconciliationClient = restTransport(
   'purReconciliations',
@@ -140,9 +138,7 @@ export const purchaseReconciliationClient = restTransport(
 
 export const purchaseReconciliationItemClient = restTransport(
   'purReconciliationItems',
-  api.purchase['reconciliation-items'],
-  { decimalFields: ['qty'] },
-)
+  api.purchase['reconciliation-items'])
 
 export const companyAccountDefaultClient = restTransport(
   'salCompanyAccountDefaults',

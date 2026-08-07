@@ -145,8 +145,8 @@ export function journalLineResourceMeta(): ResourceMeta {
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('idx', 'idx', 'integer', '行号', { required: true, filterable: true, sortable: true }),
-      field('debit', 'debit', 'decimal', '借方金额', { required: true, filterable: true, sortable: true }),
-      field('credit', 'credit', 'decimal', '贷方金额', { required: true, filterable: true, sortable: true }),
+      field('debit', 'debit', 'decimal', '借方金额', { required: true, filterable: true, sortable: true, decimalEmpty: 'zero' }),
+      field('credit', 'credit', 'decimal', '贷方金额', { required: true, filterable: true, sortable: true, decimalEmpty: 'zero' }),
       field('party_type', 'partyType', 'enum', '对手类型', {
         nullable: true,
         enumOptions: partyOptions,

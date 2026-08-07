@@ -45,6 +45,12 @@ export interface FieldMeta {
   maxLength?: number
   /** wire 可写 null（列可空才声明）：标准动作派生 create/update schema 消费 */
   nullable?: boolean
+  /**
+   * decimal 字段空值的 wire 口径：缺省空值发 null；声明 'zero' 发 '0'
+   * （借贷金额等领域约定）。仅 decimal 字段可声明；资源事实清单（ADR
+   * 2026-08-07-resource-manifest D4）派生 wire.decimalZero 消费。
+   */
+  decimalEmpty?: 'zero'
   /** 计算/投影字段（非物理列）：打印字段目录一层关联展开时跳过 */
   calculated?: boolean
   /** 仅打印字段目录可见：不进 Grid 文档，不参与筛选/排序 */

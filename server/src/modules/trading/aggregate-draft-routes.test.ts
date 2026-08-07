@@ -8,8 +8,15 @@ import { purchaseFulfillmentHeadRoutes, salesFulfillmentHeadRoutes } from './ful
 import type { FulfillmentService } from './fulfillment/service.ts'
 import { orderHeadRoutes } from './order/routes.ts'
 import type { OrderService } from './order/service.ts'
+import {
+  outsourcedIssueRoutes,
+  outsourcedReceiptRoutes,
+} from './outsourced/routes.ts'
+import type { OutsourcedService } from './outsourced/service.ts'
 import { quotationHeadRoutes } from './quotation/routes.ts'
 import type { QuotationService } from './quotation/service.ts'
+import { reconciliationHeadRoutes } from './reconciliation/routes.ts'
+import type { ReconciliationService } from './reconciliation/service.ts'
 import { testActor } from '~/platform/authz/testing.ts'
 import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
@@ -36,6 +43,9 @@ const calls = {
   orderCreate: [] as unknown[],
   quotationCreate: [] as unknown[],
   purchaseReceiptCreate: [] as unknown[],
+  reconciliationCreate: [] as unknown[],
+  outsourcedIssueCreate: [] as unknown[],
+  outsourcedReceiptCreate: [] as unknown[],
 }
 
 const orders = {
@@ -64,11 +74,38 @@ const fulfillment = {
   replacePurchaseReceiptDraft: async () => ({}),
 } as unknown as FulfillmentService
 
+const reconciliations = {
+  createDraft: async (_permit: unknown, _side: string, input: unknown) => {
+    calls.reconciliationCreate.push(input)
+    return {}
+  },
+  replaceDraft: async () => ({}),
+} as unknown as ReconciliationService
+
+const outsourced = {
+  createIssueDraft: async (_permit: unknown, input: unknown) => {
+    calls.outsourcedIssueCreate.push(input)
+    return {}
+  },
+  replaceIssueDraft: async () => ({}),
+  createReceiptDraft: async (_permit: unknown, input: unknown) => {
+    calls.outsourcedReceiptCreate.push(input)
+    return {}
+  },
+  replaceReceiptDraft: async () => ({}),
+} as unknown as OutsourcedService
+
 const app = new Hono<AppEnv>()
   .route('/orders', orderHeadRoutes({ auth, authz, orders, side: 'purchase' }))
   .route('/quotations', quotationHeadRoutes({ auth, authz, quotations, side: 'purchase' }))
   .route('/deliveries', salesFulfillmentHeadRoutes({ auth, authz, fulfillment }))
   .route('/receipts', purchaseFulfillmentHeadRoutes({ auth, authz, fulfillment }))
+  .route(
+    '/reconciliations',
+    reconciliationHeadRoutes({ auth, authz, reconciliations, side: 'purchase' }),
+  )
+  .route('/outsourced-issues', outsourcedIssueRoutes({ auth, authz, outsourced }))
+  .route('/outsourced-receipts', outsourcedReceiptRoutes({ auth, authz, outsourced }))
 app.onError(onError)
 
 const companyId = crypto.randomUUID()
@@ -152,6 +189,47 @@ const purchaseReceiptHead = {
   debitAccountId,
   creditAccountId,
 }
+const reconciliationHead = {
+  companyId,
+  reconciliationType: 'REGULAR',
+  partyType: 'SUPPLIER',
+  partyId,
+  debitAccountId,
+  creditAccountId,
+}
+const reconciliationItem = {
+  idx: 1,
+  qty: '1',
+  receiptItemId: crypto.randomUUID(),
+}
+const outsourcedIssueHead = {
+  companyId,
+  issueDate: '2026-07-31',
+  partyType: 'SUPPLIER',
+  partyId,
+  fromWarehouseId: warehouseId,
+}
+const outsourcedIssueItem = {
+  idx: 1,
+  qty: '1',
+  orderItemMaterialId: crypto.randomUUID(),
+  fromWarehouseId: warehouseId,
+}
+const outsourcedReceiptHead = {
+  companyId,
+  receiptDate: '2026-07-31',
+  partyType: 'SUPPLIER',
+  partyId,
+  warehouseId,
+  debitAccountId,
+  creditAccountId,
+}
+const outsourcedReceiptItem = {
+  idx: 1,
+  qty: '1',
+  orderItemId,
+  warehouseId,
+}
 
 async function invalidPut(path: string, body: unknown) {
   const response = await app.request(path, {
@@ -187,6 +265,9 @@ describe('Aggregate Draft HTTP schema', () => {
       ],
       [`/deliveries/${recordId}`, { ...salesDeliveryHead, packBoxes: [] }, 'items'],
       [`/receipts/${recordId}`, purchaseReceiptHead, 'items'],
+      [`/reconciliations/${recordId}`, reconciliationHead, 'items'],
+      [`/outsourced-issues/${recordId}`, outsourcedIssueHead, 'items'],
+      [`/outsourced-receipts/${recordId}`, outsourcedReceiptHead, 'items'],
     ]
 
     for (const [path, body, field] of cases) {
@@ -239,6 +320,14 @@ describe('Aggregate Draft HTTP schema', () => {
         {
           ...purchaseReceiptHead,
           items: [{ ...fulfillmentItem, qty: 'abc' }],
+        },
+        'items[0].qty',
+      ],
+      [
+        `/reconciliations/${recordId}`,
+        {
+          ...reconciliationHead,
+          items: [{ ...reconciliationItem, qty: 'abc' }],
         },
         'items[0].qty',
       ],
@@ -332,6 +421,9 @@ describe('Aggregate Draft HTTP schema', () => {
     calls.orderCreate.length = 0
     calls.quotationCreate.length = 0
     calls.purchaseReceiptCreate.length = 0
+    calls.reconciliationCreate.length = 0
+    calls.outsourcedIssueCreate.length = 0
+    calls.outsourcedReceiptCreate.length = 0
 
     const orderResponse = await app.request('/orders', {
       method: 'POST',
@@ -367,5 +459,29 @@ describe('Aggregate Draft HTTP schema', () => {
     })
     expect(receiptResponse.status).toBe(201)
     expect(calls.purchaseReceiptCreate[0]).toMatchObject({ items: [] })
+
+    const reconciliationResponse = await app.request('/reconciliations', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(reconciliationHead),
+    })
+    expect(reconciliationResponse.status).toBe(201)
+    expect(calls.reconciliationCreate[0]).toMatchObject({ items: [] })
+
+    const issueResponse = await app.request('/outsourced-issues', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(outsourcedIssueHead),
+    })
+    expect(issueResponse.status).toBe(201)
+    expect(calls.outsourcedIssueCreate[0]).toMatchObject({ items: [] })
+
+    const outsourcedReceiptResponse = await app.request('/outsourced-receipts', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(outsourcedReceiptHead),
+    })
+    expect(outsourcedReceiptResponse.status).toBe(201)
+    expect(calls.outsourcedReceiptCreate[0]).toMatchObject({ items: [] })
   })
 })

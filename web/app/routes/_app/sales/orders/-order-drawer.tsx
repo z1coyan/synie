@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, ListBox, NumberField, Select, TextArea, TextField, toast } from '@heroui/react'
 import { isForbidden } from '~/lib/errors'
 import { companyClient } from '~/lib/resources/companies'
+import { resourceLabel } from '~/lib/resources/catalog'
 import {
   salesOrderItemClient,
 } from '~/lib/resources/orders'
@@ -742,13 +743,13 @@ export function OrderDrawerProvider({
           let saved: Row
           if (mode === 'create') {
             saved = await salesOrderDraft.createDraft(draft)
-            toast.success('销售订单已创建')
+            toast.success(`${resourceLabel('salOrders')}已创建`)
           } else {
             saved = await salesOrderDraft.replaceDraft(
               rowId!,
               draft,
             )
-            toast.success('销售订单已更新')
+            toast.success(`${resourceLabel('salOrders')}已更新`)
           }
           await Promise.all([
             salesOrderBinding.cache.invalidateAll(queryClient),

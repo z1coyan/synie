@@ -7,14 +7,20 @@ import {
 } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, ListBox, NumberField, Select, TextField, toast } from '@heroui/react'
+import { resourceLabel } from '~/lib/resources/catalog'
 import { companyClient } from '~/lib/resources/companies'
+import { purchaseOutsourcedIssueItemClient } from '~/lib/resources/fulfillment'
 import {
-  purchaseOutsourcedIssueClient,
-  purchaseOutsourcedIssueItemClient,
-} from '~/lib/resources/fulfillment'
+  buildOutsourcedIssueDraft,
+  type OutsourcedIssueSavedDraft,
+} from '~/lib/resources/outsourced-draft'
+import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
 import { queryOutsourcedWarehouses } from '~/lib/resources/inventory'
 import { purchaseOrderItemMaterialClient } from '~/lib/resources/orders'
-import { resourceBindingFor } from '~/lib/resources/registry'
+import {
+  aggregateDraftFor,
+  resourceBindingFor,
+} from '~/lib/resources/registry'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
@@ -25,11 +31,12 @@ import { auditMaterialCell, type AuditDocConfig } from '../../scm/-audit-doc'
 import { CompanyDefaultSync, WarehouseRemoteSelect, defaultCompanyId } from '../../scm/-stock-doc'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { todayLocal } from '~/lib/form-defaults'
-import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import {
   createDocumentDrawerOpenBridge,
   useDocumentDrawer,
 } from '~/lib/use-document-drawer'
+
+const purchaseOutsourcedIssueDraft = aggregateDraftFor('purOutsourcedIssues')
 
 export interface IssueRef {
   id: string
@@ -70,41 +77,6 @@ const {
 } = createDocumentDrawerOpenBridge<OpenIssueDrawer>()
 export { useIssueDrawer }
 
-
-/** 提交 mutation:材料/单位由发料清单行锁定带出,后端再快照与折算 */
-function itemInput(row: Row) {
-  return {
-    idx: row.idx,
-    orderItemMaterialId: row.orderItemMaterialId,
-    qty: row.qty,
-    fromWarehouseId: row.fromWarehouseId,
-    outsourcedWarehouseId: row.outsourcedWarehouseId,
-    remarks: row.remarks ?? null,
-  }
-}
-
-async function persistItems(
-  issueId: string,
-  current: Row[],
-  snapshot: Row[],
-): Promise<string[]> {
-  return persistChildRows({
-    current,
-    snapshot,
-    client: purchaseOutsourcedIssueItemClient,
-    parentIdField: 'issueId',
-    parentId: issueId,
-    compareKeys: [
-      'idx',
-      'orderItemMaterialId',
-      'qty',
-      'fromWarehouseId',
-      'outsourcedWarehouseId',
-      'remarks',
-    ],
-    inputOf: itemInput,
-  })
-}
 
 /**
  * 外协仓选择器:通过 warehouse REST 按协作方过滤,
@@ -225,30 +197,20 @@ export function IssueDrawerProvider({
   children: ReactNode
   urlSync?: boolean
 }) {
-  // 单据抽屉骨架:双态状态机、URL 身份→明细装载(竞态安全)、深链补拉全部收口进 hook
-  const drawer = useDocumentDrawer<Row[]>({
+  // 单据抽屉骨架:双态状态机、URL 身份→整单草稿装载(竞态安全)、深链补拉全部收口进 hook
+  const drawer = useDocumentDrawer<OutsourcedIssueSavedDraft>({
     resource: 'purOutsourcedIssues',
     urlSync,
-    loadDraft: (issueId) =>
-      purchaseOutsourcedIssueItemClient
-        .query({
-          limit: 200,
-          offset: 0,
-          sort: { column: 'idx', direction: 'ascending' },
-          filter: {
-            issueId: { kind: 'fk', op: 'in', values: [issueId], labels: [] },
-          },
-        })
-        .then((result) => result.results),
+    loadDraft: (issueId) => purchaseOutsourcedIssueDraft.loadDraft(issueId),
   })
   const { isOpen, mode, rowId } = drawer
   const issueStatus = drawer.row?.status
   const [items, setItems] = useState<Row[]>([])
-  const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [filters] = useState<FilterState>({})
   // 发料清单行缓存:选择时写入完整行,transformItem 带出快照名
   const linesRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
+  const draftHeadRef = useRef<Row | null>(null)
 
   const companies = useQuery({
     queryKey: ['purOutsourcedIssues', 'companies'],
@@ -266,9 +228,10 @@ export function IssueDrawerProvider({
 
   const resetItems = useCallback(() => setItems((cur) => (cur.length === 0 ? cur : [])), [])
 
-  // 草稿 → 条目状态派生:draft 变化(含关闭/新建清空为 null)时初始化条目+快照基线并预热清单行缓存
+  // 草稿 → 条目状态派生:draft 变化(含关闭/新建清空为 null)时初始化条目、写 draftHeadRef 并预热清单行缓存
   useEffect(() => {
-    const rows = drawer.draft ?? []
+    draftHeadRef.current = drawer.draft
+    const rows = drawer.draft?.items ?? []
     const cache = new Map<string, Row>()
     // 编辑态预热缓存:存量行不必再点选清单行也能过校验/回填(快照即显示源)
     for (const r of rows) {
@@ -285,7 +248,6 @@ export function IssueDrawerProvider({
     }
     linesRef.current = cache
     setItems(rows)
-    setItemsSnapshot(rows)
   }, [drawer.draft, drawer.generation]) // generation 覆盖 create/关闭的 null→null(draft 引用不变也需重置)
 
   const openDrawer: OpenIssueDrawer = (nextMode, issue) => {
@@ -359,6 +321,7 @@ export function IssueDrawerProvider({
         {...drawerCfg}
         mode={mode}
         isOpen={isOpen}
+        isSubmitDisabled={mode === 'edit' && !drawer.detailLoaded}
         onOpenChange={(open) => {
           if (!open) drawer.close()
         }}
@@ -692,31 +655,19 @@ export function IssueDrawerProvider({
           )
         }}
         onSubmit={async (values, mode) => {
+          assertAggregateDraftReady(mode, drawer.detailLoaded, '委外发料明细')
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
-          let savedId: string
+          const draft = buildOutsourcedIssueDraft(
+            { ...draftHeadRef.current, ...values },
+            items,
+          )
+          let saved: Row
           if (mode === 'create') {
-            const saved = await purchaseOutsourcedIssueClient.create(values)
-            const issueId = String(saved.id)
-            const itemErrors = await persistItems(issueId, items, [])
-            if (itemErrors.length > 0) {
-              toast.danger('发料单已创建,但部分条目保存失败', {
-                description: itemErrors.join('; '),
-              })
-            } else {
-              toast.success('委外发料单已创建')
-            }
-            savedId = issueId
+            saved = await purchaseOutsourcedIssueDraft.createDraft(draft)
+            toast.success(`${resourceLabel('purOutsourcedIssues')}已创建`)
           } else {
-            await purchaseOutsourcedIssueClient.update(rowId!, values)
-            const itemErrors = await persistItems(rowId!, items, itemsSnapshot)
-            if (itemErrors.length > 0) {
-              toast.danger('发料单已更新,但部分条目保存失败', {
-                description: itemErrors.join('; '),
-              })
-            } else {
-              toast.success('委外发料单已更新')
-            }
-            savedId = rowId!
+            saved = await purchaseOutsourcedIssueDraft.replaceDraft(rowId!, draft)
+            toast.success(`${resourceLabel('purOutsourcedIssues')}已更新`)
           }
           await Promise.all([
             resourceBindingFor('purOutsourcedIssues').cache.invalidateAll(
@@ -729,7 +680,7 @@ export function IssueDrawerProvider({
               'purOrderItemMaterials',
             ).cache.invalidateGrid(queryClient),
           ])
-          return savedId
+          return String(saved.id)
         }}
       />
     </IssueDrawerOpenProvider>

@@ -100,7 +100,7 @@ function DepartmentsPage() {
             onEdit={(row) => open('edit', String(row.id))}
             rowActions={statusToggleActions({
               field: 'enabled',
-              update: (id, input) => requireWriter(binding, 'update', '部门')(id, input),
+              update: (id, input) => requireWriter(binding, 'update')(id, input),
               onDone: () => void refresh(),
               hint: {
                 disable: '停用后不能再把用户挂到该部门,也不能作为新建部门的上级;已挂接的用户保留不变。',
@@ -137,9 +137,9 @@ function DepartmentsPage() {
         onEdit={() => setMode('edit')}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
-            await requireWriter(binding, 'create', '部门')({ ...values, companyId })
+            await requireWriter(binding, 'create')({ ...values, companyId })
           } else {
-            await requireWriter(binding, 'update', '部门')(String(drawer!.recordId), values)
+            await requireWriter(binding, 'update')(String(drawer!.recordId), values)
           }
           toast.success(mode === 'create' ? '部门已创建' : '部门已更新')
           await refresh()

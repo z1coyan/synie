@@ -56,9 +56,9 @@ function OperationsPage() {
         onEdit={() => setMode('edit')}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
-            await requireWriter(binding, 'create', '工序')(values)
+            await requireWriter(binding, 'create')(values)
           } else {
-            await requireWriter(binding, 'update', '工序')(String(drawer!.recordId), values)
+            await requireWriter(binding, 'update')(String(drawer!.recordId), values)
           }
           toast.success(mode === 'create' ? '工序已创建' : '工序已更新')
           invalidate()

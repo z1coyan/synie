@@ -4,8 +4,10 @@
  *
  * 系统中绝大多数资源端点形状一致（POST .query、GET/PATCH/DELETE .[':id']、
  * POST .）；本模块把这套 wire 形状收敛为唯一 implementation，业务资源文件只声明
- * 端点引用与 wire 选项（严格列表、decimal/datetime 字段、能力子集），不再逐资源
- * 手写五个方法的样板。偏离标准形状的资源（单例设置、附件、自定义查询）继续手写。
+ * 端点引用与 wire 选项（严格列表、能力子集），不再逐资源手写五个方法的样板。
+ * decimal/date 写编码由资源事实清单按 server FieldMeta.type 派生（ADR
+ * 2026-08-07-resource-manifest），资源文件不再手抄字段清单；偏离标准形状的资源
+ * （单例设置、附件、自定义查询）继续手写。
  *
  * 能力声明与端点形状在编译期关联：未声明 capabilities 时端点必须具备全部写
  * 动词；声明子集后经 RestEndpointsFor 只要求实际存在的动词。wire 类型断言
@@ -15,11 +17,9 @@ import type { ListQuery } from '@synie/shared'
 import { readApiResponse, type ApiResponseAdapter } from '../api/client'
 import type { Row } from '~/components/synie-data-grid/types'
 import {
-  dateTimeWireInput,
-  decimalWireInput,
+  encodeResourceWrite,
   resourceListBody,
   strictResourceListBody,
-  type DecimalWireOptions,
   type ResourceListWireOptions,
 } from './resource-wire'
 import type {
@@ -90,12 +90,6 @@ export interface RestTransportWireOptions {
   readonly strictListLabel?: string
   /** 非严格列表的透传选项（默认 merge 口径）。 */
   readonly listOptions?: ResourceListWireOptions
-  /** create/update 时收口为 decimal wire string 的字段。 */
-  readonly decimalFields?: readonly string[]
-  /** decimal 收口的空值口径等选项。 */
-  readonly decimalOptions?: DecimalWireOptions
-  /** create/update 时把 YYYY-MM-DD 转为 datetime wire 的字段。 */
-  readonly dateTimeFields?: readonly string[]
 }
 
 type PartialWriteEndpoints = RestReadEndpoints & {
@@ -157,14 +151,7 @@ export function restTransport(
   }
 
   function writeBody(input: Record<string, unknown>): Record<string, unknown> {
-    let body = input
-    if (options.decimalFields?.length) {
-      body = decimalWireInput(body, options.decimalFields, options.decimalOptions)
-    }
-    if (options.dateTimeFields?.length) {
-      body = dateTimeWireInput(body, options.dateTimeFields)
-    }
-    return body
+    return encodeResourceWrite(resource, input)
   }
 
   return {

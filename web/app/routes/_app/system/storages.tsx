@@ -153,13 +153,13 @@ function StoragesPage() {
             ...(secret.trim() === '' ? {} : { secretAccessKey: secret }),
           }
           if (mode === 'create') {
-            await requireWriter(binding, 'create', '存储接入')({
+            await requireWriter(binding, 'create')({
               ...common,
               name: String(values.name ?? ''),
               kind: String(values.kind ?? ''),
             })
           } else {
-            await requireWriter(binding, 'update', '存储接入')(String(drawer!.recordId), common)
+            await requireWriter(binding, 'update')(String(drawer!.recordId), common)
           }
           toast.success(mode === 'create' ? '存储接入已创建' : '存储接入已更新')
           setSecret('')

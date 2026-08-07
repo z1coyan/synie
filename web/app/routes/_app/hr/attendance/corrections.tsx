@@ -149,9 +149,9 @@ function AttendanceCorrectionsPage() {
           const input = { ...values, times }
 
           if (mode === 'create') {
-            await requireWriter(binding, 'create', '补卡单')(input)
+            await requireWriter(binding, 'create')(input)
           } else {
-            await requireWriter(binding, 'update', '补卡单')(
+            await requireWriter(binding, 'update')(
               String(drawer!.recordId),
               input,
             )

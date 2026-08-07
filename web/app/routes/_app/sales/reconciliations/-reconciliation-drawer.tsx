@@ -15,13 +15,19 @@ import {
   toast,
 } from '@heroui/react'
 import { formatAmount, formatQty } from '~/lib/amount'
+import { resourceLabel } from '~/lib/resources/catalog'
 import { companyClient } from '~/lib/resources/companies'
 import { salesDeliveryItemClient } from '~/lib/resources/fulfillment'
+import { salesReconciliationItemClient } from '~/lib/resources/reconciliations'
 import {
-  salesReconciliationClient,
-  salesReconciliationItemClient,
-} from '~/lib/resources/reconciliations'
-import { resourceBindingFor } from '~/lib/resources/registry'
+  buildReconciliationDraft,
+  type ReconciliationSavedDraft,
+} from '~/lib/resources/reconciliation-draft'
+import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
+import {
+  aggregateDraftFor,
+  resourceBindingFor,
+} from '~/lib/resources/registry'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
@@ -38,12 +44,13 @@ import { auditMaterialCell, type AuditDocConfig } from '../../scm/-audit-doc'
 import { CompanyDefaultSync, defaultCompanyId } from '../../scm/-stock-doc'
 import { fetchCompanyAccountDefaults } from '~/components/company-account-defaults'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
-import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import { toastError } from '~/lib/toast'
 import {
   createDocumentDrawerOpenBridge,
   useDocumentDrawer,
 } from '~/lib/use-document-drawer'
+
+const salesReconciliationDraft = aggregateDraftFor('salReconciliations')
 
 export interface ReconciliationRef {
   id: string
@@ -109,33 +116,6 @@ const {
   Provider: ReconciliationDrawerOpenProvider,
 } = createDocumentDrawerOpenBridge<OpenReconciliationDrawer>()
 export { useReconciliationDrawer }
-
-
-/** 提交 mutation:金额/baseQty 由后端按金额链与折算比例算(不可手改) */
-function itemInput(row: Row) {
-  return {
-    idx: row.idx,
-    deliveryItemId: row.deliveryItemId,
-    qty: row.qty,
-    remarks: row.remarks ?? null,
-  }
-}
-
-async function persistItems(
-  reconciliationId: string,
-  current: Row[],
-  snapshot: Row[],
-): Promise<string[]> {
-  return persistChildRows({
-    current,
-    snapshot,
-    client: salesReconciliationItemClient,
-    parentIdField: 'reconciliationId',
-    parentId: reconciliationId,
-    compareKeys: ['idx', 'deliveryItemId', 'qty', 'remarks'],
-    inputOf: itemInput,
-  })
-}
 
 /** 科目候选使用结构化 REST FilterState。 */
 function accountFilter(
@@ -361,9 +341,8 @@ function previewAmount(qty: unknown, price: unknown): number | null {
   return Math.round(q * p * 100) / 100
 }
 
-/** 对账条目行集合 + 发货条目预热缓存(骨架 loadDraft 的返回形) */
-interface ReconciliationLinesDraft {
-  items: Row[]
+/** 对账整单草稿 + 发货条目预热缓存(骨架 loadDraft 的返回形) */
+type ReconciliationDrawerDraft = ReconciliationSavedDraft & {
   deliveryItems: Map<string, Row>
 }
 
@@ -381,24 +360,13 @@ export function ReconciliationDrawerProvider({
   urlSync?: boolean
 }) {
   // 单据抽屉骨架:双态状态机、URL 身份→整单草稿装载(竞态安全)、深链补拉全部收口进 hook
-  const drawer = useDocumentDrawer<ReconciliationLinesDraft>({
+  const drawer = useDocumentDrawer<ReconciliationDrawerDraft>({
     resource: 'salReconciliations',
     urlSync,
     loadDraft: async (reconciliationId) => {
-      const d = await salesReconciliationItemClient.query({
-        limit: 200,
-        offset: 0,
-        sort: { column: 'idx', direction: 'ascending' },
-        filter: {
-          reconciliationId: {
-            kind: 'fk',
-            op: 'in',
-            values: [reconciliationId],
-            labels: [],
-          },
-        },
-      })
-      const rows = d.results
+      // 整单草稿:头+对账条目一次一致读快照;发货条目预热缓存装进 draft 返回
+      const draft = await salesReconciliationDraft.loadDraft(reconciliationId)
+      const rows = draft.items
       // 编辑态预热缓存:按行上发货条目 id 取剩余可对账量/快照价/币种
       const ids = [
         ...new Set(
@@ -436,18 +404,18 @@ export function ReconciliationDrawerProvider({
           customerPartNo: r.customerPartNo ?? di.customerPartNo ?? null,
         }
       })
-      return { items, deliveryItems }
+      return { ...draft, items, deliveryItems }
     },
   })
   const { isOpen, mode, rowId } = drawer
   const reconciliationStatus = drawer.row?.status
   const [items, setItems] = useState<Row[]>([])
-  const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [importing, setImporting] = useState(false)
   const [filters] = useState<FilterState>({})
   // 发货条目缓存:选择时写入完整行,validateItem/transformItem 带剩余量与快照价
   const deliveryItemsRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
+  const draftHeadRef = useRef<Row | null>(null)
 
   const companies = useQuery({
     queryKey: ['salReconciliations', 'companies'],
@@ -468,12 +436,11 @@ export function ReconciliationDrawerProvider({
     [],
   )
 
-  // 草稿 → 条目状态派生:draft 变化(含关闭/新建清空为 null)时初始化条目及其保存比对基线,并重建发货条目缓存
+  // 草稿 → 条目状态派生:draft 变化(含关闭/新建清空为 null)时初始化条目、写 draftHeadRef 并重建发货条目缓存
   useEffect(() => {
+    draftHeadRef.current = drawer.draft
     deliveryItemsRef.current = drawer.draft?.deliveryItems ?? new Map()
-    const rows = drawer.draft?.items ?? []
-    setItems(rows)
-    setItemsSnapshot(rows)
+    setItems(drawer.draft?.items ?? [])
   }, [drawer.draft, drawer.generation]) // generation 覆盖 create/关闭的 null→null(draft 引用不变也需重置)
 
   const openDrawer: OpenReconciliationDrawer = (nextMode, reconciliation) => {
@@ -501,6 +468,7 @@ export function ReconciliationDrawerProvider({
         {...drawerCfg}
         mode={mode}
         isOpen={isOpen}
+        isSubmitDisabled={mode === 'edit' && !drawer.detailLoaded}
         onOpenChange={(open) => {
           if (!open) drawer.close()
         }}
@@ -1042,35 +1010,20 @@ export function ReconciliationDrawerProvider({
           )
         }}
         onSubmit={async (values, mode) => {
+          assertAggregateDraftReady(mode, drawer.detailLoaded, '销售对账明细')
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
-          let savedId: string
+          const draft = buildReconciliationDraft(
+            'sales',
+            { ...draftHeadRef.current, ...values },
+            items,
+          )
+          let saved: Row
           if (mode === 'create') {
-            const created = await salesReconciliationClient.create(values)
-            const reconciliationId = String(created.id)
-            const itemErrors = await persistItems(reconciliationId, items, [])
-            if (itemErrors.length > 0) {
-              toast.danger('销售对账单已创建,但部分条目保存失败', {
-                description: itemErrors.join('; '),
-              })
-            } else {
-              toast.success('销售对账单已创建')
-            }
-            savedId = reconciliationId
+            saved = await salesReconciliationDraft.createDraft(draft)
+            toast.success(`${resourceLabel('salReconciliations')}已创建`)
           } else {
-            await salesReconciliationClient.update(rowId!, values)
-            const itemErrors = await persistItems(
-              rowId!,
-              items,
-              itemsSnapshot,
-            )
-            if (itemErrors.length > 0) {
-              toast.danger('销售对账单已更新,但部分条目保存失败', {
-                description: itemErrors.join('; '),
-              })
-            } else {
-              toast.success('销售对账单已更新')
-            }
-            savedId = rowId!
+            saved = await salesReconciliationDraft.replaceDraft(rowId!, draft)
+            toast.success(`${resourceLabel('salReconciliations')}已更新`)
           }
           await Promise.all([
             resourceBindingFor('salReconciliations').cache.invalidateAll(
@@ -1080,7 +1033,7 @@ export function ReconciliationDrawerProvider({
               'salReconciliationItems',
             ).cache.invalidateGrid(queryClient),
           ])
-          return savedId
+          return String(saved.id)
         }}
       />
     </ReconciliationDrawerOpenProvider>

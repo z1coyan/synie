@@ -5,6 +5,8 @@
  * handler 用 `permitOf(c)` 取凭证。工作流动作逐个挂自己的码
  * （confirm / unconfirm / audit=结单 / void）。
  * 条目是 via 子资源：`guard(itemResource, 'create'|'update'|'delete')` 由平台解析到母资源动作码。
+ * 整单草稿三连（POST 创建草稿 / GET :id/draft / PUT :id 全量替换）与报价/订单/履约先例同形；
+ * PUT 聚合写要求 update ∧ create ∧ delete（子树差异天然含增删）。
  */
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
@@ -15,13 +17,72 @@ import type { AuthService } from '~/platform/auth/service.ts'
 import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
-import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { ApiError } from '~/platform/http/errors.ts'
+import { decimalStringSchema, listQuerySchema, validationHook } from '~/platform/http/zod.ts'
 import type { TradingSide } from '../common.ts'
 import { presentKey } from '../common.ts'
 import type { ReconciliationService } from './service.ts'
 import { reconciliationSpec } from './spec.ts'
 
 const idParam = z.object({ id: z.string().uuid() })
+
+const reconciliationDraftItemSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    idx: z.number().int(),
+    qty: decimalStringSchema,
+    deliveryItemId: z.string().uuid().nullable().optional(),
+    receiptItemId: z.string().uuid().nullable().optional(),
+    outsourcedReceiptItemId: z.string().uuid().nullable().optional(),
+    remarks: z.string().nullable().optional(),
+  })
+  .strict()
+
+const reconciliationDraftHeadFields = {
+  companyId: z.string().uuid(),
+  reconciliationNo: z.string().nullable().optional(),
+  reconciliationType: z.string().min(1),
+  partyType: z.string().min(1),
+  partyId: z.string().uuid(),
+  debitAccountId: z.string().uuid().nullable().optional(),
+  creditAccountId: z.string().uuid().nullable().optional(),
+  remarks: z.string().nullable().optional(),
+}
+
+const reconciliationDraftCreateSchema = z
+  .object({
+    ...reconciliationDraftHeadFields,
+    // 兼容仍只创建空表头的领域调用；聚合抽屉始终显式发送完整 items。
+    items: z.array(reconciliationDraftItemSchema).default([]),
+  })
+  .strict()
+
+// PUT 是全量替换：顶层 items 必须显式提交。
+const reconciliationDraftReplaceSchema = z
+  .object({
+    ...reconciliationDraftHeadFields,
+    items: z.array(reconciliationDraftItemSchema),
+  })
+  .strict()
+
+function reconciliationDraftValidationHook(result: {
+  success: boolean
+  error?: z.ZodError
+}): void {
+  if (result.success || !result.error) return
+  const fields: Record<string, string[]> = {}
+  for (const issue of result.error.issues) {
+    let key = ''
+    for (const part of issue.path) {
+      if (typeof part === 'number') key += `[${part}]`
+      else key += key ? `.${String(part)}` : String(part)
+    }
+    if (!key) key = '_'
+    else if (!key.startsWith('items')) key = `header.${key}`
+    ;(fields[key] ??= []).push(issue.message)
+  }
+  throw ApiError.validation('请求参数错误', fields)
+}
 
 function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
   return {
@@ -40,7 +101,16 @@ export function reconciliationHeadRoutes(deps: {
   side: TradingSide
 }) {
   const { auth, authz, reconciliations, side } = deps
-  const headGuard = (action: string) => authz.guard(reconciliationSpec(side).headResource, action)
+  const resource = reconciliationSpec(side).headResource
+  const headGuard = (action: string) => authz.guard(resource, action)
+  const prefix = authz.targetOf(resource).prefix
+  /**
+   * 整单 PUT 是聚合写：子树差异可能新增/删除条目，
+   * 故在 update 之外叠加同前缀的 create/delete。
+   */
+  const replaceGuard = authz.guard(resource, 'update', {
+    allOf: [`${prefix}:create`, `${prefix}:delete`],
+  })
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
@@ -55,44 +125,38 @@ export function reconciliationHeadRoutes(deps: {
     .post(
       '/',
       headGuard('create'),
-      zValidator(
-        'json',
-        z
-          .object({
-            companyId: z.string().uuid(),
-            reconciliationNo: z.string().nullable().optional(),
-            reconciliationType: z.string().min(1),
-            partyType: z.string().min(1),
-            partyId: z.string().uuid(),
-            debitAccountId: z.string().uuid().nullable().optional(),
-            creditAccountId: z.string().uuid().nullable().optional(),
-            remarks: z.string().nullable().optional(),
-          })
-          .strict(),
-        validationHook,
-      ),
-      async (c) => {
-        const body = c.req.valid('json')
-        return c.json(
-          await reconciliations.createHead(permitOf(c), side, {
-            companyId: body.companyId,
-            no: body.reconciliationNo,
-            kind: body.reconciliationType,
-            partyType: body.partyType,
-            partyId: body.partyId,
-            debitAccountId: body.debitAccountId,
-            creditAccountId: body.creditAccountId,
-            remarks: body.remarks,
-          }),
-          201,
-        )
-      },
+      zValidator('json', reconciliationDraftCreateSchema, reconciliationDraftValidationHook),
+      async (c) =>
+        c.json(await reconciliations.createDraft(permitOf(c), side, c.req.valid('json')), 201),
+    )
+    // 完整聚合草稿读取（无分页截断）；须在 /:id 之前注册更具体路径
+    .get(
+      '/:id/draft',
+      headGuard('read'),
+      zValidator('param', idParam, validationHook),
+      async (c) =>
+        c.json(await reconciliations.getDraft(permitOf(c), side, c.req.valid('param').id)),
     )
     .get(
       '/:id',
       headGuard('read'),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await reconciliations.getHead(permitOf(c), side, c.req.valid('param').id)),
+    )
+    .put(
+      '/:id',
+      replaceGuard,
+      zValidator('param', idParam, validationHook),
+      zValidator('json', reconciliationDraftReplaceSchema, reconciliationDraftValidationHook),
+      async (c) =>
+        c.json(
+          await reconciliations.replaceDraft(
+            permitOf(c),
+            side,
+            c.req.valid('param').id,
+            c.req.valid('json'),
+          ),
+        ),
     )
     .patch(
       '/:id',

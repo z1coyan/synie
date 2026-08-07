@@ -259,9 +259,7 @@ export const bomClient = restTransport('mfgBoms', api.manufacturing.boms)
 
 export const bomComponentClient = restTransport(
   'mfgBomComponents',
-  api.manufacturing['bom-components'],
-  { decimalFields: ['quantity', 'lossRate'] },
-)
+  api.manufacturing['bom-components'])
 
 export const bomRouteClient = restTransport(
   'mfgBomRoutes',
@@ -270,17 +268,13 @@ export const bomRouteClient = restTransport(
 
 export const bomByproductClient = restTransport(
   'mfgBomByproducts',
-  api.manufacturing['bom-byproducts'],
-  { decimalFields: ['quantity'] },
-)
+  api.manufacturing['bom-byproducts'])
 
 export const demandClient = restTransport('mfgDemands', api.manufacturing.demands)
 
 export const demandItemClient = restTransport(
   'mfgDemandItems',
-  api.manufacturing['demand-items'],
-  { decimalFields: ['qty'] },
-)
+  api.manufacturing['demand-items'])
 
 export const workOrderClient = restTransport(
   'mfgWorkOrders',
@@ -291,6 +285,4 @@ export const outputClient = restTransport('mfgOutputs', api.manufacturing.output
 
 export const outputItemClient = restTransport(
   'mfgOutputItems',
-  api.manufacturing['output-items'],
-  { decimalFields: ['qty'] },
-)
+  api.manufacturing['output-items'])

@@ -90,10 +90,10 @@ export async function submitMaterialForm(
 ): Promise<string> {
   if (mode === 'view') throw new Error('查看模式不可提交')
   if (mode === 'create') {
-    const saved = await requireWriter(presentation.binding, 'create', '物料')(values)
+    const saved = await requireWriter(presentation.binding, 'create')(values)
     return String(saved.id)
   }
   if (!rowId) throw new Error('更新物料缺少 id')
-  const saved = await requireWriter(presentation.binding, 'update', '物料')(rowId, values)
+  const saved = await requireWriter(presentation.binding, 'update')(rowId, values)
   return String(saved.id)
 }

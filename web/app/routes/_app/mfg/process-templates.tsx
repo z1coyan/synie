@@ -10,6 +10,7 @@ import {
   processTemplateClient,
   processTemplateItemClient,
 } from '~/lib/resources/manufacturing'
+import { resourceLabel } from '~/lib/resources/catalog'
 import type { Row } from '~/components/synie-data-grid/types'
 import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import { resourceBindingFor } from '~/lib/resources/registry'
@@ -160,7 +161,7 @@ function ProcessTemplatesPage() {
                 description: itemErrors.join('; '),
               })
             } else {
-              toast.success('工艺模板已创建')
+              toast.success(`${resourceLabel('mfgProcessTemplates')}已创建`)
             }
           } else {
             const templateId = String(drawer.rowId)
@@ -175,7 +176,7 @@ function ProcessTemplatesPage() {
                 description: itemErrors.join('; '),
               })
             } else {
-              toast.success('工艺模板已更新')
+              toast.success(`${resourceLabel('mfgProcessTemplates')}已更新`)
             }
           }
           // 抽屉走 rowId 自查,一并失效行缓存,重开详情不吃 30s staleTime 的旧行

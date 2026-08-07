@@ -59,15 +59,11 @@ export const salesQuotationClient = restTransport(
 
 export const salesQuotationItemClient = restTransport(
   'salQuotationItems',
-  api.sales['quotation-items'],
-  { decimalFields: ['price', 'taxRate'] },
-)
+  api.sales['quotation-items'])
 
 export const salesQuotationTierClient = restTransport(
   'salQuotationTiers',
-  api.sales['quotation-tiers'],
-  { decimalFields: ['minQty', 'price'] },
-)
+  api.sales['quotation-tiers'])
 
 export const purchaseQuotationClient = restTransport(
   'purQuotations',
@@ -76,12 +72,8 @@ export const purchaseQuotationClient = restTransport(
 
 export const purchaseQuotationItemClient = restTransport(
   'purQuotationItems',
-  api.purchase['quotation-items'],
-  { decimalFields: ['price', 'taxRate'] },
-)
+  api.purchase['quotation-items'])
 
 export const purchaseQuotationTierClient = restTransport(
   'purQuotationTiers',
-  api.purchase['quotation-tiers'],
-  { decimalFields: ['minQty', 'price'] },
-)
+  api.purchase['quotation-tiers'])

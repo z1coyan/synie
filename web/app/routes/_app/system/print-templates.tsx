@@ -372,7 +372,7 @@ function PrintTemplatesPage() {
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             if (!fileId) throw new Error('请上传模板文件')
-            const created = await requireWriter(binding, 'create', '打印模板')({
+            const created = await requireWriter(binding, 'create')({
               name: values.name,
               resource: resourcePick,
               fileId,
@@ -387,7 +387,7 @@ function PrintTemplatesPage() {
               remarks: values.remarks ?? null,
             }
             if (fileId) input.fileId = fileId
-            await requireWriter(binding, 'update', '打印模板')(String(drawer.recordId), input)
+            await requireWriter(binding, 'update')(String(drawer.recordId), input)
             await binding.cache.invalidateGrid(queryClient)
           }
         }}

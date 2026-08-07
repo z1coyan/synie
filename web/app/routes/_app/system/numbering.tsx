@@ -14,7 +14,7 @@ import {
   listNumberableResources,
   numberingCounterClient,
 } from '~/lib/resources/numbering'
-import { useCatalogBasicForm, requireWriter } from '~/lib/resources/catalog'
+import { useCatalogBasicForm, requireWriter, resourceLabel as resourceManifestLabel } from '~/lib/resources/catalog'
 import { ensureDefaultGridPage } from '~/lib/route-prefetch'
 import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import type { Row } from '~/components/synie-data-grid/types'
@@ -139,7 +139,7 @@ function NumberingPage() {
           rowActions={statusToggleActions({
             field: 'enabled',
             update: (id, input) => {
-              return requireWriter(binding, 'update', '编号规则')(id, input)
+              return requireWriter(binding, 'update')(id, input)
             },
             onDone: () => binding.cache.invalidateGrid(queryClient),
           })}
@@ -238,17 +238,17 @@ function NumberingPage() {
           }
           const input = { ...values, segments }
           if (mode === 'create') {
-            await requireWriter(binding, 'create', '编号规则')(input)
-            toast.success('编号规则已创建')
+            await requireWriter(binding, 'create')(input)
+            toast.success(`${resourceManifestLabel('sysNumberingRules')}已创建`)
           } else {
-            await requireWriter(binding, 'update', '编号规则')(String(drawer!.recordId), input)
+            await requireWriter(binding, 'update')(String(drawer!.recordId), input)
             const counterErrors = await persistCounters(counters, countersSnapshot)
             if (counterErrors.length > 0) {
               toast.danger('规则已更新,但部分计数器保存失败', {
                 description: counterErrors.join('; '),
               })
             } else {
-              toast.success('编号规则已更新')
+              toast.success(`${resourceManifestLabel('sysNumberingRules')}已更新`)
             }
           }
           await binding.cache.invalidateGrid(queryClient)

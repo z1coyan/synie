@@ -13,6 +13,7 @@ import {
   getWorkOrderBomSnapshot,
   workOrderClient,
 } from '~/lib/resources/manufacturing'
+import { resourceLabel } from '~/lib/resources/catalog'
 import { useResourceCapabilities } from '~/lib/use-resource-capabilities'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useTemplatePrint } from '~/components/synie-print/TemplatePrintDialog'
@@ -476,7 +477,7 @@ function WorkOrdersPageInner() {
             await workOrderClient.update(String(drawer!.recordId), {
               workOrderNo: values.workOrderNo,
             })
-            toast.success('生产工单已更新')
+            toast.success(`${resourceLabel('mfgWorkOrders')}已更新`)
           }
           invalidateWorkOrderLists()
         }}

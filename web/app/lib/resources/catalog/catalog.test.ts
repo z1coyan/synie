@@ -227,9 +227,13 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
     expect(cw && 'delete' in cw && cw.delete).toBeTruthy()
   })
 
-  test('lookup 种子：员工/物料/分类/单位 search 与 subtitle', async () => {
-    const { resolveResourceLookup, LOOKUP_SEEDS } = await import('./lookups')
-    expect(LOOKUP_SEEDS.hrEmployees.searchFields).toEqual(['name', 'code', 'attendanceNo'])
+  test('lookup 回落：未缓存文档时读资源事实清单（员工/物料/分类/单位 search 与 subtitle）', async () => {
+    const { resolveResourceLookup } = await import('./lookups')
+    expect(resolveResourceLookup('hrEmployees').searchFields).toEqual([
+      'name',
+      'code',
+      'attendanceNo',
+    ])
     expect(resolveResourceLookup('hrEmployees').subtitleFields).toEqual([
       'code',
       'attendanceNo',
@@ -237,6 +241,8 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
     expect(resolveResourceLookup('invMaterials').searchFields).toContain('spec')
     expect(resolveResourceLookup('invMaterialCategories').subtitleFields).toEqual(['code'])
     expect(resolveResourceLookup('basUnits').subtitleFields).toEqual(['symbol'])
+    // 清单外的资源兜底 name
+    expect(resolveResourceLookup('nonexistentResource').labelField).toBe('name')
   })
 
   test('transport 与 binding.writer 都省略不支持的写方法', () => {

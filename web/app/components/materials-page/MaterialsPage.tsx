@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, toast } from '@heroui/react'
 import { materialClient, materialUnitClient } from '~/lib/resources/inventory'
+import { resourceLabel } from '~/lib/resources/catalog'
 import { unitClient } from '~/lib/resources/units'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import {
@@ -321,7 +322,7 @@ export function MaterialsPage({ title, description }: MaterialsPageProps) {
             if (unitErrors.length > 0) {
               toast.danger('物料已创建,但部分单位转换保存失败', { description: unitErrors.join('; ') })
             } else if (failed.length === 0) {
-              toast.success('物料已创建')
+              toast.success(`${resourceLabel('invMaterials')}已创建`)
             }
             await resourceBindingFor(RESOURCE).cache.invalidateAll(queryClient)
             return materialId
@@ -332,7 +333,7 @@ export function MaterialsPage({ title, description }: MaterialsPageProps) {
           if (unitErrors.length > 0) {
             toast.danger('物料已更新,但部分单位转换保存失败', { description: unitErrors.join('; ') })
           } else {
-            toast.success('物料已更新')
+            toast.success(`${resourceLabel('invMaterials')}已更新`)
           }
           await resourceBindingFor(RESOURCE).cache.invalidateAll(queryClient)
           return materialId

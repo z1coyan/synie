@@ -62,7 +62,7 @@ function BankAccountsPage() {
           rowActions={statusToggleActions({
             field: 'active',
             update: (id, input) => {
-              return requireWriter(binding, 'update', '银行账户')(id, input)
+              return requireWriter(binding, 'update')(id, input)
             },
             rowLabel: (row) => String(row.alias ?? ''),
             onDone: () => binding.cache.invalidateRow(queryClient),
@@ -116,9 +116,9 @@ function BankAccountsPage() {
         onEdit={() => setMode('edit')}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
-            await requireWriter(binding, 'create', '银行账户')(values)
+            await requireWriter(binding, 'create')(values)
           } else {
-            await requireWriter(binding, 'update', '银行账户')(String(drawer!.recordId), values)
+            await requireWriter(binding, 'update')(String(drawer!.recordId), values)
           }
           toast.success(mode === 'create' ? '银行账户已创建' : '银行账户已更新')
           await binding.cache.invalidateGrid(queryClient)

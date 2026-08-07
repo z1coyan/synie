@@ -6,7 +6,7 @@ import {
   defineCommand,
 } from './catalog/commands'
 import { restTransport } from './rest-transport'
-import { decimalWireInput } from './resource-wire'
+import { encodeResourceWrite } from './resource-wire'
 import type { ResourceClient } from './types'
 
 export interface AttendanceMonthSummary {
@@ -185,6 +185,7 @@ export async function saveAttendanceCorrection(
     : attendanceCorrectionClient.create(input)
 }
 
+/** 创建时的零值回填面（领域口径：未填即 0）；wire 编码本身由资源事实清单派生 */
 const payrollDecimals = [
   'workdays',
   'overtimeHours',
@@ -198,7 +199,7 @@ const payrollDecimals = [
 function payrollCreateInput(
   input: Record<string, unknown>,
 ): Record<string, unknown> {
-  const result = decimalWireInput(input, payrollDecimals)
+  const result = encodeResourceWrite('hrPayrolls', input)
   for (const field of payrollDecimals) {
     if (result[field] == null) result[field] = '0'
   }
@@ -210,7 +211,6 @@ function payrollCreateInput(
 
 const payrollTransport = restTransport('hrPayrolls', api.hr.payrolls, {
   listOptions: listWireOptions,
-  decimalFields: payrollDecimals,
 })
 
 export const payrollClient: ResourceClient = {
@@ -264,7 +264,6 @@ export const payrollPaymentClient = restTransport(
   {
     capabilities: { update: false },
     listOptions: listWireOptions,
-    decimalFields: ['amount'],
   },
 )
 
@@ -309,7 +308,7 @@ export function payRemainingPayroll(
 export const employeeLoanClient = restTransport(
   'hrEmployeeLoans',
   api.hr['employee-loans'],
-  { listOptions: listWireOptions, decimalFields: ['amount'] },
+  { listOptions: listWireOptions },
 )
 
 export async function saveEmployeeLoan(

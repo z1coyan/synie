@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Label, NumberField, TextArea, TextField, toast } from '@heroui/react'
 import { formatPrice } from '~/lib/amount'
 import { companyClient } from '~/lib/resources/companies'
+import { resourceLabel } from '~/lib/resources/catalog'
 import { purchaseQuotationItemClient } from '~/lib/resources/quotations'
 import { buildQuotationDraft, type QuotationSavedDraft } from '~/lib/resources/quotation-draft'
 import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
@@ -455,13 +456,13 @@ export function QuotationDrawerProvider({
           let saved: Row
           if (mode === 'create') {
             saved = await purchaseQuotationDraft.createDraft(draft)
-            toast.success('采购报价单已创建')
+            toast.success(`${resourceLabel('purQuotations')}已创建`)
           } else {
             saved = await purchaseQuotationDraft.replaceDraft(
               rowId!,
               draft,
             )
-            toast.success('采购报价单已更新')
+            toast.success(`${resourceLabel('purQuotations')}已更新`)
           }
           await Promise.all([
             purchaseQuotationBinding.cache.invalidateAll(queryClient),

@@ -16,7 +16,8 @@
     "db:migrate": "bun db/migrate.ts",
     "db:seed": "bun db/seed.ts",
     "db:reset": "bun db/reset.ts",
-    "db:codegen": "kysely-codegen --dialect postgres --out-file src/db/types.d.ts"
+    "db:codegen": "kysely-codegen --dialect postgres --out-file src/db/types.d.ts",
+    "gen:manifest": "bun scripts/generate-resource-manifest.ts"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.7.4",

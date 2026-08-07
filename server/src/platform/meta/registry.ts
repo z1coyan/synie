@@ -78,6 +78,11 @@ export function createRegistry() {
     return resources.get(name)
   }
 
+  /** 注册期规范化结果（label/lookup 等 seal 校验后的唯一真值）；资源事实清单派生消费 */
+  function normalizedResource(name: string): NormalizedResource | undefined {
+    return normalized.get(name)
+  }
+
   /** 全部已注册资源（打印字段目录等派生消费） */
   function list(): ResourceMeta[] {
     return [...resources.values()]
@@ -369,6 +374,7 @@ export function createRegistry() {
   return {
     register,
     get,
+    normalizedResource,
     list,
     seal,
     isSealed,
@@ -432,6 +438,11 @@ function validate(resource: ResourceMeta): void {
   for (const field of resource.fields) {
     if (!field.name || !field.apiName || !field.dbColumn || !field.label) {
       throw new Error(`Meta 资源 ${resource.name} 存在不完整字段: ${field.apiName || field.name}`)
+    }
+    if (field.decimalEmpty !== undefined && field.type !== 'decimal') {
+      throw new Error(
+        `Meta 资源 ${resource.name} 非 decimal 字段 ${field.apiName} 不得声明 decimalEmpty`,
+      )
     }
     if (!IDENTIFIER_RE.test(field.dbColumn)) {
       throw new Error(`Meta 资源 ${resource.name} 的列名非法: ${field.dbColumn}`)

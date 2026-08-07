@@ -39,8 +39,6 @@ const listWireOptions = {
   joinFields: 'reject',
 } as const
 
-const bankAmountFields = ['income', 'expense', 'balance'] as const
-
 export const bankAccountClient = restTransport(
   'accBankAccounts',
   api.finance['bank-accounts'],
@@ -50,7 +48,7 @@ export const bankAccountClient = restTransport(
 export const bankTransactionClient = restTransport(
   'accBankTransactions',
   api.finance['bank-transactions'],
-  { listOptions: listWireOptions, decimalFields: bankAmountFields },
+  { listOptions: listWireOptions },
 )
 
 export const bankImportTemplateClient = restTransport(
@@ -78,7 +76,6 @@ export const bankImportItemClient = restTransport(
   {
     capabilities: { create: false },
     listOptions: listWireOptions,
-    decimalFields: bankAmountFields,
   },
 )
 
@@ -88,7 +85,6 @@ export const bankReconciliationClient = restTransport(
   {
     capabilities: { update: false },
     listOptions: listWireOptions,
-    decimalFields: ['amount'],
   },
 )
 
@@ -154,12 +150,10 @@ export const bankTransactionCommandAdapter = createCommandAdapter({
   ),
 })
 
-const invoiceAmounts = ['netTotal', 'taxTotal', 'grossTotal'] as const
-
 export const vatInvoiceClient = restTransport(
   'accVatInvoices',
   api.finance['vat-invoices'],
-  { listOptions: listWireOptions, decimalFields: invoiceAmounts },
+  { listOptions: listWireOptions },
 )
 
 export function auditVatInvoice(id: string, postingDate?: string) {
@@ -249,7 +243,7 @@ export const expenseReportCommandAdapter = createRowCommandAdapter({
 export const expenseReportItemClient = restTransport(
   'accExpenseReportItems',
   api.finance['expense-report-items'],
-  { listOptions: listWireOptions, decimalFields: ['amount'] },
+  { listOptions: listWireOptions },
 )
 
 export async function queryExpenseReportItems(
@@ -304,20 +298,12 @@ export async function saveExpenseReportItems(
 export const billClient = restTransport('accBills', api.finance.bills, {
   capabilities: { create: false },
   listOptions: listWireOptions,
-  decimalFields: ['faceAmount'],
 })
-
-const billAmounts = [
-  'amount',
-  'discountRate',
-  'interest',
-  'netAmount',
-] as const
 
 export const billTransactionClient = restTransport(
   'accBillTransactions',
   api.finance['bill-transactions'],
-  { listOptions: listWireOptions, decimalFields: billAmounts },
+  { listOptions: listWireOptions },
 )
 
 export function auditBillTransaction(id: string, postingDate?: string) {

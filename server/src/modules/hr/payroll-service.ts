@@ -40,7 +40,7 @@ import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import { loadAuthorized } from '~/db/load.ts'
 import { mapRow, snapshot } from '~/platform/standard/fields.ts'
-import { createStandardService } from '~/platform/standard/service.ts'
+import { createStandardService, type StandardService } from '~/platform/standard/service.ts'
 import {
   employeeLoanResourceMeta,
   payrollPaymentResourceMeta,
@@ -807,6 +807,9 @@ export function createPayrollService(deps: PayrollServiceDeps) {
       loanBase.update(permit, id, { ...patch }),
     deleteLoan: (permit: Permit, id: string) => loanBase.remove(permit, id),
     loanBalances,
+
+    _payrollsForContract: (): StandardService => payrollBase as unknown as StandardService,
+    _loansForContract: (): StandardService => loanBase as unknown as StandardService,
   }
 }
 

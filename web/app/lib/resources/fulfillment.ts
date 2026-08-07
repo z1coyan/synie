@@ -351,9 +351,7 @@ export const purchaseReceiptClient = restTransport(
 
 export const purchaseReceiptItemClient = restTransport(
   'purReceiptItems',
-  api.purchase['receipt-items'],
-  { decimalFields: ['qty'] },
-)
+  api.purchase['receipt-items'])
 
 export const purchaseOutsourcedIssueClient = restTransport(
   'purOutsourcedIssues',
@@ -362,9 +360,7 @@ export const purchaseOutsourcedIssueClient = restTransport(
 
 export const purchaseOutsourcedIssueItemClient = restTransport(
   'purOutsourcedIssueItems',
-  api.purchase['outsourced-issue-items'],
-  { decimalFields: ['qty'] },
-)
+  api.purchase['outsourced-issue-items'])
 
 export const purchaseOutsourcedReceiptClient = restTransport(
   'purOutsourcedReceipts',
@@ -373,18 +369,12 @@ export const purchaseOutsourcedReceiptClient = restTransport(
 
 export const purchaseOutsourcedReceiptItemClient = restTransport(
   'purOutsourcedReceiptItems',
-  api.purchase['outsourced-receipt-items'],
-  { decimalFields: ['qty'] },
-)
+  api.purchase['outsourced-receipt-items'])
 
 export const purchaseOutsourcedReceiptItemMaterialClient = restTransport(
   'purOutsourcedReceiptItemMaterials',
-  api.purchase['outsourced-receipt-item-materials'],
-  { decimalFields: ['qty'] },
-)
+  api.purchase['outsourced-receipt-item-materials'])
 
 export const purchaseOutsourcedReceiptItemByproductClient = restTransport(
   'purOutsourcedReceiptItemByproducts',
-  api.purchase['outsourced-receipt-item-byproducts'],
-  { decimalFields: ['qty'] },
-)
+  api.purchase['outsourced-receipt-item-byproducts'])

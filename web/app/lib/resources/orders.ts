@@ -83,38 +83,27 @@ export const purchaseOrderCommandAdapter = createRowCommandAdapter({
 })
 
 export const salesOrderClient = restTransport('salOrders', api.sales.orders, {
-  decimalFields: ['exchangeRate'],
 })
 
 export const salesOrderItemClient = restTransport(
   'salOrderItems',
-  api.sales['order-items'],
-  { decimalFields: ['qty', 'price', 'taxRate'] },
-)
+  api.sales['order-items'])
 
 export const purchaseOrderClient = restTransport(
   'purOrders',
-  api.purchase.orders,
-  { decimalFields: ['exchangeRate'] },
-)
+  api.purchase.orders)
 
 export const purchaseOrderItemClient = restTransport(
   'purOrderItems',
-  api.purchase['order-items'],
-  { decimalFields: ['qty', 'price', 'taxRate'] },
-)
+  api.purchase['order-items'])
 
 export const purchaseOrderItemMaterialClient = restTransport(
   'purOrderItemMaterials',
-  api.purchase['order-item-materials'],
-  { decimalFields: ['quantity'] },
-)
+  api.purchase['order-item-materials'])
 
 export const purchaseOrderItemByproductClient = restTransport(
   'purOrderItemByproducts',
-  api.purchase['order-item-byproducts'],
-  { decimalFields: ['quantity'] },
-)
+  api.purchase['order-item-byproducts'])
 
 export async function queryPurchaseOrderDemandLines(input: {
   companyId: string
