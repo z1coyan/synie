@@ -3,7 +3,7 @@
  * `loadDraft` / `createDraft` / `replaceDraft`。
  *
  * 不扩宽 {@link StandardServiceOptions}——平坦资源 interface 保持小；聚合描述符是
- * 独立 module，有自己的合同测试面（T1.4）。
+ * 独立 module，有自己的合同测试面（`aggregate-contract.postgres.test.ts` CASES）。
  *
  * ## 语义（D4，照抄术语表「聚合草稿 Adapter」）
  *
