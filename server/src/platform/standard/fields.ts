@@ -1,13 +1,14 @@
 /**
  * 标准动作内核·字段派生：ResourceMeta 字段声明 → wire/db 双向值转换与投影。
  *
- * 全站既有约定（与 db/filterbuild.ts 的枚举处理一致）：
- * - 枚举 wire 大写、库内小写
+ * 全站既有约定（枚举大小写两路统一经 platform/meta/enum-storage.ts 换算）：
+ * - 枚举 wire 大写、库内随 enumStorage（缺省小写）
  * - decimal wire 十进制字符串、库内 numeric，读回 toFixed 规范化
  * - date wire `YYYY-MM-DD` 字符串；datetime wire Date（DTO 层 toISOString）
  */
 import { decimal } from '@synie/shared'
 import { toDateOnly } from '~/db/dates.ts'
+import { enumDbValue } from '../meta/enum-storage.ts'
 import type { FieldMeta, ResourceMeta } from '../meta/types.ts'
 
 /** 平台管理列：任何资源都不可经 wire 写入 */
@@ -32,11 +33,11 @@ export function toDbValue(field: FieldMeta, value: unknown): unknown {
   if (value === null || value === undefined) return null
   switch (field.type) {
     case 'enum':
-      // 库内大小写按 meta 声明；缺省小写（全站约定），'upper' 是历史遗留列的逃生舱
-      return field.enumStorage === 'upper' ? String(value).toUpperCase() : String(value).toLowerCase()
+      // 库内大小写按 meta 声明（缺省小写）；与筛选编译共用同一换算，见 enum-storage.ts
+      return enumDbValue(field.enumStorage, String(value))
     case 'enumArray':
       return Array.isArray(value)
-        ? value.map((v) => (field.enumStorage === 'upper' ? String(v).toUpperCase() : String(v).toLowerCase()))
+        ? value.map((v) => enumDbValue(field.enumStorage, String(v)))
         : value
     case 'decimal':
       return decimal(String(value)).toFixed()

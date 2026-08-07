@@ -1,6 +1,7 @@
 import { sql, type RawBuilder } from 'kysely'
 import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
 import { ApiError } from '~/platform/http/errors.ts'
+import { enumDbValue } from '~/platform/meta/enum-storage.ts'
 import type { ResourceReadFieldSpec, ResourceReadSpec } from '~/platform/meta/read-spec.ts'
 
 /**
@@ -192,7 +193,8 @@ function buildPolyFk(
   if (values.length === 0) return null
   const discriminator = byApi.get(field.discriminatorApiName!)
   if (!discriminator) throw validation(field.apiName, 'Meta 缺少多态判别字段')
-  return sql`(${column(discriminator)} = ${filter.variant.toLowerCase()} AND ${column(field)}::text = ANY(${values}::text[]))`
+  // 判别列同为枚举：库内大小写随判别字段 enumStorage（缺省小写）
+  return sql`(${column(discriminator)} = ${enumDbValue(discriminator.enumStorage, filter.variant)} AND ${column(field)}::text = ANY(${values}::text[]))`
 }
 
 function requireStringArray(field: ResourceReadFieldSpec, values: unknown): string[] {
@@ -234,7 +236,8 @@ function enumValues(field: ResourceReadFieldSpec, values: string[]): string[] {
   const allowed = new Set(field.enumValues ?? [])
   return values.map((value) => {
     if (!allowed.has(value)) throw validation(field.apiName, '包含未知枚举值')
-    return value.toLowerCase()
+    // 库内大小写随字段 enumStorage（写路径同款换算，见 enum-storage.ts）
+    return enumDbValue(field.enumStorage, value)
   })
 }
 

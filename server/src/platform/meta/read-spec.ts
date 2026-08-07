@@ -14,6 +14,8 @@ export interface ResourceReadFieldSpec {
   searchable: boolean
   /** wire 枚举值（大写 token）；仅 enum / enumArray */
   enumValues?: readonly string[]
+  /** 枚举库内大小写（缺省小写）；仅 enum / enumArray，筛选编译按此换算存储值 */
+  enumStorage?: 'lower' | 'upper'
   /** 多态外键：判别字段 apiName */
   discriminatorApiName?: string
   /** 多态外键：允许的变体 value */
@@ -47,6 +49,7 @@ function fieldToReadSpec(field: FieldMeta): ResourceReadFieldSpec {
   }
   if (field.enumOptions && field.enumOptions.length > 0) {
     spec.enumValues = field.enumOptions.map((o) => o.value)
+    if (field.enumStorage) spec.enumStorage = field.enumStorage
   }
   if (field.ref?.discriminator) {
     spec.discriminatorApiName = field.ref.discriminator
