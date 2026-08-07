@@ -1,7 +1,5 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useRef,
   useState,
@@ -41,7 +39,10 @@ import { CompanyDefaultSync, WarehouseRemoteSelect, defaultCompanyId } from '../
 import { fetchCompanyAccountDefaults } from '~/components/company-account-defaults'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { todayLocal } from '~/lib/form-defaults'
-import { useDocumentDrawer } from '~/lib/use-document-drawer'
+import {
+  createDocumentDrawerOpenBridge,
+  useDocumentDrawer,
+} from '~/lib/use-document-drawer'
 
 export interface ReceiptRef {
   id: string
@@ -80,11 +81,12 @@ export const receiptAuditConfig = {
       .then((result) => result.results),
 } satisfies AuditDocConfig
 
-const ReceiptDrawerContext = createContext<OpenReceiptDrawer>(() => {})
+const {
+  useOpen: useReceiptDrawer,
+  Provider: ReceiptDrawerOpenProvider,
+} = createDocumentDrawerOpenBridge<OpenReceiptDrawer>()
+export { useReceiptDrawer }
 
-export function useReceiptDrawer(): OpenReceiptDrawer {
-  return useContext(ReceiptDrawerContext)
-}
 
 /** 提交 mutation:物料/单位由订单条目锁定带出,后端再快照与折算 */
 function itemInput(row: Row) {
@@ -591,7 +593,7 @@ export function ReceiptDrawerProvider({
   }
 
   return (
-    <ReceiptDrawerContext.Provider value={openDrawer}>
+    <ReceiptDrawerOpenProvider value={openDrawer}>
       {children}
       <SynieRecordDrawer
         resource="purOutsourcedReceipts"
@@ -1397,6 +1399,6 @@ export function ReceiptDrawerProvider({
           return savedId
         }}
       />
-    </ReceiptDrawerContext.Provider>
+    </ReceiptDrawerOpenProvider>
   )
 }

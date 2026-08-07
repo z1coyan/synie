@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Label, NumberField, TextArea, TextField, toast } from '@heroui/react'
 import { formatPrice } from '~/lib/amount'
@@ -19,7 +19,10 @@ import type { Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { auditMaterialCell, type AuditDocConfig } from '../../scm/-audit-doc'
 import { todayLocal } from '~/lib/form-defaults'
-import { useDocumentDrawer } from '~/lib/use-document-drawer'
+import {
+  createDocumentDrawerOpenBridge,
+  useDocumentDrawer,
+} from '~/lib/use-document-drawer'
 
 const purchaseQuotationBinding = resourceBindingFor('purQuotations')
 const purchaseQuotationItemBinding = resourceBindingFor('purQuotationItems')
@@ -83,12 +86,12 @@ export const purchaseQuotationAuditConfig = {
   ],
 } satisfies AuditDocConfig
 
-const QuotationDrawerContext = createContext<OpenQuotationDrawer>(() => {})
+const {
+  useOpen: useQuotationDrawer,
+  Provider: QuotationDrawerOpenProvider,
+} = createDocumentDrawerOpenBridge<OpenQuotationDrawer>()
+export { useQuotationDrawer }
 
-/** 子路由(报价单/报价条目)取 openDrawer:view/edit 传 {id, status},create 传 null */
-export function useQuotationDrawer(): OpenQuotationDrawer {
-  return useContext(QuotationDrawerContext)
-}
 
 function rowTiers(row: Row): Row[] {
   return (row.tiers as Row[] | undefined) ?? []
@@ -252,7 +255,7 @@ export function QuotationDrawerProvider({
   }
 
   return (
-    <QuotationDrawerContext.Provider value={openDrawer}>
+    <QuotationDrawerOpenProvider value={openDrawer}>
       {children}
 
       <SynieRecordDrawer
@@ -468,6 +471,6 @@ export function QuotationDrawerProvider({
           return String(saved.id)
         }}
       />
-    </QuotationDrawerContext.Provider>
+    </QuotationDrawerOpenProvider>
   )
 }

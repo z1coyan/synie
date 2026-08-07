@@ -1,6 +1,4 @@
 import {
-  createContext,
-  useContext,
   useEffect,
   useRef,
   useState,
@@ -26,7 +24,10 @@ import {
 } from '../../scm/-audit-doc'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { persistChildRows } from '~/lib/resources/persist-child-rows'
-import { useDocumentDrawer } from '~/lib/use-document-drawer'
+import {
+  createDocumentDrawerOpenBridge,
+  useDocumentDrawer,
+} from '~/lib/use-document-drawer'
 import { WorkOrderProgressCell } from '../-work-order-progress-cell'
 import { resourceBindingFor } from '~/lib/resources/registry'
 
@@ -44,11 +45,12 @@ export type OpenOutputDrawer = (
   output: OutputRef | null,
 ) => void
 
-const OutputDrawerContext = createContext<OpenOutputDrawer>(() => {})
+const {
+  useOpen: useOutputDrawer,
+  Provider: OutputDrawerOpenProvider,
+} = createDocumentDrawerOpenBridge<OpenOutputDrawer>()
+export { useOutputDrawer }
 
-export function useOutputDrawer(): OpenOutputDrawer {
-  return useContext(OutputDrawerContext)
-}
 
 /**
  * 工单「当前未入」折回行单位（与 WorkOrderProgressCell 同口径）。
@@ -264,7 +266,7 @@ export function OutputDrawerProvider({
     mode === 'create' || !outputStatus || outputStatus === 'DRAFT'
 
   return (
-    <OutputDrawerContext.Provider value={openDrawer}>
+    <OutputDrawerOpenProvider value={openDrawer}>
       {children}
 
       <SynieRecordDrawer
@@ -495,6 +497,6 @@ export function OutputDrawerProvider({
           return savedId
         }}
       />
-    </OutputDrawerContext.Provider>
+    </OutputDrawerOpenProvider>
   )
 }

@@ -1,7 +1,5 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useRef,
   useState,
@@ -28,7 +26,10 @@ import { CompanyDefaultSync, WarehouseRemoteSelect, defaultCompanyId } from '../
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { todayLocal } from '~/lib/form-defaults'
 import { persistChildRows } from '~/lib/resources/persist-child-rows'
-import { useDocumentDrawer } from '~/lib/use-document-drawer'
+import {
+  createDocumentDrawerOpenBridge,
+  useDocumentDrawer,
+} from '~/lib/use-document-drawer'
 
 export interface IssueRef {
   id: string
@@ -63,11 +64,12 @@ export const issueAuditConfig = {
       .then((result) => result.results),
 } satisfies AuditDocConfig
 
-const IssueDrawerContext = createContext<OpenIssueDrawer>(() => {})
+const {
+  useOpen: useIssueDrawer,
+  Provider: IssueDrawerOpenProvider,
+} = createDocumentDrawerOpenBridge<OpenIssueDrawer>()
+export { useIssueDrawer }
 
-export function useIssueDrawer(): OpenIssueDrawer {
-  return useContext(IssueDrawerContext)
-}
 
 /** 提交 mutation:材料/单位由发料清单行锁定带出,后端再快照与折算 */
 function itemInput(row: Row) {
@@ -350,7 +352,7 @@ export function IssueDrawerProvider({
   }
 
   return (
-    <IssueDrawerContext.Provider value={openDrawer}>
+    <IssueDrawerOpenProvider value={openDrawer}>
       {children}
       <SynieRecordDrawer
         resource="purOutsourcedIssues"
@@ -730,6 +732,6 @@ export function IssueDrawerProvider({
           return savedId
         }}
       />
-    </IssueDrawerContext.Provider>
+    </IssueDrawerOpenProvider>
   )
 }

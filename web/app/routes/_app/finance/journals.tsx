@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { parseDate } from '@internationalized/date'
 import { AlertDialog, Button, Calendar, DateField, DatePicker, Label, toast } from '@heroui/react'
 import { toastError } from '~/lib/toast'
-import { useRequestGuard } from '~/lib/use-request-guard'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
@@ -14,13 +13,12 @@ import {
   glJournalLineClient,
 } from '~/lib/resources/accounting'
 import { accountClient } from '~/lib/resources/accounts'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { executeCommandWithInvalidation } from '~/lib/resources/command-invalidation'
 import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import { ensureDefaultGridPage } from '~/lib/route-prefetch'
 import { resourceBindingFor } from '~/lib/resources/registry'
-import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+import { useDocumentDrawer } from '~/lib/use-document-drawer'
 
 const RESOURCE = 'accGlJournals'
 
@@ -107,27 +105,33 @@ const GRID_COLUMNS = [
 ]
 
 function JournalsPage() {
-  // 页面级主抽屉:开/关/模式走 URL(?record=&mode=);分录明细本地 + 深链补拉
-  const {
-    drawer,
-    open,
-    setMode,
-    close,
-    row: drawerRow,
-  } = useRecordDrawerUrl(RESOURCE)
+  // 单据抽屉骨架:URL 双态 + 分录行装载竞态协议
+  const drawer = useDocumentDrawer<Row[]>({
+    resource: RESOURCE,
+    urlSync: true,
+    loadErrorLabel: '分录行加载失败',
+    loadDraft: (journalId) =>
+      glJournalLineClient
+        .query({
+          limit: 200,
+          offset: 0,
+          sort: { column: 'idx', direction: 'ascending' },
+          filter: { journalId: { kind: 'fk', values: [journalId], labels: [] } },
+        })
+        .then((d) => d.results),
+  })
+  const { isOpen, mode, rowId } = drawer
   const [lines, setLines] = useState<Row[]>([])
   const [linesSnapshot, setLinesSnapshot] = useState<Row[]>([])
-  // edit/view 态分录行靠 REST 异步拉取,未完成前禁止编辑,防回填覆盖在输行
-  const [linesLoaded, setLinesLoaded] = useState(false)
   const queryClient = useQueryClient()
-  // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张凭证的行回填到当前凭证
-  const guard = useRequestGuard()
-  // 已为哪张凭证拉过分录;深链 effect 与 openDrawer 去重,避免双发
-  const loadedIdRef = useRef<string | null>(null)
+  const drawerRow = drawer.row
 
-  const isOpen = drawer !== null
-  const mode: DrawerMode = drawer?.mode ?? 'view'
-  const rowId = drawer?.recordId ?? undefined
+  // 草稿 → 分录状态派生
+  useEffect(() => {
+    const rows = drawer.draft ?? []
+    setLines(rows)
+    setLinesSnapshot(rows)
+  }, [drawer.draft, drawer.generation])
 
   // 行内「审核」确认框允许补填/修正过账日期(草稿可不填,审核时必填);
   // 抽屉「保存并审核」由标准组件在保存成功后调用同一 REST client action
@@ -160,71 +164,6 @@ function JournalsPage() {
     }
   }
 
-  function resetLines() {
-    loadedIdRef.current = null
-    setLines([])
-    setLinesSnapshot([])
-    setLinesLoaded(true)
-  }
-
-  function loadLines(journalId: string) {
-    const my = guard.begin()
-    loadedIdRef.current = journalId
-    setLinesLoaded(false)
-    glJournalLineClient
-      .query({
-        limit: 200,
-        offset: 0,
-        sort: { column: 'idx', direction: 'ascending' },
-        filter: { journalId: { kind: 'fk', values: [journalId], labels: [] } },
-      })
-      .then((d) => {
-        if (!guard.isCurrent(my)) return
-        setLines(d.results)
-        setLinesSnapshot(d.results)
-        setLinesLoaded(true)
-      })
-      .catch((e) => {
-        if (!guard.isCurrent(my)) return
-        toastError('分录行加载失败')(e)
-        setLines([])
-        setLinesSnapshot([])
-      })
-  }
-
-  // 打开头抽屉:create 行清空;view/edit 按凭证 id 拉行(快照留作提交时 diff 基准)
-  const openDrawer = useCallback(
-    (nextMode: DrawerMode, row: Row | null) => {
-      open(nextMode, row?.id != null ? String(row.id) : null)
-      if (nextMode === 'create' || !row) {
-        resetLines()
-        return
-      }
-      loadLines(String(row.id))
-    },
-    [open],
-  )
-
-  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉分录
-  useEffect(() => {
-    const d = drawer
-    if (!d) {
-      if (loadedIdRef.current != null) {
-        guard.invalidate()
-        resetLines()
-      }
-      return
-    }
-    if (d.mode === 'create' || d.recordId == null) {
-      if (loadedIdRef.current != null) resetLines()
-      return
-    }
-    if (loadedIdRef.current !== d.recordId) {
-      loadLines(d.recordId)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
-  }, [drawer?.recordId, drawer?.mode])
-
   return (
     <>
       <h1 className="font-brand text-3xl tracking-wide">会计凭证</h1>
@@ -235,9 +174,9 @@ function JournalsPage() {
           resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
-          onView={(row) => openDrawer('view', row)}
-          onCreate={() => openDrawer('create', null)}
-          onEdit={(row) => openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)}
+          onView={(row) => drawer.open('view', row)}
+          onCreate={() => drawer.open('create', null)}
+          onEdit={(row) => drawer.open(row.status === 'DRAFT' ? 'edit' : 'view', row)}
           actionHandlers={{ audit: (rows) => openAudit(rows[0]) }}
           actionVisible={{
             audit: (row) => row.status === 'DRAFT',
@@ -254,13 +193,7 @@ function JournalsPage() {
         mode={mode}
         isOpen={isOpen}
         onOpenChange={(isDrawerOpen) => {
-          if (isDrawerOpen) return
-          // 关闭即作废在途请求并清空快照,防止残留快照被下次提交按差异写误用到别的凭证
-          guard.invalidate()
-          close()
-          setLines([])
-          setLinesSnapshot([])
-          loadedIdRef.current = null
+          if (!isDrawerOpen) drawer.close()
         }}
         // 表格列是白名单子集,行数据不全;不传 row,走 rowId 自查完整记录
         rowId={rowId}
@@ -286,7 +219,7 @@ function JournalsPage() {
           // 过账日期草稿可留空,审核时填入;新增时填了保存后会提示直接审核过账
           postingDate: { cols: 6 },
         }}
-        onEdit={drawerRow?.status === 'DRAFT' ? () => setMode('edit') : undefined}
+        onEdit={drawerRow?.status === 'DRAFT' ? () => drawer.setMode('edit') : undefined}
         extraContent={(mode, row, values) => {
           // 凭证公司:存量凭证取行数据(建后不可改),新建取表单草稿;未选公司前不能录行
           const journalCompanyId = (row?.companyId ?? values.companyId ?? null) as string | null
@@ -296,7 +229,7 @@ function JournalsPage() {
               label="分录行"
               items={lines}
               onChange={setLines}
-              readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT') || journalCompanyId == null || (mode !== 'create' && !linesLoaded)}
+              readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT') || journalCompanyId == null || (mode !== 'create' && !drawer.detailLoaded)}
               toolbar={
                 mode === 'create' && journalCompanyId == null ? (
                   <span className="text-xs text-muted">选择公司后可录入分录行</span>
@@ -393,7 +326,7 @@ function JournalsPage() {
             }
             savedId = journalId
           } else {
-            const journalId = String(drawer!.recordId)
+            const journalId = String(drawer.rowId)
             await glJournalClient.update(journalId, values)
             const lineErrors = await persistLines(journalId, lines, linesSnapshot)
             if (lineErrors.length > 0) {

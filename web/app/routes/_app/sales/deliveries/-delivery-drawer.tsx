@@ -1,7 +1,5 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -53,7 +51,10 @@ import { fetchCompanyAccountDefaults } from '~/components/company-account-defaul
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { todayLocal } from '~/lib/form-defaults'
 import { toastError } from '~/lib/toast'
-import { useDocumentDrawer } from '~/lib/use-document-drawer'
+import {
+  createDocumentDrawerOpenBridge,
+  useDocumentDrawer,
+} from '~/lib/use-document-drawer'
 
 const salesDeliveryBinding = resourceBindingFor('salDeliveries')
 const salesDeliveryDraft = aggregateDraftFor('salDeliveries')
@@ -92,11 +93,12 @@ export const deliveryAuditConfig = {
   loadItems: loadDeliveryItemsForAudit,
 } satisfies AuditDocConfig
 
-const DeliveryDrawerContext = createContext<OpenDeliveryDrawer>(() => {})
+const {
+  useOpen: useDeliveryDrawer,
+  Provider: DeliveryDrawerOpenProvider,
+} = createDocumentDrawerOpenBridge<OpenDeliveryDrawer>()
+export { useDeliveryDrawer }
 
-export function useDeliveryDrawer(): OpenDeliveryDrawer {
-  return useContext(DeliveryDrawerContext)
-}
 
 /** 提交 mutation:物料/单位由订单条目锁定带出,后端再快照与折算 */
 function itemInput(row: Row): SalesDeliveryDraftItemInput {
@@ -1319,7 +1321,7 @@ export function DeliveryDrawerProvider({
   }
 
   return (
-    <DeliveryDrawerContext.Provider value={openDrawer}>
+    <DeliveryDrawerOpenProvider value={openDrawer}>
       {children}
       <SynieRecordDrawer
         resource="salDeliveries"
@@ -1789,6 +1791,6 @@ export function DeliveryDrawerProvider({
           }
         }}
       />
-    </DeliveryDrawerContext.Provider>
+    </DeliveryDrawerOpenProvider>
   )
 }

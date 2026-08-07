@@ -1,6 +1,4 @@
 import {
-  createContext,
-  useContext,
   useEffect,
   useState,
   type ReactNode,
@@ -24,7 +22,10 @@ import type { Row } from '~/components/synie-data-grid/types'
 import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { toastError } from '~/lib/toast'
-import { useDocumentDrawer } from '~/lib/use-document-drawer'
+import {
+  createDocumentDrawerOpenBridge,
+  useDocumentDrawer,
+} from '~/lib/use-document-drawer'
 
 // mutation input 只收行自身字段,行上挂的 material/unit/operation join 对象不进 payload
 function componentInput(row: Row) {
@@ -128,11 +129,12 @@ export type OpenBomDrawer = (
   options?: OpenBomDrawerOptions,
 ) => void
 
-const BomDrawerContext = createContext<OpenBomDrawer>(() => {})
+const {
+  useOpen: useBomDrawer,
+  Provider: BomDrawerOpenProvider,
+} = createDocumentDrawerOpenBridge<OpenBomDrawer>()
+export { useBomDrawer }
 
-export function useBomDrawer(): OpenBomDrawer {
-  return useContext(BomDrawerContext)
-}
 
 /** 三个子表行集合的装载快照(骨架 loadDraft 的返回形) */
 interface BomLinesDraft {
@@ -289,7 +291,7 @@ export function BomDrawerProvider({
   }
 
   return (
-    <BomDrawerContext.Provider value={openDrawer}>
+    <BomDrawerOpenProvider value={openDrawer}>
       {children}
 
       <SynieRecordDrawer
@@ -564,6 +566,6 @@ export function BomDrawerProvider({
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
-    </BomDrawerContext.Provider>
+    </BomDrawerOpenProvider>
   )
 }

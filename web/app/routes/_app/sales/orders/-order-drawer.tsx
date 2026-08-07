@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, ListBox, NumberField, Select, TextArea, TextField, toast } from '@heroui/react'
 import { isForbidden } from '~/lib/errors'
@@ -29,7 +29,10 @@ import { auditMaterialCell, type AuditDocConfig } from '../../scm/-audit-doc'
 import { OrderFlowHistory } from '../../scm/-order-flow-history'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { todayLocal } from '~/lib/form-defaults'
-import { useDocumentDrawer } from '~/lib/use-document-drawer'
+import {
+  createDocumentDrawerOpenBridge,
+  useDocumentDrawer,
+} from '~/lib/use-document-drawer'
 
 const salesOrderBinding = resourceBindingFor('salOrders')
 const salesOrderItemBinding = resourceBindingFor('salOrderItems')
@@ -83,12 +86,12 @@ export const salesOrderAuditConfig = {
   ],
 } satisfies AuditDocConfig
 
-const OrderDrawerContext = createContext<OpenOrderDrawer>(() => {})
+const {
+  useOpen: useOrderDrawer,
+  Provider: OrderDrawerOpenProvider,
+} = createDocumentDrawerOpenBridge<OpenOrderDrawer>()
+export { useOrderDrawer }
 
-/** 子路由(订单/订单条目)取 openDrawer:view/edit 传 {id, status},create 传 null */
-export function useOrderDrawer(): OpenOrderDrawer {
-  return useContext(OrderDrawerContext)
-}
 
 // 样品订单单行数量上限(单行配置);无 sales.setting:read 权限的录单员查不到,客户端校验跳过,后端建行/审核兜底
 
@@ -301,7 +304,7 @@ export function OrderDrawerProvider({
   }
 
   return (
-    <OrderDrawerContext.Provider value={openDrawer}>
+    <OrderDrawerOpenProvider value={openDrawer}>
       {children}
 
       <SynieRecordDrawer
@@ -754,6 +757,6 @@ export function OrderDrawerProvider({
           return String(saved.id)
         }}
       />
-    </OrderDrawerContext.Provider>
+    </OrderDrawerOpenProvider>
   )
 }

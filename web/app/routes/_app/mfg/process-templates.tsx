@@ -14,9 +14,8 @@ import type { Row } from '~/components/synie-data-grid/types'
 import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { toastError } from '~/lib/toast'
-import { useRequestGuard } from '~/lib/use-request-guard'
 import { ensureDefaultGridPage } from '~/lib/route-prefetch'
-import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+import { useDocumentDrawer } from '~/lib/use-document-drawer'
 
 const RESOURCE = 'mfgProcessTemplates'
 
@@ -59,59 +58,38 @@ async function persistItems(
 const GRID_COLUMNS = ['code', 'name', 'note']
 
 function ProcessTemplatesPage() {
-  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
+  // 单据抽屉骨架:URL 双态 + 工艺步骤装载竞态协议
+  const drawer = useDocumentDrawer<Row[]>({
+    resource: RESOURCE,
+    urlSync: true,
+    loadErrorLabel: '工艺步骤加载失败',
+    loadDraft: (templateId) =>
+      processTemplateItemClient
+        .query({
+          limit: 200,
+          offset: 0,
+          filter: {
+            templateId: {
+              kind: 'fk',
+              op: 'in',
+              values: [templateId],
+              labels: [],
+            },
+          },
+          sort: { column: 'seq', direction: 'ascending' },
+        })
+        .then((d) => d.results ?? []),
+  })
   const [items, setItems] = useState<Row[]>([])
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
-  // edit/view 态工艺步骤靠异步拉取,未完成前禁止编辑,防回填覆盖在输行
-  const [itemsLoaded, setItemsLoaded] = useState(false)
   const queryClient = useQueryClient()
-  // 请求守卫:防止慢响应把上一个模板的步骤行回填到当前模板(同物料先例)
-  const guard = useRequestGuard()
 
-  // 深链/点击开抽屉:按 templateId 拉工艺步骤;create 清空;关闭清空
+  // 草稿 → 工艺步骤状态派生
   useEffect(() => {
-    const my = guard.begin()
-    if (!drawer) {
-      setItems([])
-      setItemsSnapshot([])
-      setItemsLoaded(false)
-      return
-    }
-    if (drawer.mode === 'create' || drawer.recordId == null) {
-      setItems([])
-      setItemsSnapshot([])
-      setItemsLoaded(true)
-      return
-    }
-    setItemsLoaded(false)
-    processTemplateItemClient
-      .query({
-        limit: 200,
-        offset: 0,
-        filter: {
-          templateId: {
-            kind: 'fk',
-            op: 'in',
-            values: [drawer.recordId],
-            labels: [],
-          },
-        },
-        sort: { column: 'seq', direction: 'ascending' },
-      })
-      .then((d) => {
-        if (!guard.isCurrent(my)) return
-        setItems(d.results)
-        setItemsSnapshot(d.results)
-        setItemsLoaded(true)
-      })
-      .catch((e) => {
-        if (!guard.isCurrent(my)) return
-        toastError('工艺步骤加载失败')(e)
-        setItems([])
-        setItemsSnapshot([])
-      })
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅抽屉身份变化时响应
-  }, [drawer?.recordId, drawer?.mode])
+    const rows = drawer.draft ?? []
+    setItems(rows)
+    setItemsSnapshot(rows)
+  }, [drawer.draft, drawer.generation])
 
   return (
     <>
@@ -125,21 +103,23 @@ function ProcessTemplatesPage() {
         <SynieDataGrid
           resource={RESOURCE}
           columns={GRID_COLUMNS}
-          onView={(row) => open('view', String(row.id))}
-          onCreate={() => open('create')}
-          onEdit={(row) => open('edit', String(row.id))}
+          onView={(row) => drawer.open('view', row)}
+          onCreate={() => drawer.open('create', null)}
+          onEdit={(row) => drawer.open('edit', row)}
         />
       </div>
 
       <SynieRecordDrawer
         resource={RESOURCE}
         {...drawerConfig(RESOURCE)}
-        mode={drawer?.mode ?? 'view'}
-        isOpen={drawer !== null}
-        onOpenChange={(isOpen) => !isOpen && close()}
+        mode={drawer.mode}
+        isOpen={drawer.isOpen}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) drawer.close()
+        }}
         // 表格列是白名单子集,行数据不全;不传 row,走 rowId 自查完整记录
-        rowId={drawer?.recordId ?? undefined}
-        onEdit={() => setMode('edit')}
+        rowId={drawer.rowId}
+        onEdit={() => drawer.setMode('edit')}
         tabExtraContent={{
           items: (mode) => (
             <SynieEditableTable
@@ -147,7 +127,7 @@ function ProcessTemplatesPage() {
               label="工艺步骤"
               items={items}
               onChange={setItems}
-              readOnly={mode === 'view' || (mode !== 'create' && !itemsLoaded)}
+              readOnly={mode === 'view' || (mode !== 'create' && !drawer.detailLoaded)}
               exclude={['templateId']}
               columns={['seq', 'operationId', 'requirement', 'isOutsourced']}
               fields={{
@@ -183,7 +163,7 @@ function ProcessTemplatesPage() {
               toast.success('工艺模板已创建')
             }
           } else {
-            const templateId = String(drawer!.recordId)
+            const templateId = String(drawer.rowId)
             await processTemplateClient.update(templateId, values)
             const itemErrors = await persistItems(
               templateId,

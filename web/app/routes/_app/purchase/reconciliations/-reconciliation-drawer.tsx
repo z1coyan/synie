@@ -1,7 +1,5 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useRef,
   useState,
@@ -45,7 +43,10 @@ import { fetchCompanyAccountDefaults } from '~/components/company-account-defaul
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import { toastError } from '~/lib/toast'
-import { useDocumentDrawer } from '~/lib/use-document-drawer'
+import {
+  createDocumentDrawerOpenBridge,
+  useDocumentDrawer,
+} from '~/lib/use-document-drawer'
 
 export interface ReconciliationRef {
   id: string
@@ -107,13 +108,12 @@ export const reconciliationAuditConfig = {
   loadItems: reconciliationConfirmConfig.loadItems,
 } satisfies AuditDocConfig
 
-const ReconciliationDrawerContext = createContext<OpenReconciliationDrawer>(
-  () => {},
-)
+const {
+  useOpen: useReconciliationDrawer,
+  Provider: ReconciliationDrawerOpenProvider,
+} = createDocumentDrawerOpenBridge<OpenReconciliationDrawer>()
+export { useReconciliationDrawer }
 
-export function useReconciliationDrawer(): OpenReconciliationDrawer {
-  return useContext(ReconciliationDrawerContext)
-}
 
 /** 提交 mutation:金额/baseQty 由后端按金额链与折算比例算(不可手改);入库条目双来源恰一 */
 function itemInput(row: Row) {
@@ -524,7 +524,7 @@ export function ReconciliationDrawerProvider({
   }
 
   return (
-    <ReconciliationDrawerContext.Provider value={openDrawer}>
+    <ReconciliationDrawerOpenProvider value={openDrawer}>
       {children}
       <SynieRecordDrawer
         resource="purReconciliations"
@@ -1175,6 +1175,6 @@ export function ReconciliationDrawerProvider({
           return savedId
         }}
       />
-    </ReconciliationDrawerContext.Provider>
+    </ReconciliationDrawerOpenProvider>
   )
 }

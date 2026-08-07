@@ -1,6 +1,4 @@
 import {
-  createContext,
-  useContext,
   useEffect,
   useRef,
   useState,
@@ -26,7 +24,10 @@ import {
 } from '../../scm/-audit-doc'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { persistChildRows } from '~/lib/resources/persist-child-rows'
-import { useDocumentDrawer } from '~/lib/use-document-drawer'
+import {
+  createDocumentDrawerOpenBridge,
+  useDocumentDrawer,
+} from '~/lib/use-document-drawer'
 import { SalesItemPicker } from './-sales-item-picker'
 import { useResourceCapabilities } from '~/lib/use-resource-capabilities'
 import { canGenerateWorkOrder, useDemandItemActions } from './-item-actions'
@@ -46,11 +47,12 @@ export type OpenDemandDrawer = (
   demand: DemandRef | null,
 ) => void
 
-const DemandDrawerContext = createContext<OpenDemandDrawer>(() => {})
+const {
+  useOpen: useDemandDrawer,
+  Provider: DemandDrawerOpenProvider,
+} = createDocumentDrawerOpenBridge<OpenDemandDrawer>()
+export { useDemandDrawer }
 
-export function useDemandDrawer(): OpenDemandDrawer {
-  return useContext(DemandDrawerContext)
-}
 
 // 需求行脚手架:取数走骨架 loadDraft(下方 loadDemandItems);
 // 持久化按 snapshot 比对做 删→增→改(见组件内 persistItems)。
@@ -225,7 +227,7 @@ export function DemandDrawerProvider({
   }
 
   return (
-    <DemandDrawerContext.Provider value={openDrawer}>
+    <DemandDrawerOpenProvider value={openDrawer}>
       {children}
 
       <SynieRecordDrawer
@@ -418,6 +420,6 @@ export function DemandDrawerProvider({
         }}
       />
       {itemActions.dialogs}
-    </DemandDrawerContext.Provider>
+    </DemandDrawerOpenProvider>
   )
 }

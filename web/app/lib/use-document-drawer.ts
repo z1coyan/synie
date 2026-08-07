@@ -6,6 +6,8 @@
  *   - URL 身份 → 整单草稿装载:开抽屉占号、异步回填前比对的竞态协议,
  *     深链/前进后退按 recordId 补拉,关抽屉作废在途请求
  *   - 装载失败 toast 与非法 id 守卫(文案默认从资源文档中文标签派生)
+ *   - open 桥:createContext + useOpen + Provider 三件套
+ *     (createDocumentDrawerOpenBridge;BOM 等可扩 open 签名第三参)
  *
  * 边界(只收管道,不收条目):条目状态、条目编辑 UI、科目联动、快照回填与
  * onSubmit 仍属各抽屉声明。hook 返回 draft,各抽屉用一个派生 effect 初始化
@@ -14,9 +16,19 @@
  * draft 引用不变(null→null),只有 generation 变化能让 effect 触发重置。
  *
  * 分层:DocumentDetailLoader 是纯状态机(无 React,bun:test 直测竞态);
- * useDocumentDrawer 只做 React 接线(URL 源/本地态二选一 + 订阅状态机)。
+ * useDocumentDrawer 只做 React 接线(URL 源/本地态二选一 + 订阅状态机);
+ * createDocumentDrawerOpenBridge 收 open 桥样板,不碰业务 UI。
  */
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  createContext,
+  createElement,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { resourceBindingFor } from '~/lib/resources/registry'
@@ -250,4 +262,26 @@ export function useDocumentDrawer<TDraft>(
     close,
     setMode,
   }
+}
+
+/**
+ * 单据抽屉 open 桥工厂:createContext + useOpen + Provider 三件套。
+ *
+ * 对标 13 个 *-drawer 里重复的 Context 声明 / useXxxDrawer / Provider 包一层。
+ * open 签名由各资源自定(多数是 (mode, ref|null);BOM 可带 options 第三参);
+ * 缺省 Provider 外调用为 no-op(与原 createContext(() => {}) 一致)。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- open 形参表由资源自定
+export function createDocumentDrawerOpenBridge<TOpen extends (...args: any[]) => void>() {
+  const Context = createContext<TOpen>((() => {}) as TOpen)
+
+  function useOpen(): TOpen {
+    return useContext(Context)
+  }
+
+  function Provider(props: { value: TOpen; children: ReactNode }) {
+    return createElement(Context.Provider, { value: props.value }, props.children)
+  }
+
+  return { useOpen, Provider }
 }
