@@ -1,6 +1,6 @@
 /**
  * 履约领域钩子：条目快照派生、头校验、装箱相等、审核装载。
- * 聚合草稿只管持久化；本 module 供标准钩子与 skeleton 审核路径复用。
+ * 聚合草稿只管持久化；本 module 供标准钩子与审核 effect 复用。
  */
 import { decimal } from '@synie/shared'
 import { sql, type RawBuilder } from 'kysely'

@@ -120,6 +120,9 @@ export interface ControlledProjectionSpec {
 | salReconciliations / purReconciliations | 手写头/子行/confirm·unconfirm·audit·void；改/删分文案 | 标准头/子行 + 聚合 + workflow 双状态机；mutableMessage「仅草稿…可修改或删除」 | W3；D7 |
 | 同上 | 条目 join 投影列为物理 + audit.exclude | 投影列 calculated；item audit 仅物理列 | 标准 child 分离 |
 | 同上 | 编号 assignedInTx 可选手填 | 内核 numbering nextInTx 系统生成 | D6 |
+| purOutsourcedIssues / purOutsourcedReceipts | 手写头/四类子行/audit·void；编号 assignedInTx | 标准 + 聚合 + workflow；nextInTx 系统编号 | W4；D6/D7 |
+| 同上 | 材料跨公司删 not_found 委外入库单不存在 | 委外入库成品行不存在（锁直接母行） | 孙级同 salDeliveries |
+| 同上 | skeleton 审核编排 | effect 内联；删 skeleton/shapes | 候选 2 收尾 |
 
 ---
 
@@ -241,9 +244,37 @@ export interface ControlledProjectionSpec {
 
 ---
 
+## W4 · purOutsourcedIssues / purOutsourcedReceipts 聚合迁入
+
+**定案**：委外发料/入库头与四类子行 CRUD、整单草稿三连改由 `platform/standard` 派生；audit/void 迁 workflow（D7）；原 posting skeleton 四调用点与履约侧 fulfillment 调用点一并内联到领域 effect，删除 `skeleton.ts` / `shapes.ts`。
+
+- 发料头：`createStandardService`（numbering `issueNo` + workflow audit/void；effect 库存双分录 + issued_qty 投影）
+- 发料行：`createStandardChildService`（订单材料快照 `derivedFields`）
+- 入库头：`createStandardService`（numbering `receiptNo` + workflow audit/void；effect 三向收料 + 投影 + 条件 GL）
+- 入库成品行：`createStandardChildService`；`afterWrite` 钩子 **carryReceiptChildren** 比例带出材料/副产物
+- 材料/副产物：`createStandardChildService`（via 成品行，孙级 D3）；独立 CRUD，**不进**聚合草稿树（空数组会抹掉 carry）
+- 草稿三连：`createAggregateService`（发料 `items`；入库仅 `items`；`validationMessage: 委外发料/入库草稿参数不合法`）
+- 借贷科目币种：`platform/posting/account-currency.ts`（原 skeleton 内联）
+
+**路由/URL/DTO 冻结**（头/子行 CRUD + audit/void；无新增草稿 URL）。
+
+**有意差异**（见行为变更表续行）：
+
+| 资源 | 旧行为 | 新行为 | 理由 |
+|------|--------|--------|------|
+| purOutsourcedIssues/Receipts | 编号 assignedInTx 可选手填 | 内核 numbering nextInTx 系统生成 | D6 |
+| 同上 | 材料删跨公司 not_found「委外入库单不存在」 | 锁直接母行 →「委外入库成品行不存在」 | 与 salDeliveries 孙级同收敛 |
+| 材料/副产物 | 审计键 rename `source_id`/`warehouse_id` | 物理列名 `order_item_material_id` 等 | 标准 child 审计面 |
+| 投影列 | audit.exclude 列出头快照列 | meta `calculated`，无需 exclude | 与 fulfillment 条目同形态 |
+
+**验收**：`outsourced/service.ts` ≤1100；四类子行手写 CRUD 删除；skeleton/shapes 删除；聚合 CASES 加 issue/receipt 两行。
+
+---
+
 ## 非目标（本日志边界）
 
 - 不动 `engines/gl` | `engines/inventory` interface。
 - 不做路由词表收口；wire URL/DTO/错误码字节冻结。
 - mfgOutputItems list 仍弹射（母单投影 join，非 extraWhere 能单独解锁）。
 - 本波不对账路由新增草稿三连 URL（前端仍逐条 CRUD；聚合服务已就绪供合同/后续）。
+- 本波不对委外路由新增草稿三连 URL（聚合服务已就绪供合同/后续）。

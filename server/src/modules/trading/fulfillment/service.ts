@@ -5,7 +5,7 @@
  * W2/W3：头/条目/装箱 + 整单草稿由 platform/standard 派生
  * （createStandardService + createStandardChildService + createAggregateService）。
  * 销售发货 3 层平行子树：条目 + 装箱箱→装箱行（孙级 D3 第二消费者）。
- * 审核/作废双侧仍走 posting skeleton（跨引擎效果，不进聚合草稿钩子）。
+ * 审核/作废双侧走 workflow.ts 内联 effect（跨引擎效果，不进聚合草稿钩子；W4 已清零 skeleton）。
  *
  * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
  * 装箱行的可达性经两级 via（pack_line → pack_box → sal_delivery）递归到发货单谓词。
@@ -108,7 +108,7 @@ export type {
   SalesDraftPackLineInput,
 } from './types.ts'
 
-// 审核/作废 skeleton 审计：双侧 meta 并集；单号/日期列经 rename 为通用键
+// 审核/作废审计：双侧 meta 并集；单号/日期列经 rename 为通用键
 const HEAD_AUDIT = mergeAuditFields(
   ...(['sales', 'purchase'] as const).map((s) => {
     const spec = fulfillmentSpec(s)
