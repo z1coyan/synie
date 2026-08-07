@@ -15,7 +15,6 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import {
@@ -24,6 +23,7 @@ import {
   defaultCompanyId,
 } from '../../scm/-stock-doc'
 import { executeCommandWithInvalidation } from '~/lib/resources/command-invalidation'
+import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { TRANSFER_DOC_STATUS_ENUM_COLORS } from '~/lib/doc-status'
 import { todayLocal } from '~/lib/form-defaults'
@@ -82,41 +82,20 @@ function itemInput(row: Row) {
   }
 }
 
-const ITEM_COMPARE_KEYS = ['idx', 'materialId', 'unitId', 'qty', 'remark'] as const
-
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
-async function persistItems(docId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
-  const errors: string[] = []
-  const run = async (idx: unknown, operation: () => Promise<unknown>) => {
-    try {
-      await operation()
-    } catch (error) {
-      errors.push(`第${idx}行:${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    await run(old.idx, () => stockTransferItemClient.delete(old.id))
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      await run(row.idx, () =>
-        stockTransferItemClient.create({ stockTransferId: docId, ...itemInput(row) }),
-      )
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      await run(row.idx, () => stockTransferItemClient.update(row.id, itemInput(row)))
-    }
-  }
-  return errors
+async function persistItems(
+  docId: string,
+  current: Row[],
+  snapshot: Row[],
+): Promise<string[]> {
+  return persistChildRows({
+    current,
+    snapshot,
+    client: stockTransferItemClient,
+    parentIdField: 'stockTransferId',
+    parentId: docId,
+    compareKeys: ['idx', 'materialId', 'unitId', 'qty', 'remark'],
+    inputOf: itemInput,
+  })
 }
 
 /** create 态按公司查叶子仓,命中种子名「{公司编号} - 在途」且在途仓未填时预填 */

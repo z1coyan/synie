@@ -14,7 +14,6 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import {
@@ -22,6 +21,7 @@ import {
   WarehouseRemoteSelect,
   defaultCompanyId,
 } from '../../scm/-stock-doc'
+import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { COUNT_DOC_STATUS_ENUM_COLORS } from '~/lib/doc-status'
 import { todayLocal } from '~/lib/form-defaults'
@@ -69,42 +69,24 @@ function itemInput(row: Row) {
   }
 }
 
-const ITEM_COMPARE_KEYS = ['materialId', 'unitId', 'countedQuantity', 'remark'] as const
-
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
-async function persistItems(docId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
-  const errors: string[] = []
-  const run = async (at: string, operation: () => Promise<unknown>) => {
-    try {
-      await operation()
-    } catch (error) {
-      errors.push(`${at}:${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    await run(`行「${String(old.materialName ?? old.id)}」`, () =>
-      stockCountItemClient.delete(old.id),
-    )
-  }
-
-  for (const [i, row] of current.entries()) {
-    const at = `第${i + 1}行`
-    if (isLocalRow(row)) {
-      await run(at, () => stockCountItemClient.create({ countId: docId, ...itemInput(row) }))
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      await run(at, () => stockCountItemClient.update(row.id, itemInput(row)))
-    }
-  }
-  return errors
+async function persistItems(
+  docId: string,
+  current: Row[],
+  snapshot: Row[],
+): Promise<string[]> {
+  return persistChildRows({
+    current,
+    snapshot,
+    client: stockCountItemClient,
+    parentIdField: 'countId',
+    parentId: docId,
+    compareKeys: ['materialId', 'unitId', 'countedQuantity', 'remark'],
+    inputOf: itemInput,
+    rowLabel: (row, { op, index }) =>
+      op === 'delete'
+        ? `行「${String(row.materialName ?? row.id)}」`
+        : `第${index + 1}行`,
+  })
 }
 
 function StockCountsTab() {

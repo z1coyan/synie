@@ -4,7 +4,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import {
@@ -12,6 +11,7 @@ import {
   processTemplateItemClient,
 } from '~/lib/resources/manufacturing'
 import type { Row } from '~/components/synie-data-grid/types'
+import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { toastError } from '~/lib/toast'
 import { useRequestGuard } from '~/lib/use-request-guard'
@@ -36,63 +36,23 @@ function itemInput(row: Row) {
   }
 }
 
-const ITEM_COMPARE_KEYS = [
-  'operationId',
-  'seq',
-  'requirement',
-  'isOutsourced',
-] as const
-
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_COMPARE_KEYS.some(
-    (k) => String(before[k] ?? '') !== String(after[k] ?? ''),
-  )
-}
-
 /** 工艺步骤差异持久化:本地草稿行 create;存量行有变 update;快照有、当前无 destroy(同物料单位转换先例) */
 async function persistItems(
   templateId: string,
   current: Row[],
   snapshot: Row[],
 ): Promise<string[]> {
-  const errors: string[] = []
-  const itemLabel = (row: Row) =>
-    (row.operation as Row | undefined)?.name ?? '工艺步骤'
-  const currentIds = new Set(
-    current.filter((r) => !isLocalRow(r)).map((r) => r.id),
-  )
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    try {
-      await processTemplateItemClient.delete(old.id)
-    } catch (error) {
-      errors.push(`${itemLabel(old)}:${(error as Error).message}`)
-    }
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      try {
-        await processTemplateItemClient.create({
-          templateId,
-          ...itemInput(row),
-        })
-      } catch (error) {
-        errors.push(`${itemLabel(row)}:${(error as Error).message}`)
-      }
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      try {
-        await processTemplateItemClient.update(row.id, itemInput(row))
-      } catch (error) {
-        errors.push(`${itemLabel(row)}:${(error as Error).message}`)
-      }
-    }
-  }
-  return errors
+  return persistChildRows({
+    current,
+    snapshot,
+    client: processTemplateItemClient,
+    parentIdField: 'templateId',
+    parentId: templateId,
+    compareKeys: ['operationId', 'seq', 'requirement', 'isOutsourced'],
+    inputOf: itemInput,
+    rowLabel: (row) =>
+      String((row.operation as Row | undefined)?.name ?? '工艺步骤'),
+  })
 }
 
 // 列白名单:时间戳不进表格

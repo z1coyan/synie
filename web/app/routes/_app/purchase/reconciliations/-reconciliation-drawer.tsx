@@ -30,10 +30,7 @@ import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import {
-  isLocalRow,
-  localRowId,
-} from '~/components/synie-editable-table/editable'
+import { localRowId } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
 import type {
@@ -46,6 +43,7 @@ import { auditMaterialCell, type AuditDocConfig } from '../../scm/-audit-doc'
 import { CompanyDefaultSync, defaultCompanyId } from '../../scm/-stock-doc'
 import { fetchCompanyAccountDefaults } from '~/components/company-account-defaults'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
+import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import { toastError } from '~/lib/toast'
 import { useDocumentDrawer } from '~/lib/use-document-drawer'
 
@@ -128,70 +126,26 @@ function itemInput(row: Row) {
   }
 }
 
-const ITEM_COMPARE_KEYS = [
-  'idx',
-  'receiptItemId',
-  'outsourcedReceiptItemId',
-  'qty',
-  'remarks',
-] as const
-
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_COMPARE_KEYS.some(
-    (k) => String(before[k] ?? '') !== String(after[k] ?? ''),
-  )
-}
-
 async function persistItems(
   reconciliationId: string,
   current: Row[],
   snapshot: Row[],
 ): Promise<string[]> {
-  const errors: string[] = []
-  const collect = (
-    idx: unknown,
-    msgs: { message: string }[] | null | undefined,
-  ) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
-  }
-  const currentIds = new Set(
-    current.filter((r) => !isLocalRow(r)).map((r) => r.id),
-  )
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    try {
-      await purchaseReconciliationItemClient.delete(String(old.id))
-    } catch (error) {
-      collect(old.idx, [{ message: (error as Error).message }])
-    }
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      try {
-        await purchaseReconciliationItemClient.create({
-          reconciliationId,
-          ...itemInput(row),
-        })
-      } catch (error) {
-        collect(row.idx, [{ message: (error as Error).message }])
-      }
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      try {
-        await purchaseReconciliationItemClient.update(
-          String(row.id),
-          itemInput(row),
-        )
-      } catch (error) {
-        collect(row.idx, [{ message: (error as Error).message }])
-      }
-    }
-  }
-  return errors
+  return persistChildRows({
+    current,
+    snapshot,
+    client: purchaseReconciliationItemClient,
+    parentIdField: 'reconciliationId',
+    parentId: reconciliationId,
+    compareKeys: [
+      'idx',
+      'receiptItemId',
+      'outsourcedReceiptItemId',
+      'qty',
+      'remarks',
+    ],
+    inputOf: itemInput,
+  })
 }
 
 /** 科目候选使用结构化 REST FilterState。 */

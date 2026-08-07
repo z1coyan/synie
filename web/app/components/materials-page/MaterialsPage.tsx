@@ -18,10 +18,10 @@ import { MaterialCell } from '~/components/synie-material-cell/MaterialCell'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { useFkPreview } from '~/components/synie-record-drawer/fk-preview'
 import type { Row } from '~/components/synie-data-grid/types'
+import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import { toastError } from '~/lib/toast'
 import { useRequestGuard } from '~/lib/use-request-guard'
 
@@ -32,39 +32,23 @@ function unitInput(row: Row) {
   return { unitId: row.unitId, factor: row.factor }
 }
 
-function unitChanged(before: Row, after: Row): boolean {
-  return ['unitId', 'factor'].some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
 /** 转换行差异持久化:本地草稿行 create;存量行有变 update;快照有、当前无 destroy(同凭证分录行先例) */
-async function persistUnits(materialId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
-  const errors: string[] = []
-  const unitLabel = (row: Row) => (row.unit as Row | undefined)?.name ?? '转换行'
-  const attempt = async (row: Row, operation: () => Promise<unknown>) => {
-    try {
-      await operation()
-    } catch (error) {
-      errors.push(`${unitLabel(row)}:${(error as Error).message}`)
-    }
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    await attempt(old, () => materialUnitClient.delete(old.id))
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      await attempt(row, () => materialUnitClient.create({ materialId, ...unitInput(row) }))
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && unitChanged(old, row)) {
-      await attempt(row, () => materialUnitClient.update(row.id, unitInput(row)))
-    }
-  }
-  return errors
+async function persistUnits(
+  materialId: string,
+  current: Row[],
+  snapshot: Row[],
+): Promise<string[]> {
+  return persistChildRows({
+    current,
+    snapshot,
+    client: materialUnitClient,
+    parentIdField: 'materialId',
+    parentId: materialId,
+    compareKeys: ['unitId', 'factor'],
+    inputOf: unitInput,
+    rowLabel: (row) =>
+      String((row.unit as Row | undefined)?.name ?? '转换行'),
+  })
 }
 
 

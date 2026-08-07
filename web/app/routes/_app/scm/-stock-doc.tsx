@@ -7,7 +7,6 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
@@ -18,6 +17,7 @@ import {
 } from '~/lib/form-defaults'
 import { companyClient } from '~/lib/resources/companies'
 import type { ResourceClient } from '~/lib/resources/types'
+import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import {
   AUDIT_DOC_EDIT_ACTION_VISIBLE,
@@ -131,41 +131,21 @@ function itemInput(row: Row) {
   }
 }
 
-const ITEM_COMPARE_KEYS = ['idx', 'materialId', 'unitId', 'qty', 'remark'] as const
-
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
-async function persistItems(cfg: StockDocConfig, docId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
-  const errors: string[] = []
-  const run = async (idx: unknown, operation: () => Promise<unknown>) => {
-    try {
-      await operation()
-    } catch (error) {
-      errors.push(`第${idx}行:${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    await run(old.idx, () => cfg.itemClient.delete(old.id))
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      await run(row.idx, () =>
-        cfg.itemClient.create({ [cfg.docIdField]: docId, ...itemInput(row) }),
-      )
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      await run(row.idx, () => cfg.itemClient.update(row.id, itemInput(row)))
-    }
-  }
-  return errors
+async function persistItems(
+  cfg: StockDocConfig,
+  docId: string,
+  current: Row[],
+  snapshot: Row[],
+): Promise<string[]> {
+  return persistChildRows({
+    current,
+    snapshot,
+    client: cfg.itemClient,
+    parentIdField: cfg.docIdField,
+    parentId: docId,
+    compareKeys: ['idx', 'materialId', 'unitId', 'qty', 'remark'],
+    inputOf: itemInput,
+  })
 }
 
 export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {

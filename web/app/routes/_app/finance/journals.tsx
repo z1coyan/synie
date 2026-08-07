@@ -8,7 +8,6 @@ import { useRequestGuard } from '~/lib/use-request-guard'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import {
   glJournalClient,
@@ -18,6 +17,7 @@ import { accountClient } from '~/lib/resources/accounts'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { executeCommandWithInvalidation } from '~/lib/resources/command-invalidation'
+import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import { ensureDefaultGridPage } from '~/lib/route-prefetch'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
@@ -44,41 +44,29 @@ function lineInput(row: Row) {
   }
 }
 
-const LINE_COMPARE_KEYS = ['idx', 'accountId', 'debit', 'credit', 'partyType', 'partyId', 'remarks'] as const
-
-function lineChanged(before: Row, after: Row): boolean {
-  return LINE_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
 /** 行差异持久化:本地草稿行 create;存量行有变 update;快照有、当前无 destroy。全程收集错误文案(带行号定位),不中途抛出 */
-async function persistLines(journalId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
-  const errors: string[] = []
-  // 多行部分失败时用户要能定位到行,错误文案统一冠以行号(destroy 分支用被删行的 idx)
-  const run = async (idx: unknown, request: () => Promise<unknown>) => {
-    try {
-      await request()
-    } catch (error) {
-      errors.push(`第${idx}行:${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    await run(old.idx, () => glJournalLineClient.delete(old.id))
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      await run(row.idx, () => glJournalLineClient.create({ journalId, ...lineInput(row) }))
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && lineChanged(old, row)) {
-      await run(row.idx, () => glJournalLineClient.update(row.id, lineInput(row)))
-    }
-  }
-  return errors
+async function persistLines(
+  journalId: string,
+  current: Row[],
+  snapshot: Row[],
+): Promise<string[]> {
+  return persistChildRows({
+    current,
+    snapshot,
+    client: glJournalLineClient,
+    parentIdField: 'journalId',
+    parentId: journalId,
+    compareKeys: [
+      'idx',
+      'accountId',
+      'debit',
+      'credit',
+      'partyType',
+      'partyId',
+      'remarks',
+    ],
+    inputOf: lineInput,
+  })
 }
 
 const safeParseDate = (v: string | null) => {
