@@ -35,6 +35,10 @@ import {
   createFulfillmentService,
   type FulfillmentService,
 } from '~/modules/trading/fulfillment/service.ts'
+import {
+  createOrderService,
+  type OrderService,
+} from '~/modules/trading/order/service.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import { createInventoryEngine } from '~/engines/inventory/index.ts'
 import { createAggregateService, type AggregateService } from './aggregate.ts'
@@ -356,6 +360,8 @@ const CASES: AggregateContractCase[] = [
   ...quotationContractCases(),
   // W2：采购入库（最简 2 层）；夹具见 purReceiptFixture
   purReceiptContractCase(),
+  // W3：销售/采购订单（SAMPLE/SPOT 免报价；委外子树不进合同）
+  ...orderContractCases(),
 ]
 
 /** 报价业务资源合同夹具（beforeAll 播种；prepare 只装配服务） */
@@ -717,6 +723,177 @@ function purReceiptContractCase(): AggregateContractCase {
   }
 }
 
+/** 订单业务资源合同夹具（复用 quotation 主数据；SAMPLE/SPOT 免报价套档） */
+const orderFixture = {
+  service: null as OrderService | null,
+  registry: null as Registry | null,
+  ruleIds: [] as string[],
+  ready: false,
+}
+
+function orderContractCases(): AggregateContractCase[] {
+  function wrap(
+    side: 'sales' | 'purchase',
+    headResource: string,
+    headTable: string,
+    itemTable: string,
+  ): AggregateContractCase {
+    const partyType = side === 'sales' ? 'CUSTOMER' : 'SUPPLIER'
+    const partyId = () =>
+      side === 'sales' ? quotationFixture.customerId : quotationFixture.supplierId
+    const orderType = side === 'sales' ? 'SAMPLE' : 'SPOT'
+    const asAgg = (): AggregateService => orderFixture.service!._aggregateForContract(side)
+    const validDraft = () => ({
+      companyId: quotationFixture.companyId,
+      orderDate: '2026-07-31',
+      orderType,
+      partyType,
+      partyId: partyId(),
+      currencyId: quotationFixture.currencyId,
+      exchangeRate: '1',
+      terms: `合同-ord-${side}`,
+      remarks: null,
+      items: [
+        {
+          idx: 1,
+          qty: '5',
+          materialId: quotationFixture.materialId,
+          unitId: quotationFixture.unitId,
+          price: '10',
+          taxRate: '0.13',
+          remarks: null,
+          issueLines: [],
+          byproductLines: [],
+        },
+        {
+          idx: 2,
+          qty: '3',
+          materialId: quotationFixture.material2Id,
+          unitId: quotationFixture.unitId,
+          price: '8',
+          taxRate: '0.13',
+          remarks: null,
+          issueLines: [],
+          byproductLines: [],
+        },
+      ],
+    })
+    const noopFrom = (created: Record<string, unknown>) => {
+      const items = asItems(created, 'items').map((item) => ({
+        id: item.id,
+        idx: item.idx,
+        qty: item.qty,
+        materialId: item.materialId,
+        unitId: item.unitId,
+        price: item.price,
+        taxRate: item.taxRate,
+        remarks: item.remarks,
+        quotationItemId: item.quotationItemId ?? null,
+        bomId: item.bomId ?? null,
+        demandLineId: item.demandLineId ?? null,
+        demandDate: item.demandDate ?? null,
+        issueLines: [],
+        byproductLines: [],
+      }))
+      return {
+        companyId: created.companyId,
+        orderDate: created.orderDate,
+        orderType: created.orderType,
+        partyType: created.partyType,
+        partyId: created.partyId,
+        currencyId: created.currencyId,
+        exchangeRate: created.exchangeRate,
+        terms: created.terms,
+        remarks: created.remarks,
+        isOutsourced: created.isOutsourced,
+        items,
+      }
+    }
+    return {
+      title: side === 'sales' ? '销售订单（salOrders）' : '采购订单（purOrders）',
+      headResource,
+      authzResources: [
+        headResource,
+        side === 'sales' ? 'salOrderItems' : 'purOrderItems',
+      ],
+      headTable,
+      itemTable,
+      itemsKey: 'items',
+      prepare: () => ({
+        service: asAgg(),
+        registry: orderFixture.registry!,
+      }),
+      companyId: () => quotationFixture.companyId,
+      otherCompanyId: () => quotationFixture.otherCompanyId,
+      validDraft,
+      buildDiffReplace: (created) => {
+        const items = asItems(created, 'items')
+        const kept = items[0]!
+        const deleted = items[1]!
+        return {
+          keptItemId: String(kept.id),
+          deletedItemId: String(deleted.id),
+          input: {
+            ...noopFrom(created),
+            terms: `合同改-ord-${side}`,
+            items: [
+              {
+                id: kept.id,
+                idx: 1,
+                qty: '6',
+                materialId: kept.materialId,
+                unitId: kept.unitId,
+                price: kept.price,
+                taxRate: kept.taxRate,
+                remarks: '保留',
+                issueLines: [],
+                byproductLines: [],
+              },
+              {
+                idx: 2,
+                qty: '2',
+                materialId: quotationFixture.material2Id,
+                unitId: quotationFixture.unitId,
+                price: '9',
+                taxRate: '0.13',
+                remarks: null,
+                issueLines: [],
+                byproductLines: [],
+              },
+            ],
+          },
+        }
+      },
+      buildNoopReplace: noopFrom,
+      buildFailReplace: (created) => ({
+        ...noopFrom(created),
+        terms: '不应落库',
+        items: [
+          ...asItems(noopFrom(created), 'items'),
+          {
+            idx: 9,
+            qty: '0',
+            materialId: quotationFixture.materialId,
+            unitId: quotationFixture.unitId,
+            price: '1',
+            taxRate: '0.13',
+            issueLines: [],
+            byproductLines: [],
+          },
+        ],
+      }),
+      buildEmptyReplace: (created) => ({
+        ...noopFrom(created),
+        items: [],
+      }),
+    }
+  }
+  return [
+    wrap('sales', 'salOrders', 'sal_order', 'sal_order_item'),
+    wrap('purchase', 'purOrders', 'pur_order', 'pur_order_item'),
+  ]
+}
+
 // ── 套件 ────────────────────────────────────────────────────────────────────
 
 run('聚合草稿合同（postgres）', () => {
@@ -731,6 +908,13 @@ run('聚合草稿合同（postgres）', () => {
     db,
     numbering,
     { inventory: createInventoryEngine(), gl: createGlEngine() },
+    sealed,
+  )
+  orderFixture.registry = sealed
+  orderFixture.service = createOrderService(
+    db,
+    numbering,
+    quotationFixture.service,
     sealed,
   )
 
@@ -922,14 +1106,43 @@ run('聚合草稿合同（postgres）', () => {
       }
     }
     pr.ready = true
+
+    // 订单编号规则（复用 quotation 公司/物料/对手）
+    for (const [resource, mark] of [
+      ['sales.order', 'SO'],
+      ['purchase.order', 'PO'],
+    ] as const) {
+      const existing = await db
+        .selectFrom('sys_numbering_rule')
+        .select('id')
+        .where('resource', '=', resource)
+        .where('enabled', '=', true)
+        .executeTakeFirst()
+      if (!existing) {
+        const rule = await numbering.create(permit('sysNumberingRules', 'create'), {
+          resource,
+          name: `ORD${suffix}${mark}规则`,
+          segments: [
+            { type: 'text', value: `O${suffix}${mark}-` },
+            { type: 'seq', padding: 4 },
+          ],
+          perCompany: false,
+          enabled: true,
+        })
+        orderFixture.ruleIds.push(rule.id)
+      }
+    }
+    orderFixture.ready = true
   })
 
   afterAll(async () => {
     const f = quotationFixture
-    for (const id of f.ruleIds) {
+    for (const id of [...f.ruleIds, ...orderFixture.ruleIds]) {
       await db.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
     }
     await sql`DELETE FROM sys_audit_log WHERE company_id=${f.companyId}::uuid`.execute(db)
+    await sql`DELETE FROM sal_order WHERE company_id=${f.companyId}::uuid`.execute(db)
+    await sql`DELETE FROM pur_order WHERE company_id=${f.companyId}::uuid`.execute(db)
     await sql`DELETE FROM sal_quotation WHERE company_id=${f.companyId}::uuid`.execute(db)
     await sql`DELETE FROM pur_quotation WHERE company_id=${f.companyId}::uuid`.execute(db)
     await sql`

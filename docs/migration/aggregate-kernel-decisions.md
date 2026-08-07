@@ -113,6 +113,7 @@ export interface ControlledProjectionSpec {
 | salQuotations / purQuotations | 手写 `*InTx` 草稿/子行/孙级；身份校验顶层文案「报价草稿子记录身份不合法」；字段「不属于该报价单/报价条目」；公司改键 `header.companyId` | 聚合内核 `createAggregateService` + child 孙级；身份校验统一 `报价草稿参数不合法`；字段「不属于该{资源 label}」；公司改键 `companyId`（与合同套件一致） | W2 迁入聚合；无测钉死旧身份文案；公司键对齐内核 D4 合同 |
 | 同上 | 条目/档独立 CRUD 与草稿各一套手写 | 同一 child InTx + 公开 create/update/remove 包装；草稿走 aggregate | 一份实现两入口，wire 端点不变 |
 | purReceipts | 手写草稿/子行；身份文案「采购入库草稿子记录身份不合法」；公司改键 `header.companyId`；子行删/改无审计；头审计键 `number`/`document_date`/`head_id` | 聚合内核 + child；身份统一「采购入库草稿参数不合法」；公司键 `companyId`；子行增/改/删三型审计；头审计键 meta 原列 `receipt_no`/`receipt_date`/`receipt_id` | W2 迁入；与合同套件/报价收敛一致；子行审计补齐属合同强化 |
+| salOrders / purOrders | 手写草稿/子行/audit·close·void；公司键 `header.companyId`；身份顶层「订单草稿子记录身份不合法」 | 标准头/子行 + InTx 草稿 + OutsourcedDraftPort；workflow 三转移；公司键 `companyId`；身份「订单草稿参数不合法」 | W3；D7 状态转移；委外子树端口保留 |
 
 ---
 
@@ -171,9 +172,34 @@ export interface ControlledProjectionSpec {
 
 ---
 
+## W3 · salOrders / purOrders 聚合迁入
+
+**定案**：订单头 create/update/delete 与条目 CRUD、整单草稿三连改由 `platform/standard` 派生；audit/close/void 迁 workflow（D7）。
+
+- 头：`createStandardService`（numbering `orderNo` + workflow audit/close/void）
+- 条目：`createStandardChildService`（物料快照 + 金额派生 `derivedFields`；图纸挂接 afterWrite/beforeDelete）
+- 草稿三连：头+条目走 InTx（与 aggregate D4 同序）；采购委外发料/副产物仍走 **OutsourcedDraftPort**（`outsourced-config.draft`）同事务挂钩——子树非 standard child，不进聚合描述符
+- 审核 effect：`verifyItems` 报价复核；采购 `adjustDemandOnAudit(occupy)` 占量
+- 作废 effect：`ensureVoidable` 下游闸 + 采购占量释放
+- 关闭：纯状态转移
+
+**路由/URL/DTO 冻结**。
+
+**有意差异**（见行为变更表）：
+
+| 资源 | 旧行为 | 新行为 | 理由 |
+|------|--------|--------|------|
+| salOrders/purOrders | 草稿公司改键 `header.companyId`；子记录身份顶层文案「订单草稿子记录身份不合法」 | 公司键 `companyId`（合同套件一致）；身份统一「订单草稿参数不合法」 | W2 报价/入库同收敛；无测钉死旧键/旧顶层文案 |
+| 同上 | 头改/删文案分「仅草稿订单可修改」「仅草稿订单可删除」 | workflow `mutableMessage`「仅草稿订单可修改或删除」 | 内核单门；条目门仍「仅草稿订单可编辑条目」 |
+| 同上 | 独立 update 条目未带 taxRate 时会重解析报价税率 | update 合并后默认保留既有 taxRate（全量草稿仍显式提交） | child 钩子不见原始 patch；合同/草稿测不依赖该边角 |
+
+**验收**：`order/service.ts` ≤800；聚合 CASES 加 salOrders/purOrders 两行；order-draft + 合同套件绿。
+
+---
+
 ## 非目标（本日志边界）
 
-- 不做 W3+ 资源聚合迁移（订单/发货/对账等；W2 报价 + 采购入库已落地）。
+- 不做 W3 发货/对账及之后资源（本波仅 orders）。
 - 不动 `engines/gl` | `engines/inventory` interface。
 - 不做路由词表收口；wire URL/DTO/错误码字节冻结。
 - mfgOutputItems list 仍弹射（母单投影 join，非 extraWhere 能单独解锁）。
