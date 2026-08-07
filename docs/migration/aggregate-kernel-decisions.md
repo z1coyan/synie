@@ -10,6 +10,7 @@
 |------|------|------|
 | 2026-08-07 | D10 | 三个领域基元落 `platform/posting/` 扩容；不新建 `platform/domain-primitives/` |
 | 2026-08-07 | D11 | 受控投影累加器收 `afterAdjust` 回调，去掉对 manufacturing/arrangement 的动态 import |
+| 2026-08-07 | D12 | mfgWorkOrders **不做**完整聚合草稿；头走 standard+InTx，void 走 workflow；配料/路线/副产品仅 BOM 快照整包写，不进 child/aggregate |
 
 ---
 
@@ -275,6 +276,59 @@ export interface ControlledProjectionSpec {
 
 ---
 
+## D12 · mfgWorkOrders 子行形态（W5 首日·调用面定案）
+
+**问题**（plan D12 标 `？`）：工单配料 / 路线 / 副产品三表由 BOM 快照复制写入、用户不逐行 CRUD——是否只需 InTx 变体 + workflow，而不需要完整聚合草稿（`createAggregateService` / `replaceDraft`）。
+
+### 调用面证据（`work-order-service.ts` + `routes.ts` + meta）
+
+| 出口 | 子表写/读 | 用户形态 |
+|------|-----------|----------|
+| `createWorkOrder` | 可选 `copyBomSnapshotToWorkOrder`（`bomId`） | 头从需求行派生；无子行入参 |
+| `updateWorkOrder` | 无 | 仅 `workOrderNo`（创建后不可改号） |
+| `deleteWorkOrder` / `voidWorkOrder` | 级联删派生草稿；不改 BOM 子表内容 | 头状态/生命周期 + effect |
+| `applyBom` | **整包** clear + copy 三表，或 clear+`bom_id=null` | 选/清 BOM，非逐行 |
+| `createInlineBom` | 写 **mfg_bom** 主数据 + 整包复制到工单快照 | 跨资源编排（BOM create + 工单 update） |
+| `getBomSnapshot` | 只读 join 三表 | 展示 / 打印 / 派生弹窗 |
+| `getMaterialDemandPreview` / `generateMaterialDemand` | 只读配料；派生 **mfg_demand** 草稿 | 跨资源编排，非子行 CRUD |
+| 路由 | **无** `GET/POST/PUT …/draft`；**无** `work-order-components|routes|byproducts` CRUD | wire 本就无草稿三连、无子行端点 |
+| meta 子资源 | `mfgWorkOrderComponents/Routes/Byproducts` | `presentation: none`；`actions: [read]`；注释「打印循环区」 |
+
+产品文档 [`docs/业务模块/生产工单.md`](../业务模块/生产工单.md) 一致：选 BOM 后快照到私有子表；内嵌创建 BOM 是「建正式 BOM 并选入」；生成物料需求读快照配料。
+
+### 定案 ★
+
+**不做完整聚合草稿。** W5 对 `mfgWorkOrders` 的内核形态为：
+
+1. **头**：`createStandardService`（或等价派生）+ 既有/新增 `*InTx` 变体；创建仍由需求行弹射编排（占量 `upsertMakeArrangement`、图纸 `syncDrawingAttachments`、可选 BOM 快照）在外层 `withTx` 内调 InTx / 受信任写。
+2. **void**：迁 **workflow** `transitions`（D7）；effect 保留：`removeMakeArrangementByWorkOrder`、`cascadeDeleteDerivedDrafts`、已审核入库闸（`hasAuditedOutput`）。delete 的级联同属 effect / 钩子纪律，不进草稿。
+3. **三子表**：**不**注册 `createStandardChildService`，**不**进 `createAggregateService` 子树，**不**加聚合 CASES 行（计划 DoD「14 聚合」中 work-order **从聚合计数剔除**，或计为「头+workflow 迁入、非聚合」——见下「计划对照」）。
+4. **快照写**保留模块内私有助手（今日 `copyBomSnapshotToWorkOrder` / `clearWorkOrderBomSnapshot` 及 `createInlineBom` 内联同构段可抽一处）：仅被 `create` / `applyBom` / `createInlineBom` 同事务调用；语义仍是 **整集合替换**（先删后插），不是用户 diff 的 replaceDraft。
+5. **领域动作原样手写弹射**（路由/URL/DTO 冻结）：`apply-bom`、`create-bom`、`bom-snapshot`、`material-demand-preview`、`generate-material-demand`。生成物料需求是跨资源持久化，按铁律走编排而非聚合钩子。
+
+### 为何不是聚合草稿
+
+| 聚合草稿前提（D4 / 交易域） | 工单实际 |
+|------------------------------|----------|
+| 用户编辑头+多子行，GET/POST/PUT draft 三连 | **无** draft 端点；头 update 几乎空操作 |
+| 子行独立 create/update/remove 授权与逐行审计 | 子 meta 只读；写路径无逐行审计，仅头 `apply_bom` / `create_inline_bom` 痕 |
+| `replaceDraft` 缺失即删、暂态空集闸 | 快照由服务端从 BOM **整包**复制；用户不能提交 partial children |
+| 聚合 CASES 合同面 | 无可替换的草稿 wire 可钉 |
+
+强行挂聚合会：虚构 draft wire（违反 D8 冻结或扩面）、把只读打印 meta 变成可写 child、或把 BOM 主数据创建塞进 `deriveChild`——均违背钩子纪律与 YAGNI。
+
+### 与 plan / DoD 对照
+
+- plan D12 倾向「可能只需 InTx + workflow」——**本表采纳**。
+- 终态 DoD「14 个资源 … 聚合草稿」中 **`mfgWorkOrders` 降级为：标准头 + workflow + 快照助手**；聚合合同 CASES **不加** work-order 行。度量「聚合 CASES = 14」改为 **交易+制造中真正有草稿三连/子行 CRUD 的资源数**（实现波次更新 plan 度量时改数，本决策不改代码）。
+- W5 验收行数目标 `work-order-service.ts` ≤700 仍适用：删手写状态转移循环、收口快照复制重复，**不**引入 aggregate 描述符。
+
+**不做（本决策）**：为工单新增 draft URL；为三快照表开标准 child CRUD；把 `generateMaterialDemand` / `createInlineBom` 塞进聚合 `afterWrite`。
+
+**行为**：本决策纯形态定案，**无 wire/语义变更**；实现波次若红测暴露差异，先记行为变更表再改。
+
+---
+
 ## 非目标（本日志边界）
 
 - 不动 `engines/gl` | `engines/inventory` interface。
@@ -282,3 +336,4 @@ export interface ControlledProjectionSpec {
 - mfgOutputItems list 仍弹射（母单投影 join，非 extraWhere 能单独解锁）。
 - 本波不对账路由新增草稿三连 URL（前端仍逐条 CRUD；聚合服务已就绪供合同/后续）。
 - 本波不对委外路由新增草稿三连 URL（聚合服务已就绪供合同/后续）。
+- mfgWorkOrders **不做**聚合草稿三连（D12）；子表非用户 CRUD。
