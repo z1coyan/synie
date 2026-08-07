@@ -380,3 +380,52 @@ export interface ControlledProjectionSpec {
 - 本波不对账路由新增草稿三连 URL（前端仍逐条 CRUD；聚合服务已就绪供合同/后续）。
 - 本波不对委外路由新增草稿三连 URL（聚合服务已就绪供合同/后续）。
 - mfgWorkOrders **不做**聚合草稿三连（D12）；子表非用户 CRUD。
+
+---
+
+## W7 · 收线汇总（2026-08-07）
+
+迁移分支 `feat/aggregate-kernel` 相对 `main` @ 638235fb 已完成计划 W0–W6 实现与本波文档定案。设计决策 **D1–D12 全部 ★**；有意行为变更见上方「行为变更表」与各波节（红测先记后改）。定案 ADR：
+
+- [`docs/系统架构/adr/2026-08-07-aggregate-document-kernel.md`](../系统架构/adr/2026-08-07-aggregate-document-kernel.md)（D1–D12）
+- [`docs/系统架构/adr/2026-08-07-abandon-convex-migration.md`](../系统架构/adr/2026-08-07-abandon-convex-migration.md)（防重议 Convex）
+
+### 终态对照（Definition of Done）
+
+| DoD 项 | 结果 |
+|--------|------|
+| 交易+制造聚合写资源迁入 `platform/standard` | **13 资源完整聚合草稿**（报价 sal/pur、订单 sal/pur、发货、入库、对账 sal/pur、委外发料/入库、需求、BOM、工艺模板）+ **mfgWorkOrders 按 D12** 标准头 + InTx + void workflow + 快照助手（**非**聚合） |
+| 聚合合同 CASES | `aggregate-contract.postgres.test.ts`：合成 stdAc + 上述 13 业务行；**不加** work-order |
+| `posting/skeleton.ts` + `shapes.ts` | **已删**；活编排进各域 workflow effect；科目币种 → `posting/account-currency.ts` |
+| 前端半边（W6） | `aggregateDraftTransport` 工厂、`persistChildRows`、`useDocumentDrawer`/open 桥覆盖；草稿 Adapter 挂 `DRAFT_ADAPTERS`（有 wire 草稿三连的 6 头资源）；无草稿 URL 的资源仍逐条 CRUD / 合同暴露 |
+| wire 冻结 | 路由手写；URL/DTO/错误 code 与用户文案按铁律；有意差异仅日志已记行（身份/公司键/审计列名/编号系统生成等收敛） |
+| 文档 | 本日志收线 + ADR×2 + 术语表 + `资源接入.md` + `模块结构.md`（W7） |
+
+### 行数收缩（验收目标对照，现码 `wc -l`）
+
+| 文件 | 目标 | 现码 |
+|------|------|------|
+| `quotation/service.ts` | ≤600 | 515 |
+| `order/service.ts` | ≤800 | 789 |
+| `fulfillment/service.ts` | ≤800 | 724 |
+| `reconciliation/service.ts` | ≤700 | 695 |
+| `outsourced/service.ts` | ≤1100 | 1078 |
+| `master-service.ts` | ≤700 | 587 |
+| `demand-service.ts` | ≤600 | 516 |
+| `work-order-service.ts` | ≤700 | 434 |
+
+### 内核落点（实现坐标）
+
+| 能力 | 路径 |
+|------|------|
+| `*InTx`（D1） | `platform/standard/service.ts`、`child.ts` |
+| 孙级 ≤2（D3） | `child.ts` parent 可指 child；装配断言 |
+| 聚合派生（D2/D4/D6） | `platform/standard/aggregate.ts` → `createAggregateService` |
+| 合同套件（D9） | `aggregate-contract.postgres.test.ts` + v2 合成测 |
+| `extraWhere`（T1.5） | `StandardServiceOptions.extraWhere`；accGlJournals / mfgOutputs / accBills |
+| 领域基元（D10/D11） | `platform/posting/{material-qty,warehouse,controlled-projection,text}.ts` |
+| 前端草稿工厂 | `web/app/lib/resources/aggregate-draft-transport.ts`、`persist-child-rows.ts` |
+
+### 本迁移明确不做 / 遗留（非阻断）
+
+见下节「非目标」与 ADR「后续」；判官终审 **无已知丢写/锁序/platform→domain 阻断**。后续独立决策：路由词表收口、对账/委外/制造草稿 URL 上线、`mfgOutputItems` list 弹射、engines interface 演进等——**不在本分支范围**。
