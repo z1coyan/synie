@@ -20,6 +20,8 @@ export interface Operation {
   note: string | null
   insertedAt: Date
   updatedAt: Date
+  /** 标准动作内核的 StandardItem 约束 */
+  [key: string]: unknown
 }
 
 export interface ProcessTemplate {
@@ -29,6 +31,8 @@ export interface ProcessTemplate {
   note: string | null
   insertedAt: Date
   updatedAt: Date
+  /** 标准动作内核的 StandardItem 约束 */
+  [key: string]: unknown
 }
 
 export interface TemplateItem {
@@ -40,6 +44,8 @@ export interface TemplateItem {
   operationId: string
   insertedAt: Date
   updatedAt: Date
+  /** 标准动作内核的 StandardItem 约束 */
+  [key: string]: unknown
 }
 
 export interface Bom {
@@ -51,6 +57,8 @@ export interface Bom {
   status: BomStatus
   insertedAt: Date
   updatedAt: Date
+  /** 标准动作内核的 StandardItem 约束 */
+  [key: string]: unknown
 }
 
 export interface DemandArrangement {
@@ -77,6 +85,8 @@ export interface BomComponent {
   unitId: string
   insertedAt: Date
   updatedAt: Date
+  /** 标准动作内核的 StandardItem 约束 */
+  [key: string]: unknown
 }
 
 export interface BomRoute {
@@ -88,6 +98,8 @@ export interface BomRoute {
   operationId: string
   insertedAt: Date
   updatedAt: Date
+  /** 标准动作内核的 StandardItem 约束 */
+  [key: string]: unknown
 }
 
 export interface BomByproduct {
@@ -99,6 +111,8 @@ export interface BomByproduct {
   unitId: string
   insertedAt: Date
   updatedAt: Date
+  /** 标准动作内核的 StandardItem 约束 */
+  [key: string]: unknown
 }
 
 export interface Demand {

@@ -108,9 +108,15 @@ function headMeta(
         createOnly: true,
         filterable: true,
         sortable: true,
+        maxLength: 32,
       }),
-      field('name', 'name', 'string', nameLabel, { required: true, filterable: true, sortable: true }),
-      field('note', 'note', 'string', '备注', { filterable: true, sortable: true }),
+      field('name', 'name', 'string', nameLabel, {
+        required: true,
+        filterable: true,
+        sortable: true,
+        maxLength: 64,
+      }),
+      field('note', 'note', 'string', '备注', { filterable: true, sortable: true, maxLength: 255 }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         readonly: true,
         filterable: true,
@@ -139,7 +145,11 @@ function routeFields(): ResourceMeta['fields'] {
   return [
     field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
     field('seq', 'seq', 'integer', '工序顺序', { required: true, filterable: true, sortable: true }),
-    field('requirement', 'requirement', 'string', '工艺要求', { filterable: true, sortable: true }),
+    field('requirement', 'requirement', 'string', '工艺要求', {
+      filterable: true,
+      sortable: true,
+      maxLength: 512,
+    }),
     field('is_outsourced', 'isOutsourced', 'boolean', '外协标记', {
       required: true,
       filterable: true,
@@ -192,6 +202,7 @@ export function processTemplateItemResourceMeta(): ResourceMeta {
     classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'mfg.route_template',
     permissionLabel: '工艺模板',
+    label: '工艺模板行',
     table: 'mfg_process_template_item',
     authz: { kind: 'via', parent: 'mfgProcessTemplates', fk: 'template_id' },
     fields: [
@@ -234,15 +245,20 @@ export function bomResourceMeta(): ResourceMeta {
         createOnly: true,
         filterable: true,
         sortable: true,
+        maxLength: 32,
       }),
-      field('plan_name', 'planName', 'string', '方案名称', { filterable: true, sortable: true }),
+      field('plan_name', 'planName', 'string', '方案名称', {
+        filterable: true,
+        sortable: true,
+        maxLength: 64,
+      }),
       field('status', 'status', 'enum', '状态', {
         filterable: true,
         sortable: true,
         readonly: true,
         enumOptions: bomStatusOptions,
       }),
-      field('note', 'note', 'string', '备注', { filterable: true, sortable: true }),
+      field('note', 'note', 'string', '备注', { filterable: true, sortable: true, maxLength: 255 }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         readonly: true,
         filterable: true,
@@ -288,6 +304,7 @@ export function bomComponentResourceMeta(): ResourceMeta {
     classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'mfg.bom',
     permissionLabel: 'BOM',
+    label: 'BOM行',
     table: 'mfg_bom_component',
     authz: { kind: 'via', parent: 'mfgBoms', fk: 'bom_id' },
     fields: [
@@ -339,6 +356,7 @@ export function bomRouteResourceMeta(): ResourceMeta {
     classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'mfg.bom',
     permissionLabel: 'BOM',
+    label: '工艺路线行',
     table: 'mfg_bom_route',
     authz: { kind: 'via', parent: 'mfgBoms', fk: 'bom_id' },
     fields: [
@@ -368,6 +386,7 @@ export function bomByproductResourceMeta(): ResourceMeta {
     classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'mfg.bom',
     permissionLabel: 'BOM',
+    label: 'BOM行',
     table: 'mfg_bom_byproduct',
     authz: { kind: 'via', parent: 'mfgBoms', fk: 'bom_id' },
     fields: [

@@ -51,6 +51,10 @@ import {
   createDemandService,
   type DemandService,
 } from '~/modules/manufacturing/demand-service.ts'
+import {
+  createMasterService,
+  type MasterService,
+} from '~/modules/manufacturing/master-service.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import { createInventoryEngine } from '~/engines/inventory/index.ts'
 import { createAggregateService, type AggregateService } from './aggregate.ts'
@@ -195,6 +199,11 @@ interface AggregateContractCase {
   buildFailReplace: (created: Record<string, unknown>) => Record<string, unknown>
   /** 显式空集合 = 删全部子行 */
   buildEmptyReplace: (created: Record<string, unknown>) => Record<string, unknown>
+  /**
+   * 头无 company 列的 global 资源（BOM / 工艺模板）跳过「公司创建后不可改」断言。
+   * 缺省 true（业务单据）。
+   */
+  companyScoped?: boolean
 }
 
 /** 合成夹具公司 id（无 FK；仅 wire 字段） */
@@ -382,6 +391,8 @@ const CASES: AggregateContractCase[] = [
   ...outsourcedContractCases(),
   // W5：履约需求单（确认占量/作废下游进 effect；合同面测头+条目）
   mfgDemandContractCase(),
+  mfgProcessTemplateContractCase(),
+  mfgBomContractCase(),
 ]
 
 /** 报价业务资源合同夹具（beforeAll 播种；prepare 只装配服务） */
@@ -1503,6 +1514,21 @@ const demandFixture = {
   ruleIds: [] as string[],
 }
 
+/** 工艺模板 / BOM 主数据合同夹具（global；beforeAll 播种） */
+const masterFixture = {
+  unitId: crypto.randomUUID(),
+  categoryId: crypto.randomUUID(),
+  materialId: crypto.randomUUID(),
+  material2Id: crypto.randomUUID(),
+  material3Id: crypto.randomUUID(),
+  operationId: crypto.randomUUID(),
+  operation2Id: crypto.randomUUID(),
+  ready: false,
+  service: null as MasterService | null,
+  registry: null as Registry | null,
+  ruleIds: [] as string[],
+}
+
 function mfgDemandContractCase(): AggregateContractCase {
   const asAgg = (): AggregateService => demandFixture.service!._aggregateForContract()
   const validDraft = () => ({
@@ -1619,6 +1645,239 @@ function mfgDemandContractCase(): AggregateContractCase {
   }
 }
 
+function mfgProcessTemplateContractCase(): AggregateContractCase {
+  const asAgg = (): AggregateService => masterFixture.service!._templateAggregateForContract()
+  const validDraft = () => ({
+    name: `合同模板-${suffix}`,
+    note: '合同-template',
+    items: [
+      {
+        operationId: masterFixture.operationId,
+        seq: 10,
+        requirement: '要求A',
+        isOutsourced: false,
+      },
+      {
+        operationId: masterFixture.operation2Id,
+        seq: 20,
+        requirement: null,
+        isOutsourced: true,
+      },
+    ],
+  })
+  const noopFrom = (created: Record<string, unknown>) => {
+    const items = asItems(created, 'items').map((item) => ({
+      id: item.id,
+      operationId: item.operationId,
+      seq: item.seq,
+      requirement: item.requirement,
+      isOutsourced: item.isOutsourced,
+    }))
+    return {
+      name: created.name,
+      note: created.note,
+      items,
+    }
+  }
+  return {
+    title: '工艺模板（mfgProcessTemplates）',
+    headResource: 'mfgProcessTemplates',
+    authzResources: ['mfgProcessTemplates', 'mfgProcessTemplateItems'],
+    headTable: 'mfg_process_template',
+    itemTable: 'mfg_process_template_item',
+    itemsKey: 'items',
+    companyScoped: false,
+    prepare: () => ({
+      service: asAgg(),
+      registry: masterFixture.registry!,
+    }),
+    companyId: () => '',
+    otherCompanyId: () => '',
+    validDraft,
+    buildDiffReplace: (created) => {
+      const items = asItems(created, 'items')
+      const kept = items[0]!
+      const deleted = items[1]!
+      return {
+        keptItemId: String(kept.id),
+        deletedItemId: String(deleted.id),
+        input: {
+          ...noopFrom(created),
+          note: '合同改-template',
+          items: [
+            {
+              id: kept.id,
+              operationId: kept.operationId,
+              seq: 11,
+              requirement: '保留',
+              isOutsourced: false,
+            },
+            {
+              operationId: masterFixture.operation2Id,
+              seq: 30,
+              requirement: '新增',
+              isOutsourced: false,
+            },
+          ],
+        },
+      }
+    },
+    buildNoopReplace: noopFrom,
+    buildFailReplace: (created) => ({
+      ...noopFrom(created),
+      note: '不应落库',
+      items: [
+        ...asItems(noopFrom(created), 'items'),
+        {
+          // operationId 缺 → 校验失败
+          seq: 99,
+          isOutsourced: false,
+        },
+      ],
+    }),
+    buildEmptyReplace: (created) => ({
+      ...noopFrom(created),
+      items: [],
+    }),
+  }
+}
+
+function mfgBomContractCase(): AggregateContractCase {
+  const asAgg = (): AggregateService => masterFixture.service!._bomAggregateForContract()
+  const validDraft = () => ({
+    materialId: masterFixture.materialId,
+    planName: '合同方案',
+    note: '合同-bom',
+    components: [
+      {
+        materialId: masterFixture.material2Id,
+        unitId: masterFixture.unitId,
+        quantity: '2',
+        lossRate: '0.01',
+        note: null,
+      },
+      {
+        materialId: masterFixture.material3Id,
+        unitId: masterFixture.unitId,
+        quantity: '3',
+        lossRate: null,
+        note: '行2',
+      },
+    ],
+    routes: [],
+    byproducts: [],
+  })
+  const noopFrom = (created: Record<string, unknown>) => {
+    const components = asItems(created, 'components').map((item) => ({
+      id: item.id,
+      materialId: item.materialId,
+      unitId: item.unitId,
+      quantity: item.quantity,
+      lossRate: item.lossRate,
+      note: item.note,
+    }))
+    const routes = Array.isArray(created.routes)
+      ? (created.routes as Array<Record<string, unknown>>).map((item) => ({
+          id: item.id,
+          operationId: item.operationId,
+          seq: item.seq,
+          requirement: item.requirement,
+          isOutsourced: item.isOutsourced,
+        }))
+      : []
+    const byproducts = Array.isArray(created.byproducts)
+      ? (created.byproducts as Array<Record<string, unknown>>).map((item) => ({
+          id: item.id,
+          materialId: item.materialId,
+          unitId: item.unitId,
+          quantity: item.quantity,
+          note: item.note,
+        }))
+      : []
+    return {
+      planName: created.planName,
+      note: created.note,
+      components,
+      routes,
+      byproducts,
+    }
+  }
+  return {
+    title: 'BOM（mfgBoms）',
+    headResource: 'mfgBoms',
+    authzResources: [
+      'mfgBoms',
+      'mfgBomComponents',
+      'mfgBomRoutes',
+      'mfgBomByproducts',
+    ],
+    headTable: 'mfg_bom',
+    itemTable: 'mfg_bom_component',
+    itemsKey: 'components',
+    companyScoped: false,
+    prepare: () => ({
+      service: asAgg(),
+      registry: masterFixture.registry!,
+    }),
+    companyId: () => '',
+    otherCompanyId: () => '',
+    validDraft,
+    buildDiffReplace: (created) => {
+      const items = asItems(created, 'components')
+      const kept = items[0]!
+      const deleted = items[1]!
+      return {
+        keptItemId: String(kept.id),
+        deletedItemId: String(deleted.id),
+        input: {
+          ...noopFrom(created),
+          note: '合同改-bom',
+          components: [
+            {
+              id: kept.id,
+              materialId: kept.materialId,
+              unitId: kept.unitId,
+              quantity: '2.5',
+              lossRate: kept.lossRate,
+              note: '保留',
+            },
+            {
+              materialId: masterFixture.material3Id,
+              unitId: masterFixture.unitId,
+              quantity: '1',
+              lossRate: null,
+              note: null,
+            },
+          ],
+          routes: [],
+          byproducts: [],
+        },
+      }
+    },
+    buildNoopReplace: noopFrom,
+    buildFailReplace: (created) => ({
+      ...noopFrom(created),
+      note: '不应落库',
+      components: [
+        ...asItems(noopFrom(created), 'components'),
+        {
+          materialId: masterFixture.material2Id,
+          unitId: masterFixture.unitId,
+          quantity: '0',
+        },
+      ],
+      routes: [],
+      byproducts: [],
+    }),
+    buildEmptyReplace: (created) => ({
+      ...noopFrom(created),
+      components: [],
+      routes: [],
+      byproducts: [],
+    }),
+  }
+}
+
 // ── 套件 ────────────────────────────────────────────────────────────────────
 
 run('聚合草稿合同（postgres）', () => {
@@ -1661,6 +1920,8 @@ run('聚合草稿合同（postgres）', () => {
   )
   demandFixture.registry = sealed
   demandFixture.service = createDemandService(db, numbering, sealed)
+  masterFixture.registry = sealed
+  masterFixture.service = createMasterService(db, numbering, sealed)
 
   beforeAll(async () => {
     await sql`
@@ -2254,6 +2515,53 @@ run('聚合草稿合同（postgres）', () => {
       }
       df.ready = true
     }
+
+    // 工艺模板 / BOM 主数据夹具（W5）
+    {
+      const mf = masterFixture
+      const tag = `MB${suffix}`
+      await sql`
+        INSERT INTO bas_unit(id,unit_type,is_base,name,symbol,ratio)
+        VALUES (${mf.unitId}::uuid, ${'mb-' + suffix}, true, ${tag + '件'}, ${'ub' + suffix}, 1)
+      `.execute(db)
+      await sql`
+        INSERT INTO inv_material_category(id,code,name,is_leaf,active)
+        VALUES (${mf.categoryId}::uuid, ${'MB' + suffix}, ${tag + '分类'}, true, true)
+      `.execute(db)
+      await sql`
+        INSERT INTO inv_material(id,code,name,category_id,default_unit_id,active,material_type) VALUES
+          (${mf.materialId}::uuid, ${'BA' + suffix}, ${tag + '母料'}, ${mf.categoryId}::uuid, ${mf.unitId}::uuid, true, 'STOCK'),
+          (${mf.material2Id}::uuid, ${'BB' + suffix}, ${tag + '子料'}, ${mf.categoryId}::uuid, ${mf.unitId}::uuid, true, 'STOCK'),
+          (${mf.material3Id}::uuid, ${'BC' + suffix}, ${tag + '子料二'}, ${mf.categoryId}::uuid, ${mf.unitId}::uuid, true, 'STOCK')
+      `.execute(db)
+      await sql`
+        INSERT INTO mfg_operation(id,code,name,note) VALUES
+          (${mf.operationId}::uuid, ${'OA' + suffix}, ${tag + '工序'}, null),
+          (${mf.operation2Id}::uuid, ${'OB' + suffix}, ${tag + '工序二'}, null)
+      `.execute(db)
+      for (const resource of ['mfg.route_template', 'mfg.bom'] as const) {
+        const existing = await db
+          .selectFrom('sys_numbering_rule')
+          .select('id')
+          .where('resource', '=', resource)
+          .where('enabled', '=', true)
+          .executeTakeFirst()
+        if (!existing) {
+          const rule = await numbering.create(permit('sysNumberingRules', 'create'), {
+            resource,
+            name: `${tag}${resource}规则`,
+            segments: [
+              { type: 'text', value: `M${suffix.slice(0, 4)}-` },
+              { type: 'seq', padding: 4 },
+            ],
+            perCompany: false,
+            enabled: true,
+          })
+          mf.ruleIds.push(rule.id)
+        }
+      }
+      mf.ready = true
+    }
   })
 
   afterAll(async () => {
@@ -2392,6 +2700,33 @@ run('聚合草稿合同（postgres）', () => {
         DELETE FROM bas_company WHERE id IN (${df.companyId}::uuid, ${df.otherCompanyId}::uuid)
       `.execute(db)
       await sql`DELETE FROM bas_currency WHERE id=${df.currencyId}::uuid`.execute(db)
+    }
+
+    // 工艺模板 / BOM 主数据夹具清理（按本夹具主键/命名前缀收口，勿全表扫）
+    {
+      const mf = masterFixture
+      for (const id of mf.ruleIds) {
+        await db.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
+      }
+      // 子表 ON DELETE CASCADE
+      await sql`
+        DELETE FROM mfg_bom WHERE material_id IN (
+          ${mf.materialId}::uuid, ${mf.material2Id}::uuid, ${mf.material3Id}::uuid
+        )
+      `.execute(db)
+      await sql`
+        DELETE FROM mfg_process_template WHERE name LIKE ${'%' + suffix + '%'}
+      `.execute(db)
+      await sql`
+        DELETE FROM mfg_operation WHERE id IN (${mf.operationId}::uuid, ${mf.operation2Id}::uuid)
+      `.execute(db)
+      await sql`
+        DELETE FROM inv_material WHERE id IN (
+          ${mf.materialId}::uuid, ${mf.material2Id}::uuid, ${mf.material3Id}::uuid
+        )
+      `.execute(db)
+      await sql`DELETE FROM inv_material_category WHERE id=${mf.categoryId}::uuid`.execute(db)
+      await sql`DELETE FROM bas_unit WHERE id=${mf.unitId}::uuid`.execute(db)
     }
 
     await sql`DROP TABLE IF EXISTS std_ac_tier`.execute(db)
@@ -2549,6 +2884,7 @@ run('聚合草稿合同（postgres）', () => {
       })
 
       test('公司创建后不可改', async () => {
+        if (c.companyScoped === false) return
         const created = await service.createDraft(p('create'), c.validDraft())
         const noop = c.buildNoopReplace(created)
         await expect(

@@ -129,6 +129,10 @@ export interface ControlledProjectionSpec {
 | mfgDemands | 手写头/行 CRUD；confirm/close/void 手搓；服务 API 枚举小写；编号 assignedInTx 可选手填 | 标准头/子行 + 聚合 + workflow；wire 形大写（对齐 mfgOutputs）；nextInTx 系统编号 | W5；D6/D7 |
 | mfgDemands | 条目 meta 销售来源 readonly；快照列可写 | salesOrderItemId createOnly；快照/baseQty/status readonly + derived；label「需求行」 | 标准 child 可写面；「需求行参数不合法」保留 |
 | mfgDemands | 确认占量与作废下游闸手写事务内 | 进 transition effect | 钩子纪律；dispatch 非状态转移仍手写 |
+| mfgBoms / mfgProcessTemplates / mfgOperations | 手写头/子行 CRUD；编号 assignedInTx 可选手填；BOM 启停手搓 | 标准头/子行 + 聚合（BOM 三子表/模板一子表）+ BOM workflow 启停；nextInTx 系统编号 | W5；D6/D7 |
+| mfgBoms | 任意状态可改头/子行；仅草稿可删；启停同态幂等 no-op | 同；mutableStatuses 全态可改；beforeDelete 仅草稿；启停包装保留同态 no-op | 与旧行为对齐 |
+| mfgBomComponents / mfgBomByproducts | 改 bomId 抛「制造主数据锚点不可修改」 | createOnly 静默忽略改键 | 与全站 createOnly/合同收敛 |
+| mfgBoms / mfgProcessTemplates 子行 | 独立 CRUD 无聚合草稿端点 | 公开 CRUD 包装 + `_aggregateForContract` 进 CASES；路由 URL 不变 | wire 冻结；草稿三连未上线不扩面 |
 
 ---
 
