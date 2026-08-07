@@ -5,7 +5,7 @@
  * 三个执行点（listAuthorized / loadAuthorized / assertCompanyWritable）由平台拥有。
  * 「持 create 或 update 均可」的多码析取归 guard 的 `anyOf`（本地包装已删）。
  */
-import { decimal, isDecimalString, roundBaseQty, toDecimalString } from '@synie/shared'
+import { decimal, isDecimalString, toDecimalString } from '@synie/shared'
 import { sql } from 'kysely'
 import { toDateOnly } from '~/db/dates.ts'
 import type { DbHandle } from '~/db/tx.ts'
@@ -65,66 +65,11 @@ export function parsePositiveQty(raw: string, field = 'qty'): string {
   return toDecimalString(v)
 }
 
-export interface ItemProjection {
-  baseQty: string
-  materialCode: string
-  materialName: string
-  materialSpec: string | null
-  unitName: string
-}
-
-/** 物料/单位折算默认单位口径（6 位），对齐 Go deriveItemProjection */
-export async function deriveItemProjection(
-  db: DbHandle,
-  materialId: string,
-  unitId: string,
-  qtyRaw: string,
-): Promise<ItemProjection> {
-  const qty = parsePositiveQty(qtyRaw, 'qty')
-  const material = await db
-    .selectFrom('inv_material')
-    .select(['default_unit_id', 'code', 'name', 'spec'])
-    .where('id', '=', materialId)
-    .executeTakeFirst()
-  if (!material) {
-    throw ApiError.validation('需求行参数不合法', { materialId: ['物料不存在'] })
-  }
-  const unit = await db
-    .selectFrom('bas_unit')
-    .select('name')
-    .where('id', '=', unitId)
-    .executeTakeFirst()
-  if (!unit) {
-    throw ApiError.validation('需求行参数不合法', { unitId: ['单位不存在'] })
-  }
-  // 6 位精度舍入后以 toDecimalString 出 wire（去尾零，对齐 shopspring.String）
-  let baseQty = toDecimalString(decimal(roundBaseQty(qty)))
-  if (unitId !== material.default_unit_id) {
-    const conv = await db
-      .selectFrom('inv_material_unit')
-      .select('factor')
-      .where('material_id', '=', materialId)
-      .where('unit_id', '=', unitId)
-      .executeTakeFirst()
-    if (!conv) {
-      throw ApiError.validation('需求行参数不合法', {
-        unitId: ['单位必须是物料默认单位或其单位转换单位'],
-      })
-    }
-    const factor = decimal(String(conv.factor))
-    if (!factor.gt(0)) {
-      throw new ApiError('conflict', '物料单位转换系数必须大于零')
-    }
-    baseQty = toDecimalString(decimal(roundBaseQty(decimal(qty).div(factor))))
-  }
-  return {
-    baseQty,
-    materialCode: material.code,
-    materialName: material.name,
-    materialSpec: material.spec,
-    unitName: unit.name,
-  }
-}
+/** 制造域物料投影 / base_qty：实现见 platform/posting/material-qty（W0 T0.1） */
+export {
+  deriveItemProjection,
+  type MfgItemProjection as ItemProjection,
+} from '~/platform/posting/material-qty.ts'
 
 export async function ensureMaterial(
   db: DbHandle,

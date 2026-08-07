@@ -71,66 +71,14 @@ export async function partyExists(
   return Boolean(row.rows[0]?.exists)
 }
 
-export interface MaterialSnap {
-  code: string
-  name: string
-  unitName: string
-  spec: string | null
-  customerPartNo: string | null
-  defaultUnitId: string
-  factor: Decimal | null
-  isCustomerMaterial: boolean
-  customerId: string | null
-  materialType: string
-}
+/** 物料快照 / base_qty 折算：实现见 platform/posting/material-qty（W0 T0.1） */
+export {
+  convertToBaseQty,
+  loadMaterialSnap,
+  type MaterialSnap,
+} from '~/platform/posting/material-qty.ts'
 
-export async function loadMaterialSnap(
-  db: DbHandle,
-  materialId: string,
-  unitId: string,
-): Promise<MaterialSnap> {
-  const rows = await sql<{
-    code: string
-    name: string
-    spec: string | null
-    customer_part_no: string | null
-    default_unit_id: string
-    is_customer_material: boolean
-    customer_id: string | null
-    unit_name: string
-    factor: string | null
-    material_type: string
-  }>`
-    SELECT m.code, m.name, m.spec, m.customer_part_no, m.default_unit_id,
-      m.is_customer_material, m.customer_id, m.material_type, u.name AS unit_name, mu.factor::text AS factor
-    FROM inv_material m
-    JOIN bas_unit u ON u.id = ${unitId}::uuid
-    LEFT JOIN inv_material_unit mu ON mu.material_id = m.id AND mu.unit_id = u.id
-    WHERE m.id = ${materialId}::uuid
-  `.execute(db)
-  const row = rows.rows[0]
-  if (!row) {
-    throw ApiError.validation('物料参数不合法', { materialId: ['物料或单位不存在'] })
-  }
-  const factor = row.factor !== null && row.factor !== undefined ? decimal(row.factor) : null
-  if (unitId !== row.default_unit_id && (factor === null || !factor.gt(0))) {
-    throw ApiError.validation('物料参数不合法', {
-      unitId: ['单位必须是物料默认单位或其单位转换单位'],
-    })
-  }
-  return {
-    code: row.code,
-    name: row.name,
-    unitName: row.unit_name,
-    spec: row.spec,
-    customerPartNo: row.customer_part_no,
-    defaultUnitId: row.default_unit_id,
-    factor,
-    isCustomerMaterial: row.is_customer_material,
-    customerId: row.customer_id,
-    materialType: row.material_type,
-  }
-}
+import type { MaterialSnap } from '~/platform/posting/material-qty.ts'
 
 /** 单据行的物料类型准入：不在白名单即拦（行保存时校验，与引用合法性同层）。 */
 export function guardMaterialType(
@@ -144,16 +92,6 @@ export function guardMaterialType(
       ? '仅库存类物料可进该单据'
       : '资产类物料不能进该单据'
   throw ApiError.validation(`${label}参数不合法`, { materialId: [message] })
-}
-
-export function convertToBaseQty(qty: Decimal, unitId: string, snap: MaterialSnap): Decimal {
-  if (unitId === snap.defaultUnitId) return qty
-  if (snap.factor && snap.factor.gt(0)) {
-    return qty.div(snap.factor).toDecimalPlaces(6)
-  }
-  throw ApiError.validation('物料参数不合法', {
-    unitId: ['单位必须是物料默认单位或其单位转换单位'],
-  })
 }
 
 export function guardCustomerMaterial(
