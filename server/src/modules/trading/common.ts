@@ -9,9 +9,12 @@ import { sql } from 'kysely'
 import { toDateOnly } from '~/db/dates.ts'
 import type { DbHandle } from '~/db/tx.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import { lowerParty, runeLen } from '~/platform/posting/text.ts'
 
 export { ident } from '~/db/ident.ts'
 export { toDateOnly }
+/** 对手类型 / 码点长度：实现见 platform/posting/text（W0 T0.4） */
+export { lowerParty, runeLen }
 
 export type TradingSide = 'sales' | 'purchase'
 
@@ -49,10 +52,6 @@ export function asOptionalString(value: unknown): string | null {
 
 export function upperStatus(value: string): string {
   return value.trim().toUpperCase()
-}
-
-export function lowerParty(value: string): string {
-  return value.trim().toLowerCase()
 }
 
 export async function partyExists(
@@ -147,6 +146,4 @@ export function codeNamedRef(
   return { id, code, name }
 }
 
-export function runeLen(s: string): number {
-  return [...s].length
-}
+

@@ -60,6 +60,7 @@ import {
   upperStatus,
   wireRequiredDecimal,
 } from '../common.ts'
+import { withIndexedFields } from '~/platform/posting/text.ts'
 import { utcToday } from '~/db/dates.ts'
 import { quotationSpec, type QuotationSideSpec } from './spec.ts'
 
@@ -1594,24 +1595,6 @@ function tierExtras(row: Record<string, unknown>): Record<string, unknown> {
 }
 
 // ─── 领域校验（头/条目/价格档形状 + 聚合子记录身份） ─────────────────
-
-async function withIndexedFields<T>(
-  prefix: string,
-  run: () => Promise<T>,
-): Promise<T> {
-  try {
-    return await run()
-  } catch (error) {
-    if (!(error instanceof ApiError) || error.code !== 'validation' || !error.fields) throw error
-    const fields = Object.fromEntries(
-      Object.entries(error.fields).map(([field, messages]) => [
-        `${prefix}.${field}`,
-        messages,
-      ]),
-    )
-    throw ApiError.validation(error.message, fields)
-  }
-}
 
 function validateNewQuotationDraftIdentities(input: QuotationDraftInput): void {
   const fields: Record<string, string[]> = {}

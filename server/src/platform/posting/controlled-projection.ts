@@ -19,6 +19,7 @@ import { sql } from 'kysely'
 import { ident } from '~/db/ident.ts'
 import type { DbHandle } from '~/db/tx.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import { lowerParty } from '~/platform/posting/text.ts'
 
 // ---------------------------------------------------------------------------
 // 公共原语
@@ -39,11 +40,6 @@ export type AfterAdjust = (
 
 function wireRequiredDecimal(value: Decimal | string | number): string {
   return toDecimalString(decimal(value))
-}
-
-/** 对手类型小写口径（platform 自持） */
-function lowerParty(value: string): string {
-  return value.trim().toLowerCase()
 }
 
 /** 可履约上限 = baseQty × (1 + 容差比例)；供单测与实现共用 */

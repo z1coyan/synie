@@ -10,9 +10,10 @@
  */
 import type { DbHandle } from '~/db/tx.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import { lowerParty } from '~/platform/posting/text.ts'
 
 // ---------------------------------------------------------------------------
-// 共用：读仓 + 对手类型口径（与 trading lowerParty / skeleton lowerPartyType 同语义）
+// 共用：读仓 + 对手类型口径（lowerParty 见 text.ts）
 // ---------------------------------------------------------------------------
 
 interface WarehouseRow {
@@ -42,11 +43,6 @@ async function loadWarehouse(
     ])
     .where('id', '=', warehouseId)
     .executeTakeFirst()
-}
-
-/** 对手类型小写口径（platform 自持，不 import modules） */
-function lowerParty(value: string): string {
-  return value.trim().toLowerCase()
 }
 
 // ---------------------------------------------------------------------------

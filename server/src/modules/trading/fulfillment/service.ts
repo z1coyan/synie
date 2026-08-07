@@ -48,6 +48,7 @@ import {
   upperStatus,
   wireRequiredDecimal,
 } from '../common.ts'
+import { withIndexedFields } from '~/platform/posting/text.ts'
 import { utcToday } from '~/db/dates.ts'
 import {
   postFulfillment,
@@ -1496,25 +1497,6 @@ export function createFulfillmentService(
 export type FulfillmentService = ReturnType<typeof createFulfillmentService>
 
 // ---- helpers ----
-
-async function withIndexedFields<T>(
-  prefix: string,
-  run: () => Promise<T>,
-  aliases: Record<string, string> = {},
-): Promise<T> {
-  try {
-    return await run()
-  } catch (error) {
-    if (!(error instanceof ApiError) || error.code !== 'validation' || !error.fields) throw error
-    const fields = Object.fromEntries(
-      Object.entries(error.fields).map(([field, messages]) => [
-        `${prefix}.${aliases[field] ?? field}`,
-        messages,
-      ]),
-    )
-    throw ApiError.validation(error.message, fields)
-  }
-}
 
 function validateSalesDraftIdentities(
   input: SalesDraftInput,

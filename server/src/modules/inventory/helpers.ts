@@ -64,9 +64,8 @@ export function validateOptionalText(
   }
 }
 
-export function runeLen(value: string): number {
-  return [...value].length
-}
+/** Unicode 码点长度：实现见 platform/posting/text（W0 T0.4） */
+export { runeLen } from '~/platform/posting/text.ts'
 
 /** 库存单据物料投影 / base_qty：实现见 platform/posting/material-qty（W0 T0.1） */
 export {

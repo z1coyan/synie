@@ -52,6 +52,7 @@ import {
   upperStatus,
   wireRequiredDecimal,
 } from '../common.ts'
+import { withIndexedFields } from '~/platform/posting/text.ts'
 import { utcToday } from '~/db/dates.ts'
 import type { QuotationService } from '../quotation/service.ts'
 import { deriveItemAmounts } from './amounts.ts'
@@ -1223,24 +1224,6 @@ export function createOrderService(
 export type OrderService = ReturnType<typeof createOrderService>
 
 // ---- helpers ----
-
-async function withIndexedFields<T>(
-  prefix: string,
-  run: () => Promise<T>,
-): Promise<T> {
-  try {
-    return await run()
-  } catch (error) {
-    if (!(error instanceof ApiError) || error.code !== 'validation' || !error.fields) throw error
-    const fields = Object.fromEntries(
-      Object.entries(error.fields).map(([field, messages]) => [
-        `${prefix}.${field}`,
-        messages,
-      ]),
-    )
-    throw ApiError.validation(error.message, fields)
-  }
-}
 
 function validateSalesOrderDraftHasNoOutsourcedLines(
   side: TradingSide,

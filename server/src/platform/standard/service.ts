@@ -42,6 +42,7 @@ import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { FieldMeta, ResourceMeta } from '~/platform/meta/types.ts'
+import { runeLen } from '~/platform/posting/text.ts'
 import { fromDbValue, mapRow, physicalFields, snapshot, toDbValue, writableFields } from './fields.ts'
 
 export interface StandardItem {
@@ -198,10 +199,6 @@ export function auditStamp(permit: Permit): Record<string, unknown> {
     audited_at: sql`(now() AT TIME ZONE 'utc')`,
     audited_by_id: permit.actor.userId || null,
   }
-}
-
-function runeLen(value: string): number {
-  return [...value].length
 }
 
 export function createStandardService<TItem extends StandardItem = StandardItem>(

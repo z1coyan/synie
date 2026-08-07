@@ -25,6 +25,7 @@ import { auditCreated, auditDiff, writeAudit } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import type { Actor, Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import { runeLen } from '~/platform/posting/text.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { createStandardChildService } from '~/platform/standard/child.ts'
@@ -671,10 +672,6 @@ function actorUserId(actor: Actor): string | null {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
     ? id
     : null
-}
-
-function runeLen(value: string): number {
-  return [...value].length
 }
 
 function validation(field: string, message: string): ApiError {

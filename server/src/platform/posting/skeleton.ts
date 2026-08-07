@@ -30,11 +30,7 @@ import type { InventoryEngine, StockLine } from '~/engines/inventory/index.ts'
 import { auditDiff, writeAudit } from '~/platform/audit/write.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-
-/** 对手类型落库口径（小写），与 trading/common 的 lowerParty 同语义 */
-function lowerPartyType(value: string): string {
-  return value.trim().toLowerCase()
-}
+import { lowerParty as lowerPartyType } from '~/platform/posting/text.ts'
 
 // ---------------------------------------------------------------------------
 // 履约过账（库存 + 条件总账双分录 + 订单投影）
