@@ -123,6 +123,8 @@ export interface ControlledProjectionSpec {
 | purOutsourcedIssues / purOutsourcedReceipts | 手写头/四类子行/audit·void；编号 assignedInTx | 标准 + 聚合 + workflow；nextInTx 系统编号 | W4；D6/D7 |
 | 同上 | 材料跨公司删 not_found 委外入库单不存在 | 委外入库成品行不存在（锁直接母行） | 孙级同 salDeliveries |
 | 同上 | skeleton 审核编排 | effect 内联；删 skeleton/shapes | 候选 2 收尾 |
+| 同上 | 非草稿再 audit：经 lockDraft 文案「仅草稿…可编辑」 | workflow audit guardMessage「仅草稿…可审核」 | W4 判官；与全站 audit 门对齐；mutableMessage 仍「可编辑」 |
+| 同上 | 成品行 PATCH warehouseId 不经 present（服务 `?? before`） | 路由补 warehouseIdPresent；schema nullable.optional | W4 判官：present 写路径下否则静默丢写 |
 
 ---
 
@@ -266,6 +268,8 @@ export interface ControlledProjectionSpec {
 | 同上 | 材料删跨公司 not_found「委外入库单不存在」 | 锁直接母行 →「委外入库成品行不存在」 | 与 salDeliveries 孙级同收敛 |
 | 材料/副产物 | 审计键 rename `source_id`/`warehouse_id` | 物理列名 `order_item_material_id` 等 | 标准 child 审计面 |
 | 投影列 | audit.exclude 列出头快照列 | meta `calculated`，无需 exclude | 与 fulfillment 条目同形态 |
+| audit 门 | 非草稿 audit 经 lockDraft →「仅草稿…可编辑」 | `guardMessage`「仅草稿…可审核」 | W4 判官；全站 audit 口径；改/删仍「可编辑」 |
+| 成品行 PATCH warehouseId | 服务 `input.warehouseId ?? before`（无 present） | 路由 `warehouseIdPresent` + nullable schema | W4 判官丢写；对齐头/副产物/履约 |
 
 **验收**：`outsourced/service.ts` ≤1100；四类子行手写 CRUD 删除；skeleton/shapes 删除；聚合 CASES 加 issue/receipt 两行。
 

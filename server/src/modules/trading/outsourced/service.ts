@@ -213,7 +213,7 @@ export function createOutsourcedService(
           label: '审核',
           from: ['DRAFT'],
           to: 'AUDITED',
-          guardMessage: `仅草稿${ISSUE_LABEL}可编辑`,
+          guardMessage: `仅草稿${ISSUE_LABEL}可审核`,
           stamps: ({ permit }) => auditStamp(permit),
           effect: async (trx, { before }) => {
             await effectAuditIssue(trx, inventory, before as IssueHead)
@@ -412,7 +412,7 @@ export function createOutsourcedService(
           label: '审核',
           from: ['DRAFT'],
           to: 'AUDITED',
-          guardMessage: `仅草稿${RECEIPT_LABEL}可编辑`,
+          guardMessage: `仅草稿${RECEIPT_LABEL}可审核`,
           stamps: ({ permit }) => auditStamp(permit),
           effect: async (trx, { before, input }) => {
             const override =

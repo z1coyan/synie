@@ -645,4 +645,45 @@ run('PG 集成（委外发料/入库生命周期）', () => {
       outsourced.deleteIssue(scoped(ISSUE_RESOURCE, 'delete'), issue.id),
     ).rejects.toThrow('仅草稿委外发料单可编辑')
   })
+
+  test('成品行 HTTP PATCH warehouseId 经 present 落库（判官丢写回归）', async () => {
+    const altWhId = crypto.randomUUID()
+    await sql`
+      INSERT INTO inv_warehouse(id, name, code, is_leaf, active, is_outsourced, company_id)
+      VALUES (${altWhId}::uuid, ${'备仓' + suffix}, ${'WA' + suffix}, true, true, false, ${companyId}::uuid)
+    `.execute(db)
+
+    const receipt = await outsourced.createReceipt(permit(RECEIPT_RESOURCE, 'create'), {
+      companyId,
+      partyType: 'SUPPLIER',
+      partyId: supplierId,
+      warehouseId: mainWhId,
+      outsourcedWarehouseId: outWhId,
+      debitAccountId: debitId,
+      creditAccountId: creditId,
+    })
+    const item = await outsourced.createReceiptItem(permit(RECEIPT_ITEM_RESOURCE, 'create'), {
+      receiptId: receipt.id,
+      idx: 99,
+      qty: '1',
+      orderItemId,
+      warehouseId: mainWhId,
+    })
+    expect(item.warehouseId).toBe(mainWhId)
+
+    const res = await http.request(`/api/v1/purchase/outsourced-receipt-items/${item.id}`, {
+      method: 'PATCH',
+      headers: {
+        authorization: 'Bearer scoped',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ warehouseId: altWhId }),
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { warehouseId: string }
+    expect(body.warehouseId).toBe(altWhId)
+
+    const reloaded = await outsourced.getReceiptItem(permit(RECEIPT_ITEM_RESOURCE, 'read'), item.id)
+    expect(reloaded.warehouseId).toBe(altWhId)
+  })
 })
