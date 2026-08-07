@@ -24,7 +24,14 @@ export function createEmployeePresentation(
     label: '员工',
     exclude: ['id', 'insertedAt', 'updatedAt'],
     fields: {
-      code: { order: 0, cols: 6, required: false, placeholder: '保存后自动编号' },
+      // 系统生成编号（ADR 2026-08-06）：readOnly 不进 create wire（对齐 material / meta.form）
+      code: {
+        order: 0,
+        cols: 6,
+        required: false,
+        edit: 'readOnly',
+        placeholder: '保存后自动编号',
+      },
       name: { order: 1, cols: 6, required: true },
       attendanceNo: { order: 2, cols: 6 },
       phone: { order: 3, cols: 6 },
