@@ -126,6 +126,9 @@ export interface ControlledProjectionSpec {
 | 同上 | skeleton 审核编排 | effect 内联；删 skeleton/shapes | 候选 2 收尾 |
 | 同上 | 非草稿再 audit：经 lockDraft 文案「仅草稿…可编辑」 | workflow audit guardMessage「仅草稿…可审核」 | W4 判官；与全站 audit 门对齐；mutableMessage 仍「可编辑」 |
 | 同上 | 成品行 PATCH warehouseId 不经 present（服务 `?? before`） | 路由补 warehouseIdPresent；schema nullable.optional | W4 判官：present 写路径下否则静默丢写 |
+| mfgDemands | 手写头/行 CRUD；confirm/close/void 手搓；服务 API 枚举小写；编号 assignedInTx 可选手填 | 标准头/子行 + 聚合 + workflow；wire 形大写（对齐 mfgOutputs）；nextInTx 系统编号 | W5；D6/D7 |
+| mfgDemands | 条目 meta 销售来源 readonly；快照列可写 | salesOrderItemId createOnly；快照/baseQty/status readonly + derived；label「需求行」 | 标准 child 可写面；「需求行参数不合法」保留 |
+| mfgDemands | 确认占量与作废下游闸手写事务内 | 进 transition effect | 钩子纪律；dispatch 非状态转移仍手写 |
 
 ---
 
@@ -273,6 +276,25 @@ export interface ControlledProjectionSpec {
 | 成品行 PATCH warehouseId | 服务 `input.warehouseId ?? before`（无 present） | 路由 `warehouseIdPresent` + nullable schema | W4 判官丢写；对齐头/副产物/履约 |
 
 **验收**：`outsourced/service.ts` ≤1100；四类子行手写 CRUD 删除；skeleton/shapes 删除；聚合 CASES 加 issue/receipt 两行。
+
+---
+
+## W5 · mfgDemands 聚合迁入
+
+**定案**：履约需求单头/条目 CRUD 与整单草稿三连改由 `platform/standard` 派生；confirm/close/void 迁 workflow（D7）；确认销售占用校验与作废下游拦截进 effect；dispatch / 安排 / 销售占用 / 点完成兼容 / 工单派生受信任写仍手写。
+
+- 头：`createStandardService`（numbering `demandNo` + workflow confirm/close/void）
+- 条目：`createStandardChildService`（物料快照 `derivedFields`；图纸 `afterWrite`/`beforeDelete`；投影可安排量）
+- 草稿三连：`createAggregateService`（`validationMessage: 履约需求单草稿参数不合法`；路由暂无草稿 URL，CASES/`_aggregateForContract` 暴露）
+- confirm effect：至少一行 + 销售来源占用校验（原 confirmDemand 事务体）
+- void effect：锁行 + 未作废工单 / 已审核采购闸
+- close：纯状态转移
+
+**路由/URL/DTO 冻结**（头/条目 CRUD + confirm/close/void/dispatch + 安排）。
+
+**有意差异**（见行为变更表）：服务层枚举改 wire 大写；编号系统生成；meta 可写面收口。
+
+**验收**：`demand-service.ts` ≤600；手写草稿/子行 CRUD 删除；聚合 CASES 加 mfgDemands 一行；manufacturing 相关测绿。
 
 ---
 

@@ -1,11 +1,12 @@
-/** 制造域类型：DB 存小写状态/履约方式，wire 见 wire.ts 转大写 */
+/** 制造域类型：DB 存小写状态/履约方式；Demand/DemandItem 已迁标准内核为 wire 形大写 */
 
-export type DemandStatus = 'draft' | 'confirmed' | 'closed' | 'voided'
-export type DemandItemStatus = 'pending' | 'scheduled' | 'completed'
-/** 单头指派类型（纯路由声明）：采购/生产/库存/关闭；make ⇔ 下发车间非空 */
-export type DemandAssignType = 'purchase' | 'make' | 'stock' | 'close'
-/** @deprecated 行级履约方式已取消；存量只读兼容 */
-export type FulfillmentMethod = 'make' | 'buy' | 'outsource' | 'stock'
+/** 履约需求单已迁标准动作内核：wire 形枚举大写（库内仍小写） */
+export type DemandStatus = 'DRAFT' | 'CONFIRMED' | 'CLOSED' | 'VOIDED'
+export type DemandItemStatus = 'PENDING' | 'SCHEDULED' | 'COMPLETED'
+/** 单头指派类型（纯路由声明）：采购/生产/库存/关闭；MAKE ⇔ 下发车间非空 */
+export type DemandAssignType = 'PURCHASE' | 'MAKE' | 'STOCK' | 'CLOSE'
+/** @deprecated 行级履约方式已取消；存量只读兼容（wire 大写） */
+export type FulfillmentMethod = 'MAKE' | 'BUY' | 'OUTSOURCE' | 'STOCK'
 export type WorkOrderStatus = 'in_progress' | 'completed' | 'voided'
 /** 生产入库已迁标准动作内核：Output/OutputItem 是 wire 形（枚举大写，库内仍小写） */
 export type OutputStatus = 'DRAFT' | 'AUDITED' | 'VOIDED'
@@ -104,7 +105,7 @@ export interface Demand {
   id: string
   demandNo: string
   demandDate: string
-  /** 指派类型（纯路由声明）：草稿保存即必填；make 时下发车间必填，其余类型必须为空 */
+  /** 指派类型（纯路由声明）：草稿保存即必填；MAKE 时下发车间必填，其余类型必须为空 */
   assignType: DemandAssignType
   /** 单头需求日：新增行的行需求日默认值；改单头不追溯既有行 */
   needDate: string | null
@@ -116,6 +117,8 @@ export interface Demand {
   createdById: string | null
   insertedAt: Date
   updatedAt: Date
+  /** 标准动作内核的 StandardItem 约束 */
+  [key: string]: unknown
 }
 
 export interface DemandItem {
@@ -150,6 +153,8 @@ export interface DemandItem {
   remainingOrderableQty: string
   insertedAt: Date
   updatedAt: Date
+  /** 标准动作内核的 StandardItem 约束 */
+  [key: string]: unknown
 }
 
 export interface WorkOrder {

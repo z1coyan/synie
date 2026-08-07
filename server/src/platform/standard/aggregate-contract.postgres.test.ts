@@ -47,6 +47,10 @@ import {
   createOutsourcedService,
   type OutsourcedService,
 } from '~/modules/trading/outsourced/service.ts'
+import {
+  createDemandService,
+  type DemandService,
+} from '~/modules/manufacturing/demand-service.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import { createInventoryEngine } from '~/engines/inventory/index.ts'
 import { createAggregateService, type AggregateService } from './aggregate.ts'
@@ -376,6 +380,8 @@ const CASES: AggregateContractCase[] = [
   ...reconciliationContractCases(),
   // W4：委外发料 / 委外入库（材料·副产物孙级；合同面测条目集合）
   ...outsourcedContractCases(),
+  // W5：履约需求单（确认占量/作废下游进 effect；合同面测头+条目）
+  mfgDemandContractCase(),
 ]
 
 /** 报价业务资源合同夹具（beforeAll 播种；prepare 只装配服务） */
@@ -1482,6 +1488,137 @@ function outsourcedContractCases(): AggregateContractCase[] {
   return [issueCase(), receiptCase()]
 }
 
+/** 履约需求单合同夹具（beforeAll 播种） */
+const demandFixture = {
+  companyId: crypto.randomUUID(),
+  otherCompanyId: crypto.randomUUID(),
+  currencyId: crypto.randomUUID(),
+  unitId: crypto.randomUUID(),
+  categoryId: crypto.randomUUID(),
+  materialId: crypto.randomUUID(),
+  material2Id: crypto.randomUUID(),
+  ready: false,
+  service: null as DemandService | null,
+  registry: null as Registry | null,
+  ruleIds: [] as string[],
+}
+
+function mfgDemandContractCase(): AggregateContractCase {
+  const asAgg = (): AggregateService => demandFixture.service!._aggregateForContract()
+  const validDraft = () => ({
+    companyId: demandFixture.companyId,
+    assignType: 'PURCHASE',
+    demandDate: '2026-07-31',
+    needDate: '2026-08-15',
+    remarks: '合同-demand',
+    assignedDeptId: null,
+    items: [
+      {
+        idx: 1,
+        materialId: demandFixture.materialId,
+        unitId: demandFixture.unitId,
+        qty: '10',
+        needDate: '2026-08-15',
+        remarks: null,
+      },
+      {
+        idx: 2,
+        materialId: demandFixture.material2Id,
+        unitId: demandFixture.unitId,
+        qty: '20',
+        needDate: '2026-08-20',
+        remarks: null,
+      },
+    ],
+  })
+  const noopFrom = (created: Record<string, unknown>) => {
+    const items = asItems(created, 'items').map((item) => ({
+      id: item.id,
+      idx: item.idx,
+      materialId: item.materialId,
+      unitId: item.unitId,
+      qty: item.qty,
+      needDate: item.needDate,
+      remarks: item.remarks,
+    }))
+    return {
+      companyId: created.companyId,
+      assignType: created.assignType,
+      demandDate: created.demandDate,
+      needDate: created.needDate,
+      remarks: created.remarks,
+      assignedDeptId: created.assignedDeptId ?? null,
+      items,
+    }
+  }
+  return {
+    title: '履约需求单（mfgDemands）',
+    headResource: 'mfgDemands',
+    authzResources: ['mfgDemands', 'mfgDemandItems'],
+    headTable: 'mfg_demand',
+    itemTable: 'mfg_demand_item',
+    itemsKey: 'items',
+    prepare: () => ({
+      service: asAgg(),
+      registry: demandFixture.registry!,
+    }),
+    companyId: () => demandFixture.companyId,
+    otherCompanyId: () => demandFixture.otherCompanyId,
+    validDraft,
+    buildDiffReplace: (created) => {
+      const items = asItems(created, 'items')
+      const kept = items[0]!
+      const deleted = items[1]!
+      return {
+        keptItemId: String(kept.id),
+        deletedItemId: String(deleted.id),
+        input: {
+          ...noopFrom(created),
+          remarks: '合同改-demand',
+          items: [
+            {
+              id: kept.id,
+              idx: 1,
+              materialId: kept.materialId,
+              unitId: kept.unitId,
+              qty: '11',
+              needDate: kept.needDate,
+              remarks: '保留',
+            },
+            {
+              idx: 3,
+              materialId: demandFixture.material2Id,
+              unitId: demandFixture.unitId,
+              qty: '3',
+              needDate: '2026-08-25',
+              remarks: null,
+            },
+          ],
+        },
+      }
+    },
+    buildNoopReplace: noopFrom,
+    buildFailReplace: (created) => ({
+      ...noopFrom(created),
+      remarks: '不应落库',
+      items: [
+        ...asItems(noopFrom(created), 'items'),
+        {
+          idx: 9,
+          materialId: demandFixture.materialId,
+          unitId: demandFixture.unitId,
+          // needDate 缺 → 校验失败
+          qty: '1',
+        },
+      ],
+    }),
+    buildEmptyReplace: (created) => ({
+      ...noopFrom(created),
+      items: [],
+    }),
+  }
+}
+
 // ── 套件 ────────────────────────────────────────────────────────────────────
 
 run('聚合草稿合同（postgres）', () => {
@@ -1522,6 +1659,8 @@ run('聚合草稿合同（postgres）', () => {
     { inventory: createInventoryEngine(), gl: createGlEngine() },
     sealed,
   )
+  demandFixture.registry = sealed
+  demandFixture.service = createDemandService(db, numbering, sealed)
 
   beforeAll(async () => {
     await sql`
@@ -2065,6 +2204,56 @@ run('聚合草稿合同（postgres）', () => {
       }
       ox.ready = true
     }
+
+    // 履约需求单夹具（W5）
+    {
+      const df = demandFixture
+      const tag = `MD${suffix}`
+      await sql`
+        INSERT INTO bas_currency(id,name,iso_code,symbol,active)
+        VALUES (${df.currencyId}::uuid, ${tag + '币'}, ${'M' + suffix.slice(0, 2)}, '¤', true)
+      `.execute(db)
+      await sql`
+        INSERT INTO bas_company(id,code,name,short_name,base_currency_id) VALUES
+          (${df.companyId}::uuid, ${'M' + suffix}, ${tag + '公司'}, 'MD', ${df.currencyId}::uuid),
+          (${df.otherCompanyId}::uuid, ${'N' + suffix}, ${tag + '他司'}, 'ME', ${df.currencyId}::uuid)
+      `.execute(db)
+      await sql`
+        INSERT INTO bas_unit(id,unit_type,is_base,name,symbol,ratio)
+        VALUES (${df.unitId}::uuid, ${'md-' + suffix}, true, ${tag + '件'}, ${'um' + suffix}, 1)
+      `.execute(db)
+      await sql`
+        INSERT INTO inv_material_category(id,code,name,is_leaf,active)
+        VALUES (${df.categoryId}::uuid, ${'MD' + suffix}, ${tag + '分类'}, true, true)
+      `.execute(db)
+      await sql`
+        INSERT INTO inv_material(id,code,name,category_id,default_unit_id,active,material_type) VALUES
+          (${df.materialId}::uuid, ${'MM' + suffix}, ${tag + '物料'}, ${df.categoryId}::uuid, ${df.unitId}::uuid, true, 'STOCK'),
+          (${df.material2Id}::uuid, ${'MN' + suffix}, ${tag + '物料二'}, ${df.categoryId}::uuid, ${df.unitId}::uuid, true, 'STOCK')
+      `.execute(db)
+      {
+        const existing = await db
+          .selectFrom('sys_numbering_rule')
+          .select('id')
+          .where('resource', '=', 'mfg.demand')
+          .where('enabled', '=', true)
+          .executeTakeFirst()
+        if (!existing) {
+          const rule = await numbering.create(permit('sysNumberingRules', 'create'), {
+            resource: 'mfg.demand',
+            name: `${tag}需求规则`,
+            segments: [
+              { type: 'text', value: `MD${suffix}-` },
+              { type: 'seq', padding: 4 },
+            ],
+            perCompany: false,
+            enabled: true,
+          })
+          df.ruleIds.push(rule.id)
+        }
+      }
+      df.ready = true
+    }
   })
 
   afterAll(async () => {
@@ -2184,6 +2373,25 @@ run('聚合草稿合同（postgres）', () => {
       await sql`DELETE FROM pur_supplier WHERE id=${rf.supplierId}::uuid`.execute(db)
       await sql`DELETE FROM bas_company WHERE id IN (${rf.companyId}::uuid, ${rf.otherCompanyId}::uuid)`.execute(db)
       await sql`DELETE FROM bas_currency WHERE id=${rf.currencyId}::uuid`.execute(db)
+    }
+
+    // 履约需求单夹具清理
+    {
+      const df = demandFixture
+      for (const id of df.ruleIds) {
+        await db.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
+      }
+      await sql`DELETE FROM sys_audit_log WHERE company_id=${df.companyId}::uuid`.execute(db)
+      await sql`DELETE FROM mfg_demand WHERE company_id=${df.companyId}::uuid`.execute(db)
+      await sql`
+        DELETE FROM inv_material WHERE id IN (${df.materialId}::uuid, ${df.material2Id}::uuid)
+      `.execute(db)
+      await sql`DELETE FROM inv_material_category WHERE id=${df.categoryId}::uuid`.execute(db)
+      await sql`DELETE FROM bas_unit WHERE id=${df.unitId}::uuid`.execute(db)
+      await sql`
+        DELETE FROM bas_company WHERE id IN (${df.companyId}::uuid, ${df.otherCompanyId}::uuid)
+      `.execute(db)
+      await sql`DELETE FROM bas_currency WHERE id=${df.currencyId}::uuid`.execute(db)
     }
 
     await sql`DROP TABLE IF EXISTS std_ac_tier`.execute(db)

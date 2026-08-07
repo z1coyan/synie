@@ -148,10 +148,10 @@ export function createWorkOrderService(
         true,
       )
       const parent = await loadDemandAuthorized(trx, permit, demandTarget, item.demandId, true)
-      if (parent.status !== 'confirmed') {
+      if (parent.status !== 'CONFIRMED') {
         throw new ApiError('conflict', '仅已确认未关闭需求单的行可生成工单')
       }
-      if (item.status === 'completed') {
+      if (item.status === 'COMPLETED') {
         throw new ApiError('conflict', '已完成的需求行不可生成工单')
       }
       const remBase = hardRemainingArrangeable(item.baseQty, item.arrangedQty)

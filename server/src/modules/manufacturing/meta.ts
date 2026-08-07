@@ -437,6 +437,7 @@ export function demandResourceMeta(): ResourceMeta {
       }),
       field('remarks', 'remarks', 'string', '备注', { filterable: true, sortable: true }),
       field('status', 'status', 'enum', '状态', {
+        readonly: true,
         filterable: true,
         sortable: true,
         enumOptions: demandStatusOptions,
@@ -451,7 +452,9 @@ export function demandResourceMeta(): ResourceMeta {
         filterable: true,
         sortable: true,
       }),
-      fk('company_id', 'companyId', '公司', 'basCompanies', 'company', 'name'),
+      fk('company_id', 'companyId', '公司', 'basCompanies', 'company', 'name', {
+        createOnly: true,
+      }),
       fk('created_by_id', 'createdById', '录入人', 'sysUsers', 'createdBy', 'name'),
       fk(
         'assigned_dept_id',
@@ -492,6 +495,8 @@ export function demandItemResourceMeta(): ResourceMeta {
     attachments: {},
     permissionPrefix: 'mfg.demand',
     permissionLabel: '履约需求单',
+    /** 子行校验文案用 label（「需求行参数不合法」），permissionLabel 仍共享需求单前缀 */
+    label: '需求行',
     table: 'mfg_demand_item',
     authz: { kind: 'via', parent: 'mfgDemands', fk: 'demand_id' },
     fields: [
@@ -499,6 +504,7 @@ export function demandItemResourceMeta(): ResourceMeta {
       field('idx', 'idx', 'integer', '行号', { filterable: true, sortable: true }),
       field('qty', 'qty', 'decimal', '数量', { filterable: true, sortable: true }),
       field('base_qty', 'baseQty', 'decimal', '折算默认单位数量', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
@@ -534,23 +540,31 @@ export function demandItemResourceMeta(): ResourceMeta {
         enumOptions: fulfillmentOptions,
       }),
       field('status', 'status', 'enum', '行状态', {
+        readonly: true,
         filterable: true,
         sortable: true,
         enumOptions: demandItemStatusOptions,
       }),
       field('material_code', 'materialCode', 'string', '物料编号快照', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
       field('material_name', 'materialName', 'string', '物料名称快照', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
       field('material_spec', 'materialSpec', 'string', '物料规格快照', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
-      field('unit_name', 'unitName', 'string', '单位名称快照', { filterable: true, sortable: true }),
+      field('unit_name', 'unitName', 'string', '单位名称快照', {
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      }),
       field('remarks', 'remarks', 'string', '行备注', { filterable: true, sortable: true }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         readonly: true,
@@ -562,11 +576,15 @@ export function demandItemResourceMeta(): ResourceMeta {
         filterable: true,
         sortable: true,
       }),
-      fk('demand_id', 'demandId', '履约需求单', 'mfgDemands', 'demand', 'demandNo'),
-      fk('company_id', 'companyId', '公司', 'basCompanies', 'company', 'name'),
+      fk('demand_id', 'demandId', '履约需求单', 'mfgDemands', 'demand', 'demandNo', {
+        createOnly: true,
+      }),
+      fk('company_id', 'companyId', '公司', 'basCompanies', 'company', 'name', {
+        createOnly: true,
+      }),
       fk('material_id', 'materialId', '物料', 'invMaterials', 'material', 'name'),
       fk('unit_id', 'unitId', '单位', 'basUnits', 'unit', 'name'),
-      // 来源销售订单条目：创建时定型（勾选带入），更新路径一律拒绝变更（service 硬校验）
+      // 来源销售订单条目：创建时定型（勾选带入）；createOnly 挡 update wire，服务钩子拒绝改键
       fk(
         'sales_order_item_id',
         'salesOrderItemId',
@@ -574,7 +592,7 @@ export function demandItemResourceMeta(): ResourceMeta {
         'salOrderItems',
         'salesOrderItem',
         'materialCode',
-        { readonly: true },
+        { createOnly: true },
       ),
       // 物料需求派生写入；与销售来源互斥，只读穿透展示（不进表单）
       fk(
