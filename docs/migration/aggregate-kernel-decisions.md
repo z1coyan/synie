@@ -1,6 +1,6 @@
 # 聚合单据内核·行为变更与设计决策日志
 
-迁移分支：`feat/aggregate-kernel-w0`（基线 `main` @ 638235fb；计划见 `.scratch/aggregate-kernel/plan.md` / `/tmp/aggregate-kernel-plan-20260807.md`）。
+迁移分支：`feat/aggregate-kernel`（由 `feat/aggregate-kernel-w0` 改名延续；基线 `main` @ 638235fb；计划见 `.scratch/aggregate-kernel/plan.md` / `/tmp/aggregate-kernel-plan-20260807.md`）。
 
 铁律：红测试 = 显式决策点；每一条有意的行为变更在此记一行（资源/旧行为/新行为/理由）。
 报错文案与 wire 字节不变——调用点原有 code/status/字段键/中文文案逐字保留（用 label/字段参数化，不要统一成一种文案）。
