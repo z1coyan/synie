@@ -2,6 +2,7 @@
  * 物料 Presentation Extension：字段/effects/tabs 静态面。
  * 附件与单位转换 tab 内容由页面经 extraContent / tabExtraContent 组合（业务状态在页面）。
  */
+import { requireWriter } from '../catalog/require-writer'
 import type { ResourceBinding } from '../catalog/types'
 import type { PresentationExtension } from './types'
 import type { FieldOverride } from '~/components/synie-record-drawer/fields'
@@ -88,15 +89,11 @@ export async function submitMaterialForm(
   rowId: string | undefined,
 ): Promise<string> {
   if (mode === 'view') throw new Error('查看模式不可提交')
-  const writer = presentation.binding.writer
-  if (!writer) throw new Error('物料不支持写入')
   if (mode === 'create') {
-    if (!('create' in writer) || !writer.create) throw new Error('物料不支持 create')
-    const saved = await writer.create(values)
+    const saved = await requireWriter(presentation.binding, 'create', '物料')(values)
     return String(saved.id)
   }
   if (!rowId) throw new Error('更新物料缺少 id')
-  if (!('update' in writer) || !writer.update) throw new Error('物料不支持 update')
-  const saved = await writer.update(rowId, values)
+  const saved = await requireWriter(presentation.binding, 'update', '物料')(rowId, values)
   return String(saved.id)
 }
