@@ -2,10 +2,11 @@
  * 标准履约：销售发货 / 采购入库 + 装箱清单。
  * 审核单事务：库存引擎 + 订单投影 + 金额>0 时 GL 引擎（零金额跳总账）。
  *
- * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
- * 列表 `listAuthorized`、写前取行 `loadAuthorized`（不命中一律 not_found）、
- * create 走 `assertCompanyWritable`。模块内零鉴权代码。
- * 状态前置条件（仅草稿可编辑等）是领域不变量，留在本文件抛 conflict。
+ * W2 采购入库：头/条目 + 整单草稿由 platform/standard 派生（createStandardService +
+ * createStandardChildService + createAggregateService）。销售发货仍手写（W3 再迁）。
+ * 审核/作废双侧仍走 posting skeleton（跨引擎效果，不进聚合草稿钩子）。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
  * 装箱行的可达性经两级 via（pack_line → pack_box → sal_delivery）递归到发货单谓词。
  */
 import type { ListQuery } from '@synie/shared'
@@ -28,6 +29,9 @@ import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { AuthzTarget } from '~/platform/meta/resource-authz.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
+import { createAggregateService } from '~/platform/standard/aggregate.ts'
+import { createStandardChildService } from '~/platform/standard/child.ts'
+import { createStandardService } from '~/platform/standard/service.ts'
 import { listAuthorized } from '~/db/list.ts'
 import { assertCompanyWritable, loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
 import { mapWriteError } from '~/db/dberr.ts'
@@ -276,7 +280,30 @@ export interface PurchaseReceiptDraftDto {
   items: ReturnType<typeof mapItemDto>[]
 }
 
-type Numberer = Pick<NumberingService, 'assignedInTx'>
+type Numberer = Pick<NumberingService, 'assignedInTx' | 'nextInTx'>
+
+const PUR_ITEM_DERIVED = [
+  'baseQty',
+  'materialCode',
+  'materialName',
+  'materialSpec',
+  'customerPartNo',
+  'unitName',
+  'orderNo',
+  'orderQty',
+  'orderBaseQty',
+  'orderUnitName',
+  'orderPrice',
+  'orderAmount',
+  'orderBasePrice',
+  'orderBaseAmount',
+  'orderTaxRate',
+  'orderCurrencyCode',
+] as const
+
+const FULFILLMENT_WRITE_ERRORS = [
+  { code: '23505', message: '单号已存在' },
+] as const
 
 export function createFulfillmentService(
   db: Kysely<Database>,
@@ -299,6 +326,232 @@ export function createFulfillmentService(
   }
   const packBoxTarget = registry.authzTarget(PACK_BOX_RESOURCE)
   const packLineTarget = registry.authzTarget(PACK_LINE_RESOURCE)
+
+  // ── W2 采购入库：标准头 / 子行 / 聚合草稿 ──────────────────────────────
+  const purSpec = fulfillmentSpec('purchase')
+  const purHeads = createStandardService({
+    db,
+    registry,
+    resource: purSpec.headResource,
+    notFound: `${purSpec.label}不存在`,
+    defaultOrder: sql`"receipt_date" DESC, "id" ASC`,
+    writeErrors: [
+      { code: '23505', message: `${purSpec.label}单号已存在` },
+    ],
+    numbering: { service: numberer, field: 'receiptNo' },
+    hooks: {
+      insertColumns: ({ permit }) => ({
+        status: 'draft',
+        created_by_id: permit.actor.userId || null,
+      }),
+      validate: ({ action, draft, before }) => {
+        validatePurchaseHeadWire(draft, {
+          requireReceiptNo: action === 'update',
+          requireDate: action === 'update' || draft.receiptDate != null,
+        })
+        if (
+          action === 'update' &&
+          before &&
+          draft.receiptNo !== undefined &&
+          String(draft.receiptNo).trim() !== String(before.receiptNo)
+        ) {
+          throw ApiError.validation(`${purSpec.label}参数不合法`, {
+            receiptNo: ['编号创建后不可修改'],
+          })
+        }
+      },
+      beforeWrite: async (trx, { action, draft, before }) => {
+        if (action === 'create') {
+          if (!draft.receiptDate) draft.receiptDate = utcToday()
+          else draft.receiptDate = toDateOnly(String(draft.receiptDate))
+        } else if (draft.receiptDate != null) {
+          draft.receiptDate = toDateOnly(String(draft.receiptDate))
+        }
+        if (draft.postingDate != null && draft.postingDate !== '') {
+          draft.postingDate = toDateOnly(String(draft.postingDate))
+        } else if (draft.postingDate === '') {
+          draft.postingDate = null
+        }
+        if (draft.partyType != null) draft.partyType = lowerParty(String(draft.partyType))
+        validatePurchaseHeadWire(draft, {
+          requireReceiptNo: action === 'update',
+          requireDate: true,
+        })
+        const headLike: FulfillmentHead = {
+          id: String(before?.id ?? ''),
+          no: String(draft.receiptNo ?? before?.receiptNo ?? 'x'),
+          documentDate: String(draft.receiptDate ?? before?.receiptDate ?? ''),
+          postingDate:
+            draft.postingDate === undefined
+              ? ((before?.postingDate as string | null | undefined) ?? null)
+              : (draft.postingDate as string | null),
+          partyType: String(draft.partyType ?? before?.partyType ?? ''),
+          partyId: String(draft.partyId ?? before?.partyId ?? ''),
+          remarks:
+            draft.remarks === undefined
+              ? ((before?.remarks as string | null | undefined) ?? null)
+              : (draft.remarks as string | null),
+          status: 'DRAFT',
+          auditedAt: null,
+          insertedAt: '',
+          updatedAt: '',
+          companyId: String(draft.companyId ?? before?.companyId ?? ''),
+          warehouseId:
+            draft.warehouseId === undefined
+              ? ((before?.warehouseId as string | null | undefined) ?? null)
+              : (draft.warehouseId as string | null),
+          debitAccountId: String(draft.debitAccountId ?? before?.debitAccountId ?? ''),
+          creditAccountId: String(draft.creditAccountId ?? before?.creditAccountId ?? ''),
+          createdById: null,
+          auditedById: null,
+        }
+        await validateHeadRefs(trx, purSpec, headLike)
+        if (action === 'update' && before) {
+          const partyChanged =
+            lowerParty(String(draft.partyType ?? before.partyType)) !==
+              lowerParty(String(before.partyType)) ||
+            String(draft.partyId ?? before.partyId) !== String(before.partyId)
+          if (partyChanged) {
+            const has = await sql<{ e: boolean }>`
+              SELECT EXISTS(
+                SELECT 1 FROM pur_receipt_item WHERE receipt_id=${String(before.id)}::uuid
+              ) AS e
+            `.execute(trx)
+            if (has.rows[0]?.e) {
+              throw new ApiError('conflict', '已有条目时不可修改履约对手')
+            }
+          }
+        }
+      },
+      beforeDelete: async (trx, { item }) => {
+        await sql`
+          DELETE FROM sys_attachment
+          WHERE owner_type=${purSpec.itemOwnerType}
+            AND owner_id IN (
+              SELECT id FROM pur_receipt_item WHERE receipt_id=${String(item.id)}::uuid
+            )
+        `.execute(trx)
+      },
+    },
+    workflow: {
+      mutableMessage: `仅草稿${purSpec.label}可编辑`,
+      // 审核/作废仍走 skeleton 弹射（跨引擎）；workflow 仅提供草稿可变状态门
+      transitions: [],
+    },
+  })
+
+  const purItems = createStandardChildService({
+    db,
+    registry,
+    resource: purSpec.itemResource,
+    notFound: `${purSpec.itemLabel}不存在`,
+    defaultOrder: sql`"idx" ASC, "id" ASC`,
+    writeErrors: FULFILLMENT_WRITE_ERRORS,
+    recordLabel: (item) => String(item.idx),
+    derivedFields: [...PUR_ITEM_DERIVED],
+    projection: {
+      source: ITEM_SOURCE.purchase,
+      alias: ITEM_ALIAS,
+      // party_id 是物理列（join 投影）；calculated 列走 selectExtra
+      selectExtra: sql`receipt_no, receipt_date, receipt_status, party_type, remaining_reconcilable_qty`,
+      mapExtra: (row) => mapPurchaseItemExtras(row),
+    },
+    parent: {
+      resource: purSpec.headResource,
+      fkField: 'receiptId',
+      notFound: `${purSpec.label}不存在`,
+      inheritFields: ['companyId'],
+      gate: (parent) => {
+        if (String(parent.status) !== 'DRAFT') {
+          throw new ApiError('conflict', `仅草稿${purSpec.label}可编辑`)
+        }
+      },
+    },
+    hooks: {
+      validate: ({ draft }) => {
+        const qty = draft.qty
+        if (qty === undefined || qty === null || qty === '') {
+          throw ApiError.validation(`${purSpec.itemLabel}参数不合法`, { qty: ['必填'] })
+        }
+        if (!decimal(String(qty)).gt(0)) {
+          throw ApiError.validation(`${purSpec.itemLabel}参数不合法`, { qty: ['必须大于 0'] })
+        }
+        if (!draft.orderItemId) {
+          throw ApiError.validation(`${purSpec.itemLabel}参数不合法`, {
+            orderItemId: ['必填'],
+          })
+        }
+        if (draft.remarks != null && runeLen(String(draft.remarks)) > 512) {
+          throw ApiError.validation(`${purSpec.itemLabel}参数不合法`, {
+            remarks: ['最多 512 个字符'],
+          })
+        }
+      },
+      beforeWrite: async (trx, { draft, parent }) => {
+        const derived = await deriveItem(trx, purSpec, {
+          companyId: String(parent.companyId),
+          partyType: String(parent.partyType),
+          partyId: String(parent.partyId),
+        }, {
+          idx: Number(draft.idx),
+          qty: decimal(String(draft.qty)),
+          orderItemId: String(draft.orderItemId),
+          unitId: draft.unitId == null || draft.unitId === '' ? null : String(draft.unitId),
+          warehouseId:
+            draft.warehouseId === undefined || draft.warehouseId === null || draft.warehouseId === ''
+              ? null
+              : String(draft.warehouseId),
+          remarks: draft.remarks == null ? null : String(draft.remarks),
+        })
+        draft.idx = derived.idx
+        draft.qty = wireRequiredDecimal(derived.qty)
+        draft.baseQty = wireRequiredDecimal(derived.baseQty)
+        draft.materialId = derived.materialId
+        draft.unitId = derived.unitId
+        draft.warehouseId = derived.warehouseId
+        draft.materialCode = derived.materialCode
+        draft.materialName = derived.materialName
+        draft.materialSpec = derived.materialSpec
+        draft.customerPartNo = derived.customerPartNo
+        draft.unitName = derived.unitName
+        draft.orderNo = derived.orderNo
+        draft.orderQty = wireRequiredDecimal(derived.orderQty)
+        draft.orderBaseQty = wireRequiredDecimal(derived.orderBaseQty)
+        draft.orderUnitName = derived.orderUnitName
+        draft.orderPrice = wireRequiredDecimal(derived.orderPrice)
+        draft.orderAmount = wireRequiredDecimal(derived.orderAmount)
+        draft.orderBasePrice = wireRequiredDecimal(derived.orderBasePrice)
+        draft.orderBaseAmount = wireRequiredDecimal(derived.orderBaseAmount)
+        draft.orderTaxRate = wireRequiredDecimal(derived.orderTaxRate)
+        draft.orderCurrencyCode = derived.orderCurrencyCode
+        draft.remarks = derived.remarks
+        draft.orderItemId = derived.orderItemId
+      },
+      afterWrite: async (trx, { item, parent }) => {
+        await syncDrawingAttachments(
+          trx,
+          purSpec.itemOwnerType,
+          String(item.id),
+          String(item.materialId),
+          String(parent.companyId),
+        )
+      },
+      beforeDelete: async (trx, { item }) => {
+        await sql`
+          DELETE FROM sys_attachment
+          WHERE owner_type=${purSpec.itemOwnerType} AND owner_id=${String(item.id)}::uuid
+        `.execute(trx)
+      },
+    },
+  })
+
+  const purAggregate = createAggregateService({
+    db,
+    registry,
+    head: purHeads,
+    validationMessage: '采购入库草稿参数不合法',
+    children: [{ key: 'items', service: purItems }],
+  })
 
   /** 按 Permit 取单头（可锁）；不命中一律 not_found */
   async function loadAuthorizedHead(
@@ -339,6 +592,13 @@ export function createFulfillmentService(
   }
 
   async function listHeads(permit: Permit, side: TradingSide, query: Partial<ListQuery>) {
+    if (side === 'purchase') {
+      const r = await purHeads.list(permit, query)
+      return {
+        count: r.count,
+        results: r.results.map((row) => presentPurchaseHead(row as Record<string, unknown>)),
+      }
+    }
     const spec = fulfillmentSpec(side)
     return listAuthorized({
       db,
@@ -355,6 +615,9 @@ export function createFulfillmentService(
   }
 
   async function getHead(permit: Permit, side: TradingSide, id: string) {
+    if (side === 'purchase') {
+      return presentPurchaseHead((await purHeads.get(permit, id)) as Record<string, unknown>)
+    }
     const spec = fulfillmentSpec(side)
     return mapHeadDto(side, await loadAuthorizedHead(db, permit, spec, id))
   }
@@ -529,6 +792,10 @@ export function createFulfillmentService(
   }
 
   async function deleteHead(permit: Permit, side: TradingSide, id: string) {
+    if (side === 'purchase') {
+      await purHeads.remove(permit, id)
+      return
+    }
     const spec = fulfillmentSpec(side)
     await withTx(db, async (trx) => {
       const item = mapHead(await lockDraftHead(trx, permit, spec, id))
@@ -659,6 +926,13 @@ export function createFulfillmentService(
   }
 
   async function listItems(permit: Permit, side: TradingSide, query: Partial<ListQuery>) {
+    if (side === 'purchase') {
+      const r = await purItems.list(permit, query)
+      return {
+        count: r.count,
+        results: r.results.map((row) => presentPurchaseItem(row as Record<string, unknown>)),
+      }
+    }
     return listAuthorized({
       db,
       permit,
@@ -675,6 +949,9 @@ export function createFulfillmentService(
 
   /** 条目可达性经 via 链递归到母单自身的行谓词；与列表共用同一份投影 */
   async function getItem(permit: Permit, side: TradingSide, id: string) {
+    if (side === 'purchase') {
+      return presentPurchaseItem((await purItems.get(permit, id)) as Record<string, unknown>)
+    }
     const spec = fulfillmentSpec(side)
     return loadAuthorizedFrom({
       db,
@@ -1298,76 +1575,21 @@ export function createFulfillmentService(
     })
   }
 
-  /** 母单已授权（loadAuthorizedHead / lockDraftHead）后的子树装载 */
-  async function loadPurchaseReceiptDraft(
-    handle: DbHandle,
-    id: string,
-  ): Promise<PurchaseReceiptDraftDto> {
-    const spec = fulfillmentSpec('purchase')
-    const headRow = await loadHead(handle, spec, id)
-    if (!headRow) throw new ApiError('not_found', '采购入库单不存在')
-    const itemRows = await sql<Record<string, unknown>>`
-      SELECT i.*, h.receipt_no, h.receipt_date, h.status AS receipt_status,
-        h.party_type, h.party_id,
-        (i.base_qty - i.reconciled_qty) AS remaining_reconcilable_qty
-      FROM pur_receipt_item i
-      JOIN pur_receipt h ON h.id=i.receipt_id
-      WHERE i.receipt_id=${id}::uuid
-      ORDER BY i.idx, i.id
-    `.execute(handle)
-    return {
-      ...mapHeadDto('purchase', headRow),
-      id: String(headRow.id),
-      receiptNo: String(headRow.receipt_no),
-      receiptDate: asDate(headRow.receipt_date),
-      items: itemRows.rows.map((row) => mapItemDto('purchase', row)),
-    }
-  }
-
   /** 领域专用完整草稿读取；不经过分页子资源 query。 */
   async function getPurchaseReceiptDraft(
     permit: Permit,
     id: string,
   ): Promise<PurchaseReceiptDraftDto> {
-    const spec = fulfillmentSpec('purchase')
-    return withReadSnapshot(db, async (snapshot) => {
-      await loadAuthorizedHead(snapshot, permit, spec, id)
-      return loadPurchaseReceiptDraft(snapshot, id)
-    })
+    return presentPurchaseDraft(await purAggregate.loadDraft(permit, id))
   }
 
   async function createPurchaseReceiptDraft(
     permit: Permit,
     input: PurchaseReceiptDraftInput,
   ): Promise<PurchaseReceiptDraftDto> {
-    const identityFields: Record<string, string[]> = {}
-    input.items.forEach((item, itemIndex) => {
-      if (item.id !== undefined) {
-        identityFields[`items[${itemIndex}].id`] = ['新记录不能包含 id']
-      }
-    })
-    if (Object.keys(identityFields).length > 0) {
-      throw ApiError.validation('采购入库草稿参数不合法', identityFields)
-    }
-    // 入参校验（400）先于公司边界（404）
-    assertCompanyPresent(fulfillmentSpec('purchase'), input.companyId, 'header.companyId')
-    assertCompanyWritable(permit, input.companyId, '公司不存在')
-
-    return withTx(db, async (trx) => {
-      const head = await withIndexedFields(
-        'header',
-        () => createHeadInTx(trx, permit, 'purchase', input),
-        { number: 'receiptNo', documentDate: 'receiptDate' },
-      )
-      const receiptId = String(head.id)
-      for (let itemIndex = 0; itemIndex < input.items.length; itemIndex++) {
-        const item = input.items[itemIndex]!
-        await withIndexedFields(`items[${itemIndex}]`, () =>
-          createItemInTx(trx, permit, 'purchase', { ...item, headId: receiptId }),
-        )
-      }
-      return loadPurchaseReceiptDraft(trx, receiptId)
-    })
+    return presentPurchaseDraft(
+      await purAggregate.createDraft(permit, purchaseDraftPayload(input)),
+    )
   }
 
   /**
@@ -1379,85 +1601,26 @@ export function createFulfillmentService(
     id: string,
     input: PurchaseReceiptDraftInput,
   ): Promise<PurchaseReceiptDraftDto> {
-    return withTx(db, async (trx) => {
-      const spec = fulfillmentSpec('purchase')
-      const before = mapHead(await lockDraftHead(trx, permit, spec, id))
-      if (input.companyId !== before.companyId) {
-        throw ApiError.validation('采购入库草稿参数不合法', {
-          'header.companyId': ['创建后不可修改公司'],
-        })
-      }
-
-      const existingItems = await trx
-        .selectFrom('pur_receipt_item')
-        .select('id')
-        .where('receipt_id', '=', id)
-        .execute()
-      const existingItemIds = new Set(existingItems.map((item) => item.id))
-      validatePurchaseReceiptDraftIdentities(input, existingItemIds)
-
-      const requestedItems = new Set(input.items.flatMap((item) => item.id ?? []))
-
-      for (const oldId of existingItemIds) {
-        if (requestedItems.has(oldId)) continue
-        await sql`
-          DELETE FROM sys_attachment
-          WHERE owner_type=${spec.itemOwnerType} AND owner_id=${oldId}::uuid
-        `.execute(trx)
-        await trx.deleteFrom('pur_receipt_item').where('id', '=', oldId).execute()
-      }
-
-      await withIndexedFields(
-        'header',
-        () =>
-          updateHeadInTx(trx, permit, 'purchase', id, {
-            no: input.no ?? before.no,
-            documentDate: input.documentDate ?? before.documentDate,
-            postingDate: input.postingDate ?? null,
-            postingDatePresent: true,
-            partyType: input.partyType,
-            partyId: input.partyId,
-            remarks: input.remarks ?? null,
-            remarksPresent: true,
-            warehouseId: input.warehouseId ?? null,
-            warehouseIdPresent: true,
-            debitAccountId: input.debitAccountId,
-            creditAccountId: input.creditAccountId,
-          }),
-        { number: 'receiptNo', documentDate: 'receiptDate' },
-      )
-
-      for (let itemIndex = 0; itemIndex < input.items.length; itemIndex++) {
-        const item = input.items[itemIndex]!
-        if (item.id === undefined) {
-          await withIndexedFields(`items[${itemIndex}]`, () =>
-            createItemInTx(trx, permit, 'purchase', { ...item, headId: id }),
-          )
-        } else {
-          await withIndexedFields(`items[${itemIndex}]`, () =>
-            updateItemInTx(trx, permit, 'purchase', item.id!, {
-              idx: item.idx,
-              qty: item.qty,
-              orderItemId: item.orderItemId,
-              unitId: item.unitId ?? null,
-              unitIdPresent: true,
-              warehouseId: item.warehouseId,
-              warehouseIdPresent: true,
-              remarks: item.remarks ?? null,
-              remarksPresent: true,
-            }),
-          )
-        }
-      }
-      return loadPurchaseReceiptDraft(trx, id)
-    })
+    return presentPurchaseDraft(
+      await purAggregate.replaceDraft(permit, id, purchaseDraftPayload(input)),
+    )
   }
 
   async function createPurchaseItem(
     permit: Permit,
     input: SalesDraftItemInput & { receiptId: string },
   ) {
-    return createItem(permit, 'purchase', { ...input, headId: input.receiptId })
+    return presentPurchaseItem(
+      (await purItems.create(permit, {
+        receiptId: input.receiptId,
+        idx: input.idx,
+        qty: input.qty,
+        orderItemId: input.orderItemId,
+        unitId: input.unitId ?? null,
+        warehouseId: input.warehouseId,
+        remarks: input.remarks ?? null,
+      })) as Record<string, unknown>,
+    )
   }
 
   async function updatePurchaseItem(
@@ -1465,15 +1628,24 @@ export function createFulfillmentService(
     id: string,
     input: FulfillmentItemUpdateInput,
   ) {
-    return updateItem(permit, 'purchase', id, input)
+    const patch: Record<string, unknown> = {}
+    if (input.idx !== undefined) patch.idx = input.idx
+    if (input.qty !== undefined) patch.qty = input.qty
+    if (input.orderItemId !== undefined) patch.orderItemId = input.orderItemId
+    if (input.unitIdPresent) patch.unitId = input.unitId ?? null
+    if (input.warehouseIdPresent) patch.warehouseId = input.warehouseId ?? null
+    if (input.remarksPresent) patch.remarks = input.remarks ?? null
+    return presentPurchaseItem((await purItems.update(permit, id, patch)) as Record<string, unknown>)
   }
 
   async function deletePurchaseItem(permit: Permit, id: string) {
-    return deleteItem(permit, 'purchase', id)
+    await purItems.remove(permit, id)
   }
 
   async function createPurchaseHead(permit: Permit, input: FulfillmentHeadDraftInput) {
-    return createHead(permit, 'purchase', input)
+    return presentPurchaseHead(
+      (await purHeads.create(permit, purchaseHeadPayload(input))) as Record<string, unknown>,
+    )
   }
 
   async function updatePurchaseHead(
@@ -1481,7 +1653,17 @@ export function createFulfillmentService(
     id: string,
     input: FulfillmentHeadUpdateInput,
   ) {
-    return updateHead(permit, 'purchase', id, input)
+    const patch: Record<string, unknown> = {}
+    if (input.no !== undefined) patch.receiptNo = input.no
+    if (input.documentDate !== undefined) patch.receiptDate = input.documentDate
+    if (input.postingDatePresent) patch.postingDate = input.postingDate ?? null
+    if (input.partyType !== undefined) patch.partyType = input.partyType
+    if (input.partyId !== undefined) patch.partyId = input.partyId
+    if (input.remarksPresent) patch.remarks = input.remarks ?? null
+    if (input.warehouseIdPresent) patch.warehouseId = input.warehouseId ?? null
+    if (input.debitAccountId !== undefined) patch.debitAccountId = input.debitAccountId
+    if (input.creditAccountId !== undefined) patch.creditAccountId = input.creditAccountId
+    return presentPurchaseHead((await purHeads.update(permit, id, patch)) as Record<string, unknown>)
   }
 
   return {
@@ -1537,24 +1719,6 @@ function validateSalesDraftIdentities(
   }
 }
 
-function validatePurchaseReceiptDraftIdentities(
-  input: PurchaseReceiptDraftInput,
-  existingItems: ReadonlySet<string>,
-): void {
-  const fields: Record<string, string[]> = {}
-  const seenItems = new Set<string>()
-  input.items.forEach((item, itemIndex) => {
-    if (item.id === undefined) return
-    const field = `items[${itemIndex}].id`
-    if (seenItems.has(item.id)) fields[field] = ['同一草稿中不能重复']
-    else if (!existingItems.has(item.id)) fields[field] = ['不属于该采购入库单']
-    seenItems.add(item.id)
-  })
-  if (Object.keys(fields).length > 0) {
-    throw ApiError.validation('采购入库草稿子记录身份不合法', fields)
-  }
-}
-
 /** create 的入参校验（400）必须先于公司边界（404）：空公司报「必填」而非「公司不存在」 */
 function assertCompanyPresent(
   spec: FulfillmentSideSpec,
@@ -1563,6 +1727,172 @@ function assertCompanyPresent(
 ): void {
   if (!companyId) {
     throw ApiError.validation(`${spec.label}参数不合法`, { [field]: ['必填'] })
+  }
+}
+
+/** 采购头 wire 形校验（apiName；标准服务钩子） */
+function validatePurchaseHeadWire(
+  draft: Record<string, unknown>,
+  opts: { requireReceiptNo: boolean; requireDate: boolean },
+): void {
+  const fields: Record<string, string[]> = {}
+  const label = fulfillmentSpec('purchase').label
+  if (opts.requireReceiptNo) {
+    const no = String(draft.receiptNo ?? '').trim()
+    if (!no || runeLen(no) > 32) fields.receiptNo = ['不能为空且最多 32 个字符']
+  }
+  if (opts.requireDate && !draft.receiptDate) fields.receiptDate = ['必填']
+  const partyType = draft.partyType != null ? lowerParty(String(draft.partyType)) : ''
+  if (!fulfillmentSpec('purchase').allowedParty.has(partyType)) {
+    fields.partyType = ['对手类型不合法']
+  }
+  if (!draft.partyId) fields.partyId = ['必填']
+  if (!draft.companyId && opts.requireReceiptNo === false && draft.companyId !== undefined) {
+    // create 路径 company 由内核 assertCompanyWritable 管；此处只拦空串
+  }
+  if (draft.companyId !== undefined && !draft.companyId) fields.companyId = ['必填']
+  if (partyType === 'company' && draft.partyId && draft.companyId && draft.partyId === draft.companyId) {
+    fields.partyId = ['对手不能是本公司']
+  }
+  if (!draft.debitAccountId) fields.debitAccountId = ['必填']
+  if (!draft.creditAccountId) fields.creditAccountId = ['必填']
+  if (draft.remarks != null && runeLen(String(draft.remarks)) > 512) {
+    fields.remarks = ['最多 512 个字符']
+  }
+  if (Object.keys(fields).length > 0) {
+    throw ApiError.validation(`${label}参数不合法`, fields)
+  }
+}
+
+function purchaseHeadPayload(input: FulfillmentHeadDraftInput): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    companyId: input.companyId,
+    receiptDate: input.documentDate ?? undefined,
+    postingDate: input.postingDate ?? null,
+    partyType: input.partyType,
+    partyId: input.partyId,
+    remarks: input.remarks ?? null,
+    warehouseId: input.warehouseId ?? null,
+    debitAccountId: input.debitAccountId,
+    creditAccountId: input.creditAccountId,
+  }
+  // 手填单号由内核拒绝（ADR 编号系统生成）；空值不传
+  if (input.no != null && String(input.no).trim() !== '') {
+    payload.receiptNo = input.no
+  }
+  return payload
+}
+
+function purchaseDraftPayload(input: PurchaseReceiptDraftInput): Record<string, unknown> {
+  const payload = purchaseHeadPayload(input)
+  // 缺 items 键原样透传，让聚合层 fail-closed
+  if (Array.isArray(input.items)) {
+    payload.items = input.items.map((item) => ({
+      ...(item.id !== undefined ? { id: item.id } : {}),
+      idx: item.idx,
+      qty: item.qty,
+      orderItemId: item.orderItemId,
+      unitId: item.unitId ?? null,
+      warehouseId: item.warehouseId,
+      remarks: item.remarks ?? null,
+    }))
+  }
+  return payload
+}
+
+function asIso(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  if (value instanceof Date) return value.toISOString()
+  return new Date(String(value)).toISOString()
+}
+
+function presentPurchaseHead(row: Record<string, unknown>) {
+  return {
+    id: String(row.id),
+    receiptNo: String(row.receiptNo ?? ''),
+    receiptDate: String(row.receiptDate ?? ''),
+    postingDate: row.postingDate == null ? null : String(row.postingDate),
+    partyType: upperStatus(String(row.partyType ?? '')),
+    partyId: String(row.partyId ?? ''),
+    remarks: row.remarks == null ? null : String(row.remarks),
+    status: upperStatus(String(row.status ?? 'DRAFT')),
+    auditedAt: asIso(row.auditedAt),
+    insertedAt: asIso(row.insertedAt)!,
+    updatedAt: asIso(row.updatedAt)!,
+    companyId: String(row.companyId ?? ''),
+    warehouseId: row.warehouseId == null ? null : String(row.warehouseId),
+    debitAccountId: String(row.debitAccountId ?? ''),
+    creditAccountId: String(row.creditAccountId ?? ''),
+    createdById: row.createdById == null ? null : String(row.createdById),
+    auditedById: row.auditedById == null ? null : String(row.auditedById),
+  }
+}
+
+function presentPurchaseItem(row: Record<string, unknown>) {
+  const baseQty = String(row.baseQty ?? 0)
+  const reconciled = String(row.reconciledQty ?? 0)
+  return {
+    id: String(row.id),
+    idx: Number(row.idx),
+    qty: wireRequiredDecimal(String(row.qty ?? 0)),
+    baseQty: wireRequiredDecimal(baseQty),
+    materialCode: String(row.materialCode ?? ''),
+    materialName: String(row.materialName ?? ''),
+    materialSpec: row.materialSpec == null ? null : String(row.materialSpec),
+    customerPartNo: row.customerPartNo == null ? null : String(row.customerPartNo),
+    unitName: String(row.unitName ?? ''),
+    orderNo: String(row.orderNo ?? ''),
+    orderQty: wireRequiredDecimal(String(row.orderQty ?? 0)),
+    orderBaseQty: wireRequiredDecimal(String(row.orderBaseQty ?? 0)),
+    orderUnitName: String(row.orderUnitName ?? ''),
+    orderPrice: wireRequiredDecimal(String(row.orderPrice ?? 0)),
+    orderAmount: wireRequiredDecimal(String(row.orderAmount ?? 0)),
+    orderBasePrice: wireRequiredDecimal(String(row.orderBasePrice ?? 0)),
+    orderBaseAmount: wireRequiredDecimal(String(row.orderBaseAmount ?? 0)),
+    orderTaxRate: wireRequiredDecimal(String(row.orderTaxRate ?? 0)),
+    orderCurrencyCode: String(row.orderCurrencyCode ?? ''),
+    reconciledQty: wireRequiredDecimal(reconciled),
+    remarks: row.remarks == null ? null : String(row.remarks),
+    insertedAt: asIso(row.insertedAt)!,
+    updatedAt: asIso(row.updatedAt)!,
+    receiptId: String(row.receiptId ?? ''),
+    companyId: String(row.companyId ?? ''),
+    orderItemId: String(row.orderItemId ?? ''),
+    materialId: String(row.materialId ?? ''),
+    unitId: String(row.unitId ?? ''),
+    warehouseId: row.warehouseId == null ? null : String(row.warehouseId),
+    receiptNo: String(row.receiptNo ?? ''),
+    receiptDate: row.receiptDate == null ? '' : String(row.receiptDate),
+    receiptStatus: upperStatus(String(row.receiptStatus ?? 'DRAFT')),
+    partyType: upperStatus(String(row.partyType ?? '')),
+    partyId: String(row.partyId ?? ''),
+    remainingReconcilableQty: wireRequiredDecimal(
+      String(row.remainingReconcilableQty ?? decimal(baseQty).sub(reconciled)),
+    ),
+  }
+}
+
+function presentPurchaseDraft(raw: Record<string, unknown>): PurchaseReceiptDraftDto {
+  const items = Array.isArray(raw.items)
+    ? (raw.items as Record<string, unknown>[]).map((item) => presentPurchaseItem(item))
+    : []
+  return {
+    ...presentPurchaseHead(raw),
+    items,
+  }
+}
+
+function mapPurchaseItemExtras(row: Record<string, unknown>): Record<string, unknown> {
+  const baseQty = String(row.base_qty ?? 0)
+  const reconciled = String(row.reconciled_qty ?? 0)
+  return {
+    receiptNo: String(row.receipt_no ?? ''),
+    receiptDate: asDate(row.receipt_date),
+    receiptStatus: upperStatus(String(row.receipt_status ?? 'DRAFT')),
+    partyType: upperStatus(String(row.party_type ?? '')),
+    remainingReconcilableQty: wireRequiredDecimal(
+      String(row.remaining_reconcilable_qty ?? decimal(baseQty).sub(reconciled)),
+    ),
   }
 }
 
@@ -1708,7 +2038,7 @@ async function loadActionItems(db: DbHandle, spec: FulfillmentSideSpec, headId: 
 async function deriveItem(
   db: DbHandle,
   spec: FulfillmentSideSpec,
-  parent: FulfillmentHead,
+  parent: { companyId: string; partyType: string; partyId: string },
   draft: {
     idx: number
     qty: ReturnType<typeof decimal>

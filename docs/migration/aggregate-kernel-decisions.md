@@ -112,6 +112,7 @@ export interface ControlledProjectionSpec {
 | 内核 standard | list/load 无 extraWhere；accGlJournals/mfgOutputs/accBills list 弹射 | `StandardServiceOptions.extraWhere`（list/get/写前锁共用）；三资源 list（及 bills get）改描述符 | T1.5；可见性/行筛选语义字节冻结，见 v2 extraWhere 合同 |
 | salQuotations / purQuotations | 手写 `*InTx` 草稿/子行/孙级；身份校验顶层文案「报价草稿子记录身份不合法」；字段「不属于该报价单/报价条目」；公司改键 `header.companyId` | 聚合内核 `createAggregateService` + child 孙级；身份校验统一 `报价草稿参数不合法`；字段「不属于该{资源 label}」；公司改键 `companyId`（与合同套件一致） | W2 迁入聚合；无测钉死旧身份文案；公司键对齐内核 D4 合同 |
 | 同上 | 条目/档独立 CRUD 与草稿各一套手写 | 同一 child InTx + 公开 create/update/remove 包装；草稿走 aggregate | 一份实现两入口，wire 端点不变 |
+| purReceipts | 手写草稿/子行；身份文案「采购入库草稿子记录身份不合法」；公司改键 `header.companyId`；子行删/改无审计；头审计键 `number`/`document_date`/`head_id` | 聚合内核 + child；身份统一「采购入库草稿参数不合法」；公司键 `companyId`；子行增/改/删三型审计；头审计键 meta 原列 `receipt_no`/`receipt_date`/`receipt_id` | W2 迁入；与合同套件/报价收敛一致；子行审计补齐属合同强化 |
 
 ---
 
@@ -153,9 +154,26 @@ export interface ControlledProjectionSpec {
 
 ---
 
+## W2 · purReceipts 采购入库聚合迁入
+
+**定案**：采购入库头/条目 CRUD 与整单草稿三连改由 `platform/standard` 派生：
+
+- 头：`createStandardService`（numbering `receiptNo`；workflow 仅草稿可变门，审核/作废仍弹射 `auditFulfillmentInTx`/`voidFulfillmentInTx` skeleton）
+- 条目：`createStandardChildService`（订单快照 `derivedFields` + `deriveItem`；图纸挂接 `afterWrite`/`beforeDelete`）
+- 草稿三连：`createAggregateService`（`validationMessage: 采购入库草稿参数不合法`）
+- 销售发货仍手写（W3）
+
+**路由/URL/DTO 冻结**；服务层 `PurchaseReceiptDraftInput` 仍用内部 `no`/`documentDate`，进聚合前映射为 `receiptNo`/`receiptDate`。
+
+**有意差异**（见行为变更表）：身份/公司键文案收敛；子行补齐 destroy/update 审计；头审计列名回归 meta 原列（不再 rename 为 number/document_date）。
+
+**验收**：手写采购草稿/子行 CRUD 删除；聚合 CASES 加 purReceipts 一行；fulfillment.postgres + 合同套件绿。
+
+---
+
 ## 非目标（本日志边界）
 
-- 不做 W3+ 资源聚合迁移（订单/入库/对账等；W2 报价已落地）。
+- 不做 W3+ 资源聚合迁移（订单/发货/对账等；W2 报价 + 采购入库已落地）。
 - 不动 `engines/gl` | `engines/inventory` interface。
 - 不做路由词表收口；wire URL/DTO/错误码字节冻结。
 - mfgOutputItems list 仍弹射（母单投影 join，非 extraWhere 能单独解锁）。
