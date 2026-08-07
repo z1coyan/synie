@@ -65,6 +65,10 @@ import {
   type PostingProjectionLine,
 } from '~/platform/posting/skeleton.ts'
 import {
+  validateEnabledLeafWarehouse,
+  validateOutsourcedWarehouse,
+} from '~/platform/posting/warehouse.ts'
+import {
   outsourcedIssueItemMeta,
   outsourcedIssueMeta,
   outsourcedReceiptItemByproductMeta,
@@ -1962,44 +1966,7 @@ function validateCommonHead(
 }
 
 async function validateWarehouse(db: DbHandle, companyId: string, warehouseId: string) {
-  const wh = await db
-    .selectFrom('inv_warehouse')
-    .select(['company_id', 'active', 'is_leaf'])
-    .where('id', '=', warehouseId)
-    .executeTakeFirst()
-  if (!wh || wh.company_id !== companyId || !wh.active || !wh.is_leaf) {
-    throw ApiError.validation('委外履约仓库不合法', {
-      warehouseId: ['须为单据公司启用叶子仓'],
-    })
-  }
-}
-
-async function validateOutsourcedWarehouse(
-  db: DbHandle,
-  companyId: string,
-  partyType: string,
-  partyId: string,
-  warehouseId: string,
-) {
-  const wh = await db
-    .selectFrom('inv_warehouse')
-    .select(['company_id', 'is_outsourced', 'active', 'is_leaf', 'party_type', 'party_id'])
-    .where('id', '=', warehouseId)
-    .executeTakeFirst()
-  const valid =
-    wh &&
-    wh.company_id === companyId &&
-    wh.is_outsourced &&
-    wh.active &&
-    wh.is_leaf &&
-    wh.party_type &&
-    lowerParty(wh.party_type) === lowerParty(partyType) &&
-    wh.party_id === partyId
-  if (!valid) {
-    throw ApiError.validation('外协仓不合法', {
-      outsourcedWarehouseId: ['须为绑定当前对手的本公司启用外协仓'],
-    })
-  }
+  await validateEnabledLeafWarehouse(db, companyId, warehouseId, '委外履约仓库不合法')
 }
 
 async function validateReceiptAccounts(

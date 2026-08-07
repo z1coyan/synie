@@ -54,6 +54,7 @@ import {
   reverseFulfillment,
 } from '../order/projection.ts'
 import { auditFulfillmentInTx, voidFulfillmentInTx } from '~/platform/posting/skeleton.ts'
+import { validateEnabledLeafWarehouse } from '~/platform/posting/warehouse.ts'
 import {
   fulfillmentHeadMeta,
   fulfillmentItemListMeta,
@@ -1632,14 +1633,7 @@ async function validateHeadRefs(db: DbHandle, spec: FulfillmentSideSpec, item: F
 }
 
 async function validateWarehouse(db: DbHandle, companyId: string, warehouseId: string) {
-  const wh = await db
-    .selectFrom('inv_warehouse')
-    .select(['company_id', 'active', 'is_leaf'])
-    .where('id', '=', warehouseId)
-    .executeTakeFirst()
-  if (!wh || wh.company_id !== companyId || !wh.active || !wh.is_leaf) {
-    throw ApiError.validation('履约仓库不合法', { warehouseId: ['须为单据公司启用叶子仓'] })
-  }
+  await validateEnabledLeafWarehouse(db, companyId, warehouseId, '履约仓库不合法')
 }
 
 /** 已授权路径内的单头读取（授权/锁由 loadAuthorized 承担） */

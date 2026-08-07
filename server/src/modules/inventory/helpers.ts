@@ -7,7 +7,6 @@
 import { decimal, toDecimalString, type Decimal } from '@synie/shared'
 import { sql } from 'kysely'
 import type { DbHandle } from '~/db/tx.ts'
-import { ApiError } from '~/platform/http/errors.ts'
 
 export function toDate(value: unknown): Date {
   if (value instanceof Date) return value
@@ -75,34 +74,8 @@ export {
   type StockItemProjection as ItemProjection,
 } from '~/platform/posting/material-qty.ts'
 
-export async function validateLeafWarehouse(
-  db: DbHandle,
-  companyId: string,
-  warehouseId: string,
-  label: string,
-  fieldName = 'warehouseId',
-  checkActive = true,
-): Promise<void> {
-  const row = await db
-    .selectFrom('inv_warehouse')
-    .select(['id', 'company_id', 'is_leaf', 'active'])
-    .where('id', '=', warehouseId)
-    .executeTakeFirst()
-  if (!row) {
-    throw ApiError.validation(`${label}参数不合法`, { [fieldName]: ['仓库不存在'] })
-  }
-  if (row.company_id !== companyId) {
-    throw ApiError.validation(`${label}参数不合法`, { [fieldName]: ['仓库不属于本公司'] })
-  }
-  if (!row.is_leaf) {
-    throw ApiError.validation(`${label}参数不合法`, {
-      [fieldName]: ['只有叶子仓库才能发生库存'],
-    })
-  }
-  if (checkActive && !row.active) {
-    throw ApiError.validation(`${label}参数不合法`, { [fieldName]: ['仓库已停用'] })
-  }
-}
+/** 叶子仓校验：实现见 platform/posting/warehouse（W0 T0.2） */
+export { validateLeafWarehouse } from '~/platform/posting/warehouse.ts'
 
 export async function currentBookQty(
   db: DbHandle,

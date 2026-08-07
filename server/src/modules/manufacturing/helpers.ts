@@ -114,31 +114,8 @@ export async function ensureUnitAllowed(
   }
 }
 
-export async function validateWarehouse(
-  db: DbHandle,
-  warehouseId: string | null | undefined,
-  companyId: string,
-  field = 'warehouseId',
-): Promise<void> {
-  if (warehouseId == null) return
-  const wh = await db
-    .selectFrom('inv_warehouse')
-    .select(['company_id', 'is_leaf', 'active'])
-    .where('id', '=', warehouseId)
-    .executeTakeFirst()
-  if (!wh) {
-    throw ApiError.validation('生产入库仓库不合法', { [field]: ['仓库不存在'] })
-  }
-  if (wh.company_id !== companyId) {
-    throw ApiError.validation('生产入库仓库不合法', { [field]: ['仓库不属于本公司'] })
-  }
-  if (!wh.is_leaf) {
-    throw ApiError.validation('生产入库仓库不合法', { [field]: ['仅叶子仓可入库'] })
-  }
-  if (!wh.active) {
-    throw ApiError.validation('生产入库仓库不合法', { [field]: ['仓库已停用'] })
-  }
-}
+/** 生产入库仓校验：实现见 platform/posting/warehouse（W0 T0.2） */
+export { validateMfgWarehouse as validateWarehouse } from '~/platform/posting/warehouse.ts'
 
 export async function validateSalesSource(
   db: DbHandle,
