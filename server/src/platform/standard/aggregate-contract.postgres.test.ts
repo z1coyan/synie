@@ -360,6 +360,8 @@ const CASES: AggregateContractCase[] = [
   ...quotationContractCases(),
   // W2：采购入库（最简 2 层）；夹具见 purReceiptFixture
   purReceiptContractCase(),
+  // W3：销售发货（条目 + 装箱平行子树；合同面测条目集合，装箱空数组）
+  salDeliveryContractCase(),
   // W3：销售/采购订单（SAMPLE/SPOT 免报价；委外子树不进合同）
   ...orderContractCases(),
 ]
@@ -723,6 +725,182 @@ function purReceiptContractCase(): AggregateContractCase {
   }
 }
 
+/** 销售发货业务资源合同夹具 */
+const salDeliveryFixture = {
+  companyId: crypto.randomUUID(),
+  otherCompanyId: crypto.randomUUID(),
+  currencyId: crypto.randomUUID(),
+  customerId: crypto.randomUUID(),
+  unitId: crypto.randomUUID(),
+  categoryId: crypto.randomUUID(),
+  materialId: crypto.randomUUID(),
+  material2Id: crypto.randomUUID(),
+  warehouseId: crypto.randomUUID(),
+  debitAccountId: crypto.randomUUID(),
+  creditAccountId: crypto.randomUUID(),
+  orderId: crypto.randomUUID(),
+  orderItemId: crypto.randomUUID(),
+  orderItem2Id: crypto.randomUUID(),
+  ready: false,
+  service: null as FulfillmentService | null,
+  registry: null as Registry | null,
+  ruleIds: [] as string[],
+}
+
+function salDeliveryContractCase(): AggregateContractCase {
+  const asAgg = (): AggregateService => salDeliveryFixture.service!._aggregateForContract('sales')
+  const validDraft = () => ({
+    companyId: salDeliveryFixture.companyId,
+    documentDate: '2026-07-25',
+    postingDate: '2026-07-25',
+    partyType: 'customer',
+    partyId: salDeliveryFixture.customerId,
+    remarks: '合同-salDelivery',
+    warehouseId: salDeliveryFixture.warehouseId,
+    debitAccountId: salDeliveryFixture.debitAccountId,
+    creditAccountId: salDeliveryFixture.creditAccountId,
+    items: [
+      {
+        idx: 1,
+        qty: '10',
+        orderItemId: salDeliveryFixture.orderItemId,
+        warehouseId: salDeliveryFixture.warehouseId,
+      },
+      {
+        idx: 2,
+        qty: '20',
+        orderItemId: salDeliveryFixture.orderItem2Id,
+        warehouseId: salDeliveryFixture.warehouseId,
+      },
+    ],
+    packBoxes: [],
+  })
+  const noopFrom = (created: Record<string, unknown>) => {
+    const items = asItems(created, 'items').map((item) => ({
+      id: item.id,
+      idx: item.idx,
+      qty: item.qty,
+      orderItemId: item.orderItemId,
+      unitId: item.unitId,
+      warehouseId: item.warehouseId,
+      remarks: item.remarks,
+    }))
+    const packBoxes = Array.isArray(created.packBoxes)
+      ? (created.packBoxes as Array<Record<string, unknown>>).map((box) => ({
+          id: box.id,
+          lines: Array.isArray(box.lines)
+            ? (box.lines as Array<Record<string, unknown>>).map((line) => ({
+                id: line.id,
+                idx: line.idx,
+                qty: line.qty,
+                materialId: line.materialId,
+                unitId: line.unitId,
+                remarks: line.remarks,
+              }))
+            : [],
+        }))
+      : []
+    return {
+      companyId: created.companyId,
+      no: created.deliveryNo,
+      documentDate: created.deliveryDate,
+      postingDate: created.postingDate,
+      partyType: created.partyType,
+      partyId: created.partyId,
+      remarks: created.remarks,
+      warehouseId: created.warehouseId,
+      debitAccountId: created.debitAccountId,
+      creditAccountId: created.creditAccountId,
+      items,
+      packBoxes,
+    }
+  }
+  return {
+    title: '销售发货单（salDeliveries）',
+    headResource: 'salDeliveries',
+    authzResources: [
+      'salDeliveries',
+      'salDeliveryItems',
+      'salDeliveryPackBoxes',
+      'salDeliveryPackLines',
+    ],
+    headTable: 'sal_delivery',
+    itemTable: 'sal_delivery_item',
+    itemsKey: 'items',
+    prepare: () => ({
+      service: asAgg(),
+      registry: salDeliveryFixture.registry!,
+    }),
+    companyId: () => salDeliveryFixture.companyId,
+    otherCompanyId: () => salDeliveryFixture.otherCompanyId,
+    validDraft,
+    buildDiffReplace: (created) => {
+      const items = asItems(created, 'items')
+      const kept = items[0]!
+      const deleted = items[1]!
+      return {
+        keptItemId: String(kept.id),
+        deletedItemId: String(deleted.id),
+        input: {
+          ...noopFrom(created),
+          remarks: '合同改-salDelivery',
+          items: [
+            {
+              id: kept.id,
+              idx: 1,
+              qty: '11',
+              orderItemId: kept.orderItemId,
+              unitId: kept.unitId,
+              warehouseId: kept.warehouseId,
+              remarks: '保留',
+            },
+            {
+              idx: 3,
+              qty: '3',
+              orderItemId: salDeliveryFixture.orderItem2Id,
+              warehouseId: salDeliveryFixture.warehouseId,
+            },
+          ],
+          packBoxes: [],
+        },
+      }
+    },
+    buildNoopReplace: noopFrom,
+    buildFailReplace: (created) => {
+      const base = noopFrom(created)
+      const items = asItems(created, 'items')
+      const kept = items[0]!
+      return {
+        ...base,
+        remarks: '不应落库',
+        items: [
+          {
+            id: kept.id,
+            idx: kept.idx,
+            qty: '99',
+            orderItemId: kept.orderItemId,
+            unitId: kept.unitId,
+            warehouseId: kept.warehouseId,
+            remarks: kept.remarks,
+          },
+          {
+            idx: 9,
+            qty: '0',
+            orderItemId: salDeliveryFixture.orderItemId,
+            warehouseId: salDeliveryFixture.warehouseId,
+          },
+        ],
+        packBoxes: [],
+      }
+    },
+    buildEmptyReplace: (created) => ({
+      ...noopFrom(created),
+      items: [],
+      packBoxes: [],
+    }),
+  }
+}
+
 /** 订单业务资源合同夹具（复用 quotation 主数据；SAMPLE/SPOT 免报价套档） */
 const orderFixture = {
   service: null as OrderService | null,
@@ -904,12 +1082,15 @@ run('聚合草稿合同（postgres）', () => {
   quotationFixture.registry = sealed
   quotationFixture.service = createQuotationService(db, numbering, sealed)
   purReceiptFixture.registry = sealed
-  purReceiptFixture.service = createFulfillmentService(
+  const fulfillment = createFulfillmentService(
     db,
     numbering,
     { inventory: createInventoryEngine(), gl: createGlEngine() },
     sealed,
   )
+  purReceiptFixture.service = fulfillment
+  salDeliveryFixture.registry = sealed
+  salDeliveryFixture.service = fulfillment
   orderFixture.registry = sealed
   orderFixture.service = createOrderService(
     db,
@@ -1107,6 +1288,90 @@ run('聚合草稿合同（postgres）', () => {
     }
     pr.ready = true
 
+    // 销售发货夹具
+    const sd = salDeliveryFixture
+    const sdTag = `SD${suffix}`
+    await sql`
+      INSERT INTO bas_currency(id,name,iso_code,symbol,active)
+      VALUES (${sd.currencyId}::uuid, ${sdTag + '币'}, ${'D' + suffix.slice(0, 2)}, '¤', true)
+    `.execute(db)
+    await sql`
+      INSERT INTO bas_company(id,code,name,short_name,base_currency_id) VALUES
+        (${sd.companyId}::uuid, ${'D' + suffix}, ${sdTag + '公司'}, 'SD', ${sd.currencyId}::uuid),
+        (${sd.otherCompanyId}::uuid, ${'E' + suffix}, ${sdTag + '他司'}, 'SE', ${sd.currencyId}::uuid)
+    `.execute(db)
+    await sql`
+      INSERT INTO sal_customers(id,code,name,short_name)
+      VALUES (${sd.customerId}::uuid, ${'DC' + suffix}, ${sdTag + '客户'}, 'DC')
+    `.execute(db)
+    await sql`
+      INSERT INTO bas_unit(id,unit_type,is_base,name,symbol,ratio)
+      VALUES (${sd.unitId}::uuid, ${'sd-' + suffix}, true, ${sdTag + '件'}, ${'ud' + suffix}, 1)
+    `.execute(db)
+    await sql`
+      INSERT INTO inv_material_category(id,code,name,is_leaf,active)
+      VALUES (${sd.categoryId}::uuid, ${'DC' + suffix}, ${sdTag + '分类'}, true, true)
+    `.execute(db)
+    await sql`
+      INSERT INTO inv_material(id,code,name,category_id,default_unit_id,active,material_type) VALUES
+        (${sd.materialId}::uuid, ${'DM' + suffix}, ${sdTag + '物料'}, ${sd.categoryId}::uuid, ${sd.unitId}::uuid, true, 'STOCK'),
+        (${sd.material2Id}::uuid, ${'DN' + suffix}, ${sdTag + '物料二'}, ${sd.categoryId}::uuid, ${sd.unitId}::uuid, true, 'STOCK')
+    `.execute(db)
+    await sql`
+      INSERT INTO inv_warehouse(id,name,code,company_id,active,is_leaf)
+      VALUES (
+        ${sd.warehouseId}::uuid, ${sdTag + '仓'}, ${'DW' + suffix.slice(0, 8)},
+        ${sd.companyId}::uuid, true, true
+      )
+    `.execute(db)
+    await sql`
+      INSERT INTO bas_account(id,code,name,direction,is_group,active,company_id,currency_id,role) VALUES
+        (${sd.debitAccountId}::uuid, ${'DD' + suffix}, ${sdTag + '未开应收'}, 'debit', false, true,
+          ${sd.companyId}::uuid, ${sd.currencyId}::uuid, 'unbilled_receivable'),
+        (${sd.creditAccountId}::uuid, ${'DC' + suffix}, ${sdTag + '贷'}, 'credit', false, true,
+          ${sd.companyId}::uuid, ${sd.currencyId}::uuid, NULL)
+    `.execute(db)
+    await sql`
+      INSERT INTO sal_order(id,order_no,order_date,party_type,party_id,status,company_id,
+        exchange_rate,currency_id,order_type)
+      VALUES (${sd.orderId}::uuid, ${sdTag + '-SO'}, '2026-07-20', 'customer',
+        ${sd.customerId}::uuid, 'audited', ${sd.companyId}::uuid, 1, ${sd.currencyId}::uuid, 'sample')
+    `.execute(db)
+    await sql`
+      INSERT INTO sal_order_item(
+        id,idx,qty,base_qty,price,amount,base_price,base_amount,tax_rate,
+        order_id,company_id,material_id,unit_id,material_code,material_name,unit_name
+      ) VALUES
+        (${sd.orderItemId}::uuid,1,1000,1000,8,8000,8,8000,0,${sd.orderId}::uuid,
+          ${sd.companyId}::uuid,${sd.materialId}::uuid,${sd.unitId}::uuid,
+          ${'DM' + suffix},${sdTag + '物料'},${sdTag + '件'}),
+        (${sd.orderItem2Id}::uuid,2,500,500,8,4000,8,4000,0,${sd.orderId}::uuid,
+          ${sd.companyId}::uuid,${sd.material2Id}::uuid,${sd.unitId}::uuid,
+          ${'DN' + suffix},${sdTag + '物料二'},${sdTag + '件'})
+    `.execute(db)
+    {
+      const existing = await db
+        .selectFrom('sys_numbering_rule')
+        .select('id')
+        .where('resource', '=', 'sales.delivery')
+        .where('enabled', '=', true)
+        .executeTakeFirst()
+      if (!existing) {
+        const rule = await numbering.create(permit('sysNumberingRules', 'create'), {
+          resource: 'sales.delivery',
+          name: `${sdTag}发货规则`,
+          segments: [
+            { type: 'text', value: `D${suffix}-` },
+            { type: 'seq', padding: 4 },
+          ],
+          perCompany: false,
+          enabled: true,
+        })
+        sd.ruleIds.push(rule.id)
+      }
+    }
+    sd.ready = true
+
     // 订单编号规则（复用 quotation 公司/物料/对手）
     for (const [resource, mark] of [
       ['sales.order', 'SO'],
@@ -1177,6 +1442,27 @@ run('聚合草稿合同（postgres）', () => {
       DELETE FROM bas_company WHERE id IN (${pr.companyId}::uuid, ${pr.otherCompanyId}::uuid)
     `.execute(db)
     await sql`DELETE FROM bas_currency WHERE id=${pr.currencyId}::uuid`.execute(db)
+
+    const sd = salDeliveryFixture
+    for (const id of sd.ruleIds) {
+      await db.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
+    }
+    await sql`DELETE FROM sys_audit_log WHERE company_id=${sd.companyId}::uuid`.execute(db)
+    await sql`DELETE FROM sal_delivery WHERE company_id=${sd.companyId}::uuid`.execute(db)
+    await sql`DELETE FROM sal_order_item WHERE order_id=${sd.orderId}::uuid`.execute(db)
+    await sql`DELETE FROM sal_order WHERE id=${sd.orderId}::uuid`.execute(db)
+    await sql`DELETE FROM bas_account WHERE company_id=${sd.companyId}::uuid`.execute(db)
+    await sql`DELETE FROM inv_warehouse WHERE id=${sd.warehouseId}::uuid`.execute(db)
+    await sql`
+      DELETE FROM inv_material WHERE id IN (${sd.materialId}::uuid, ${sd.material2Id}::uuid)
+    `.execute(db)
+    await sql`DELETE FROM inv_material_category WHERE id=${sd.categoryId}::uuid`.execute(db)
+    await sql`DELETE FROM bas_unit WHERE id=${sd.unitId}::uuid`.execute(db)
+    await sql`DELETE FROM sal_customers WHERE id=${sd.customerId}::uuid`.execute(db)
+    await sql`
+      DELETE FROM bas_company WHERE id IN (${sd.companyId}::uuid, ${sd.otherCompanyId}::uuid)
+    `.execute(db)
+    await sql`DELETE FROM bas_currency WHERE id=${sd.currencyId}::uuid`.execute(db)
 
     await sql`DELETE FROM sys_audit_log WHERE resource IN ('std_ac_doc', 'std_ac_item', 'std_ac_tier')`.execute(
       db,

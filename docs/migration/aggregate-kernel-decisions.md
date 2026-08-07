@@ -114,6 +114,9 @@ export interface ControlledProjectionSpec {
 | 同上 | 条目/档独立 CRUD 与草稿各一套手写 | 同一 child InTx + 公开 create/update/remove 包装；草稿走 aggregate | 一份实现两入口，wire 端点不变 |
 | purReceipts | 手写草稿/子行；身份文案「采购入库草稿子记录身份不合法」；公司改键 `header.companyId`；子行删/改无审计；头审计键 `number`/`document_date`/`head_id` | 聚合内核 + child；身份统一「采购入库草稿参数不合法」；公司键 `companyId`；子行增/改/删三型审计；头审计键 meta 原列 `receipt_no`/`receipt_date`/`receipt_id` | W2 迁入；与合同套件/报价收敛一致；子行审计补齐属合同强化 |
 | salOrders / purOrders | 手写草稿/子行/audit·close·void；公司键 `header.companyId`；身份顶层「订单草稿子记录身份不合法」 | 标准头/子行 + InTx 草稿 + OutsourcedDraftPort；workflow 三转移；公司键 `companyId`；身份「订单草稿参数不合法」 | W3；D7 状态转移；委外子树端口保留 |
+| salDeliveries | 手写草稿/条目/装箱；公司键 `header.companyId`；身份顶层「销售发货草稿子记录身份不合法」；装箱行身份按「属本发货单」 | 聚合内核（条目 + 箱→行平行子树）；公司键 `companyId`；身份「销售发货草稿参数不合法」；孙级行身份按「属该装箱箱」 | W3；D3 孙级第二消费者；与合同/报价收敛 |
+| 同上 | 条目独立改/删无审计 | 子行增/改/删三型审计 | 合同强化，同 purReceipts |
+| 同上 | pack meta 无独立 `label` | `label: 装箱箱/装箱行`（permissionLabel 仍共享发货单前缀） | 标准子行校验文案「装箱行参数不合法」字节保留 |
 
 ---
 
@@ -194,6 +197,25 @@ export interface ControlledProjectionSpec {
 | 同上 | 独立 update 条目未带 taxRate 时会重解析报价税率 | update 合并后默认保留既有 taxRate（全量草稿仍显式提交） | child 钩子不见原始 patch；合同/草稿测不依赖该边角 |
 
 **验收**：`order/service.ts` ≤800；聚合 CASES 加 salOrders/purOrders 两行；order-draft + 合同套件绿。
+
+---
+
+## W3 · salDeliveries 销售发货聚合迁入
+
+**定案**：销售发货头/条目/装箱箱/装箱行与整单草稿三连改由 `platform/standard` 派生：
+
+- 头：`createStandardService`（numbering `deliveryNo`；workflow 仅草稿可变门；审核/作废仍弹射 skeleton）
+- 条目：`createStandardChildService`（订单快照 `derivedFields` + `deriveItem`；图纸挂接 afterWrite/beforeDelete）
+- 装箱箱：`createStandardChildService`（`boxNo` 派生自单内 MAX+1；无可写用户列）
+- 装箱行：孙级 via 箱（D3）；`inheritFields: companyId+deliveryId`；物料快照 `derivedFields`
+- 草稿三连：`createAggregateService`（`items` ∥ `packBoxes→lines`；`validationMessage: 销售发货草稿参数不合法`）
+- 金额分摊（审核 collect）/装箱相等（`validatePackEquality`）留在 audit effect 路径，不进聚合钩子
+
+**路由/URL/DTO 冻结**；服务层 `SalesDraftInput` 仍用内部 `no`/`documentDate`，进聚合前映射为 `deliveryNo`/`deliveryDate`。
+
+**有意差异**（见行为变更表）：公司键/身份顶层文案收敛；装箱行身份相对箱（更严于「属本单」）；条目补齐 destroy/update 审计；pack meta 补 `label`。
+
+**验收**：`fulfillment/service.ts` ≤800；聚合 CASES 加 salDeliveries 一行；fulfillment.postgres + 合同套件绿。
 
 ---
 
