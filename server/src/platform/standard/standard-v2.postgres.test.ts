@@ -10,6 +10,8 @@
  * - child：母单授权锁 + 状态门 + 带入列；行审计三型
  * - 孙级（D3）：parent.resource 可指 child；链深 ≤2 装配；孙级 CRUD 与越母单 not_found
  * - InTx（D1）：root/child 动作族 `*InTx(trx, permit, …)`；外层事务回滚则全链无痕
+ * - aggregate（D2/D4/D6）：loadDraft/createDraft/replaceDraft；缺失即删；
+ *   删行先于头更新；numbering 走 head options；逐行审计三型；孙级子树
  *
  * 业务资源迁入后各自的行为由 standard-contract 描述符继承；本文件只锁内核语义。
  */
@@ -24,6 +26,7 @@ import { ApiError } from '~/platform/http/errors.ts'
 import { testActor } from '~/platform/authz/testing.ts'
 import { createRegistry } from '~/platform/meta/registry.ts'
 import type { FieldMeta, ResourceMeta } from '~/platform/meta/types.ts'
+import { createAggregateService } from './aggregate.ts'
 import {
   assertChildParentChainDepth,
   createStandardChildService,
@@ -320,6 +323,20 @@ run('标准动作内核 v2（postgres）', () => {
     notFound: '测试价格档不存在',
     // 孙级无 idx 列；避免默认 `"idx" ASC` 在 list 时炸列
     defaultOrder: sql`"id" ASC`,
+  })
+
+  /** 聚合草稿：头 + 条目 + 价格档（D2/D4/D6 合成合同） */
+  const aggregate = createAggregateService({
+    db,
+    registry,
+    head: docs,
+    children: [
+      {
+        key: 'items',
+        service: items,
+        children: [{ key: 'tiers', service: tiers }],
+      },
+    ],
   })
 
   const nodes = createStandardService({
@@ -796,6 +813,245 @@ run('标准动作内核 v2（postgres）', () => {
       `.execute(db)
       expect(left.rows[0]!.n).toBe('0')
       expect(await auditRows('std_v2_tier', tierId, 'create')).toBe(0)
+    })
+  })
+
+  describe('aggregate（loadDraft/createDraft/replaceDraft · D2/D4/D6）', () => {
+    function draftInput(name: string, itemQty = '10') {
+      return {
+        name,
+        companyId,
+        items: [
+          {
+            idx: 1,
+            qty: itemQty,
+            tiers: [
+              { minQty: '1', price: '10.0000' },
+              { minQty: '10', price: '9.0000' },
+            ],
+          },
+        ],
+      }
+    }
+
+    test('createDraft：头+条目+档；编号走 head.options.numbering；逐行 create 审计', async () => {
+      const beforeNum = numberingCalls
+      const saved = await aggregate.createDraft(p('create'), draftInput('聚合建单'))
+      expect(saved.name).toBe('聚合建单')
+      expect(String(saved.docNo)).toMatch(/^AUTO-/)
+      expect(numberingCalls).toBe(beforeNum + 1)
+      expect(await auditRows('std_v2_doc', String(saved.id), 'create')).toBe(1)
+
+      const itemsArr = saved.items as Array<Record<string, unknown>>
+      expect(itemsArr).toHaveLength(1)
+      expect(itemsArr[0]!.qty).toBe('10')
+      expect(itemsArr[0]!.qtyX2).toBe('20')
+      expect(itemsArr[0]!.companyId).toBe(companyId)
+      expect(await auditRows('std_v2_item', String(itemsArr[0]!.id), 'create')).toBe(1)
+
+      const tiersArr = itemsArr[0]!.tiers as Array<Record<string, unknown>>
+      expect(tiersArr).toHaveLength(2)
+      expect(tiersArr[0]!.minQty).toBe('1')
+      expect(tiersArr[1]!.price).toBe('9')
+      expect(await auditRows('std_v2_tier', String(tiersArr[0]!.id), 'create')).toBe(1)
+      expect(await auditRows('std_v2_tier', String(tiersArr[1]!.id), 'create')).toBe(1)
+    })
+
+    test('loadDraft：repeatable-read 一致快照返回全树', async () => {
+      const created = await aggregate.createDraft(p('create'), draftInput('快照单'))
+      const loaded = await aggregate.loadDraft(p('read'), String(created.id))
+      expect(loaded.id).toBe(created.id)
+      expect(loaded.name).toBe('快照单')
+      const itemsArr = loaded.items as Array<Record<string, unknown>>
+      expect(itemsArr).toHaveLength(1)
+      expect((itemsArr[0]!.tiers as unknown[]).length).toBe(2)
+    })
+
+    test('createDraft：新记录带 id / 缺集合键 fail-closed', async () => {
+      await expect(
+        aggregate.createDraft(p('create'), {
+          name: '坏身份',
+          companyId,
+          items: [{ id: crypto.randomUUID(), idx: 1, qty: '1', tiers: [] }],
+        }),
+      ).rejects.toMatchObject({
+        code: 'validation',
+        fields: { 'items[0].id': ['新记录不能包含 id'] },
+      })
+
+      await expect(
+        aggregate.createDraft(p('create'), { name: '缺集合', companyId }),
+      ).rejects.toMatchObject({
+        code: 'validation',
+        fields: { items: ['必须显式提交数组'] },
+      })
+    })
+
+    test('replaceDraft：增/改/删差异；缺失即删；逐行审计三型', async () => {
+      const created = await aggregate.createDraft(p('create'), draftInput('替换单', '5'))
+      const item0 = (created.items as Array<Record<string, unknown>>)[0]!
+      const tier0 = (item0.tiers as Array<Record<string, unknown>>)[0]!
+      const tier1 = (item0.tiers as Array<Record<string, unknown>>)[1]!
+
+      const replaced = await aggregate.replaceDraft(p('update'), String(created.id), {
+        name: '替换后',
+        companyId,
+        items: [
+          {
+            id: item0.id,
+            idx: 1,
+            qty: '8',
+            tiers: [
+              { id: tier0.id, minQty: '1', price: '11.0000' },
+              // tier1 缺失 → 删
+              { minQty: '100', price: '7.0000' }, // 新增档
+            ],
+          },
+          { idx: 2, qty: '3', tiers: [{ minQty: '1', price: '2.0000' }] }, // 新增行
+        ],
+      })
+
+      expect(replaced.name).toBe('替换后')
+      expect(await auditRows('std_v2_doc', String(created.id), 'update')).toBe(1)
+
+      const itemsArr = replaced.items as Array<Record<string, unknown>>
+      expect(itemsArr).toHaveLength(2)
+      const kept = itemsArr.find((i) => i.id === item0.id)!
+      expect(kept.qty).toBe('8')
+      expect(await auditRows('std_v2_item', String(item0.id), 'update')).toBe(1)
+
+      const tiersKept = kept.tiers as Array<Record<string, unknown>>
+      expect(tiersKept).toHaveLength(2)
+      expect(tiersKept.some((t) => t.id === tier0.id)).toBe(true)
+      expect(tiersKept.some((t) => t.id === tier1.id)).toBe(false)
+      expect(await auditRows('std_v2_tier', String(tier0.id), 'update')).toBe(1)
+      expect(await auditRows('std_v2_tier', String(tier1.id), 'destroy')).toBe(1)
+
+      const added = itemsArr.find((i) => i.id !== item0.id)!
+      expect(added.qty).toBe('3')
+      expect(await auditRows('std_v2_item', String(added.id), 'create')).toBe(1)
+      const addedTier = (added.tiers as Array<Record<string, unknown>>)[0]!
+      expect(await auditRows('std_v2_tier', String(addedTier.id), 'create')).toBe(1)
+    })
+
+    test('replaceDraft：空集合 = 删全部子行（权威快照，非暂态）', async () => {
+      const created = await aggregate.createDraft(p('create'), draftInput('清空单'))
+      const itemId = String((created.items as Array<Record<string, unknown>>)[0]!.id)
+      const emptied = await aggregate.replaceDraft(p('update'), String(created.id), {
+        name: '已清空',
+        companyId,
+        items: [],
+      })
+      expect(emptied.items).toEqual([])
+      expect(await auditRows('std_v2_item', itemId, 'destroy')).toBe(1)
+      const left = await sql<{ n: string }>`
+        SELECT count(*)::text AS n FROM std_v2_item WHERE doc_id = ${String(created.id)}::uuid
+      `.execute(db)
+      expect(left.rows[0]!.n).toBe('0')
+    })
+
+    test('replaceDraft：删行先于头更新——清空条目后可改头字段', async () => {
+      const created = await aggregate.createDraft(p('create'), draftInput('时序单'))
+      const replaced = await aggregate.replaceDraft(p('update'), String(created.id), {
+        name: '清空并改名',
+        companyId,
+        items: [],
+      })
+      expect(replaced.name).toBe('清空并改名')
+      expect(replaced.items).toEqual([])
+    })
+
+    test('replaceDraft：身份校验——未知/重复 id、公司不可改、缺集合', async () => {
+      const created = await aggregate.createDraft(p('create'), draftInput('身份单'))
+      const item0 = (created.items as Array<Record<string, unknown>>)[0]!
+
+      await expect(
+        aggregate.replaceDraft(p('update'), String(created.id), {
+          name: 'x',
+          companyId,
+          items: [{ id: crypto.randomUUID(), idx: 1, qty: '1', tiers: [] }],
+        }),
+      ).rejects.toMatchObject({
+        code: 'validation',
+        fields: { 'items[0].id': ['不属于该测试单'] },
+      })
+
+      await expect(
+        aggregate.replaceDraft(p('update'), String(created.id), {
+          name: 'x',
+          companyId,
+          items: [
+            { id: item0.id, idx: 1, qty: '1', tiers: [] },
+            { id: item0.id, idx: 2, qty: '2', tiers: [] },
+          ],
+        }),
+      ).rejects.toMatchObject({
+        code: 'validation',
+        fields: { 'items[1].id': ['同一草稿中不能重复'] },
+      })
+
+      await expect(
+        aggregate.replaceDraft(p('update'), String(created.id), {
+          name: 'x',
+          companyId: otherCompanyId,
+          items: [{ id: item0.id, idx: 1, qty: '1', tiers: [] }],
+        }),
+      ).rejects.toMatchObject({
+        code: 'validation',
+        fields: { companyId: ['创建后不可修改公司'] },
+      })
+
+      await expect(
+        aggregate.replaceDraft(p('update'), String(created.id), {
+          name: 'x',
+          companyId,
+        }),
+      ).rejects.toMatchObject({
+        code: 'validation',
+        fields: { items: ['必须显式提交数组'] },
+      })
+    })
+
+    test('replaceDraft：任一行失败整单回滚（原子性）', async () => {
+      const created = await aggregate.createDraft(p('create'), draftInput('原子单'))
+      const item0 = (created.items as Array<Record<string, unknown>>)[0]!
+      const nameBefore = created.name
+
+      await expect(
+        aggregate.replaceDraft(p('update'), String(created.id), {
+          name: '不应落库',
+          companyId,
+          items: [
+            { id: item0.id, idx: 1, qty: '99', tiers: [] },
+            // qty 必填缺失 → child validate/insert 失败
+            { idx: 2, tiers: [] },
+          ],
+        }),
+      ).rejects.toThrow()
+
+      const reloaded = await aggregate.loadDraft(p('read'), String(created.id))
+      expect(reloaded.name).toBe(nameBefore)
+      const itemsArr = reloaded.items as Array<Record<string, unknown>>
+      expect(itemsArr).toHaveLength(1)
+      expect(itemsArr[0]!.qty).toBe('10')
+      expect(await auditRows('std_v2_doc', String(created.id), 'update')).toBe(0)
+    })
+
+    test('replaceDraft：无差异不落库不审计（头与行）', async () => {
+      const created = await aggregate.createDraft(p('create'), {
+        name: '无差单',
+        companyId,
+        items: [{ idx: 1, qty: '1', tiers: [] }],
+      })
+      const item0 = (created.items as Array<Record<string, unknown>>)[0]!
+      const again = await aggregate.replaceDraft(p('update'), String(created.id), {
+        name: '无差单',
+        companyId,
+        items: [{ id: item0.id, idx: 1, qty: '1', tiers: [] }],
+      })
+      expect(again.name).toBe('无差单')
+      expect(await auditRows('std_v2_doc', String(created.id), 'update')).toBe(0)
+      expect(await auditRows('std_v2_item', String(item0.id), 'update')).toBe(0)
     })
   })
 
