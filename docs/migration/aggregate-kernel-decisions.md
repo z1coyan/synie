@@ -11,6 +11,7 @@
 | 2026-08-07 | D10 | 三个领域基元落 `platform/posting/` 扩容；不新建 `platform/domain-primitives/` |
 | 2026-08-07 | D11 | 受控投影累加器收 `afterAdjust` 回调，去掉对 manufacturing/arrangement 的动态 import |
 | 2026-08-07 | D12 | mfgWorkOrders **不做**完整聚合草稿；头走 standard+InTx，void 走 workflow；配料/路线/副产品仅 BOM 快照整包写，不进 child/aggregate |
+| 2026-08-07 | 验收补记 | hrEmployees 呈现扩展 `code` 字段 `edit: 'readOnly'`（48b57430，依 ADR 2026-08-06 系统生成编号、对齐 material 先例）；`presentation.test.ts` 存量断言钉旧行为漏改，本次改为断言 readOnly——测试滞后修正，非行为变更 |
 
 ---
 

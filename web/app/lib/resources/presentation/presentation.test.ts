@@ -99,7 +99,8 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
       required: false,
       placeholder: '保存后自动编号',
     })
-    expect(emp.fields.code?.edit).toBeUndefined()
+    // 系统生成编号（ADR 2026-08-06）：readOnly 对齐 material 先例
+    expect(emp.fields.code?.edit).toBe('readOnly')
 
     const mat = createMaterialPresentation(
       bindingFromResourceTransport(
