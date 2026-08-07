@@ -30,6 +30,11 @@ import { auditStamp, createStandardService, type StandardService } from '~/platf
 import { listAuthorized } from '~/db/list.ts'
 import { utcToday } from '~/db/dates.ts'
 import {
+  adjustWorkOrderReceived,
+  type AfterAdjust,
+} from '~/platform/posting/controlled-projection.ts'
+import { recomputeDemandItemProjections } from './arrangement.ts'
+import {
   MFG_WRITE_MAPPINGS,
   deriveItemProjection,
   mfgWriteError,
@@ -489,36 +494,31 @@ async function checkOutput(
   }
 }
 
+/** 工单已入投影后倒写需求行安排（rowId = demandItemId） */
+const afterWorkOrderReceived: AfterAdjust = async (db, { rowId }) => {
+  await recomputeDemandItemProjections(db, rowId)
+}
+
 async function updateWorkOrderProjection(
   db: TrxHandle,
   orders: Map<string, LockedWorkOrder>,
   direction: 1 | -1,
 ): Promise<void> {
-  const ids = [...orders.keys()].sort()
-  for (const id of ids) {
-    const order = orders.get(id)!.item
-    const next = decimal(order.receivedBaseQty).add(orders.get(id)!.add.mul(direction))
-    if (next.isNegative()) {
-      throw new ApiError('conflict', '生产工单已入数量不能为负')
-    }
-    let orderStatus: WorkOrderStatus = 'in_progress'
-    if (!next.lt(decimal(order.baseQty))) {
-      orderStatus = 'completed'
-    }
-    try {
-      await db
-        .updateTable('mfg_work_order')
-        .set({
-          received_base_qty: toDecimalString(next),
-          status: orderStatus,
-          updated_at: sql`(now() AT TIME ZONE 'utc')`,
-        })
-        .where('id', '=', id)
-        .execute()
-    } catch (err) {
-      throw mfgWriteError('更新生产工单已入投影失败', err)
-    }
-    const { recomputeDemandItemProjections } = await import('./arrangement.ts')
-    await recomputeDemandItemProjections(db, order.demandItemId)
+  try {
+    await adjustWorkOrderReceived(
+      db,
+      [...orders.entries()].map(([id, { item, add }]) => ({
+        workOrderId: id,
+        demandItemId: item.demandItemId,
+        baseQty: item.baseQty,
+        receivedBaseQty: item.receivedBaseQty,
+        addQty: add,
+      })),
+      direction,
+      { afterAdjust: afterWorkOrderReceived },
+    )
+  } catch (err) {
+    if (err instanceof ApiError) throw err
+    throw mfgWriteError('更新生产工单已入投影失败', err)
   }
 }

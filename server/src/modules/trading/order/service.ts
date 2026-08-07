@@ -16,6 +16,7 @@ import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withReadSnapshot, withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
+import { recomputeDemandItemProjections } from '~/modules/manufacturing/arrangement.ts'
 import {
   auditCreated,
   auditDestroyed,
@@ -1827,10 +1828,7 @@ async function adjustDemandOnAudit(db: DbHandle, orderId: string, occupy: boolea
     }
     touched.add(row.demand_line_id)
   }
-  const { recomputeDemandItemProjections } = await import(
-    '~/modules/manufacturing/arrangement.ts'
-  )
-  for (const lineId of [...touched].sort()) {
+for (const lineId of [...touched].sort()) {
     await recomputeDemandItemProjections(db, lineId)
   }
 }

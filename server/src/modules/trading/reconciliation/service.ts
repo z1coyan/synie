@@ -47,6 +47,7 @@ import {
   wireRequiredDecimal,
 } from '../common.ts'
 import { utcToday } from '~/db/dates.ts'
+import { adjustReconciledProjection } from '~/platform/posting/controlled-projection.ts'
 import {
   reconciliationHeadMeta,
   reconciliationItemMeta,
@@ -950,7 +951,7 @@ async function requireItems(db: DbHandle, spec: ReconciliationSideSpec, id: stri
   }
 }
 
-// ---- projection ----
+// ---- projection（platform/posting/controlled-projection · W0 T0.3）----
 
 async function adjustProjection(
   db: DbHandle,
@@ -958,84 +959,7 @@ async function adjustProjection(
   id: string,
   direction: number,
 ) {
-  type Proj = { id: string; delta: string; outsourced: boolean; idx: string }
-  let rows: Proj[]
-  if (spec.side === 'sales') {
-    const r = await sql<Proj>`
-      SELECT delivery_item_id::text AS id, SUM(base_qty)::text AS delta,
-        false AS outsourced, MIN(idx)::text AS idx
-      FROM sal_reconciliation_item WHERE reconciliation_id=${id}::uuid
-      GROUP BY delivery_item_id
-    `.execute(db)
-    rows = r.rows
-  } else {
-    const r = await sql<Proj>`
-      SELECT COALESCE(receipt_item_id, outsourced_receipt_item_id)::text AS id,
-        SUM(base_qty)::text AS delta,
-        (outsourced_receipt_item_id IS NOT NULL) AS outsourced,
-        MIN(idx)::text AS idx
-      FROM pur_reconciliation_item WHERE reconciliation_id=${id}::uuid
-      GROUP BY receipt_item_id, outsourced_receipt_item_id
-    `.execute(db)
-    rows = r.rows
-  }
-  rows.sort((a, b) => a.id.localeCompare(b.id))
-  for (const value of rows) {
-    const delta = decimal(value.delta).mul(direction)
-    if (value.outsourced) {
-      const parent = await sql<{ receipt_id: string }>`
-        SELECT receipt_id FROM pur_outsourced_receipt_item WHERE id=${value.id}::uuid
-      `.execute(db)
-      if (!parent.rows[0]) throw new ApiError('conflict', '对账来源条目不存在')
-      const status = await sql<{ status: string }>`
-        SELECT status FROM pur_outsourced_receipt WHERE id=${parent.rows[0].receipt_id}::uuid FOR UPDATE
-      `.execute(db)
-      if (status.rows[0]?.status !== 'audited') {
-        throw new ApiError('conflict', '仅已审核委外入库行可对账')
-      }
-      const item = await sql<{ base_qty: string; reconciled_qty: string }>`
-        SELECT base_qty::text, reconciled_qty::text
-        FROM pur_outsourced_receipt_item WHERE id=${value.id}::uuid FOR UPDATE
-      `.execute(db)
-      if (!item.rows[0]) throw new ApiError('conflict', '对账来源条目不存在')
-      const next = decimal(item.rows[0].reconciled_qty).add(delta)
-      if (next.isNegative() || next.gt(decimal(item.rows[0].base_qty))) {
-        throw new ApiError('conflict', '超出剩余可对账量')
-      }
-      await sql`
-        UPDATE pur_outsourced_receipt_item SET
-          reconciled_qty=reconciled_qty+${wireRequiredDecimal(delta)},
-          updated_at=(now() AT TIME ZONE 'utc')
-        WHERE id=${value.id}::uuid
-          AND reconciled_qty+${wireRequiredDecimal(delta)}>=0
-          AND reconciled_qty+${wireRequiredDecimal(delta)}<=base_qty
-      `.execute(db)
-      continue
-    }
-    const table = spec.side === 'sales' ? 'sal_delivery_item' : 'pur_receipt_item'
-    const parentTable = spec.side === 'sales' ? 'sal_delivery' : 'pur_receipt'
-    const parentFK = spec.side === 'sales' ? 'delivery_id' : 'receipt_id'
-    const parent = await sql<{ status: string }>`
-      SELECT h.status FROM ${sql.raw(table)} i
-      JOIN ${sql.raw(parentTable)} h ON h.id=i.${sql.raw(parentFK)}
-      WHERE i.id=${value.id}::uuid FOR UPDATE OF h,i
-    `.execute(db)
-    if (!parent.rows[0]) throw new ApiError('conflict', '对账来源条目不存在')
-    if (parent.rows[0].status !== 'audited') {
-      throw new ApiError('conflict', '仅已审核且未作废来源条目可对账')
-    }
-    const tag = await sql`
-      UPDATE ${sql.raw(table)} SET
-        reconciled_qty=reconciled_qty+${wireRequiredDecimal(delta)},
-        updated_at=(now() AT TIME ZONE 'utc')
-      WHERE id=${value.id}::uuid
-        AND reconciled_qty+${wireRequiredDecimal(delta)}>=0
-        AND reconciled_qty+${wireRequiredDecimal(delta)}<=base_qty
-    `.execute(db)
-    if (Number(tag.numAffectedRows ?? 0) !== 1) {
-      throw new ApiError('conflict', `第${value.idx}行超出剩余可对账量`)
-    }
-  }
+  await adjustReconciledProjection(db, spec.side, id, direction)
 }
 
 async function postGiftGL(

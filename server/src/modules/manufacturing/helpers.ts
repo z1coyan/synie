@@ -11,7 +11,7 @@ import { toDateOnly } from '~/db/dates.ts'
 import type { DbHandle } from '~/db/tx.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError, type PgWriteMapping } from '~/db/dberr.ts'
-import type { DemandItemStatus, ListQueryInput } from './types.ts'
+import type { ListQueryInput } from './types.ts'
 
 export { toDateOnly }
 
@@ -160,63 +160,11 @@ export function normalizeList(query: ListQueryInput) {
   }
 }
 
-/** 采购链投影：调整已下单数量 */
-export async function adjustDemandOrdered(
-  db: DbHandle,
-  id: string,
-  delta: string | number,
-): Promise<void> {
-  const row = await db
-    .selectFrom('mfg_demand_item')
-    .select('ordered_qty')
-    .where('id', '=', id)
-    .forUpdate()
-    .executeTakeFirst()
-  if (!row) throw new ApiError('not_found', '需求行不存在')
-  const next = decimal(String(row.ordered_qty)).add(delta)
-  if (next.isNegative()) {
-    throw new ApiError('conflict', '已下单数量不能为负')
-  }
-  await db
-    .updateTable('mfg_demand_item')
-    .set({
-      ordered_qty: toDecimalString(next),
-      updated_at: sql`(now() AT TIME ZONE 'utc')`,
-    })
-    .where('id', '=', id)
-    .execute()
-}
-
-/** 采购/委外入库投影：调整已收并自动完成/回待办 */
-export async function adjustDemandReceived(
-  db: DbHandle,
-  id: string,
-  delta: string | number,
-): Promise<void> {
-  const row = await db
-    .selectFrom('mfg_demand_item')
-    .select(['received_qty', 'base_qty'])
-    .where('id', '=', id)
-    .forUpdate()
-    .executeTakeFirst()
-  if (!row) throw new ApiError('not_found', '需求行不存在')
-  const next = decimal(String(row.received_qty)).add(delta)
-  if (next.isNegative()) {
-    throw new ApiError('conflict', '已收数量不能为负')
-  }
-  const status: DemandItemStatus = !next.lt(decimal(String(row.base_qty)))
-    ? 'completed'
-    : 'pending'
-  await db
-    .updateTable('mfg_demand_item')
-    .set({
-      received_qty: toDecimalString(next),
-      status,
-      updated_at: sql`(now() AT TIME ZONE 'utc')`,
-    })
-    .where('id', '=', id)
-    .execute()
-}
+/** 采购链投影（已下单/已收）：实现见 platform/posting/controlled-projection（W0 T0.3） */
+export {
+  adjustDemandOrdered,
+  adjustDemandReceived,
+} from '~/platform/posting/controlled-projection.ts'
 
 export function numStr(v: unknown): string {
   if (v == null) return '0'
