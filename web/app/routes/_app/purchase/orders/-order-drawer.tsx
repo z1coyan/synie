@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Input, Label, ListBox, Modal, NumberField, Select, TextArea, TextField, toast } from '@heroui/react'
 import { isForbidden } from '~/lib/errors'
@@ -30,7 +30,10 @@ import { DemandLinePicker } from './-demand-line-picker'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { todayLocal } from '~/lib/form-defaults'
 import { toastError } from '~/lib/toast'
-import { useDocumentDrawer } from '~/lib/use-document-drawer'
+import {
+  createDocumentDrawerOpenBridge,
+  useDocumentDrawer,
+} from '~/lib/use-document-drawer'
 
 const purchaseOrderBinding = resourceBindingFor('purOrders')
 const purchaseOrderItemBinding = resourceBindingFor('purOrderItems')
@@ -92,12 +95,12 @@ export const purchaseOrderAuditConfig = {
   ],
 } satisfies AuditDocConfig
 
-const OrderDrawerContext = createContext<OpenOrderDrawer>(() => {})
+const {
+  useOpen: useOrderDrawer,
+  Provider: OrderDrawerOpenProvider,
+} = createDocumentDrawerOpenBridge<OpenOrderDrawer>()
+export { useOrderDrawer }
 
-/** 子路由(订单/订单条目)取 openDrawer:view/edit 传 {id, status},create 传 null */
-export function useOrderDrawer(): OpenOrderDrawer {
-  return useContext(OrderDrawerContext)
-}
 
 // 行上委外配置子表集合的读取(行对象附加键,不进 mutation payload)
 const issueLinesOf = (row: Row | null | undefined): Row[] => (row?.issueLines as Row[] | undefined) ?? []
@@ -462,7 +465,7 @@ export function OrderDrawerProvider({
   }
 
   return (
-    <OrderDrawerContext.Provider value={openDrawer}>
+    <OrderDrawerOpenProvider value={openDrawer}>
       {children}
 
       <SynieRecordDrawer
@@ -1055,6 +1058,6 @@ export function OrderDrawerProvider({
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
-    </OrderDrawerContext.Provider>
+    </OrderDrawerOpenProvider>
   )
 }

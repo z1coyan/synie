@@ -395,7 +395,7 @@ export function outsourcedReceiptItemRoutes(deps: OutsourcedRouteDeps) {
             qty: decimalString.optional(),
             orderItemId: z.string().uuid().optional(),
             unitId: z.string().uuid().nullable().optional(),
-            warehouseId: z.string().uuid().optional(),
+            warehouseId: z.string().uuid().nullable().optional(),
             remarks: z.string().nullable().optional(),
           })
           .strict(),
@@ -408,6 +408,7 @@ export function outsourcedReceiptItemRoutes(deps: OutsourcedRouteDeps) {
           await outsourced.updateReceiptItem(permitOf(c), c.req.valid('param').id, {
             ...body,
             unitIdPresent: presentKey(raw, 'unitId'),
+            warehouseIdPresent: presentKey(raw, 'warehouseId'),
             remarksPresent: presentKey(raw, 'remarks'),
           }),
         )

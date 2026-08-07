@@ -7,13 +7,22 @@
  * - tree：树锁下的父子校验（自身/不存在/后代成环）、物化路径与子树重写、
  *   有子节点删除保护
  * - projection：selectExtra/mapExtra 进 list 与 get（has_children 投影）
- * - child：母单授权锁 + 状态门 + 带入列；行审计三型
+ * - child：母单授权锁 + 状态门 + 带入列；行审计三型；
+ *   无差异按 WRITE_COLS（audit.exclude 可写列不得丢写，与 root 同构）
+ * - 孙级（D3）：parent.resource 可指 child；链深 ≤2 装配；孙级 CRUD 与越母单 not_found
+ * - InTx（D1）：root/child 动作族 `*InTx(trx, permit, …)`；外层事务回滚则全链无痕
+ * - aggregate（D2/D4/D6）：loadDraft/createDraft/replaceDraft；缺失即删；
+ *   删行先于头更新；numbering 走 head options；逐行审计三型；孙级子树；
+ *   loadTree 经 head/child 投影（mapExtra 键不丢）
+ * - extraWhere（T1.5）：list/load 领域行筛选；query 改写（伪 filter 剥离）；
+ *   谓词不命中 get → not_found（可见性语义与 list 一致）
  *
  * 业务资源迁入后各自的行为由 standard-contract 描述符继承；本文件只锁内核语义。
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
+import { withTx } from '~/db/tx.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
@@ -21,7 +30,12 @@ import { ApiError } from '~/platform/http/errors.ts'
 import { testActor } from '~/platform/authz/testing.ts'
 import { createRegistry } from '~/platform/meta/registry.ts'
 import type { FieldMeta, ResourceMeta } from '~/platform/meta/types.ts'
-import { createStandardChildService } from './child.ts'
+import { createAggregateService } from './aggregate.ts'
+import {
+  assertChildParentChainDepth,
+  createStandardChildService,
+  MAX_CHILD_PARENT_DEPTH,
+} from './child.ts'
 import { auditStamp, createStandardService } from './service.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
@@ -104,6 +118,31 @@ function itemMeta(): ResourceMeta {
       field('idx', 'idx', 'integer', '行号', { required: true, sortable: true }),
       field('qty', 'qty', 'decimal', '数量', { required: true }),
       field('qty_x2', 'qtyX2', 'decimal', '双倍数量', { readonly: true }),
+      // note 可写但排除审计：钉 child 无差异按 WRITE_COLS，不得丢写
+      field('note', 'note', 'string', '行备注', { nullable: true, maxLength: 64 }),
+      field('company_id', 'companyId', 'uuid', '公司', { readonly: true }),
+      field('inserted_at', 'insertedAt', 'datetime', '创建时间', { readonly: true }),
+      field('updated_at', 'updatedAt', 'datetime', '更新时间', { readonly: true }),
+    ],
+    actions: crud.slice(0, 4),
+    audit: { enabled: true, exclude: ['note'] },
+  }
+}
+
+/** 孙级：parent=stdV2Items（via docs）→ 链深 2，D3 首消费者形态（价格档/装箱行） */
+function tierMeta(): ResourceMeta {
+  return {
+    name: 'stdV2Tiers',
+    classification: { presentation: 'none', interactive: false, note: '内核合同测试合成孙级' },
+    permissionPrefix: 'stdv2.tier',
+    permissionLabel: '测试价格档',
+    table: 'std_v2_tier',
+    authz: { kind: 'via', parent: 'stdV2Items', fk: 'item_id' },
+    fields: [
+      field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
+      field('item_id', 'itemId', 'uuid', '母行', { required: true, createOnly: true, filterable: true }),
+      field('min_qty', 'minQty', 'decimal', '起订量', { required: true }),
+      field('price', 'price', 'decimal', '档价', { required: true }),
       field('company_id', 'companyId', 'uuid', '公司', { readonly: true }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', { readonly: true }),
       field('updated_at', 'updatedAt', 'datetime', '更新时间', { readonly: true }),
@@ -133,11 +172,66 @@ function nodeMeta(): ResourceMeta {
   }
 }
 
+/** 装配期链深断言（不依赖 DB；D3 纯描述符校验） */
+describe('标准子行装配（孙级链深 D3）', () => {
+  test(`parent 指向 child 时链深 ${MAX_CHILD_PARENT_DEPTH} 可装配；链深 3 装配期抛错`, () => {
+    const registry = createRegistry()
+    registry.register(docMeta())
+    registry.register(itemMeta())
+    registry.register(tierMeta())
+    // 曾孙：故意超限
+    registry.register({
+      name: 'stdV2TooDeep',
+      classification: { presentation: 'none', interactive: false, note: '超限链深合成' },
+      permissionPrefix: 'stdv2.deep',
+      permissionLabel: '超限孙孙',
+      table: 'std_v2_too_deep',
+      authz: { kind: 'via', parent: 'stdV2Tiers', fk: 'tier_id' },
+      fields: [
+        field('id', 'id', 'uuid', 'id', { readonly: true }),
+        field('tier_id', 'tierId', 'uuid', '母档', { required: true, createOnly: true }),
+        field('inserted_at', 'insertedAt', 'datetime', '创建时间', { readonly: true }),
+        field('updated_at', 'updatedAt', 'datetime', '更新时间', { readonly: true }),
+      ],
+      actions: crud.slice(0, 4),
+      audit: { enabled: true },
+    })
+    registry.seal()
+
+    expect(() => assertChildParentChainDepth('stdV2Items', 'stdV2Docs', registry)).not.toThrow()
+    expect(() => assertChildParentChainDepth('stdV2Tiers', 'stdV2Items', registry)).not.toThrow()
+    expect(() => assertChildParentChainDepth('stdV2TooDeep', 'stdV2Tiers', registry)).toThrow(
+      /parent 链深 3 超过上限 2/,
+    )
+
+    // parent.resource 与 meta.authz.parent 不一致 → 装配失败
+    expect(() =>
+      createStandardChildService({
+        db: null as never,
+        registry,
+        resource: 'stdV2Tiers',
+        parent: { resource: 'stdV2Docs', fkField: 'itemId' },
+      }),
+    ).toThrow(/parent\.resource=stdV2Docs 与 meta\.authz\.parent=stdV2Items 不一致/)
+
+    // 链深 3：createStandardChildService 同步 fail-closed（不落到运行时）
+    expect(() =>
+      createStandardChildService({
+        db: null as never,
+        registry,
+        resource: 'stdV2TooDeep',
+        parent: { resource: 'stdV2Tiers', fkField: 'tierId' },
+      }),
+    ).toThrow(/parent 链深 3 超过上限 2/)
+  })
+})
+
 run('标准动作内核 v2（postgres）', () => {
   const db = createDb(url!)
   const registry = createRegistry()
   registry.register(docMeta())
   registry.register(itemMeta())
+  registry.register(tierMeta())
   registry.register(nodeMeta())
   registry.seal()
   const authz = createAuthzEnforcer(registry)
@@ -151,6 +245,7 @@ run('标准动作内核 v2（postgres）', () => {
   const p = (action: string, resource = 'stdV2Docs') => permitOf(admin, resource, action)
 
   const companyId = crypto.randomUUID()
+  const otherCompanyId = crypto.randomUUID()
   let numberingCalls = 0
   const fakeNumbering = {
     nextInTx: async (_handle: unknown, input: { resource: string }) => {
@@ -220,6 +315,112 @@ run('标准动作内核 v2（postgres）', () => {
     },
   })
 
+  /** 孙级：parent.resource 指向 child（stdV2Items），链深 2 */
+  const tiers = createStandardChildService({
+    db,
+    registry,
+    resource: 'stdV2Tiers',
+    parent: {
+      resource: 'stdV2Items',
+      fkField: 'itemId',
+      inheritFields: ['companyId'],
+      notFound: '测试单行不存在',
+    },
+    notFound: '测试价格档不存在',
+    // 孙级无 idx 列；避免默认 `"idx" ASC` 在 list 时炸列
+    defaultOrder: sql`"id" ASC`,
+  })
+
+  /** 带投影的头/行（聚合 loadTree 合同：mapExtra 键不得丢） */
+  const projectedDocs = createStandardService({
+    db,
+    registry,
+    resource: 'stdV2Docs',
+    numbering: { service: fakeNumbering, field: 'docNo' },
+    hooks: {
+      insertColumns: () => ({ stamped_note: 'G1' }),
+    },
+    workflow: {
+      mutableStatuses: ['DRAFT'],
+      mutableMessage: '仅草稿测试单可修改或删除',
+      transitions: [
+        {
+          key: 'audit',
+          label: '审核',
+          from: ['DRAFT'],
+          to: 'AUDITED',
+          guardMessage: '仅草稿测试单可审核',
+          stamps: ({ permit }) => auditStamp(permit),
+        },
+      ],
+    },
+    projection: {
+      source: sql`
+        FROM (
+          SELECT d.*, upper(d.name) AS name_upper
+          FROM std_v2_doc d
+        ) std_v2_doc
+      `,
+      alias: 'std_v2_doc',
+      selectExtra: sql`name_upper`,
+      mapExtra: (row) => ({ nameUpper: String(row.name_upper ?? '') }),
+    },
+  })
+
+  const projectedItems = createStandardChildService({
+    db,
+    registry,
+    resource: 'stdV2Items',
+    parent: {
+      resource: 'stdV2Docs',
+      fkField: 'docId',
+      inheritFields: ['companyId'],
+      gate: (parent) => {
+        if (parent.status !== 'DRAFT') throw new ApiError('conflict', '仅草稿测试单可编辑单据行')
+      },
+    },
+    derivedFields: ['qtyX2'],
+    hooks: {
+      beforeWrite: (_trx, { draft }) => {
+        draft.qtyX2 = String(Number(draft.qty) * 2)
+      },
+    },
+    projection: {
+      source: sql`
+        FROM (
+          SELECT i.*, d.name AS doc_name
+          FROM std_v2_item i
+          JOIN std_v2_doc d ON d.id = i.doc_id
+        ) std_v2_item
+      `,
+      alias: 'std_v2_item',
+      selectExtra: sql`doc_name`,
+      mapExtra: (row) => ({ docName: String(row.doc_name ?? '') }),
+    },
+  })
+
+  /** 聚合草稿：头 + 条目 + 价格档（D2/D4/D6 合成合同） */
+  const aggregate = createAggregateService({
+    db,
+    registry,
+    head: docs,
+    children: [
+      {
+        key: 'items',
+        service: items,
+        children: [{ key: 'tiers', service: tiers }],
+      },
+    ],
+  })
+
+  /** 带投影的聚合：钉 loadTree 不绕开 mapExtra */
+  const projectedAggregate = createAggregateService({
+    db,
+    registry,
+    head: projectedDocs,
+    children: [{ key: 'items', service: projectedItems }],
+  })
+
   const nodes = createStandardService({
     db,
     registry,
@@ -265,6 +466,18 @@ run('标准动作内核 v2（postgres）', () => {
         idx integer NOT NULL,
         qty numeric(18,6) NOT NULL,
         qty_x2 numeric(18,6),
+        note varchar(64),
+        company_id uuid NOT NULL,
+        inserted_at timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'utc'),
+        updated_at timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
+      )
+    `.execute(db)
+    await sql`
+      CREATE TABLE IF NOT EXISTS std_v2_tier (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        item_id uuid NOT NULL REFERENCES std_v2_item(id) ON DELETE CASCADE,
+        min_qty numeric(18,6) NOT NULL,
+        price numeric(18,6) NOT NULL,
         company_id uuid NOT NULL,
         inserted_at timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'utc'),
         updated_at timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
@@ -283,7 +496,8 @@ run('标准动作内核 v2（postgres）', () => {
   })
 
   afterAll(async () => {
-    await sql`DELETE FROM sys_audit_log WHERE resource IN ('std_v2_doc', 'std_v2_item', 'std_v2_node')`.execute(db)
+    await sql`DELETE FROM sys_audit_log WHERE resource IN ('std_v2_doc', 'std_v2_item', 'std_v2_tier', 'std_v2_node')`.execute(db)
+    await sql`DROP TABLE IF EXISTS std_v2_tier`.execute(db)
     await sql`DROP TABLE IF EXISTS std_v2_item`.execute(db)
     await sql`DROP TABLE IF EXISTS std_v2_doc`.execute(db)
     await sql`DROP TABLE IF EXISTS std_v2_node`.execute(db)
@@ -417,6 +631,90 @@ run('标准动作内核 v2（postgres）', () => {
     })
   })
 
+  describe('InTx（外层事务由调用方持有）', () => {
+    test('外层回滚则全链无痕：root create + child create + 审计', async () => {
+      let docId = ''
+      let itemId = ''
+      await expect(
+        withTx(db, async (trx) => {
+          const doc = await docs.createInTx(trx, p('create'), {
+            name: `回滚链-${crypto.randomUUID().slice(0, 6)}`,
+            companyId,
+          })
+          docId = doc.id
+          const item = await items.createInTx(trx, p('create', 'stdV2Items'), {
+            docId: doc.id,
+            idx: 1,
+            qty: '1',
+          })
+          itemId = item.id
+          // 事务内可见（证明确实写进了本事务）
+          const mid = await sql<{ n: string }>`
+            SELECT count(*)::text AS n FROM std_v2_doc WHERE id = ${docId}::uuid
+          `.execute(trx)
+          expect(mid.rows[0]!.n).toBe('1')
+          throw new Error('强制回滚')
+        }),
+      ).rejects.toThrow('强制回滚')
+
+      expect(docId).not.toBe('')
+      expect(itemId).not.toBe('')
+      const docsLeft = await sql<{ n: string }>`
+        SELECT count(*)::text AS n FROM std_v2_doc WHERE id = ${docId}::uuid
+      `.execute(db)
+      const itemsLeft = await sql<{ n: string }>`
+        SELECT count(*)::text AS n FROM std_v2_item WHERE id = ${itemId}::uuid
+      `.execute(db)
+      expect(docsLeft.rows[0]!.n).toBe('0')
+      expect(itemsLeft.rows[0]!.n).toBe('0')
+      expect(await auditRows('std_v2_doc', docId, 'create')).toBe(0)
+      expect(await auditRows('std_v2_item', itemId, 'create')).toBe(0)
+    })
+
+    test('外层提交则 root+child 与审计一并落库', async () => {
+      const { docId, itemId } = await withTx(db, async (trx) => {
+        const doc = await docs.createInTx(trx, p('create'), {
+          name: `提交链-${crypto.randomUUID().slice(0, 6)}`,
+          companyId,
+        })
+        const item = await items.createInTx(trx, p('create', 'stdV2Items'), {
+          docId: doc.id,
+          idx: 1,
+          qty: '2',
+        })
+        return { docId: doc.id, itemId: item.id }
+      })
+      const got = await docs.get(p('read'), docId)
+      expect(got.id).toBe(docId)
+      const item = await items.get(p('read', 'stdV2Items'), itemId)
+      expect(item.docId).toBe(docId)
+      expect(await auditRows('std_v2_doc', docId, 'create')).toBe(1)
+      expect(await auditRows('std_v2_item', itemId, 'create')).toBe(1)
+    })
+
+    test('updateInTx/removeInTx/transitionInTx 共享外层事务：中途失败无半截状态', async () => {
+      const doc = await createDraft()
+      const item = await items.create(p('create', 'stdV2Items'), { docId: doc.id, idx: 1, qty: '1' })
+      await expect(
+        withTx(db, async (trx) => {
+          await items.updateInTx(trx, p('update', 'stdV2Items'), item.id, { qty: '9' })
+          await docs.transitionInTx(trx, p('audit'), doc.id, 'audit')
+          // 审核后删行应被状态门拦住；整段回滚
+          await items.removeInTx(trx, p('delete', 'stdV2Items'), item.id)
+        }),
+      ).rejects.toMatchObject({ code: 'conflict' })
+
+      const still = await docs.get(p('read'), doc.id)
+      expect(still.status).toBe('DRAFT')
+      expect(still.name).not.toBe('效果改名')
+      const stillItem = await items.get(p('read', 'stdV2Items'), item.id)
+      expect(stillItem.qty).toBe('1')
+      expect(await auditRows('std_v2_doc', doc.id, 'audit')).toBe(0)
+      expect(await auditRows('std_v2_item', item.id, 'update')).toBe(0)
+      expect(await auditRows('std_v2_item', item.id, 'destroy')).toBe(0)
+    })
+  })
+
   describe('child（子行：母单锁 + 状态门 + 带入列）', () => {
     test('草稿母单可加行；company_id 从母单带入；行审计三型', async () => {
       const doc = await createDraft()
@@ -439,6 +737,32 @@ run('标准动作内核 v2（postgres）', () => {
       expect(await auditRows('std_v2_item', item.id, 'destroy')).toBe(1)
     })
 
+    test('只改 audit.exclude 可写列：落库、不写审计（WRITE_COLS 与 root 同构）', async () => {
+      const doc = await createDraft()
+      const item = await items.create(p('create', 'stdV2Items'), {
+        docId: doc.id,
+        idx: 1,
+        qty: '1',
+        note: null,
+      })
+      const updated = await items.update(p('update', 'stdV2Items'), item.id, { note: '行便签' })
+      expect(updated.note).toBe('行便签')
+      const raw = await sql<{ note: string | null }>`
+        SELECT note FROM std_v2_item WHERE id = ${item.id}::uuid
+      `.execute(db)
+      expect(raw.rows[0]!.note).toBe('行便签')
+      // create 已写 1 条；exclude 列更新不得再写 update 审计
+      expect(await auditRows('std_v2_item', item.id, 'update')).toBe(0)
+
+      // 审计面内列变化 → 落库且写审计
+      await items.update(p('update', 'stdV2Items'), item.id, { qty: '2' })
+      expect(await auditRows('std_v2_item', item.id, 'update')).toBe(1)
+
+      // 同值补丁（含 exclude 列）仍是无差异
+      await items.update(p('update', 'stdV2Items'), item.id, { note: '行便签', qty: '2' })
+      expect(await auditRows('std_v2_item', item.id, 'update')).toBe(1)
+    })
+
     test('非草稿母单：加行/改行/删行一律 conflict', async () => {
       const doc = await createDraft()
       const item = await items.create(p('create', 'stdV2Items'), { docId: doc.id, idx: 1, qty: '1' })
@@ -457,6 +781,425 @@ run('标准动作内核 v2（postgres）', () => {
       await expect(
         items.create(p('create', 'stdV2Items'), { docId: crypto.randomUUID(), idx: 1, qty: '1' }),
       ).rejects.toMatchObject({ code: 'not_found' })
+    })
+  })
+
+  describe('孙级（D3：parent 指 child；CRUD + 越母单 not_found）', () => {
+    test('孙级 CRUD：挂条目下建档；company_id 从母行带入；行审计三型', async () => {
+      const doc = await createDraft()
+      const item = await items.create(p('create', 'stdV2Items'), { docId: doc.id, idx: 1, qty: '10' })
+      const tier = await tiers.create(p('create', 'stdV2Tiers'), {
+        itemId: item.id,
+        minQty: '1',
+        price: '9.5',
+      })
+      expect(tier.itemId).toBe(item.id)
+      expect(tier.companyId).toBe(companyId)
+      expect(tier.minQty).toBe('1')
+      expect(tier.price).toBe('9.5')
+      expect(await auditRows('std_v2_tier', tier.id, 'create')).toBe(1)
+
+      const got = await tiers.get(p('read', 'stdV2Tiers'), tier.id)
+      expect(got.id).toBe(tier.id)
+      expect(got.itemId).toBe(item.id)
+
+      const listed = await tiers.list(p('read', 'stdV2Tiers'), {
+        filter: { itemId: { kind: 'fk', op: 'in', values: [item.id], labels: [] } },
+      })
+      expect(listed.results.map((r) => r.id)).toContain(tier.id)
+
+      const updated = await tiers.update(p('update', 'stdV2Tiers'), tier.id, { price: '8' })
+      expect(updated.price).toBe('8')
+      expect(await auditRows('std_v2_tier', tier.id, 'update')).toBe(1)
+
+      // 无差异补丁：不写审计
+      await tiers.update(p('update', 'stdV2Tiers'), tier.id, { price: '8' })
+      expect(await auditRows('std_v2_tier', tier.id, 'update')).toBe(1)
+
+      await tiers.remove(p('delete', 'stdV2Tiers'), tier.id)
+      expect(await auditRows('std_v2_tier', tier.id, 'destroy')).toBe(1)
+      await expect(tiers.get(p('read', 'stdV2Tiers'), tier.id)).rejects.toMatchObject({
+        code: 'not_found',
+        message: '测试价格档不存在',
+      })
+    })
+
+    test('越母单 not_found（与 invMaterialUnits 一致：母行不存在/不可达同为 not_found，不泄露）', async () => {
+      // 1) 幽灵母行 id → 母 not_found 文案（create 锁母）
+      await expect(
+        tiers.create(p('create', 'stdV2Tiers'), {
+          itemId: crypto.randomUUID(),
+          minQty: '1',
+          price: '1',
+        }),
+      ).rejects.toMatchObject({ code: 'not_found', message: '测试单行不存在' })
+
+      // 2) 母行在不可达公司：公司域 actor 写孙级 → 母 not_found（不暴露存在性）
+      const homeDoc = await docs.create(p('create'), {
+        name: `本司-${crypto.randomUUID().slice(0, 6)}`,
+        companyId,
+      })
+      const homeItem = await items.create(p('create', 'stdV2Items'), {
+        docId: homeDoc.id,
+        idx: 1,
+        qty: '1',
+      })
+      const foreignDoc = await docs.create(p('create'), {
+        name: `外司-${crypto.randomUUID().slice(0, 6)}`,
+        companyId: otherCompanyId,
+      })
+      const foreignItem = await items.create(p('create', 'stdV2Items'), {
+        docId: foreignDoc.id,
+        idx: 1,
+        qty: '1',
+      })
+      const foreignTier = await tiers.create(p('create', 'stdV2Tiers'), {
+        itemId: foreignItem.id,
+        minQty: '1',
+        price: '2',
+      })
+
+      // 公司域 actor：superAdmin 的 rowFilter 恒 bypass，测不出越母单；via 归宿码在 root 前缀
+      const scoped = testActor({
+        username: `std-v2-scoped-${crypto.randomUUID().slice(0, 8)}`,
+        superAdmin: false,
+        allCompanies: false,
+        companyIds: [companyId],
+        permissions: new Set([
+          'stdv2.doc:read',
+          'stdv2.doc:create',
+          'stdv2.doc:update',
+          'stdv2.doc:delete',
+        ]),
+      })
+      const scopedTierCreate = permitOf(scoped, 'stdV2Tiers', 'create')
+      const scopedTierRead = permitOf(scoped, 'stdV2Tiers', 'read')
+      const scopedTierUpdate = permitOf(scoped, 'stdV2Tiers', 'update')
+      const scopedTierDelete = permitOf(scoped, 'stdV2Tiers', 'delete')
+
+      // 本公司母行仍可建档
+      const ok = await tiers.create(scopedTierCreate, {
+        itemId: homeItem.id,
+        minQty: '5',
+        price: '3',
+      })
+      expect(ok.companyId).toBe(companyId)
+
+      // 跨公司母行 / 跨公司孙级：一律 not_found
+      await expect(
+        tiers.create(scopedTierCreate, { itemId: foreignItem.id, minQty: '1', price: '1' }),
+      ).rejects.toMatchObject({ code: 'not_found', message: '测试单行不存在' })
+      await expect(tiers.get(scopedTierRead, foreignTier.id)).rejects.toMatchObject({
+        code: 'not_found',
+        message: '测试价格档不存在',
+      })
+      await expect(
+        tiers.update(scopedTierUpdate, foreignTier.id, { price: '99' }),
+      ).rejects.toMatchObject({ code: 'not_found' })
+      await expect(tiers.remove(scopedTierDelete, foreignTier.id)).rejects.toMatchObject({
+        code: 'not_found',
+      })
+    })
+
+    test('孙级 InTx：外层回滚则档+审计无痕', async () => {
+      const doc = await createDraft()
+      const item = await items.create(p('create', 'stdV2Items'), { docId: doc.id, idx: 1, qty: '1' })
+      let tierId = ''
+      await expect(
+        withTx(db, async (trx) => {
+          const tier = await tiers.createInTx(trx, p('create', 'stdV2Tiers'), {
+            itemId: item.id,
+            minQty: '1',
+            price: '1',
+          })
+          tierId = tier.id
+          throw new Error('强制回滚孙级')
+        }),
+      ).rejects.toThrow('强制回滚孙级')
+      expect(tierId).not.toBe('')
+      const left = await sql<{ n: string }>`
+        SELECT count(*)::text AS n FROM std_v2_tier WHERE id = ${tierId}::uuid
+      `.execute(db)
+      expect(left.rows[0]!.n).toBe('0')
+      expect(await auditRows('std_v2_tier', tierId, 'create')).toBe(0)
+    })
+  })
+
+  describe('aggregate（loadDraft/createDraft/replaceDraft · D2/D4/D6）', () => {
+    function draftInput(name: string, itemQty = '10') {
+      return {
+        name,
+        companyId,
+        items: [
+          {
+            idx: 1,
+            qty: itemQty,
+            tiers: [
+              { minQty: '1', price: '10.0000' },
+              { minQty: '10', price: '9.0000' },
+            ],
+          },
+        ],
+      }
+    }
+
+    test('createDraft：头+条目+档；编号走 head.options.numbering；逐行 create 审计', async () => {
+      const beforeNum = numberingCalls
+      const saved = await aggregate.createDraft(p('create'), draftInput('聚合建单'))
+      expect(saved.name).toBe('聚合建单')
+      expect(String(saved.docNo)).toMatch(/^AUTO-/)
+      expect(numberingCalls).toBe(beforeNum + 1)
+      expect(await auditRows('std_v2_doc', String(saved.id), 'create')).toBe(1)
+
+      const itemsArr = saved.items as Array<Record<string, unknown>>
+      expect(itemsArr).toHaveLength(1)
+      expect(itemsArr[0]!.qty).toBe('10')
+      expect(itemsArr[0]!.qtyX2).toBe('20')
+      expect(itemsArr[0]!.companyId).toBe(companyId)
+      expect(await auditRows('std_v2_item', String(itemsArr[0]!.id), 'create')).toBe(1)
+
+      const tiersArr = itemsArr[0]!.tiers as Array<Record<string, unknown>>
+      expect(tiersArr).toHaveLength(2)
+      // defaultOrder 按 id ASC（UUID 非创建序）；按 minQty 对齐断言
+      const byMin = [...tiersArr].sort((a, b) => String(a.minQty).localeCompare(String(b.minQty)))
+      expect(byMin[0]!.minQty).toBe('1')
+      expect(byMin[0]!.price).toBe('10')
+      expect(byMin[1]!.minQty).toBe('10')
+      expect(byMin[1]!.price).toBe('9')
+      expect(await auditRows('std_v2_tier', String(byMin[0]!.id), 'create')).toBe(1)
+      expect(await auditRows('std_v2_tier', String(byMin[1]!.id), 'create')).toBe(1)
+    })
+
+    test('loadDraft：repeatable-read 一致快照返回全树', async () => {
+      const created = await aggregate.createDraft(p('create'), draftInput('快照单'))
+      const loaded = await aggregate.loadDraft(p('read'), String(created.id))
+      expect(loaded.id).toBe(created.id)
+      expect(loaded.name).toBe('快照单')
+      const itemsArr = loaded.items as Array<Record<string, unknown>>
+      expect(itemsArr).toHaveLength(1)
+      expect((itemsArr[0]!.tiers as unknown[]).length).toBe(2)
+    })
+
+    test('createDraft：新记录带 id / 缺集合键 fail-closed', async () => {
+      await expect(
+        aggregate.createDraft(p('create'), {
+          name: '坏身份',
+          companyId,
+          items: [{ id: crypto.randomUUID(), idx: 1, qty: '1', tiers: [] }],
+        }),
+      ).rejects.toMatchObject({
+        code: 'validation',
+        fields: { 'items[0].id': ['新记录不能包含 id'] },
+      })
+
+      await expect(
+        aggregate.createDraft(p('create'), { name: '缺集合', companyId }),
+      ).rejects.toMatchObject({
+        code: 'validation',
+        fields: { items: ['必须显式提交数组'] },
+      })
+    })
+
+    test('replaceDraft：增/改/删差异；缺失即删；逐行审计三型', async () => {
+      const created = await aggregate.createDraft(p('create'), draftInput('替换单', '5'))
+      const item0 = (created.items as Array<Record<string, unknown>>)[0]!
+      const tier0 = (item0.tiers as Array<Record<string, unknown>>)[0]!
+      const tier1 = (item0.tiers as Array<Record<string, unknown>>)[1]!
+
+      const replaced = await aggregate.replaceDraft(p('update'), String(created.id), {
+        name: '替换后',
+        companyId,
+        items: [
+          {
+            id: item0.id,
+            idx: 1,
+            qty: '8',
+            tiers: [
+              { id: tier0.id, minQty: '1', price: '11.0000' },
+              // tier1 缺失 → 删
+              { minQty: '100', price: '7.0000' }, // 新增档
+            ],
+          },
+          { idx: 2, qty: '3', tiers: [{ minQty: '1', price: '2.0000' }] }, // 新增行
+        ],
+      })
+
+      expect(replaced.name).toBe('替换后')
+      expect(await auditRows('std_v2_doc', String(created.id), 'update')).toBe(1)
+
+      const itemsArr = replaced.items as Array<Record<string, unknown>>
+      expect(itemsArr).toHaveLength(2)
+      const kept = itemsArr.find((i) => i.id === item0.id)!
+      expect(kept.qty).toBe('8')
+      expect(await auditRows('std_v2_item', String(item0.id), 'update')).toBe(1)
+
+      const tiersKept = kept.tiers as Array<Record<string, unknown>>
+      expect(tiersKept).toHaveLength(2)
+      expect(tiersKept.some((t) => t.id === tier0.id)).toBe(true)
+      expect(tiersKept.some((t) => t.id === tier1.id)).toBe(false)
+      expect(await auditRows('std_v2_tier', String(tier0.id), 'update')).toBe(1)
+      expect(await auditRows('std_v2_tier', String(tier1.id), 'destroy')).toBe(1)
+
+      const added = itemsArr.find((i) => i.id !== item0.id)!
+      expect(added.qty).toBe('3')
+      expect(await auditRows('std_v2_item', String(added.id), 'create')).toBe(1)
+      const addedTier = (added.tiers as Array<Record<string, unknown>>)[0]!
+      expect(await auditRows('std_v2_tier', String(addedTier.id), 'create')).toBe(1)
+    })
+
+    test('replaceDraft：空集合 = 删全部子行（权威快照，非暂态）', async () => {
+      const created = await aggregate.createDraft(p('create'), draftInput('清空单'))
+      const itemId = String((created.items as Array<Record<string, unknown>>)[0]!.id)
+      const emptied = await aggregate.replaceDraft(p('update'), String(created.id), {
+        name: '已清空',
+        companyId,
+        items: [],
+      })
+      expect(emptied.items).toEqual([])
+      expect(await auditRows('std_v2_item', itemId, 'destroy')).toBe(1)
+      const left = await sql<{ n: string }>`
+        SELECT count(*)::text AS n FROM std_v2_item WHERE doc_id = ${String(created.id)}::uuid
+      `.execute(db)
+      expect(left.rows[0]!.n).toBe('0')
+    })
+
+    test('replaceDraft：删行先于头更新——清空条目后可改头字段', async () => {
+      const created = await aggregate.createDraft(p('create'), draftInput('时序单'))
+      const replaced = await aggregate.replaceDraft(p('update'), String(created.id), {
+        name: '清空并改名',
+        companyId,
+        items: [],
+      })
+      expect(replaced.name).toBe('清空并改名')
+      expect(replaced.items).toEqual([])
+    })
+
+    test('replaceDraft：身份校验——未知/重复 id、公司不可改、缺集合', async () => {
+      const created = await aggregate.createDraft(p('create'), draftInput('身份单'))
+      const item0 = (created.items as Array<Record<string, unknown>>)[0]!
+
+      await expect(
+        aggregate.replaceDraft(p('update'), String(created.id), {
+          name: 'x',
+          companyId,
+          items: [{ id: crypto.randomUUID(), idx: 1, qty: '1', tiers: [] }],
+        }),
+      ).rejects.toMatchObject({
+        code: 'validation',
+        fields: { 'items[0].id': ['不属于该测试单'] },
+      })
+
+      await expect(
+        aggregate.replaceDraft(p('update'), String(created.id), {
+          name: 'x',
+          companyId,
+          items: [
+            { id: item0.id, idx: 1, qty: '1', tiers: [] },
+            { id: item0.id, idx: 2, qty: '2', tiers: [] },
+          ],
+        }),
+      ).rejects.toMatchObject({
+        code: 'validation',
+        fields: { 'items[1].id': ['同一草稿中不能重复'] },
+      })
+
+      await expect(
+        aggregate.replaceDraft(p('update'), String(created.id), {
+          name: 'x',
+          companyId: otherCompanyId,
+          items: [{ id: item0.id, idx: 1, qty: '1', tiers: [] }],
+        }),
+      ).rejects.toMatchObject({
+        code: 'validation',
+        fields: { companyId: ['创建后不可修改公司'] },
+      })
+
+      await expect(
+        aggregate.replaceDraft(p('update'), String(created.id), {
+          name: 'x',
+          companyId,
+        }),
+      ).rejects.toMatchObject({
+        code: 'validation',
+        fields: { items: ['必须显式提交数组'] },
+      })
+    })
+
+    test('replaceDraft：任一行失败整单回滚（原子性）', async () => {
+      const created = await aggregate.createDraft(p('create'), draftInput('原子单'))
+      const item0 = (created.items as Array<Record<string, unknown>>)[0]!
+      const nameBefore = created.name
+
+      await expect(
+        aggregate.replaceDraft(p('update'), String(created.id), {
+          name: '不应落库',
+          companyId,
+          items: [
+            { id: item0.id, idx: 1, qty: '99', tiers: [] },
+            // qty 必填缺失 → child validate/insert 失败
+            { idx: 2, tiers: [] },
+          ],
+        }),
+      ).rejects.toThrow()
+
+      const reloaded = await aggregate.loadDraft(p('read'), String(created.id))
+      expect(reloaded.name).toBe(nameBefore)
+      const itemsArr = reloaded.items as Array<Record<string, unknown>>
+      expect(itemsArr).toHaveLength(1)
+      expect(itemsArr[0]!.qty).toBe('10')
+      expect(await auditRows('std_v2_doc', String(created.id), 'update')).toBe(0)
+    })
+
+    test('replaceDraft：无差异不落库不审计（头与行）', async () => {
+      const created = await aggregate.createDraft(p('create'), {
+        name: '无差单',
+        companyId,
+        items: [{ idx: 1, qty: '1', tiers: [] }],
+      })
+      const item0 = (created.items as Array<Record<string, unknown>>)[0]!
+      const again = await aggregate.replaceDraft(p('update'), String(created.id), {
+        name: '无差单',
+        companyId,
+        items: [{ id: item0.id, idx: 1, qty: '1', tiers: [] }],
+      })
+      expect(again.name).toBe('无差单')
+      expect(await auditRows('std_v2_doc', String(created.id), 'update')).toBe(0)
+      expect(await auditRows('std_v2_item', String(item0.id), 'update')).toBe(0)
+    })
+
+    test('loadTree 经 head/child 投影：createDraft/loadDraft/replaceDraft 含 mapExtra', async () => {
+      const created = await projectedAggregate.createDraft(p('create'), {
+        name: '投影单',
+        companyId,
+        items: [{ idx: 1, qty: '4', note: 'n1' }],
+      })
+      expect(created.nameUpper).toBe('投影单')
+      const createdItems = created.items as Array<Record<string, unknown>>
+      expect(createdItems).toHaveLength(1)
+      expect(createdItems[0]!.docName).toBe('投影单')
+      expect(createdItems[0]!.qtyX2).toBe('8')
+
+      const loaded = await projectedAggregate.loadDraft(p('read'), String(created.id))
+      expect(loaded.nameUpper).toBe('投影单')
+      expect((loaded.items as Array<Record<string, unknown>>)[0]!.docName).toBe('投影单')
+
+      const replaced = await projectedAggregate.replaceDraft(p('update'), String(created.id), {
+        name: '投影改',
+        companyId,
+        items: [
+          {
+            id: createdItems[0]!.id,
+            idx: 1,
+            qty: '5',
+            note: 'n2',
+          },
+        ],
+      })
+      expect(replaced.nameUpper).toBe('投影改')
+      const replacedItems = replaced.items as Array<Record<string, unknown>>
+      expect(replacedItems[0]!.docName).toBe('投影改')
+      expect(replacedItems[0]!.qty).toBe('5')
+      expect(replacedItems[0]!.note).toBe('n2')
     })
   })
 
@@ -505,6 +1248,118 @@ run('标准动作内核 v2（postgres）', () => {
         code: 'conflict',
         message: '存在下级测试节点,不能删除',
       })
+    })
+  })
+
+  describe('extraWhere（list/load 行筛选谓词 · T1.5）', () => {
+    /**
+     * 同表第二套服务：name 以 VIS- 为可见前缀（模拟 accBills EXISTS 派生可见性）；
+     * 另支持 query.tag 扩展键过滤 scratch（模拟 mfgOutputs companyId）；
+     * 支持 filter.lines 伪字段剥离（模拟 accGlJournals 行内筛选）。
+     */
+    const scopedDocs = createStandardService({
+      db,
+      registry,
+      resource: 'stdV2Docs',
+      numbering: { service: fakeNumbering, field: 'docNo' },
+      hooks: {
+        insertColumns: () => ({ stamped_note: 'G1' }),
+      },
+      extraWhere: ({ query }) => {
+        const filter = (query.filter ?? {}) as Record<string, unknown>
+        const hasLines = Object.prototype.hasOwnProperty.call(filter, 'lines')
+        const ordinary: Record<string, unknown> = {}
+        for (const [k, v] of Object.entries(filter)) {
+          if (k !== 'lines') ordinary[k] = v
+        }
+        const parts: ReturnType<typeof sql>[] = [sql`name LIKE 'VIS-%'`]
+        const tag = typeof query.tag === 'string' ? query.tag : null
+        if (tag) parts.push(sql`scratch = ${tag}`)
+        // lines 伪筛选：约定 value 为 name 精确匹配（合成资源无子行表）
+        if (hasLines && typeof filter.lines === 'string') {
+          parts.push(sql`name = ${filter.lines}`)
+        }
+        return {
+          query: {
+            ...query,
+            filter: Object.keys(ordinary).length > 0 ? (ordinary as never) : undefined,
+          },
+          where: sql`${sql.join(parts, sql` AND `)}`,
+        }
+      },
+    })
+
+    test('list：前缀可见性 + 扩展键过滤；不命中行不出现', async () => {
+      const visible = await docs.create(p('create'), {
+        name: `VIS-${crypto.randomUUID().slice(0, 6)}`,
+        companyId,
+        scratch: 'tag-a',
+      })
+      const visibleOther = await docs.create(p('create'), {
+        name: `VIS-${crypto.randomUUID().slice(0, 6)}`,
+        companyId,
+        scratch: 'tag-b',
+      })
+      const hidden = await docs.create(p('create'), {
+        name: `HID-${crypto.randomUUID().slice(0, 6)}`,
+        companyId,
+        scratch: 'tag-a',
+      })
+
+      const allVisible = await scopedDocs.list(p('read'), { limit: 200, offset: 0 })
+      const ids = allVisible.results.map((r) => r.id)
+      expect(ids).toContain(visible.id)
+      expect(ids).toContain(visibleOther.id)
+      expect(ids).not.toContain(hidden.id)
+
+      // 扩展键 tag（非 filter DSL，同 mfgOutputs.companyId）
+      const tagged = await scopedDocs.list(p('read'), {
+        limit: 200,
+        offset: 0,
+        tag: 'tag-a',
+      } as never)
+      const taggedIds = tagged.results.map((r) => r.id)
+      expect(taggedIds).toContain(visible.id)
+      expect(taggedIds).not.toContain(visibleOther.id)
+      expect(taggedIds).not.toContain(hidden.id)
+    })
+
+    test('load：谓词不命中 → not_found（与 list 可见性一致，不泄露）', async () => {
+      const visible = await docs.create(p('create'), {
+        name: `VIS-${crypto.randomUUID().slice(0, 6)}`,
+        companyId,
+      })
+      const hidden = await docs.create(p('create'), {
+        name: `HID-${crypto.randomUUID().slice(0, 6)}`,
+        companyId,
+      })
+
+      const got = await scopedDocs.get(p('read'), visible.id)
+      expect(got.id).toBe(visible.id)
+
+      await expect(scopedDocs.get(p('read'), hidden.id)).rejects.toMatchObject({
+        code: 'not_found',
+        message: '测试单不存在',
+      })
+      // 无 extraWhere 的同表服务仍可读（证明 404 来自领域谓词，非行不存在）
+      expect((await docs.get(p('read'), hidden.id)).id).toBe(hidden.id)
+    })
+
+    test('query 改写：伪 filter.lines 不进 filterbuild，落入 where', async () => {
+      const targetName = `VIS-line-${crypto.randomUUID().slice(0, 6)}`
+      const hit = await docs.create(p('create'), { name: targetName, companyId })
+      await docs.create(p('create'), {
+        name: `VIS-other-${crypto.randomUUID().slice(0, 6)}`,
+        companyId,
+      })
+
+      // 若 lines 未剥离，filterbuild 会对未知字段抛 validation
+      const listed = await scopedDocs.list(p('read'), {
+        limit: 200,
+        offset: 0,
+        filter: { lines: targetName } as never,
+      })
+      expect(listed.results.map((r) => r.id)).toEqual([hit.id])
     })
   })
 

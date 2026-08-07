@@ -5,7 +5,7 @@ import { decimal, toDecimalString } from '@synie/shared'
 import { sql } from 'kysely'
 import type { DbHandle } from '~/db/tx.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import type { ArrangementType, DemandItem, DemandItemStatus } from './types.ts'
+import type { ArrangementType, DemandItem } from './types.ts'
 import { numStr, parsePositiveQty } from './helpers.ts'
 
 export function remainingArrangeableBase(
@@ -94,7 +94,8 @@ export async function recomputeDemandItemProjections(
     ratio,
   )
 
-  let nextStatus: DemandItemStatus = item.status as DemandItemStatus
+  // 库内小写状态（DemandItemStatus 为 wire 大写，写库时用小写字面量）
+  let nextStatus: 'pending' | 'scheduled' | 'completed'
   if (fulfilled) {
     nextStatus = 'completed'
   } else if (arranged.gt(0)) {

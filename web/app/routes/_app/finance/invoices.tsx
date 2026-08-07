@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { toastError } from '~/lib/toast'
-import { useRequestGuard } from '~/lib/use-request-guard'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { parseDate } from '@internationalized/date'
 import {
@@ -37,7 +36,7 @@ import {
 } from '~/lib/resources/presentation'
 import { ensureDefaultGridPage } from '~/lib/route-prefetch'
 import { resourceBindingFor } from '~/lib/resources/registry'
-import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+import { useDocumentDrawer } from '~/lib/use-document-drawer'
 import {
   purchaseReconciliationClient,
   salesReconciliationClient,
@@ -398,32 +397,31 @@ const safeParseDate = (v: string | null) => {
 }
 
 function InvoicesPage() {
-  // 页面级主抽屉:开/关/模式走 URL(?record=&mode=);销售清单本地 + 深链补拉
-  const {
-    drawer,
-    open,
-    setMode,
-    close,
-    row: drawerRow,
-  } = useRecordDrawerUrl(RESOURCE)
+  // 单据抽屉骨架:URL 双态 + 销售清单装载竞态协议
+  const drawer = useDocumentDrawer<Row[]>({
+    resource: RESOURCE,
+    urlSync: true,
+    loadErrorLabel: '销售清单加载失败',
+    loadDraft: async (invoiceId) => {
+      const record = await vatInvoiceClient.get(invoiceId)
+      return parseItems(record?.items)
+    },
+  })
   // Presentation Extension：OCR/动态联动与 binding 共置；ResourceDocument 无脚本
   const invoicePresentation = createInvoicePresentation(resourceBindingFor(RESOURCE))
   const recognizeInvoice = invoiceOcrRecognize(invoicePresentation)
   // 退场动画期间冻结最后打开的 mode(承兑抽屉 lastRef 先例):fields/headerContent 闭包
-  // 读 isCreate/createType,关闭瞬间 drawer 已置 null,不冻结会闪回非创建态排布
+  // 读 isCreate/createType,关闭瞬间 mode 回落 view,不冻结会闪回非创建态排布
   const lastModeRef = useRef<DrawerMode | null>(null)
-  if (drawer) lastModeRef.current = drawer.mode
-  const isCreate = (drawer?.mode ?? lastModeRef.current) === 'create'
+  if (drawer.isOpen) lastModeRef.current = drawer.mode
+  const isCreate = (drawer.isOpen ? drawer.mode : lastModeRef.current) === 'create'
   // 新增发票类型(仅 create 态顶部选择卡);开抽屉时重置,关闭不清(配合上方冻结不闪)
   const [createType, setCreateType] = useState<InvoiceCreateType | null>(null)
   // create 态暂存附件:先传裸文件进父级状态,创建成功后统一 attachFile(同承兑交易抽屉先例)
   const [pendingFiles, setPendingFiles] = useState<UploadedFile[]>([])
-  // 已为哪张发票拉过清单;深链 effect 与 openDrawer 去重,避免双发
-  const loadedIdRef = useRef<string | null>(null)
 
-  const isOpen = drawer !== null
-  const mode: DrawerMode = drawer?.mode ?? 'view'
-  const rowId = drawer?.recordId ?? undefined
+  const { isOpen, mode, rowId } = drawer
+  const drawerRow = drawer.row
 
   // 字段布局(order/section)按态二分:create 态「OCR 优先」——手工字段(公司/对手/关联对账单/
   // 三科目)置顶「基本信息」,票面等 OCR 填充后核对,金额与清单收尾;edit/view 态保持五组现状
@@ -533,14 +531,14 @@ function InvoicesPage() {
     )
   }
   const [items, setItems] = useState<Row[]>([])
-  // edit/view 态 items 靠 FETCH_ITEMS 异步拉取,失败/未完成前不得当"清单已被清空"处理——
-  // 否则 onSubmit 会用空清单覆盖后端原值。create 态本地起手即视为就绪。
-  const [itemsLoaded, setItemsLoaded] = useState(false)
   const queryClient = useQueryClient()
-  // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张发票的清单回填到当前发票
-  const guard = useRequestGuard()
   // OCR 用图的裸文件 id:创建成功后补挂为附件,抽屉关闭即作废
   const ocrFileRef = useRef<string | null>(null)
+
+  // 草稿 → 销售清单状态派生
+  useEffect(() => {
+    setItems(drawer.draft ?? [])
+  }, [drawer.draft, drawer.generation])
 
   // 审核过账确认框:行内「审核」动作与新增后带过账日期的顺手审核共用
   const [auditDialog, setAuditDialog] = useState<{ id: string; fromCreate: boolean } | null>(null)
@@ -642,73 +640,29 @@ function InvoicesPage() {
     }
   }
 
-  function resetItems() {
-    loadedIdRef.current = null
-    setItems([])
-    setItemsLoaded(true)
+  // 打开抽屉:额外清 create 专属态;清单装载走骨架
+  const openDrawer = (nextMode: DrawerMode, row: Row | null) => {
     setCreateType(null)
     setPendingFiles([])
+    drawer.open(nextMode, row)
   }
 
-  function loadItems(invoiceId: string) {
-    const my = guard.begin()
-    loadedIdRef.current = invoiceId
-    setItemsLoaded(false)
-    vatInvoiceClient
-      .get(invoiceId)
-      .then((record) => {
-        if (!guard.isCurrent(my)) return
-        setItems(parseItems(record?.items))
-        setItemsLoaded(true)
-      })
-      .catch((e) => {
-        if (!guard.isCurrent(my)) return
-        toastError('销售清单加载失败')(e)
-        setItems([])
-        setItemsLoaded(false)
-      })
+  // 关闭:作废 OCR 暂存 + 骨架 close(清清单)
+  const closeDrawer = () => {
+    ocrFileRef.current = null
+    setPendingFiles([])
+    // createType 保留到退场动画结束(配合 lastModeRef 不闪)
+    drawer.close()
   }
 
-  // 打开抽屉:create 清空清单;view/edit 按发票 id 拉 items(表单字段本身走 rowId 自查完整记录,
-  // 见下方 SynieRecordDrawer——表格列是白名单子集,行数据不全,不能直接传 row)
-  const openDrawer = useCallback(
-    (nextMode: DrawerMode, row: Row | null) => {
-      open(nextMode, row?.id != null ? String(row.id) : null)
-      setCreateType(null)
-      setPendingFiles([])
-      if (nextMode === 'create' || row == null) {
-        loadedIdRef.current = null
-        setItems([])
-        setItemsLoaded(true)
-        return
-      }
-      loadItems(String(row.id))
-    },
-    [open],
-  )
-
-  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉销售清单
+  // generation 变化时清 create 专属附件/类型(深链切换/显式 open 均覆盖)
+  const lastGenRef = useRef(drawer.generation)
   useEffect(() => {
-    const d = drawer
-    if (!d) {
-      if (loadedIdRef.current != null) {
-        guard.invalidate()
-        ocrFileRef.current = null
-        resetItems()
-      }
-      return
-    }
-    if (d.mode === 'create' || d.recordId == null) {
-      if (loadedIdRef.current != null) resetItems()
-      return
-    }
-    if (loadedIdRef.current !== d.recordId) {
-      setCreateType(null)
-      setPendingFiles([])
-      loadItems(d.recordId)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
-  }, [drawer?.recordId, drawer?.mode])
+    if (lastGenRef.current === drawer.generation) return
+    lastGenRef.current = drawer.generation
+    setCreateType(null)
+    setPendingFiles([])
+  }, [drawer.generation])
 
   return (
     <>
@@ -739,13 +693,7 @@ function InvoicesPage() {
         mode={mode}
         isOpen={isOpen}
         onOpenChange={(isDrawerOpen) => {
-          if (isDrawerOpen) return
-          guard.invalidate()
-          ocrFileRef.current = null
-          close()
-          setItems([])
-          setItemsLoaded(false)
-          loadedIdRef.current = null
+          if (!isDrawerOpen) closeDrawer()
         }}
         // 表格列是白名单子集(卖方/买方/金额/科目等大量字段不在其中),行数据不全;
         // 不传 row,走 rowId 自查完整记录(同 bank-accounts 先例)
@@ -874,7 +822,7 @@ function InvoicesPage() {
           remarks: { ...lay('remarks') },
         }}
         onEdit={
-          drawerRow?.status === 'DRAFT' ? () => setMode('edit') : undefined
+          drawerRow?.status === 'DRAFT' ? () => drawer.setMode('edit') : undefined
         }
         // 新增先选类型:方向/对手类型随类型写入草稿(direction/partyType 创建态隐藏);
         // 编辑/查看态不显示此选择(direction 由记录本身决定)
@@ -928,7 +876,7 @@ function InvoicesPage() {
               label="销售清单"
               items={items}
               onChange={setItems}
-              readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT') || !itemsLoaded}
+              readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT') || !drawer.detailLoaded}
             />
           )
           // 附件面板:create 态挂在 invoiceKind.before 的 OCR 区(带 pending 暂存);
@@ -956,7 +904,7 @@ function InvoicesPage() {
           // 写入经 Presentation Extension → binding.writer，不二次全局 client 查找
           let savedId: string
           // edit 态 items 未就绪(FETCH_ITEMS 未回或失败)时省略 items 键,不用空清单覆盖后端原值
-          const omitItems = mode === 'edit' && !itemsLoaded
+          const omitItems = mode === 'edit' && !drawer.detailLoaded
           const input = omitItems ? values : { ...values, items: serializeItems(items) }
           if (mode === 'create') {
             const { id: createdId } = await submitInvoiceForm(
@@ -1003,7 +951,7 @@ function InvoicesPage() {
             }
             savedId = createdId
           } else {
-            const invoiceId = String(drawer!.recordId)
+            const invoiceId = String(drawer.rowId)
             await submitInvoiceForm(invoicePresentation, input, 'edit', invoiceId)
             toast.success(omitItems ? '发票已更新(销售清单未加载,本次未修改)' : '发票已更新')
             await invoicePresentation.binding.cache.invalidateGrid(queryClient)

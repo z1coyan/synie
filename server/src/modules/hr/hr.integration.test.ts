@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { createDb } from '~/db/index.ts'
 import type { DB as Database } from '~/db/types.ts'
-import type { Kysely } from 'kysely'
+import { sql, type Kysely } from 'kysely'
 import {
   buildTestApp,
   createTestAuth,
@@ -105,6 +105,25 @@ describePg('hr operations integration', () => {
       .set({ is_default: true })
       .where('name', '=', `${prefix.toLowerCase()}-storage`)
       .execute()
+
+    // 员工编号系统生成：无启用规则则幂等补建——不得依赖其他套件夹具的文件执行序
+    // （CI 序 hr 在 party/standard-contract 之前，裸跑即 409「未配置启用的编号规则」）
+    const employeeRule = await db
+      .selectFrom('sys_numbering_rule')
+      .select('id')
+      .where('resource', '=', 'hr.employee')
+      .where('enabled', '=', true)
+      .executeTakeFirst()
+    if (!employeeRule) {
+      // 段用 jsonb_build_object 拼：绑定参数走 ::jsonb 会被当成 JSON 字符串（双重编码）
+      await sql`
+        INSERT INTO sys_numbering_rule(resource, name, segments, per_company, enabled)
+        VALUES ('hr.employee', ${`员工规则-${prefix}`},
+                ARRAY[jsonb_build_object('type', 'text', 'value', ${`${prefix}E-`}::text),
+                      '{"type":"seq","padding":4}'::jsonb],
+                false, true)
+      `.execute(db)
+    }
   })
 
   afterAll(async () => {

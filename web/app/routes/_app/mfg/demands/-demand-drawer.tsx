@@ -1,6 +1,4 @@
 import {
-  createContext,
-  useContext,
   useEffect,
   useRef,
   useState,
@@ -25,7 +23,11 @@ import {
   type AuditDocConfig,
 } from '../../scm/-audit-doc'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
-import { useDocumentDrawer } from '~/lib/use-document-drawer'
+import { persistChildRows } from '~/lib/resources/persist-child-rows'
+import {
+  createDocumentDrawerOpenBridge,
+  useDocumentDrawer,
+} from '~/lib/use-document-drawer'
 import { SalesItemPicker } from './-sales-item-picker'
 import { useResourceCapabilities } from '~/lib/use-resource-capabilities'
 import { canGenerateWorkOrder, useDemandItemActions } from './-item-actions'
@@ -45,11 +47,12 @@ export type OpenDemandDrawer = (
   demand: DemandRef | null,
 ) => void
 
-const DemandDrawerContext = createContext<OpenDemandDrawer>(() => {})
+const {
+  useOpen: useDemandDrawer,
+  Provider: DemandDrawerOpenProvider,
+} = createDocumentDrawerOpenBridge<OpenDemandDrawer>()
+export { useDemandDrawer }
 
-export function useDemandDrawer(): OpenDemandDrawer {
-  return useContext(DemandDrawerContext)
-}
 
 // 需求行脚手架:取数走骨架 loadDraft(下方 loadDemandItems);
 // 持久化按 snapshot 比对做 删→增→改(见组件内 persistItems)。
@@ -170,45 +173,17 @@ export function DemandDrawerProvider({
   }, [drawer.draft, drawer.generation]) // generation 覆盖 create/关闭的 null→null(draft 引用不变也需重置)
 
   // 提交:删除消失的存量行 → 新建本地行 → 更新变更行;返回逐行错误(空数组 = 全成功)
-  const persistItems = async (demandId: string): Promise<string[]> => {
-    const errors: string[] = []
-    const currentIds = new Set(
-      items.filter((r) => !isLocalRow(r)).map((r) => r.id),
-    )
-
-    for (const old of itemsSnapshot) {
-      if (currentIds.has(old.id)) continue
-      try {
-        await ITEMS.client.delete(old.id)
-      } catch (error) {
-        errors.push(`${String(old.idx ?? '行')}:${(error as Error).message}`)
-      }
-    }
-
-    for (const row of items) {
-      if (isLocalRow(row)) {
-        try {
-          const input = { [ITEMS.docIdField]: demandId, ...ITEMS.itemInput(row) }
-          await ITEMS.client.create(input)
-        } catch (error) {
-          errors.push(`${String(row.idx ?? '行')}:${(error as Error).message}`)
-        }
-        continue
-      }
-      const old = itemsSnapshot.find((s) => s.id === row.id)
-      if (
-        old &&
-        ITEMS.itemKeys.some((k) => String(old[k] ?? '') !== String(row[k] ?? ''))
-      ) {
-        try {
-          await ITEMS.client.update(row.id, ITEMS.itemInput(row))
-        } catch (error) {
-          errors.push(`${String(row.idx ?? '行')}:${(error as Error).message}`)
-        }
-      }
-    }
-    return errors
-  }
+  const persistItems = async (demandId: string): Promise<string[]> =>
+    persistChildRows({
+      current: items,
+      snapshot: itemsSnapshot,
+      client: ITEMS.client,
+      parentIdField: ITEMS.docIdField,
+      parentId: demandId,
+      compareKeys: ITEMS.itemKeys,
+      inputOf: ITEMS.itemInput,
+      rowLabel: (row) => String(row.idx ?? '行'),
+    })
 
   // 行级操作后重拉抽屉里的需求行（行状态已变）。
   const itemActions = useDemandItemActions(() => {
@@ -252,7 +227,7 @@ export function DemandDrawerProvider({
   }
 
   return (
-    <DemandDrawerContext.Provider value={openDrawer}>
+    <DemandDrawerOpenProvider value={openDrawer}>
       {children}
 
       <SynieRecordDrawer
@@ -445,6 +420,6 @@ export function DemandDrawerProvider({
         }}
       />
       {itemActions.dialogs}
-    </DemandDrawerContext.Provider>
+    </DemandDrawerOpenProvider>
   )
 }

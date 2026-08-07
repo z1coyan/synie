@@ -356,6 +356,8 @@ export function packBoxMeta(): ResourceMeta {
     classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'sales.delivery',
     permissionLabel: '销售发货单',
+    // 独立显示/校验文案（permissionLabel 与发货单共享前缀标签）
+    label: '装箱箱',
     table: 'sal_delivery_pack_box',
     authz: { kind: 'via', parent: 'salDeliveries', fk: 'delivery_id' },
     fields: [
@@ -383,6 +385,8 @@ export function packLineMeta(): ResourceMeta {
     classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'sales.delivery',
     permissionLabel: '销售发货单',
+    // 独立显示/校验文案（「装箱行参数不合法」等）
+    label: '装箱行',
     table: 'sal_delivery_pack_line',
     // 两级 via：装箱行 → 装箱箱 → 销售发货单（判定递归到发货单自身的行谓词）
     authz: { kind: 'via', parent: PACK_BOX_RESOURCE, fk: 'pack_box_id' },
@@ -400,7 +404,7 @@ export function packLineMeta(): ResourceMeta {
       f('material_spec', 'materialSpec', 'string', '规格', { readonly: true, filterable: true, sortable: true }),
       f('customer_part_no', 'customerPartNo', 'string', '客户料号', { readonly: true, filterable: true, sortable: true }),
       f('unit_name', 'unitName', 'string', '单位名称', { readonly: true, filterable: true, sortable: true }),
-      f('remarks', 'remarks', 'string', '行备注', { filterable: true, sortable: true }),
+      f('remarks', 'remarks', 'string', '行备注', { filterable: true, sortable: true, nullable: true }),
       f('inserted_at', 'insertedAt', 'datetime', '创建时间', { readonly: true, filterable: true, sortable: true }),
       f('updated_at', 'updatedAt', 'datetime', '更新时间', { readonly: true, filterable: true, sortable: true }),
       f('delivery_id', 'deliveryId', 'fk', '发货单', {

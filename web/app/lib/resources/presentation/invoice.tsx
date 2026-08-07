@@ -4,6 +4,7 @@
  * ResourceDocument 只声明 form.kind=extension，不含可执行代码。
  * OCR 识别、科目联动、对账单关联、附件暂存均由本 Extension 与业务页面共置实现。
  */
+import { requireWriter } from '../catalog/require-writer'
 import type { ResourceBinding } from '../catalog/types'
 import { ocrVatInvoice } from '../finance-operations'
 import { AUDIT_TRAIL_EXCLUDE } from './document-preview-helpers'
@@ -58,15 +59,11 @@ export async function submitInvoiceForm(
   rowId: string | undefined,
 ): Promise<{ id: string; row: Record<string, unknown> }> {
   if (mode === 'view') throw new Error('查看模式不可提交')
-  const writer = presentation.binding.writer
-  if (!writer) throw new Error('发票不支持写入')
   if (mode === 'create') {
-    if (!('create' in writer) || !writer.create) throw new Error('发票不支持 create')
-    const saved = await writer.create(values)
+    const saved = await requireWriter(presentation.binding, 'create', '发票')(values)
     return { id: String(saved.id), row: saved as Record<string, unknown> }
   }
   if (!rowId) throw new Error('更新发票缺少 id')
-  if (!('update' in writer) || !writer.update) throw new Error('发票不支持 update')
-  const saved = await writer.update(rowId, values)
+  const saved = await requireWriter(presentation.binding, 'update', '发票')(rowId, values)
   return { id: String(saved.id), row: saved as Record<string, unknown> }
 }

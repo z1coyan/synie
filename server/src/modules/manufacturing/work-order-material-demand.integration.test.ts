@@ -471,7 +471,7 @@ run('PG 集成（工单物料需求派生）', () => {
       .where('id', '=', derived.id)
       .executeTakeFirstOrThrow()
     const confirmed = await mfg.demands.confirmDemand(permit, head.demand_id)
-    expect(confirmed.status).toBe('confirmed')
+    expect(confirmed.status).toBe('CONFIRMED')
   })
 
   test('逐项校验：快照行归属 / 停用与跨公司车间 / qty>0；任一失败整体回滚', async () => {

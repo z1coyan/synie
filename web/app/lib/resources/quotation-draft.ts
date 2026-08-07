@@ -1,6 +1,7 @@
-import { api, apiData } from '../api/client'
+import { api } from '../api/client'
 import type { Row } from '~/components/synie-data-grid/types'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
+import { aggregateDraftTransport } from './aggregate-draft-transport'
 import type { AggregateDraftAdapter } from './catalog/types'
 
 export type QuotationSide = 'sales' | 'purchase'
@@ -117,53 +118,15 @@ function wireDraft(input: QuotationDraft): QuotationDraft {
 }
 
 /** production Hono Adapters：销售与采购各占一个明确的聚合 seam。 */
-export const salesQuotationDraftAdapter: AggregateDraftAdapter<
+export const salesQuotationDraftAdapter = aggregateDraftTransport<
   QuotationDraft,
   QuotationSavedDraft
-> = {
-  async loadDraft(id) {
-    return apiData(
-      api.sales.quotations[':id'].draft.$get({ param: { id } }),
-    )
-  },
-  async createDraft(input) {
-    return apiData(
-      api.sales.quotations.$post({ json: wireDraft(input) as never }),
-    )
-  },
-  async replaceDraft(id, input) {
-    return apiData(
-      api.sales.quotations[':id'].$put({
-        param: { id },
-        json: wireDraft(input) as never,
-      }),
-    )
-  },
-}
+>(api.sales.quotations, { wire: wireDraft })
 
-export const purchaseQuotationDraftAdapter: AggregateDraftAdapter<
+export const purchaseQuotationDraftAdapter = aggregateDraftTransport<
   QuotationDraft,
   QuotationSavedDraft
-> = {
-  async loadDraft(id) {
-    return apiData(
-      api.purchase.quotations[':id'].draft.$get({ param: { id } }),
-    )
-  },
-  async createDraft(input) {
-    return apiData(
-      api.purchase.quotations.$post({ json: wireDraft(input) as never }),
-    )
-  },
-  async replaceDraft(id, input) {
-    return apiData(
-      api.purchase.quotations[':id'].$put({
-        param: { id },
-        json: wireDraft(input) as never,
-      }),
-    )
-  },
-}
+>(api.purchase.quotations, { wire: wireDraft })
 
 function clone<T>(value: T): T {
   return structuredClone(value)

@@ -1,6 +1,7 @@
-import { api, apiData } from '../api/client'
+import { api } from '../api/client'
 import type { Row } from '~/components/synie-data-grid/types'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
+import { aggregateDraftTransport } from './aggregate-draft-transport'
 import type { AggregateDraftAdapter } from './catalog/types'
 
 export interface PurchaseReceiptDraftItem {
@@ -88,31 +89,10 @@ function wireDraft(input: PurchaseReceiptDraft): PurchaseReceiptDraft {
 }
 
 /** production Hono Adapter：一次请求跨越采购入库聚合写 seam。 */
-export const purchaseReceiptDraftAdapter: AggregateDraftAdapter<
+export const purchaseReceiptDraftAdapter = aggregateDraftTransport<
   PurchaseReceiptDraft,
   PurchaseReceiptSavedDraft
-> = {
-  async loadDraft(id) {
-    return apiData(
-      api.purchase.receipts[':id'].draft.$get({ param: { id } }),
-    )
-  },
-  async createDraft(input) {
-    return apiData(
-      api.purchase.receipts.$post({
-        json: wireDraft(input) as never,
-      }),
-    )
-  },
-  async replaceDraft(id, input) {
-    return apiData(
-      api.purchase.receipts[':id'].$put({
-        param: { id },
-        json: wireDraft(input) as never,
-      }),
-    )
-  },
-}
+>(api.purchase.receipts, { wire: wireDraft })
 
 function clone<T>(value: T): T {
   return structuredClone(value)

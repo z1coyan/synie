@@ -1,6 +1,7 @@
 /**
  * 会计科目 Presentation Extension：动态 role 可见性与 isGroup effects。
  */
+import { requireWriter } from '../catalog/require-writer'
 import type { ResourceBinding } from '../catalog/types'
 import type { PresentationExtension } from './types'
 import type { FieldOverride } from '~/components/synie-record-drawer/fields'
@@ -64,15 +65,11 @@ export async function submitAccountForm(
   companyId: string | null,
 ): Promise<void> {
   if (mode === 'view') throw new Error('查看模式不可提交')
-  const writer = presentation.binding.writer
-  if (!writer) throw new Error('科目不支持写入')
   const input = values.isGroup === true ? { ...values, role: null } : values
   if (mode === 'create') {
-    if (!('create' in writer) || !writer.create) throw new Error('科目不支持 create')
-    await writer.create({ ...input, companyId })
+    await requireWriter(presentation.binding, 'create', '科目')({ ...input, companyId })
     return
   }
   if (!rowId) throw new Error('更新科目缺少 id')
-  if (!('update' in writer) || !writer.update) throw new Error('科目不支持 update')
-  await writer.update(rowId, input)
+  await requireWriter(presentation.binding, 'update', '科目')(rowId, input)
 }

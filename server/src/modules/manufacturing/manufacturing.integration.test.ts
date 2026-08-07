@@ -388,7 +388,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     })
     expect(afterStock.arrangedQty).toBe('40')
     expect(afterStock.completedQty).toBe('40')
-    expect(afterStock.status).toBe('scheduled')
+    expect(afterStock.status).toBe('SCHEDULED')
     const afterClose = await mfg.demands.createArrangement(permit, {
       demandItemId: line.id,
       arrangementType: 'close',
@@ -396,7 +396,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     })
     expect(afterClose.arrangedQty).toBe('100')
     expect(afterClose.completedQty).toBe('100')
-    expect(afterClose.status).toBe('completed')
+    expect(afterClose.status).toBe('COMPLETED')
     await expect(
       mfg.demands.createArrangement(permit, {
         demandItemId: line.id,
@@ -440,7 +440,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       needDate: '2026-08-10',
     })
     cleanupIds.demands.push(demand.id)
-    expect(demand.assignType).toBe('purchase')
+    expect(demand.assignType).toBe('PURCHASE')
     expect(demand.needDate).toBe('2026-08-10')
     await expect(
       mfg.demands.updateDemand(permit, demand.id, {
@@ -454,7 +454,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       assignedDeptId: workshopId,
       assignedDeptIdPresent: true,
     })
-    expect(made.assignType).toBe('make')
+    expect(made.assignType).toBe('MAKE')
     expect(made.assignedDeptId).toBe(workshopId)
     // 改单头需求日不追溯既有行（行需求日独立保存）
     const line = await mfg.demands.createDemandItem(permit, {
@@ -493,7 +493,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       assignType: 'MAKE',
       assignedDeptId: workshopId,
     })
-    expect(dispatched.assignType).toBe('make')
+    expect(dispatched.assignType).toBe('MAKE')
     expect(dispatched.assignedDeptId).toBe(workshopId)
 
     // 只给车间不给类型、原类型非生产 → 联动拦截
@@ -506,7 +506,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       assignType: 'purchase',
       assignedDeptId: null,
     })
-    expect(back.assignType).toBe('purchase')
+    expect(back.assignType).toBe('PURCHASE')
     expect(back.assignedDeptId).toBeNull()
   })
 
@@ -668,7 +668,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       remarks: '集成测试',
     })
     cleanupIds.demands.push(demand.id)
-    expect(demand.status).toBe('draft')
+    expect(demand.status).toBe('DRAFT')
 
     const line = await mfg.demands.createDemandItem(permit, {
       demandId: demand.id,
@@ -679,11 +679,11 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       needDate: '2026-08-01',
     })
     expect(line.baseQty).toBe('100')
-    expect(line.status).toBe('pending')
+    expect(line.status).toBe('PENDING')
     expect(line.fulfillmentMethod).toBeNull()
 
     const confirmed = await mfg.demands.confirmDemand(permit, demand.id)
-    expect(confirmed.status).toBe('confirmed')
+    expect(confirmed.status).toBe('CONFIRMED')
 
     // 分批：先开 40，再开 60；满量后不可再开
     const wo = await mfg.workOrders.createWorkOrder(permit, {
@@ -711,7 +711,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     ).rejects.toMatchObject({ code: 'conflict' })
 
     const scheduled = await mfg.demands.getDemandItem(permit, line.id)
-    expect(scheduled.status).toBe('scheduled')
+    expect(scheduled.status).toBe('SCHEDULED')
     expect(scheduled.arrangedQty).toBe('100')
 
     const output = await mfg.outputs.createOutput(permit, {
@@ -790,7 +790,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
 
     const lineDone = await mfg.demands.getDemandItem(permit, line.id)
     expect(lineDone.completedQty).toBe('100')
-    expect(lineDone.status).toBe('completed')
+    expect(lineDone.status).toBe('COMPLETED')
 
     // 作废工单2入库 → 需求行回已安排
     await mfg.outputs.voidOutput(permit, output3.id)
@@ -798,7 +798,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     expect(wo2Reopen.status).toBe('in_progress')
     expect(wo2Reopen.receivedBaseQty).toBe('0')
     const lineReopen = await mfg.demands.getDemandItem(permit, line.id)
-    expect(lineReopen.status).toBe('scheduled')
+    expect(lineReopen.status).toBe('SCHEDULED')
     expect(lineReopen.completedQty).toBe('40')
   })
 
@@ -1032,7 +1032,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     })
     await mfg.demands.confirmDemand(permit, demand.id)
     const done = await mfg.demands.completeDemandItem(permit, stockLine.id)
-    expect(done.status).toBe('completed')
+    expect(done.status).toBe('COMPLETED')
     expect(done.arrangedQty).toBe('5')
     expect(done.completedQty).toBe('5')
 
@@ -1280,7 +1280,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     let item = await mfg.demands.getDemandItem(permit, line.id)
     expect(item.arrangedQty).toBe('100')
     expect(item.completedQty).toBe('30') // 仅关闭完成；工单未入、采购未收
-    expect(item.status).toBe('scheduled')
+    expect(item.status).toBe('SCHEDULED')
 
     const output = await mfg.outputs.createOutput(permit, {
       companyId,
@@ -1299,7 +1299,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
 
     item = await mfg.demands.getDemandItem(permit, line.id)
     expect(item.completedQty).toBe('70') // 关闭 30 + 生产入 40
-    expect(item.status).toBe('scheduled')
+    expect(item.status).toBe('SCHEDULED')
 
     // 采购入库回写 received → 完成
     await db
@@ -1311,7 +1311,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     item = await mfg.demands.getDemandItem(permit, line.id)
     expect(item.arrangedQty).toBe('100')
     expect(item.completedQty).toBe('100')
-    expect(item.status).toBe('completed')
+    expect(item.status).toBe('COMPLETED')
 
     const arrangements = await mfg.demands.listArrangements(permit, line.id)
     const types = arrangements.map((a) => a.arrangementType).sort()

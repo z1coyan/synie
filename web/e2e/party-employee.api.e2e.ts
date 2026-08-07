@@ -11,7 +11,8 @@ const supplierCode = `E2ES${suffix}`;
 
 type CreatedRecord = {
   path: "/base/customers" | "/base/suppliers" | "/hr/employees";
-  resource: "sal_customer" | "pur_supplier" | "hr_employee";
+  /** 审计 resource = 表名（标准派生后：sal_customers / pur_supplier / hr_employees） */
+  resource: "sal_customers" | "pur_supplier" | "hr_employees";
   id: string;
 };
 
@@ -80,7 +81,7 @@ async function createAndEditSimpleParty(args: {
   resource: "salCustomers" | "purSuppliers";
   label: "客户" | "供应商";
   apiPath: "/base/customers" | "/base/suppliers";
-  auditResource: "sal_customer" | "pur_supplier";
+  auditResource: "sal_customers" | "pur_supplier";
   code: string;
   name: string;
   updatedName: string;
@@ -206,7 +207,7 @@ test("客户、供应商、员工 Grid/Drawer 全程使用 Go REST", async ({ pa
       resource: "salCustomers",
       label: "客户",
       apiPath: "/base/customers",
-      auditResource: "sal_customer",
+      auditResource: "sal_customers",
       code: customerCode,
       name: `浏览器测试客户-${suffix}`,
       updatedName: `浏览器测试客户已更新-${suffix}`,
@@ -286,7 +287,7 @@ test("客户、供应商、员工 Grid/Drawer 全程使用 Go REST", async ({ pa
     ]);
     created.push({
       path: "/hr/employees",
-      resource: "hr_employee",
+      resource: "hr_employees",
       id: employeeID,
     });
     await expect(createEmployee).toBeHidden();
@@ -403,7 +404,7 @@ test("客户、供应商、员工 Grid/Drawer 全程使用 Go REST", async ({ pa
       postgres(`
         DELETE FROM sys_audit_log
         WHERE record_id IN (${ids.join(",")})
-          AND resource IN ('sal_customer', 'pur_supplier', 'hr_employee');
+          AND resource IN ('sal_customers', 'pur_supplier', 'hr_employees');
       `);
       const remaining = postgres(`
         SELECT

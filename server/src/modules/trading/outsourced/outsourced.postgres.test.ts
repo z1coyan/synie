@@ -82,9 +82,9 @@ run('PG 集成（委外发料/入库生命周期）', () => {
   const orderItemId = crypto.randomUUID()
   const orderMaterialId = crypto.randomUUID()
   const orderByproductId = crypto.randomUUID()
-  /** 编号桩：本文件不验取号；手填编号已从入参移除（真实服务会拒收） */
+  /** 编号桩：本文件不验取号；编号由内核 nextInTx 系统生成 */
   const numberer = {
-    assignedInTx: async () => `AUTO-${suffix}-${crypto.randomUUID().slice(0, 4)}`,
+    nextInTx: async () => `AUTO-${suffix}-${crypto.randomUUID().slice(0, 4)}`,
   }
   const outsourcedConfig = createOutsourcedConfigService(db, registry)
   const outsourced = createOutsourcedService(
@@ -607,9 +607,10 @@ run('PG 集成（委外发料/入库生命周期）', () => {
     await expect(
       outsourced.updateIssue(other(ISSUE_RESOURCE, 'update'), f.issueId, { remarks: 'x' }),
     ).rejects.toThrow('委外发料单不存在')
+    // W4：孙级删锁直接母行（成品行），越权 not_found 落在成品行文案（与 salDeliveries 装箱行同收敛）
     await expect(
       outsourced.deleteReceiptMaterial(other(RECEIPT_MATERIAL_RESOURCE, 'delete'), f.materialId),
-    ).rejects.toThrow('委外入库单不存在')
+    ).rejects.toThrow('委外入库成品行不存在')
   })
 
   test('HTTP 缺码 403；有码 200（403 只由 guard 的码级判定产生）', async () => {
@@ -643,5 +644,46 @@ run('PG 集成（委外发料/入库生命周期）', () => {
     await expect(
       outsourced.deleteIssue(scoped(ISSUE_RESOURCE, 'delete'), issue.id),
     ).rejects.toThrow('仅草稿委外发料单可编辑')
+  })
+
+  test('成品行 HTTP PATCH warehouseId 经 present 落库（判官丢写回归）', async () => {
+    const altWhId = crypto.randomUUID()
+    await sql`
+      INSERT INTO inv_warehouse(id, name, code, is_leaf, active, is_outsourced, company_id)
+      VALUES (${altWhId}::uuid, ${'备仓' + suffix}, ${'WA' + suffix}, true, true, false, ${companyId}::uuid)
+    `.execute(db)
+
+    const receipt = await outsourced.createReceipt(permit(RECEIPT_RESOURCE, 'create'), {
+      companyId,
+      partyType: 'SUPPLIER',
+      partyId: supplierId,
+      warehouseId: mainWhId,
+      outsourcedWarehouseId: outWhId,
+      debitAccountId: debitId,
+      creditAccountId: creditId,
+    })
+    const item = await outsourced.createReceiptItem(permit(RECEIPT_ITEM_RESOURCE, 'create'), {
+      receiptId: receipt.id,
+      idx: 99,
+      qty: '1',
+      orderItemId,
+      warehouseId: mainWhId,
+    })
+    expect(item.warehouseId).toBe(mainWhId)
+
+    const res = await http.request(`/api/v1/purchase/outsourced-receipt-items/${item.id}`, {
+      method: 'PATCH',
+      headers: {
+        authorization: 'Bearer scoped',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ warehouseId: altWhId }),
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { warehouseId: string }
+    expect(body.warehouseId).toBe(altWhId)
+
+    const reloaded = await outsourced.getReceiptItem(permit(RECEIPT_ITEM_RESOURCE, 'read'), item.id)
+    expect(reloaded.warehouseId).toBe(altWhId)
   })
 })

@@ -1,6 +1,4 @@
 import {
-  createContext,
-  useContext,
   useEffect,
   useState,
   type ReactNode,
@@ -8,7 +6,6 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, toast } from '@heroui/react'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
@@ -22,9 +19,13 @@ import {
   bomRouteClient,
 } from '~/lib/resources/manufacturing'
 import type { Row } from '~/components/synie-data-grid/types'
+import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { toastError } from '~/lib/toast'
-import { useDocumentDrawer } from '~/lib/use-document-drawer'
+import {
+  createDocumentDrawerOpenBridge,
+  useDocumentDrawer,
+} from '~/lib/use-document-drawer'
 
 // mutation input 只收行自身字段,行上挂的 material/unit/operation join 对象不进 payload
 function componentInput(row: Row) {
@@ -55,78 +56,22 @@ function byproductInput(row: Row) {
   }
 }
 
-const COMPONENT_COMPARE_KEYS = [
-  'materialId',
-  'unitId',
-  'quantity',
-  'lossRate',
-  'note',
-] as const
-const ROUTE_COMPARE_KEYS = [
-  'operationId',
-  'seq',
-  'requirement',
-  'isOutsourced',
-] as const
-const BYPRODUCT_COMPARE_KEYS = [
-  'materialId',
-  'unitId',
-  'quantity',
-  'note',
-] as const
-
-const rowChanged = (keys: readonly string[]) => (before: Row, after: Row) =>
-  keys.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-
-const componentChanged = rowChanged(COMPONENT_COMPARE_KEYS)
-const routeChanged = rowChanged(ROUTE_COMPARE_KEYS)
-const byproductChanged = rowChanged(BYPRODUCT_COMPARE_KEYS)
-
-const componentLabel = (row: Row) =>
-  (row.material as Row | undefined)?.name ?? '配料行'
-const routeLabel = (row: Row) =>
-  (row.operation as Row | undefined)?.name ?? '路线行'
-const byproductLabel = (row: Row) =>
-  (row.material as Row | undefined)?.name ?? '副产品行'
-
 async function persistComponents(
   bomId: string,
   current: Row[],
   snapshot: Row[],
 ): Promise<string[]> {
-  const errors: string[] = []
-  const currentIds = new Set(
-    current.filter((r) => !isLocalRow(r)).map((r) => r.id),
-  )
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    try {
-      await bomComponentClient.delete(old.id)
-    } catch (error) {
-      errors.push(`${componentLabel(old)}:${(error as Error).message}`)
-    }
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      try {
-        await bomComponentClient.create({ bomId, ...componentInput(row) })
-      } catch (error) {
-        errors.push(`${componentLabel(row)}:${(error as Error).message}`)
-      }
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && componentChanged(old, row)) {
-      try {
-        await bomComponentClient.update(row.id, componentInput(row))
-      } catch (error) {
-        errors.push(`${componentLabel(row)}:${(error as Error).message}`)
-      }
-    }
-  }
-  return errors
+  return persistChildRows({
+    current,
+    snapshot,
+    client: bomComponentClient,
+    parentIdField: 'bomId',
+    parentId: bomId,
+    compareKeys: ['materialId', 'unitId', 'quantity', 'lossRate', 'note'],
+    inputOf: componentInput,
+    rowLabel: (row) =>
+      String((row.material as Row | undefined)?.name ?? '配料行'),
+  })
 }
 
 async function persistRoutes(
@@ -134,39 +79,17 @@ async function persistRoutes(
   current: Row[],
   snapshot: Row[],
 ): Promise<string[]> {
-  const errors: string[] = []
-  const currentIds = new Set(
-    current.filter((r) => !isLocalRow(r)).map((r) => r.id),
-  )
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    try {
-      await bomRouteClient.delete(old.id)
-    } catch (error) {
-      errors.push(`${routeLabel(old)}:${(error as Error).message}`)
-    }
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      try {
-        await bomRouteClient.create({ bomId, ...routeInput(row) })
-      } catch (error) {
-        errors.push(`${routeLabel(row)}:${(error as Error).message}`)
-      }
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && routeChanged(old, row)) {
-      try {
-        await bomRouteClient.update(row.id, routeInput(row))
-      } catch (error) {
-        errors.push(`${routeLabel(row)}:${(error as Error).message}`)
-      }
-    }
-  }
-  return errors
+  return persistChildRows({
+    current,
+    snapshot,
+    client: bomRouteClient,
+    parentIdField: 'bomId',
+    parentId: bomId,
+    compareKeys: ['operationId', 'seq', 'requirement', 'isOutsourced'],
+    inputOf: routeInput,
+    rowLabel: (row) =>
+      String((row.operation as Row | undefined)?.name ?? '路线行'),
+  })
 }
 
 async function persistByproducts(
@@ -174,39 +97,17 @@ async function persistByproducts(
   current: Row[],
   snapshot: Row[],
 ): Promise<string[]> {
-  const errors: string[] = []
-  const currentIds = new Set(
-    current.filter((r) => !isLocalRow(r)).map((r) => r.id),
-  )
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    try {
-      await bomByproductClient.delete(old.id)
-    } catch (error) {
-      errors.push(`${byproductLabel(old)}:${(error as Error).message}`)
-    }
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      try {
-        await bomByproductClient.create({ bomId, ...byproductInput(row) })
-      } catch (error) {
-        errors.push(`${byproductLabel(row)}:${(error as Error).message}`)
-      }
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && byproductChanged(old, row)) {
-      try {
-        await bomByproductClient.update(row.id, byproductInput(row))
-      } catch (error) {
-        errors.push(`${byproductLabel(row)}:${(error as Error).message}`)
-      }
-    }
-  }
-  return errors
+  return persistChildRows({
+    current,
+    snapshot,
+    client: bomByproductClient,
+    parentIdField: 'bomId',
+    parentId: bomId,
+    compareKeys: ['materialId', 'unitId', 'quantity', 'note'],
+    inputOf: byproductInput,
+    rowLabel: (row) =>
+      String((row.material as Row | undefined)?.name ?? '副产品行'),
+  })
 }
 
 export interface OpenBomDrawerOptions {
@@ -228,11 +129,12 @@ export type OpenBomDrawer = (
   options?: OpenBomDrawerOptions,
 ) => void
 
-const BomDrawerContext = createContext<OpenBomDrawer>(() => {})
+const {
+  useOpen: useBomDrawer,
+  Provider: BomDrawerOpenProvider,
+} = createDocumentDrawerOpenBridge<OpenBomDrawer>()
+export { useBomDrawer }
 
-export function useBomDrawer(): OpenBomDrawer {
-  return useContext(BomDrawerContext)
-}
 
 /** 三个子表行集合的装载快照(骨架 loadDraft 的返回形) */
 interface BomLinesDraft {
@@ -389,7 +291,7 @@ export function BomDrawerProvider({
   }
 
   return (
-    <BomDrawerContext.Provider value={openDrawer}>
+    <BomDrawerOpenProvider value={openDrawer}>
       {children}
 
       <SynieRecordDrawer
@@ -664,6 +566,6 @@ export function BomDrawerProvider({
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
-    </BomDrawerContext.Provider>
+    </BomDrawerOpenProvider>
   )
 }

@@ -17,6 +17,6 @@
 
 ## 待办
 
-- 树形资源（分类/部门/科目/公司）：投影派生（父 join/has_children）+ 树锁钩子，内核 v2。
-- 审核/作废 + 统一单据状态机，单据资源迁入。
+- 树形资源（分类/部门/科目/公司）：投影派生（父 join/has_children）+ 树锁钩子，内核 v2。（部分已落地，残余见标准迁移决策日志弹射项。）
+- ~~审核/作废 + 统一单据状态机，单据资源迁入。~~ **已由聚合单据内核承接**：workflow transitions + 聚合草稿见 [`2026-08-07-aggregate-document-kernel.md`](2026-08-07-aggregate-document-kernel.md)。
 - 类型级 wire 派生（const meta → 精确输入类型），恢复 client 端字段级类型精度。

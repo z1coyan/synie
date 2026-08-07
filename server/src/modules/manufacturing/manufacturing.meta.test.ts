@@ -96,7 +96,7 @@ describe('制造资源 Meta', () => {
     expect(fields.get('salesOrderItemId')).toMatchObject({
       dbColumn: 'sales_order_item_id',
       type: 'fk',
-      readonly: true,
+      createOnly: true,
     })
     expect(fields.get('needDate')).toMatchObject({ required: true, type: 'date' })
     // attachments 声明即附件宿主注册（ownerType=mfg_demand_item），行图纸快照挂接用

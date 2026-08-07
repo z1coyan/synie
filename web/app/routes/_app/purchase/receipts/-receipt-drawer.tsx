@@ -1,7 +1,5 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useRef,
   useState,
@@ -40,7 +38,10 @@ import {
 import { fetchCompanyAccountDefaults } from '~/components/company-account-defaults'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { todayLocal } from '~/lib/form-defaults'
-import { useDocumentDrawer } from '~/lib/use-document-drawer'
+import {
+  createDocumentDrawerOpenBridge,
+  useDocumentDrawer,
+} from '~/lib/use-document-drawer'
 
 const purchaseReceiptBinding = resourceBindingFor('purReceipts')
 const purchaseReceiptItemBinding = resourceBindingFor('purReceiptItems')
@@ -84,11 +85,12 @@ export const receiptAuditConfig = {
       .then((result) => result.results),
 } satisfies AuditDocConfig
 
-const ReceiptDrawerContext = createContext<OpenReceiptDrawer>(() => {})
+const {
+  useOpen: useReceiptDrawer,
+  Provider: ReceiptDrawerOpenProvider,
+} = createDocumentDrawerOpenBridge<OpenReceiptDrawer>()
+export { useReceiptDrawer }
 
-export function useReceiptDrawer(): OpenReceiptDrawer {
-  return useContext(ReceiptDrawerContext)
-}
 
 /** 科目候选的 REST 结构化筛选。 */
 function accountFilter(companyId: string | null, roleEnum?: string): FilterState | undefined {
@@ -347,7 +349,7 @@ export function ReceiptDrawerProvider({
   }
 
   return (
-    <ReceiptDrawerContext.Provider value={openDrawer}>
+    <ReceiptDrawerOpenProvider value={openDrawer}>
       {children}
       <SynieRecordDrawer
         resource="purReceipts"
@@ -727,6 +729,6 @@ export function ReceiptDrawerProvider({
           return String(saved.id)
         }}
       />
-    </ReceiptDrawerContext.Provider>
+    </ReceiptDrawerOpenProvider>
   )
 }

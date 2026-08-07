@@ -1,7 +1,5 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useRef,
   useState,
@@ -22,7 +20,10 @@ import {
   purchaseOrderItemClient,
   purchaseOrderItemMaterialClient,
 } from '~/lib/resources/orders'
-import type { ResourceClient } from '~/lib/resources/types'
+import {
+  persistChildRows,
+  type ChildRowWriter,
+} from '~/lib/resources/persist-child-rows'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
@@ -38,7 +39,10 @@ import { CompanyDefaultSync, WarehouseRemoteSelect, defaultCompanyId } from '../
 import { fetchCompanyAccountDefaults } from '~/components/company-account-defaults'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { todayLocal } from '~/lib/form-defaults'
-import { useDocumentDrawer } from '~/lib/use-document-drawer'
+import {
+  createDocumentDrawerOpenBridge,
+  useDocumentDrawer,
+} from '~/lib/use-document-drawer'
 
 export interface ReceiptRef {
   id: string
@@ -77,11 +81,12 @@ export const receiptAuditConfig = {
       .then((result) => result.results),
 } satisfies AuditDocConfig
 
-const ReceiptDrawerContext = createContext<OpenReceiptDrawer>(() => {})
+const {
+  useOpen: useReceiptDrawer,
+  Provider: ReceiptDrawerOpenProvider,
+} = createDocumentDrawerOpenBridge<OpenReceiptDrawer>()
+export { useReceiptDrawer }
 
-export function useReceiptDrawer(): OpenReceiptDrawer {
-  return useContext(ReceiptDrawerContext)
-}
 
 /** 提交 mutation:物料/单位由订单条目锁定带出,后端再快照与折算 */
 function itemInput(row: Row) {
@@ -118,74 +123,51 @@ function byproductRowInput(row: Row) {
   }
 }
 
-const ITEM_COMPARE_KEYS = [
-  'idx',
-  'orderItemId',
-  'materialId',
-  'unitId',
-  'qty',
-  'warehouseId',
-  'remarks',
-] as const
-const MATERIAL_ROW_COMPARE_KEYS = ['idx', 'orderItemMaterialId', 'qty', 'outsourcedWarehouseId', 'remarks'] as const
-const BYPRODUCT_ROW_COMPARE_KEYS = ['idx', 'orderItemByproductId', 'qty', 'warehouseId', 'remarks'] as const
-
-function changedBy(keys: readonly string[]) {
-  return (before: Row, after: Row): boolean =>
-    keys.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
-const itemChanged = changedBy(ITEM_COMPARE_KEYS)
-const materialRowChanged = changedBy(MATERIAL_ROW_COMPARE_KEYS)
-const byproductRowChanged = changedBy(BYPRODUCT_ROW_COMPARE_KEYS)
-
 /**
- * 行持久化通用件:先删(跳过将随父条目级联删的行)、再增、后改。
+ * 行持久化:先删(跳过将随父条目级联删的行)、再增、后改。
  * deletedItemIds=本次被删的入库条目 id——其扣减/副产物行由 DB 级联清理,不必(也不能)逐行删。
  */
-async function persistRows(opts: {
+async function persistSideChildRows(opts: {
   current: Row[]
   snapshot: Row[]
   deletedItemIds: Set<string>
   inputOf: (row: Row) => Record<string, unknown>
-  changed: (before: Row, after: Row) => boolean
-  client: ResourceClient
+  compareKeys: readonly string[]
+  client: ChildRowWriter
 }): Promise<string[]> {
-  const errors: string[] = []
-  const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
-  }
-  const currentIds = new Set(opts.current.filter((r) => !isLocalRow(r)).map((r) => r.id))
+  return persistChildRows({
+    current: opts.current,
+    snapshot: opts.snapshot,
+    client: opts.client,
+    compareKeys: opts.compareKeys,
+    inputOf: opts.inputOf,
+    skipDelete: (old) =>
+      opts.deletedItemIds.has(String(old.receiptItemId ?? '')),
+  })
+}
 
-  for (const old of opts.snapshot) {
-    if (currentIds.has(old.id)) continue
-    if (opts.deletedItemIds.has(String(old.receiptItemId ?? ''))) continue
-    try {
-      await opts.client.delete(String(old.id))
-    } catch (error) {
-      collect(old.idx, [{ message: (error as Error).message }])
-    }
-  }
-
-  for (const row of opts.current) {
-    if (isLocalRow(row)) {
-      try {
-        await opts.client.create(opts.inputOf(row))
-      } catch (error) {
-        collect(row.idx, [{ message: (error as Error).message }])
-      }
-      continue
-    }
-    const old = opts.snapshot.find((s) => s.id === row.id)
-    if (old && opts.changed(old, row)) {
-      try {
-        await opts.client.update(String(row.id), opts.inputOf(row))
-      } catch (error) {
-        collect(row.idx, [{ message: (error as Error).message }])
-      }
-    }
-  }
-  return errors
+async function persistItemRows(
+  receiptId: string,
+  current: Row[],
+  snapshot: Row[],
+): Promise<string[]> {
+  return persistChildRows({
+    current,
+    snapshot,
+    client: purchaseOutsourcedReceiptItemClient,
+    parentIdField: 'receiptId',
+    parentId: receiptId,
+    compareKeys: [
+      'idx',
+      'orderItemId',
+      'materialId',
+      'unitId',
+      'qty',
+      'warehouseId',
+      'remarks',
+    ],
+    inputOf: itemInput,
+  })
 }
 
 /** 科目候选使用结构化 REST FilterState。 */
@@ -611,7 +593,7 @@ export function ReceiptDrawerProvider({
   }
 
   return (
-    <ReceiptDrawerContext.Provider value={openDrawer}>
+    <ReceiptDrawerOpenProvider value={openDrawer}>
       {children}
       <SynieRecordDrawer
         resource="purOutsourcedReceipts"
@@ -1341,64 +1323,35 @@ export function ReceiptDrawerProvider({
           )
           const persistSideRows = () =>
             Promise.all([
-              persistRows({
+              persistSideChildRows({
                 current: materialRows,
                 snapshot: materialRowsSnapshot,
                 deletedItemIds,
                 inputOf: materialRowInput,
-                changed: materialRowChanged,
+                compareKeys: [
+                  'idx',
+                  'orderItemMaterialId',
+                  'qty',
+                  'outsourcedWarehouseId',
+                  'remarks',
+                ],
                 client: purchaseOutsourcedReceiptItemMaterialClient,
               }),
-              persistRows({
+              persistSideChildRows({
                 current: byproductRows,
                 snapshot: byproductRowsSnapshot,
                 deletedItemIds,
                 inputOf: byproductRowInput,
-                changed: byproductRowChanged,
+                compareKeys: [
+                  'idx',
+                  'orderItemByproductId',
+                  'qty',
+                  'warehouseId',
+                  'remarks',
+                ],
                 client: purchaseOutsourcedReceiptItemByproductClient,
               }),
             ]).then(([a, b]) => [...a, ...b])
-
-          const persistItemRows = async (receiptId: string, current: Row[], snapshot: Row[]) => {
-            const errors: string[] = []
-            const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
-              if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
-            }
-            const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-            for (const old of snapshot) {
-              if (currentIds.has(old.id)) continue
-              try {
-                await purchaseOutsourcedReceiptItemClient.delete(String(old.id))
-              } catch (error) {
-                collect(old.idx, [{ message: (error as Error).message }])
-              }
-            }
-            for (const row of current) {
-              if (isLocalRow(row)) {
-                try {
-                  await purchaseOutsourcedReceiptItemClient.create({
-                    receiptId,
-                    ...itemInput(row),
-                  })
-                } catch (error) {
-                  collect(row.idx, [{ message: (error as Error).message }])
-                }
-                continue
-              }
-              const old = snapshot.find((s) => s.id === row.id)
-              if (old && itemChanged(old, row)) {
-                try {
-                  await purchaseOutsourcedReceiptItemClient.update(
-                    String(row.id),
-                    itemInput(row),
-                  )
-                } catch (error) {
-                  collect(row.idx, [{ message: (error as Error).message }])
-                }
-              }
-            }
-            return errors
-          }
 
           if (mode === 'create') {
             const saved = await purchaseOutsourcedReceiptClient.create(values)
@@ -1446,6 +1399,6 @@ export function ReceiptDrawerProvider({
           return savedId
         }}
       />
-    </ReceiptDrawerContext.Provider>
+    </ReceiptDrawerOpenProvider>
   )
 }

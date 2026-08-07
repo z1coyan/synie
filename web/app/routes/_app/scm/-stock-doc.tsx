@@ -1,13 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Label, NumberField, toast } from '@heroui/react'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
-import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
+import type { FieldOverride } from '~/components/synie-record-drawer/fields'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
@@ -18,14 +17,13 @@ import {
 } from '~/lib/form-defaults'
 import { companyClient } from '~/lib/resources/companies'
 import type { ResourceClient } from '~/lib/resources/types'
+import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import {
   AUDIT_DOC_EDIT_ACTION_VISIBLE,
   AUDIT_DOC_STATUS_ENUM_COLORS,
 } from '~/lib/doc-status'
-import { toastError } from '~/lib/toast'
-import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
-import { useRequestGuard } from '~/lib/use-request-guard'
+import { useDocumentDrawer } from '~/lib/use-document-drawer'
 
 export { CompanyDefaultSync, defaultCompanyId, todayLocal }
 
@@ -131,67 +129,56 @@ function itemInput(row: Row) {
   }
 }
 
-const ITEM_COMPARE_KEYS = ['idx', 'materialId', 'unitId', 'qty', 'remark'] as const
-
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
-async function persistItems(cfg: StockDocConfig, docId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
-  const errors: string[] = []
-  const run = async (idx: unknown, operation: () => Promise<unknown>) => {
-    try {
-      await operation()
-    } catch (error) {
-      errors.push(`第${idx}行:${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    await run(old.idx, () => cfg.itemClient.delete(old.id))
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      await run(row.idx, () =>
-        cfg.itemClient.create({ [cfg.docIdField]: docId, ...itemInput(row) }),
-      )
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      await run(row.idx, () => cfg.itemClient.update(row.id, itemInput(row)))
-    }
-  }
-  return errors
+async function persistItems(
+  cfg: StockDocConfig,
+  docId: string,
+  current: Row[],
+  snapshot: Row[],
+): Promise<string[]> {
+  return persistChildRows({
+    current,
+    snapshot,
+    client: cfg.itemClient,
+    parentIdField: cfg.docIdField,
+    parentId: docId,
+    compareKeys: ['idx', 'materialId', 'unitId', 'qty', 'remark'],
+    inputOf: itemInput,
+  })
 }
 
 export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
   const [filters, setFilters] = useState<FilterState>({})
-  // 页面级主抽屉:开/关/模式走 URL(?record=&mode=)
-  const {
-    drawer,
-    open,
-    setMode,
-    close,
-    row: drawerRow,
-  } = useRecordDrawerUrl(cfg.resource)
+  // 单据抽屉骨架:URL 双态 + 行装载竞态协议(文案保留「{label}行加载失败」)
+  const drawer = useDocumentDrawer<Row[]>({
+    resource: cfg.resource,
+    urlSync: true,
+    loadErrorLabel: `${cfg.label}行加载失败`,
+    loadDraft: (docId) =>
+      cfg.itemClient
+        .query({
+          limit: 200,
+          offset: 0,
+          sort: { column: 'idx', direction: 'ascending' },
+          fixedFilter: {
+            [cfg.docIdField]: { kind: 'fk', op: 'in', values: [docId], labels: [] },
+          },
+        })
+        .then((result) => result.results),
+  })
+  const { isOpen, mode, rowId } = drawer
   const [items, setItems] = useState<Row[]>([])
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
-  const [detailLoaded, setDetailLoaded] = useState(false)
   const queryClient = useQueryClient()
-  const guard = useRequestGuard()
   // 物料选择缓存:选中整行按 id 暂存,transformItem 带出 code/name/spec 供行内物料富单元格展示
   const materialPickRef = useRef(new Map<string, Row>())
-  // 已为哪张单据拉过明细;深链 effect 与 openDrawer 去重,避免双发
-  const loadedIdRef = useRef<string | null>(null)
+  const docStatus = drawer.row?.status
 
-  const isOpen = drawer !== null
-  const mode: DrawerMode = drawer?.mode ?? 'view'
-  const rowId = drawer?.recordId ?? undefined
-  const docStatus = drawerRow?.status
+  // 草稿 → 条目状态派生
+  useEffect(() => {
+    const rows = drawer.draft ?? []
+    setItems(rows)
+    setItemsSnapshot(rows)
+  }, [drawer.draft, drawer.generation])
 
   const companies = useQuery({
     queryKey: [cfg.resource, 'companies'],
@@ -204,70 +191,6 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
   })
 
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
-
-  function resetDetail() {
-    loadedIdRef.current = null
-    setItems([])
-    setItemsSnapshot([])
-    setDetailLoaded(true)
-  }
-
-  function loadDetail(docId: string) {
-    const my = guard.begin()
-    loadedIdRef.current = docId
-    setDetailLoaded(false)
-    cfg.itemClient
-      .query({
-        limit: 200,
-        offset: 0,
-        sort: { column: 'idx', direction: 'ascending' },
-        fixedFilter: {
-          [cfg.docIdField]: { kind: 'fk', op: 'in', values: [docId], labels: [] },
-        },
-      })
-      .then((result) => {
-        if (!guard.isCurrent(my)) return
-        const rows = result.results
-        setItems(rows)
-        setItemsSnapshot(rows)
-        setDetailLoaded(true)
-      })
-      .catch((e) => {
-        if (!guard.isCurrent(my)) return
-        toastError(`${cfg.label}行加载失败`)(e)
-        setItems([])
-        setItemsSnapshot([])
-      })
-  }
-
-  const openDrawer = useCallback((nextMode: DrawerMode, row: Row | null) => {
-    open(nextMode, row?.id != null ? String(row.id) : null)
-    if (nextMode === 'create' || !row) {
-      resetDetail()
-      return
-    }
-    loadDetail(String(row.id))
-  }, [cfg, open])
-
-  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
-  useEffect(() => {
-    const d = drawer
-    if (!d) {
-      if (loadedIdRef.current != null) {
-        guard.invalidate()
-        resetDetail()
-      }
-      return
-    }
-    if (d.mode === 'create' || d.recordId == null) {
-      if (loadedIdRef.current != null) resetDetail()
-      return
-    }
-    if (loadedIdRef.current !== d.recordId) {
-      loadDetail(d.recordId)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
-  }, [drawer?.recordId, drawer?.mode])
 
   const baseCfg = drawerConfig(cfg.resource)
   const drawerCfg = {
@@ -358,9 +281,9 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
         defaultSort={{ column: 'docDate', direction: 'descending' }}
         createLabel={cfg.createLabel}
         onFiltersChange={setFilters}
-        onView={(row) => openDrawer('view', row)}
-        onCreate={() => openDrawer('create', null)}
-        onEdit={(row) => openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)}
+        onView={(row) => drawer.open('view', row)}
+        onCreate={() => drawer.open('create', null)}
+        onEdit={(row) => drawer.open(row.status === 'DRAFT' ? 'edit' : 'view', row)}
         actionVisible={ACTION_VISIBLE}
       />
 
@@ -370,16 +293,11 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
         mode={mode}
         isOpen={isOpen}
         onOpenChange={(isDrawerOpen) => {
-          if (isDrawerOpen) return
-          guard.invalidate()
-          close()
-          setItems([])
-          setItemsSnapshot([])
-          loadedIdRef.current = null
+          if (!isDrawerOpen) drawer.close()
         }}
         rowId={rowId}
         onEdit={
-          docStatus === 'DRAFT' ? () => setMode('edit') : undefined
+          docStatus === 'DRAFT' ? () => drawer.setMode('edit') : undefined
         }
         extraContent={(mode, row, values, patchValues) => (
           <>
@@ -394,7 +312,7 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
               label={cfg.itemLabel}
               items={items}
               onChange={setItems}
-              readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !detailLoaded)}
+              readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !drawer.detailLoaded)}
               drawerClassName="w-full lg:w-[560px]"
               exclude={[
                 cfg.docIdField,

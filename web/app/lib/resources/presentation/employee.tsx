@@ -4,6 +4,7 @@
  */
 import { formatAmount } from '~/lib/amount'
 import { SynieImageAttachment } from '~/components/synie-attachment-panel/SynieImageAttachment'
+import { requireWriter } from '../catalog/require-writer'
 import type { ResourceBinding } from '../catalog/types'
 import type { PresentationExtension } from './types'
 
@@ -23,7 +24,14 @@ export function createEmployeePresentation(
     label: '员工',
     exclude: ['id', 'insertedAt', 'updatedAt'],
     fields: {
-      code: { order: 0, cols: 6, required: false, placeholder: '保存后自动编号' },
+      // 系统生成编号（ADR 2026-08-06）：readOnly 不进 create wire（对齐 material / meta.form）
+      code: {
+        order: 0,
+        cols: 6,
+        required: false,
+        edit: 'readOnly',
+        placeholder: '保存后自动编号',
+      },
       name: { order: 1, cols: 6, required: true },
       attendanceNo: { order: 2, cols: 6 },
       phone: { order: 3, cols: 6 },
@@ -63,15 +71,11 @@ export async function submitEmployeeForm(
   rowId: string | undefined,
 ): Promise<string> {
   if (mode === 'view') throw new Error('查看模式不可提交')
-  const writer = presentation.binding.writer
-  if (!writer) throw new Error('员工不支持写入')
   if (mode === 'create') {
-    if (!('create' in writer) || !writer.create) throw new Error('员工不支持 create')
-    const saved = await writer.create(values)
+    const saved = await requireWriter(presentation.binding, 'create', '员工')(values)
     return String(saved.id)
   }
   if (!rowId) throw new Error('更新员工缺少 id')
-  if (!('update' in writer) || !writer.update) throw new Error('员工不支持 update')
-  const saved = await writer.update(rowId, values)
+  const saved = await requireWriter(presentation.binding, 'update', '员工')(rowId, values)
   return String(saved.id)
 }

@@ -1,7 +1,5 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useRef,
   useState,
@@ -20,7 +18,6 @@ import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
@@ -28,7 +25,11 @@ import { auditMaterialCell, type AuditDocConfig } from '../../scm/-audit-doc'
 import { CompanyDefaultSync, WarehouseRemoteSelect, defaultCompanyId } from '../../scm/-stock-doc'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { todayLocal } from '~/lib/form-defaults'
-import { useDocumentDrawer } from '~/lib/use-document-drawer'
+import { persistChildRows } from '~/lib/resources/persist-child-rows'
+import {
+  createDocumentDrawerOpenBridge,
+  useDocumentDrawer,
+} from '~/lib/use-document-drawer'
 
 export interface IssueRef {
   id: string
@@ -63,11 +64,12 @@ export const issueAuditConfig = {
       .then((result) => result.results),
 } satisfies AuditDocConfig
 
-const IssueDrawerContext = createContext<OpenIssueDrawer>(() => {})
+const {
+  useOpen: useIssueDrawer,
+  Provider: IssueDrawerOpenProvider,
+} = createDocumentDrawerOpenBridge<OpenIssueDrawer>()
+export { useIssueDrawer }
 
-export function useIssueDrawer(): OpenIssueDrawer {
-  return useContext(IssueDrawerContext)
-}
 
 /** 提交 mutation:材料/单位由发料清单行锁定带出,后端再快照与折算 */
 function itemInput(row: Row) {
@@ -81,54 +83,27 @@ function itemInput(row: Row) {
   }
 }
 
-const ITEM_COMPARE_KEYS = [
-  'idx',
-  'orderItemMaterialId',
-  'qty',
-  'fromWarehouseId',
-  'outsourcedWarehouseId',
-  'remarks',
-] as const
-
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
-async function persistItems(issueId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
-  const errors: string[] = []
-  const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    try {
-      await purchaseOutsourcedIssueItemClient.delete(String(old.id))
-    } catch (error) {
-      collect(old.idx, [{ message: (error as Error).message }])
-    }
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      try {
-        await purchaseOutsourcedIssueItemClient.create({ issueId, ...itemInput(row) })
-      } catch (error) {
-        collect(row.idx, [{ message: (error as Error).message }])
-      }
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      try {
-        await purchaseOutsourcedIssueItemClient.update(String(row.id), itemInput(row))
-      } catch (error) {
-        collect(row.idx, [{ message: (error as Error).message }])
-      }
-    }
-  }
-  return errors
+async function persistItems(
+  issueId: string,
+  current: Row[],
+  snapshot: Row[],
+): Promise<string[]> {
+  return persistChildRows({
+    current,
+    snapshot,
+    client: purchaseOutsourcedIssueItemClient,
+    parentIdField: 'issueId',
+    parentId: issueId,
+    compareKeys: [
+      'idx',
+      'orderItemMaterialId',
+      'qty',
+      'fromWarehouseId',
+      'outsourcedWarehouseId',
+      'remarks',
+    ],
+    inputOf: itemInput,
+  })
 }
 
 /**
@@ -377,7 +352,7 @@ export function IssueDrawerProvider({
   }
 
   return (
-    <IssueDrawerContext.Provider value={openDrawer}>
+    <IssueDrawerOpenProvider value={openDrawer}>
       {children}
       <SynieRecordDrawer
         resource="purOutsourcedIssues"
@@ -757,6 +732,6 @@ export function IssueDrawerProvider({
           return savedId
         }}
       />
-    </IssueDrawerContext.Provider>
+    </IssueDrawerOpenProvider>
   )
 }

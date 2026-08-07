@@ -4,6 +4,9 @@
  * 动作词表：get / list / create / update / remove / bulkUpdate / bulkRemove
  * + 工作流转移 transition / bulkTransition（v2：统一单据状态机 draft→approved→voided，
  * 各资源的动作名/状态值/盖章列经 workflow 声明冻结为既有 wire 形状）。
+ * + 在途事务变体 createInTx / updateInTx / removeInTx / transitionInTx（D1：
+ * 对齐 numbering.nextInTx；外层事务由调用方持有，Permit 仍是唯一入场券；
+ * 不采用可选 trx 参数重载）。
  *
  * 平台契约（与手写服务逐字对齐，路由不可区分）：
  * - 授权：列表 listAuthorized、单条/写前 loadAuthorized(forUpdate)、create 走
@@ -21,6 +24,8 @@
  *   事务内 effect（过账/占量等调既有引擎）与 after（翻转后副作用）
  * - tree：树锁（advisory，按公司/全局）、父子校验（存在/自身/后代/跨公司）、
  *   物化路径维护与子树重写、有子节点删除保护
+ * - extraWhere：list/load 领域行筛选谓词（EXISTS 派生可见性、companyId 过滤、
+ *   行内伪筛选等）；可改写 list query（剥离 filter 伪字段交给 filterbuild）
  *
  * 钩子纪律（写进 AGENTS.md）：钩子只做领域不变量与行内充实（可原地改 draft）；
  * 跨资源流程编排不进钩子，留在手写服务与引擎。
@@ -42,6 +47,7 @@ import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { FieldMeta, ResourceMeta } from '~/platform/meta/types.ts'
+import { runeLen } from '~/platform/posting/text.ts'
 import { fromDbValue, mapRow, physicalFields, snapshot, toDbValue, writableFields } from './fields.ts'
 
 export interface StandardItem {
@@ -153,6 +159,30 @@ export interface StandardNumbering {
   field: string
 }
 
+/**
+ * list/load 领域行筛选上下文。
+ * - `query`：list 为调用方入参（可含 companyId 等扩展键）；load/写前锁行为空对象
+ * - `alias`：list/投影 load 为 source 别名；裸表 load 为 meta.table
+ */
+export interface ExtraWhereContext {
+  permit: Permit
+  query: Partial<ListQuery> & Record<string, unknown>
+  alias: string
+}
+
+/**
+ * 领域附加行筛选结果：
+ * - `where`：AND 进 listAuthorized / loadAuthorized（null/缺省 = 不加）
+ * - `query`：覆盖传入 filterbuild 的 list query（如剥离 `lines` 伪筛选）
+ */
+export interface ExtraWhereResult {
+  where?: RawBuilder<unknown> | null
+  query?: Partial<ListQuery> & Record<string, unknown>
+}
+
+/** list/load 共用的行筛选谓词；返回 null/undefined 等同无附加条件 */
+export type ExtraWhere = (ctx: ExtraWhereContext) => ExtraWhereResult | null | undefined
+
 export interface StandardServiceOptions {
   db: Kysely<Database>
   registry: Registry
@@ -169,19 +199,44 @@ export interface StandardServiceOptions {
   numbering?: StandardNumbering
   workflow?: StandardWorkflow
   tree?: StandardTree
+  /**
+   * list/get/写前锁 共用的领域行筛选（T1.5）。
+   * 授权谓词由平台编译；本回调只表达领域谓词（可见性 EXISTS、companyId 等）。
+   * load 路径以空 query 调用——依赖 query 的筛选在 get 上 naturally 失效（与既有弹射一致）。
+   */
+  extraWhere?: ExtraWhere
 }
 
 export interface StandardService<TItem extends StandardItem = StandardItem> {
   get(permit: Permit, id: string): Promise<TItem>
+  /**
+   * 在途读：与 {@link get} 同语义（含 projection / extraWhere），但在调用方持有的
+   * handle 上执行——供聚合 `loadDraft` 在 snapshot/trx 内装载头，避免绕开投影。
+   */
+  getOn(handle: DbHandle, permit: Permit, id: string): Promise<TItem>
   list(permit: Permit, query: Partial<ListQuery>): Promise<{ count: number; results: TItem[] }>
   create(permit: Permit, input: Record<string, unknown>): Promise<TItem>
+  /**
+   * 在途事务变体（D1）：外层事务由调用方持有；Permit 仍是唯一入场券。
+   * 签名对齐 numbering.nextInTx(handle, …)——trx 在前，不采用可选 trx 重载。
+   */
+  createInTx(trx: TrxHandle, permit: Permit, input: Record<string, unknown>): Promise<TItem>
   update(permit: Permit, id: string, patch: Record<string, unknown>): Promise<TItem>
+  updateInTx(trx: TrxHandle, permit: Permit, id: string, patch: Record<string, unknown>): Promise<TItem>
   remove(permit: Permit, id: string): Promise<void>
+  removeInTx(trx: TrxHandle, permit: Permit, id: string): Promise<void>
   /** 单事务全成全败；逐行审计 */
   bulkUpdate(permit: Permit, ids: readonly string[], patch: Record<string, unknown>): Promise<TItem[]>
   bulkRemove(permit: Permit, ids: readonly string[]): Promise<number>
   /** 工作流转移（未声明 workflow 时调用即抛错） */
   transition(permit: Permit, id: string, key: string, input?: Record<string, unknown>): Promise<TItem>
+  transitionInTx(
+    trx: TrxHandle,
+    permit: Permit,
+    id: string,
+    key: string,
+    input?: Record<string, unknown>,
+  ): Promise<TItem>
   bulkTransition(permit: Permit, ids: readonly string[], key: string, input?: Record<string, unknown>): Promise<TItem[]>
   readonly meta: ResourceMeta
   readonly stampedColumns: ReadonlySet<string>
@@ -198,10 +253,6 @@ export function auditStamp(permit: Permit): Record<string, unknown> {
     audited_at: sql`(now() AT TIME ZONE 'utc')`,
     audited_by_id: permit.actor.userId || null,
   }
-}
-
-function runeLen(value: string): number {
-  return [...value].length
 }
 
 export function createStandardService<TItem extends StandardItem = StandardItem>(
@@ -305,8 +356,27 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
     return out
   }
 
+  /**
+   * 解析领域行筛选：list 传入调用方 query；load/写前锁传空 query。
+   * 返回 where 片段与（可能被改写的）list query。
+   */
+  function resolveExtraWhere(
+    permit: Permit,
+    alias: string,
+    query: Partial<ListQuery> & Record<string, unknown> = {},
+  ): { where: RawBuilder<unknown> | null; query: Partial<ListQuery> } {
+    if (!options.extraWhere) return { where: null, query }
+    const result = options.extraWhere({ permit, query, alias })
+    if (!result) return { where: null, query }
+    return {
+      where: result.where ?? null,
+      query: result.query ?? query,
+    }
+  }
+
   /** 裸表行加载（锁路径）；返回物理字段 wire 形（无投影列） */
   async function loadBare(handle: DbHandle, permit: Permit, id: string, forUpdate: boolean) {
+    const { where: extraWhere } = resolveExtraWhere(permit, TABLE)
     const row = await loadAuthorized({
       db: handle,
       permit,
@@ -315,12 +385,14 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
       id,
       forUpdate,
       notFoundMessage: notFound,
+      extraWhere,
     })
     return mapRow(meta, row as Record<string, unknown>) as TItem
   }
 
   /** 投影单条（get 与写后重载共用） */
   async function loadProjected(handle: DbHandle, permit: Permit, id: string): Promise<TItem> {
+    const { where: extraWhere } = resolveExtraWhere(permit, ALIAS)
     return loadAuthorizedFrom({
       db: handle,
       permit,
@@ -331,6 +403,7 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
       id,
       mapRow: mapRowFull,
       notFoundMessage: notFound,
+      extraWhere,
     })
   }
 
@@ -341,11 +414,16 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
   }
 
   async function get(permit: Permit, id: string): Promise<TItem> {
-    if (projection) return loadProjected(db, permit, id)
-    return loadBare(db, permit, id, false)
+    return getOn(db, permit, id)
+  }
+
+  async function getOn(handle: DbHandle, permit: Permit, id: string): Promise<TItem> {
+    if (projection) return loadProjected(handle, permit, id)
+    return loadBare(handle, permit, id, false)
   }
 
   async function list(permit: Permit, query: Partial<ListQuery>) {
+    const resolved = resolveExtraWhere(permit, ALIAS, query as Partial<ListQuery> & Record<string, unknown>)
     return listAuthorized<TItem>({
       db,
       permit,
@@ -355,7 +433,8 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
       source: SOURCE,
       select: SELECT,
       defaultOrder,
-      query,
+      query: resolved.query,
+      extraWhere: resolved.where,
       mapRow: mapRowFull,
     })
   }
@@ -454,7 +533,7 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
     return mapRow(meta, result.rows[0] as Record<string, unknown>) as TItem
   }
 
-  async function create(permit: Permit, input: Record<string, unknown>): Promise<TItem> {
+  async function createInTx(trx: TrxHandle, permit: Permit, input: Record<string, unknown>): Promise<TItem> {
     // 编号一律系统生成：readonly 使 wire 层拿不到编号键；服务层调用方传非空值同样 400，
     // 不做静默丢弃（ADR 2026-08-06-system-generated-numbering：编号由系统生成,不接受手填）
     if (options.numbering && numberField) {
@@ -474,70 +553,72 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
       assertCompanyWritable(permit, companyId, notFound)
     }
     hooks.validate?.({ action: 'create', permit, draft })
-    return withTx(db, async (trx) => {
-      if (tree) {
-        await lockTree(trx, companyField ? String(draft[companyField.apiName]) : null)
+    if (tree) {
+      await lockTree(trx, companyField ? String(draft[companyField.apiName]) : null)
+    }
+    await hooks.beforeWrite?.(trx, { action: 'create', permit, draft })
+    const extraCols: Record<string, unknown> = {}
+    if (tree) {
+      const parent = await resolveParent(trx, draft, null, null)
+      if (tree.pathColumn) {
+        const id = crypto.randomUUID()
+        extraCols.id = id
+        extraCols[tree.pathColumn] = childPath(parent?.path ?? null, id)
       }
-      await hooks.beforeWrite?.(trx, { action: 'create', permit, draft })
-      const extraCols: Record<string, unknown> = {}
-      if (tree) {
-        const parent = await resolveParent(trx, draft, null, null)
-        if (tree.pathColumn) {
-          const id = crypto.randomUUID()
-          extraCols.id = id
-          extraCols[tree.pathColumn] = childPath(parent?.path ?? null, id)
-        }
-      }
-      if (hooks.insertColumns) Object.assign(extraCols, hooks.insertColumns({ action: 'create', permit, draft }))
-      if (options.numbering && numberField) {
-        // 编号一律系统生成（ADR 2026-08-06-system-generated-numbering）：
-        // wire 层 readonly 已挡手填；内部调用方传非空值同样 400，不做静默覆盖
-        const current = draft[numberField.apiName]
-        if (current !== undefined && current !== null && String(current).trim() !== '') {
-          throw ApiError.validation('编号由系统生成,不接受手填', {
-            [numberField.apiName]: ['编号由系统生成,不接受手填'],
-          })
-        }
-        const values: Record<string, unknown> = {}
-        for (const field of physicalFields(meta)) {
-          const v = draft[field.apiName]
-          if (v !== undefined) values[field.dbColumn] = toDbValue(field, v)
-        }
-        const assigned = await options.numbering.service.nextInTx(trx, {
-          resource: meta.permissionPrefix,
-          values,
+    }
+    if (hooks.insertColumns) Object.assign(extraCols, hooks.insertColumns({ action: 'create', permit, draft }))
+    if (options.numbering && numberField) {
+      // 编号一律系统生成（ADR 2026-08-06-system-generated-numbering）：
+      // wire 层 readonly 已挡手填；内部调用方传非空值同样 400，不做静默覆盖
+      const current = draft[numberField.apiName]
+      if (current !== undefined && current !== null && String(current).trim() !== '') {
+        throw ApiError.validation('编号由系统生成,不接受手填', {
+          [numberField.apiName]: ['编号由系统生成,不接受手填'],
         })
-        if (numberField.maxLength !== undefined && runeLen(assigned) > numberField.maxLength) {
-          throw ApiError.validation(`${label}参数不合法`, {
-            [numberField.apiName]: [`最多 ${numberField.maxLength} 个字符`],
-          })
-        }
-        draft[numberField.apiName] = assigned
-        // 编号字段声明 readonly（wire 不可写）时不在可写列集，须经 extraCols 落库（与树 path 同形态）；
-        // 可写编号字段（个别夹具/过渡资源）已随 draft 进可写列，勿重复
-        if (!writableByApi.has(numberField.apiName)) {
-          extraCols[numberField.dbColumn] = assigned
-        }
       }
-      let item: TItem
-      try {
-        item = await insertRow(trx, draft, permit, extraCols)
-      } catch (err) {
-        throw mapWriteError(err, `保存${label}失败`, writeErrors)
+      const values: Record<string, unknown> = {}
+      for (const field of physicalFields(meta)) {
+        const v = draft[field.apiName]
+        if (v !== undefined) values[field.dbColumn] = toDbValue(field, v)
       }
-      await writeAudit(trx, permit.actor, {
-        resource: TABLE,
-        recordId: item.id,
-        recordLabel: recordLabel(item),
-        actionType: 'create',
-        actionName: 'create',
-        companyId: auditCompanyId(item),
-        changes: auditCreated(snapshot(meta, item, AUDIT), AUDIT),
-        sensitiveFields: meta.audit?.sensitiveFields,
+      const assigned = await options.numbering.service.nextInTx(trx, {
+        resource: meta.permissionPrefix,
+        values,
       })
-      await hooks.afterWrite?.(trx, { action: 'create', permit, item })
-      return reload(trx, permit, item)
+      if (numberField.maxLength !== undefined && runeLen(assigned) > numberField.maxLength) {
+        throw ApiError.validation(`${label}参数不合法`, {
+          [numberField.apiName]: [`最多 ${numberField.maxLength} 个字符`],
+        })
+      }
+      draft[numberField.apiName] = assigned
+      // 编号字段声明 readonly（wire 不可写）时不在可写列集，须经 extraCols 落库（与树 path 同形态）；
+      // 可写编号字段（个别夹具/过渡资源）已随 draft 进可写列，勿重复
+      if (!writableByApi.has(numberField.apiName)) {
+        extraCols[numberField.dbColumn] = assigned
+      }
+    }
+    let item: TItem
+    try {
+      item = await insertRow(trx, draft, permit, extraCols)
+    } catch (err) {
+      throw mapWriteError(err, `保存${label}失败`, writeErrors)
+    }
+    await writeAudit(trx, permit.actor, {
+      resource: TABLE,
+      recordId: item.id,
+      recordLabel: recordLabel(item),
+      actionType: 'create',
+      actionName: 'create',
+      companyId: auditCompanyId(item),
+      changes: auditCreated(snapshot(meta, item, AUDIT), AUDIT),
+      sensitiveFields: meta.audit?.sensitiveFields,
     })
+    await hooks.afterWrite?.(trx, { action: 'create', permit, item })
+    return reload(trx, permit, item)
+  }
+
+  async function create(permit: Permit, input: Record<string, unknown>): Promise<TItem> {
+    return withTx(db, (trx) => createInTx(trx, permit, input))
   }
 
   /** 工作流可变状态门：非可变状态的改/删一律 conflict */
@@ -702,7 +783,7 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
     permit: Permit,
     id: string,
     key: string,
-    input: Record<string, unknown>,
+    input: Record<string, unknown> = {},
   ): Promise<TItem> {
     const t = transitionsByKey.get(key)
     if (!t || !statusField) {
@@ -744,7 +825,12 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
     return reload(trx, permit, item)
   }
 
-  async function transition(permit: Permit, id: string, key: string, input: Record<string, unknown> = {}): Promise<TItem> {
+  async function transition(
+    permit: Permit,
+    id: string,
+    key: string,
+    input: Record<string, unknown> = {},
+  ): Promise<TItem> {
     return withTx(db, (trx) => transitionInTx(trx, permit, id, key, input))
   }
 
@@ -764,13 +850,18 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
 
   return {
     get,
+    getOn,
     list,
     create,
+    createInTx,
     update,
+    updateInTx,
     remove,
+    removeInTx,
     bulkUpdate,
     bulkRemove,
     transition,
+    transitionInTx,
     bulkTransition,
     meta,
     stampedColumns,

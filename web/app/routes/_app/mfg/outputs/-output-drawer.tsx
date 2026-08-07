@@ -1,6 +1,4 @@
 import {
-  createContext,
-  useContext,
   useEffect,
   useRef,
   useState,
@@ -9,7 +7,6 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Label, NumberField, toast } from '@heroui/react'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
@@ -26,7 +23,11 @@ import {
   type AuditDocConfig,
 } from '../../scm/-audit-doc'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
-import { useDocumentDrawer } from '~/lib/use-document-drawer'
+import { persistChildRows } from '~/lib/resources/persist-child-rows'
+import {
+  createDocumentDrawerOpenBridge,
+  useDocumentDrawer,
+} from '~/lib/use-document-drawer'
 import { WorkOrderProgressCell } from '../-work-order-progress-cell'
 import { resourceBindingFor } from '~/lib/resources/registry'
 
@@ -44,11 +45,12 @@ export type OpenOutputDrawer = (
   output: OutputRef | null,
 ) => void
 
-const OutputDrawerContext = createContext<OpenOutputDrawer>(() => {})
+const {
+  useOpen: useOutputDrawer,
+  Provider: OutputDrawerOpenProvider,
+} = createDocumentDrawerOpenBridge<OpenOutputDrawer>()
+export { useOutputDrawer }
 
-export function useOutputDrawer(): OpenOutputDrawer {
-  return useContext(OutputDrawerContext)
-}
 
 /**
  * 工单「当前未入」折回行单位（与 WorkOrderProgressCell 同口径）。
@@ -149,53 +151,22 @@ const ITEMS = {
   ] as const,
 }
 
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEMS.itemKeys.some(
-    (k) => String(before[k] ?? '') !== String(after[k] ?? ''),
-  )
-}
-
 /** 父表单提交时调:删除消失的存量行 → 新建 local: 行 → 更新变更行;返回逐行错误 */
 async function persistItems(
   docId: string,
   current: Row[],
   snapshot: Row[],
 ): Promise<string[]> {
-  const errors: string[] = []
-  const currentIds = new Set(
-    current.filter((r) => !isLocalRow(r)).map((r) => r.id),
-  )
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    try {
-      await ITEMS.client.delete(old.id)
-    } catch (error) {
-      errors.push(`${String(old.idx ?? '行')}:${(error as Error).message}`)
-    }
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      try {
-        const input = { [ITEMS.docIdField]: docId, ...ITEMS.itemInput(row) }
-        await ITEMS.client.create(input)
-      } catch (error) {
-        errors.push(`${String(row.idx ?? '行')}:${(error as Error).message}`)
-      }
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      try {
-        const input = ITEMS.itemInput(row)
-        await ITEMS.client.update(row.id, input)
-      } catch (error) {
-        errors.push(`${String(row.idx ?? '行')}:${(error as Error).message}`)
-      }
-    }
-  }
-  return errors
+  return persistChildRows({
+    current,
+    snapshot,
+    client: ITEMS.client,
+    parentIdField: ITEMS.docIdField,
+    parentId: docId,
+    compareKeys: ITEMS.itemKeys,
+    inputOf: ITEMS.itemInput,
+    rowLabel: (row) => String(row.idx ?? '行'),
+  })
 }
 
 // 「审核整单」确认弹窗配置(同 scm 单据先例:只取行快照字段)
@@ -295,7 +266,7 @@ export function OutputDrawerProvider({
     mode === 'create' || !outputStatus || outputStatus === 'DRAFT'
 
   return (
-    <OutputDrawerContext.Provider value={openDrawer}>
+    <OutputDrawerOpenProvider value={openDrawer}>
       {children}
 
       <SynieRecordDrawer
@@ -526,6 +497,6 @@ export function OutputDrawerProvider({
           return savedId
         }}
       />
-    </OutputDrawerContext.Provider>
+    </OutputDrawerOpenProvider>
   )
 }

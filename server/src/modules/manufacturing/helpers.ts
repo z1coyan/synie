@@ -5,13 +5,13 @@
  * 三个执行点（listAuthorized / loadAuthorized / assertCompanyWritable）由平台拥有。
  * 「持 create 或 update 均可」的多码析取归 guard 的 `anyOf`（本地包装已删）。
  */
-import { decimal, isDecimalString, roundBaseQty, toDecimalString } from '@synie/shared'
+import { decimal, isDecimalString, toDecimalString } from '@synie/shared'
 import { sql } from 'kysely'
 import { toDateOnly } from '~/db/dates.ts'
 import type { DbHandle } from '~/db/tx.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError, type PgWriteMapping } from '~/db/dberr.ts'
-import type { DemandItemStatus, ListQueryInput } from './types.ts'
+import type { ListQueryInput } from './types.ts'
 
 export { toDateOnly }
 
@@ -65,66 +65,11 @@ export function parsePositiveQty(raw: string, field = 'qty'): string {
   return toDecimalString(v)
 }
 
-export interface ItemProjection {
-  baseQty: string
-  materialCode: string
-  materialName: string
-  materialSpec: string | null
-  unitName: string
-}
-
-/** 物料/单位折算默认单位口径（6 位），对齐 Go deriveItemProjection */
-export async function deriveItemProjection(
-  db: DbHandle,
-  materialId: string,
-  unitId: string,
-  qtyRaw: string,
-): Promise<ItemProjection> {
-  const qty = parsePositiveQty(qtyRaw, 'qty')
-  const material = await db
-    .selectFrom('inv_material')
-    .select(['default_unit_id', 'code', 'name', 'spec'])
-    .where('id', '=', materialId)
-    .executeTakeFirst()
-  if (!material) {
-    throw ApiError.validation('需求行参数不合法', { materialId: ['物料不存在'] })
-  }
-  const unit = await db
-    .selectFrom('bas_unit')
-    .select('name')
-    .where('id', '=', unitId)
-    .executeTakeFirst()
-  if (!unit) {
-    throw ApiError.validation('需求行参数不合法', { unitId: ['单位不存在'] })
-  }
-  // 6 位精度舍入后以 toDecimalString 出 wire（去尾零，对齐 shopspring.String）
-  let baseQty = toDecimalString(decimal(roundBaseQty(qty)))
-  if (unitId !== material.default_unit_id) {
-    const conv = await db
-      .selectFrom('inv_material_unit')
-      .select('factor')
-      .where('material_id', '=', materialId)
-      .where('unit_id', '=', unitId)
-      .executeTakeFirst()
-    if (!conv) {
-      throw ApiError.validation('需求行参数不合法', {
-        unitId: ['单位必须是物料默认单位或其单位转换单位'],
-      })
-    }
-    const factor = decimal(String(conv.factor))
-    if (!factor.gt(0)) {
-      throw new ApiError('conflict', '物料单位转换系数必须大于零')
-    }
-    baseQty = toDecimalString(decimal(roundBaseQty(decimal(qty).div(factor))))
-  }
-  return {
-    baseQty,
-    materialCode: material.code,
-    materialName: material.name,
-    materialSpec: material.spec,
-    unitName: unit.name,
-  }
-}
+/** 制造域物料投影 / base_qty：实现见 platform/posting/material-qty（W0 T0.1） */
+export {
+  deriveItemProjection,
+  type MfgItemProjection as ItemProjection,
+} from '~/platform/posting/material-qty.ts'
 
 export async function ensureMaterial(
   db: DbHandle,
@@ -169,31 +114,8 @@ export async function ensureUnitAllowed(
   }
 }
 
-export async function validateWarehouse(
-  db: DbHandle,
-  warehouseId: string | null | undefined,
-  companyId: string,
-  field = 'warehouseId',
-): Promise<void> {
-  if (warehouseId == null) return
-  const wh = await db
-    .selectFrom('inv_warehouse')
-    .select(['company_id', 'is_leaf', 'active'])
-    .where('id', '=', warehouseId)
-    .executeTakeFirst()
-  if (!wh) {
-    throw ApiError.validation('生产入库仓库不合法', { [field]: ['仓库不存在'] })
-  }
-  if (wh.company_id !== companyId) {
-    throw ApiError.validation('生产入库仓库不合法', { [field]: ['仓库不属于本公司'] })
-  }
-  if (!wh.is_leaf) {
-    throw ApiError.validation('生产入库仓库不合法', { [field]: ['仅叶子仓可入库'] })
-  }
-  if (!wh.active) {
-    throw ApiError.validation('生产入库仓库不合法', { [field]: ['仓库已停用'] })
-  }
-}
+/** 生产入库仓校验：实现见 platform/posting/warehouse（W0 T0.2） */
+export { validateMfgWarehouse as validateWarehouse } from '~/platform/posting/warehouse.ts'
 
 export async function validateSalesSource(
   db: DbHandle,
@@ -238,63 +160,11 @@ export function normalizeList(query: ListQueryInput) {
   }
 }
 
-/** 采购链投影：调整已下单数量 */
-export async function adjustDemandOrdered(
-  db: DbHandle,
-  id: string,
-  delta: string | number,
-): Promise<void> {
-  const row = await db
-    .selectFrom('mfg_demand_item')
-    .select('ordered_qty')
-    .where('id', '=', id)
-    .forUpdate()
-    .executeTakeFirst()
-  if (!row) throw new ApiError('not_found', '需求行不存在')
-  const next = decimal(String(row.ordered_qty)).add(delta)
-  if (next.isNegative()) {
-    throw new ApiError('conflict', '已下单数量不能为负')
-  }
-  await db
-    .updateTable('mfg_demand_item')
-    .set({
-      ordered_qty: toDecimalString(next),
-      updated_at: sql`(now() AT TIME ZONE 'utc')`,
-    })
-    .where('id', '=', id)
-    .execute()
-}
-
-/** 采购/委外入库投影：调整已收并自动完成/回待办 */
-export async function adjustDemandReceived(
-  db: DbHandle,
-  id: string,
-  delta: string | number,
-): Promise<void> {
-  const row = await db
-    .selectFrom('mfg_demand_item')
-    .select(['received_qty', 'base_qty'])
-    .where('id', '=', id)
-    .forUpdate()
-    .executeTakeFirst()
-  if (!row) throw new ApiError('not_found', '需求行不存在')
-  const next = decimal(String(row.received_qty)).add(delta)
-  if (next.isNegative()) {
-    throw new ApiError('conflict', '已收数量不能为负')
-  }
-  const status: DemandItemStatus = !next.lt(decimal(String(row.base_qty)))
-    ? 'completed'
-    : 'pending'
-  await db
-    .updateTable('mfg_demand_item')
-    .set({
-      received_qty: toDecimalString(next),
-      status,
-      updated_at: sql`(now() AT TIME ZONE 'utc')`,
-    })
-    .where('id', '=', id)
-    .execute()
-}
+/** 采购链投影（已下单/已收）：实现见 platform/posting/controlled-projection（W0 T0.3） */
+export {
+  adjustDemandOrdered,
+  adjustDemandReceived,
+} from '~/platform/posting/controlled-projection.ts'
 
 export function numStr(v: unknown): string {
   if (v == null) return '0'

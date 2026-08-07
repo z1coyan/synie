@@ -4,10 +4,9 @@
  * 鉴权不在本文件：路由挂 `guard(资源, 动作)`，服务收 Permit，
  * 三个执行点（listAuthorized / loadAuthorized / assertCompanyWritable）由平台拥有。
  */
-import { decimal, roundBaseQty, toDecimalString, type Decimal } from '@synie/shared'
+import { decimal, toDecimalString, type Decimal } from '@synie/shared'
 import { sql } from 'kysely'
 import type { DbHandle } from '~/db/tx.ts'
-import { ApiError } from '~/platform/http/errors.ts'
 
 export function toDate(value: unknown): Date {
   if (value instanceof Date) return value
@@ -65,119 +64,17 @@ export function validateOptionalText(
   }
 }
 
-export function runeLen(value: string): number {
-  return [...value].length
-}
+/** Unicode 码点长度：实现见 platform/posting/text（W0 T0.4） */
+export { runeLen } from '~/platform/posting/text.ts'
 
-export interface ItemProjection {
-  baseQty: Decimal
-  materialCode: string
-  materialName: string
-  materialSpec: string | null
-  unitName: string
-}
+/** 库存单据物料投影 / base_qty：实现见 platform/posting/material-qty（W0 T0.1） */
+export {
+  projectStockItem,
+  type StockItemProjection as ItemProjection,
+} from '~/platform/posting/material-qty.ts'
 
-/**
- * 物料默认单位口径折算：qty / factor（转换单位）或 qty 本身（默认单位）。
- * factor 语义：1 默认单位 = factor 该单位。
- */
-export async function projectStockItem(
-  db: DbHandle,
-  materialId: string,
-  unitId: string,
-  qty: Decimal,
-  label: string,
-): Promise<ItemProjection> {
-  const row = await sql<{
-    material_code: string
-    material_name: string
-    material_spec: string | null
-    material_type: string
-    default_unit_id: string
-    unit_name: string
-    conversion_factor: string | null
-  }>`
-    SELECT m.code AS material_code,
-           m.name AS material_name,
-           m.spec AS material_spec,
-           m.material_type,
-           m.default_unit_id,
-           u.name AS unit_name,
-           mu.factor::text AS conversion_factor
-    FROM inv_material AS m
-    JOIN bas_unit AS u ON u.id = ${unitId}::uuid
-    LEFT JOIN inv_material_unit AS mu
-      ON mu.material_id = m.id AND mu.unit_id = ${unitId}::uuid
-    WHERE m.id = ${materialId}::uuid
-  `.execute(db)
-
-  if (row.rows.length === 0) {
-    const mat = await db
-      .selectFrom('inv_material')
-      .select('id')
-      .where('id', '=', materialId)
-      .executeTakeFirst()
-    if (!mat) {
-      throw ApiError.validation(`${label}参数不合法`, { materialId: ['物料不存在'] })
-    }
-    throw ApiError.validation(`${label}参数不合法`, {
-      unitId: ['单位必须是物料默认单位或其单位转换单位'],
-    })
-  }
-
-  const r = row.rows[0]!
-  // 手工出入库/调拨/盘点等库存单据只接受库存类物料（虚拟/资产不进库存数量账）
-  if (r.material_type !== 'STOCK') {
-    throw ApiError.validation(`${label}参数不合法`, {
-      materialId: ['仅库存类物料可进库存单据'],
-    })
-  }
-  let baseQty = qty
-  if (r.default_unit_id !== unitId) {
-    if (r.conversion_factor == null || !decimal(r.conversion_factor).isPositive()) {
-      throw ApiError.validation(`${label}参数不合法`, {
-        unitId: ['单位必须是物料默认单位或其单位转换单位'],
-      })
-    }
-    baseQty = decimal(roundBaseQty(qty.div(decimal(r.conversion_factor))))
-  }
-  return {
-    baseQty,
-    materialCode: r.material_code,
-    materialName: r.material_name,
-    materialSpec: r.material_spec,
-    unitName: r.unit_name,
-  }
-}
-
-export async function validateLeafWarehouse(
-  db: DbHandle,
-  companyId: string,
-  warehouseId: string,
-  label: string,
-  fieldName = 'warehouseId',
-  checkActive = true,
-): Promise<void> {
-  const row = await db
-    .selectFrom('inv_warehouse')
-    .select(['id', 'company_id', 'is_leaf', 'active'])
-    .where('id', '=', warehouseId)
-    .executeTakeFirst()
-  if (!row) {
-    throw ApiError.validation(`${label}参数不合法`, { [fieldName]: ['仓库不存在'] })
-  }
-  if (row.company_id !== companyId) {
-    throw ApiError.validation(`${label}参数不合法`, { [fieldName]: ['仓库不属于本公司'] })
-  }
-  if (!row.is_leaf) {
-    throw ApiError.validation(`${label}参数不合法`, {
-      [fieldName]: ['只有叶子仓库才能发生库存'],
-    })
-  }
-  if (checkActive && !row.active) {
-    throw ApiError.validation(`${label}参数不合法`, { [fieldName]: ['仓库已停用'] })
-  }
-}
+/** 叶子仓校验：实现见 platform/posting/warehouse（W0 T0.2） */
+export { validateLeafWarehouse } from '~/platform/posting/warehouse.ts'
 
 export async function currentBookQty(
   db: DbHandle,
