@@ -110,6 +110,8 @@ export interface ControlledProjectionSpec {
 |------|--------|--------|------|
 | — | — | — | W0 定名阶段无行为变更；实现波次若红测暴露差异，先记本表再改 |
 | 内核 standard | list/load 无 extraWhere；accGlJournals/mfgOutputs/accBills list 弹射 | `StandardServiceOptions.extraWhere`（list/get/写前锁共用）；三资源 list（及 bills get）改描述符 | T1.5；可见性/行筛选语义字节冻结，见 v2 extraWhere 合同 |
+| salQuotations / purQuotations | 手写 `*InTx` 草稿/子行/孙级；身份校验顶层文案「报价草稿子记录身份不合法」；字段「不属于该报价单/报价条目」；公司改键 `header.companyId` | 聚合内核 `createAggregateService` + child 孙级；身份校验统一 `报价草稿参数不合法`；字段「不属于该{资源 label}」；公司改键 `companyId`（与合同套件一致） | W2 迁入聚合；无测钉死旧身份文案；公司键对齐内核 D4 合同 |
+| 同上 | 条目/档独立 CRUD 与草稿各一套手写 | 同一 child InTx + 公开 create/update/remove 包装；草稿走 aggregate | 一份实现两入口，wire 端点不变 |
 
 ---
 
@@ -134,9 +136,26 @@ export interface ControlledProjectionSpec {
 
 ---
 
+## W2 · salQuotations / purQuotations 聚合迁入
+
+**定案**：报价头 create/update（整单草稿）与条目/孙级价格档 CRUD 改由 `platform/standard` 派生：
+
+- 头：`createStandardService`（numbering `quotationNo` + workflow audit/void 保留）
+- 条目：`createStandardChildService`（via 头；物料快照 `derivedFields`；梯度→固定价 `afterWrite` purge 审计 actionName 仍为 `purge`）
+- 价格档：`createStandardChildService`（via 条目，孙级 D3；草稿门 + 仅数量梯度可维护档）
+- 草稿三连：`createAggregateService`（`validationMessage: 报价草稿参数不合法`）
+
+**路由/URL/DTO 冻结**；`resolveForOrder` 仍手写。
+
+**有意差异**（见行为变更表）：身份校验顶层文案与「不属于该…」字段文案收敛到内核通用句式；公司不可改字段键去 `header.` 前缀。既有 quotation-draft / quotation-audit 测未钉死这些键。
+
+**验收**：`quotation/service.ts` 1782→≤600（拆 `domain.ts` / `projection.ts` / `types.ts`）；聚合 CASES 加 sal/pur 两行。
+
+---
+
 ## 非目标（本日志边界）
 
-- 不做 W2+ 资源聚合迁移（报价/入库等）。
+- 不做 W3+ 资源聚合迁移（订单/入库/对账等；W2 报价已落地）。
 - 不动 `engines/gl` | `engines/inventory` interface。
 - 不做路由词表收口；wire URL/DTO/错误码字节冻结。
 - mfgOutputItems list 仍弹射（母单投影 join，非 extraWhere 能单独解锁）。

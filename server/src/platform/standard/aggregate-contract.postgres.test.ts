@@ -23,8 +23,14 @@ import type { Permit } from '~/platform/authz/core/index.ts'
 import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { testActor } from '~/platform/authz/testing.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { createRegistry, type Registry } from '~/platform/meta/registry.ts'
 import type { FieldMeta, ResourceMeta } from '~/platform/meta/types.ts'
+import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
+import {
+  createQuotationService,
+  type QuotationService,
+} from '~/modules/trading/quotation/service.ts'
 import { createAggregateService, type AggregateService } from './aggregate.ts'
 import { createStandardChildService } from './child.ts'
 import { createStandardService } from './service.ts'
@@ -340,13 +346,215 @@ const CASES: AggregateContractCase[] = [
       items: [],
     }),
   },
-  // W2+：salQuotations / purQuotations / purReceipts … 各加一行描述符即可继承本合同。
+  // W2：报价两侧（孙级价格档首消费者）；夹具见 quotationFixture
+  ...quotationContractCases(),
 ]
+
+/** 报价业务资源合同夹具（beforeAll 播种；prepare 只装配服务） */
+const quotationFixture = {
+  companyId: crypto.randomUUID(),
+  otherCompanyId: crypto.randomUUID(),
+  currencyId: crypto.randomUUID(),
+  customerId: crypto.randomUUID(),
+  supplierId: crypto.randomUUID(),
+  unitId: crypto.randomUUID(),
+  categoryId: crypto.randomUUID(),
+  materialId: crypto.randomUUID(),
+  material2Id: crypto.randomUUID(),
+  ready: false,
+  service: null as QuotationService | null,
+  registry: null as Registry | null,
+  ruleIds: [] as string[],
+}
+
+function quotationContractCases(): AggregateContractCase[] {
+  function wrap(side: 'sales' | 'purchase', headResource: string, headTable: string, itemTable: string, tierTable: string): AggregateContractCase {
+    const partyType = side === 'sales' ? 'CUSTOMER' : 'SUPPLIER'
+    const partyId = () =>
+      side === 'sales' ? quotationFixture.customerId : quotationFixture.supplierId
+    const asAgg = (): AggregateService => {
+      const q = quotationFixture.service!
+      return {
+        loadDraft: (p, id) => q.getDraft(p, side, id),
+        createDraft: (p, input) => q.createDraft(p, side, input as never),
+        replaceDraft: (p, id, input) => q.replaceDraft(p, side, id, input as never),
+        head: null as never,
+        children: [],
+      }
+    }
+    const validDraft = () => ({
+      companyId: quotationFixture.companyId,
+      quotationDate: '2026-07-31',
+      validUntil: '2026-08-31',
+      partyType,
+      partyId: partyId(),
+      currencyId: quotationFixture.currencyId,
+      terms: `合同-${side}`,
+      remarks: null,
+      items: [
+        {
+          idx: 1,
+          materialId: quotationFixture.materialId,
+          unitId: quotationFixture.unitId,
+          pricingMode: 'FIXED',
+          price: '10',
+          taxRate: '0.13',
+          remarks: null,
+          tiers: [],
+        },
+        {
+          idx: 2,
+          materialId: quotationFixture.material2Id,
+          unitId: quotationFixture.unitId,
+          pricingMode: 'QTY_TIERED',
+          price: null,
+          taxRate: '0.13',
+          remarks: null,
+          tiers: [
+            { minQty: '10', price: '8' },
+            { minQty: '100', price: '7' },
+          ],
+        },
+      ],
+    })
+    const noopFrom = (created: Record<string, unknown>) => {
+      const items = asItems(created, 'items').map((item) => ({
+        id: item.id,
+        idx: item.idx,
+        materialId: item.materialId,
+        unitId: item.unitId,
+        pricingMode: item.pricingMode,
+        price: item.price,
+        taxRate: item.taxRate,
+        remarks: item.remarks,
+        tiers: (Array.isArray(item.tiers) ? item.tiers : []).map((t: Record<string, unknown>) => ({
+          id: t.id,
+          minQty: t.minQty,
+          price: t.price,
+        })),
+      }))
+      return {
+        companyId: created.companyId,
+        quotationDate: created.quotationDate,
+        validUntil: created.validUntil,
+        partyType: created.partyType,
+        partyId: created.partyId,
+        currencyId: created.currencyId,
+        terms: created.terms,
+        remarks: created.remarks,
+        items,
+      }
+    }
+    return {
+      title: side === 'sales' ? '销售报价单（salQuotations）' : '采购报价单（purQuotations）',
+      headResource,
+      authzResources: [
+        headResource,
+        side === 'sales' ? 'salQuotationItems' : 'purQuotationItems',
+        side === 'sales' ? 'salQuotationTiers' : 'purQuotationTiers',
+      ],
+      headTable,
+      itemTable,
+      itemsKey: 'items',
+      nested: { table: tierTable, key: 'tiers' },
+      prepare: () => ({
+        service: asAgg(),
+        registry: quotationFixture.registry!,
+      }),
+      companyId: () => quotationFixture.companyId,
+      otherCompanyId: () => quotationFixture.otherCompanyId,
+      validDraft,
+      buildDiffReplace: (created) => {
+        const items = asItems(created, 'items')
+        const kept = items[1]! // 梯度行
+        const deleted = items[0]!
+        const keptTiers = (kept.tiers as Array<Record<string, unknown>>) ?? []
+        const tier0 = keptTiers[0]!
+        return {
+          keptItemId: String(kept.id),
+          deletedItemId: String(deleted.id),
+          input: {
+            ...noopFrom(created),
+            terms: `合同改-${side}`,
+            items: [
+              {
+                id: kept.id,
+                idx: 1,
+                materialId: kept.materialId,
+                unitId: kept.unitId,
+                pricingMode: 'QTY_TIERED',
+                price: null,
+                taxRate: kept.taxRate,
+                remarks: '保留',
+                tiers: [
+                  { id: tier0.id, minQty: tier0.minQty, price: '7.5' },
+                  { minQty: '200', price: '5' },
+                ],
+              },
+              {
+                idx: 2,
+                materialId: quotationFixture.materialId,
+                unitId: quotationFixture.unitId,
+                pricingMode: 'FIXED',
+                price: '9',
+                taxRate: '0.13',
+                remarks: null,
+                tiers: [],
+              },
+            ],
+          },
+        }
+      },
+      buildNoopReplace: noopFrom,
+      buildFailReplace: (created) => {
+        const base = noopFrom(created)
+        const items = asItems(created, 'items')
+        const tiered = items.find((i) => String(i.pricingMode).toUpperCase() === 'QTY_TIERED')!
+        const tiers = ((tiered.tiers as Array<Record<string, unknown>>) ?? []).map((t) => ({
+          id: t.id,
+          minQty: t.minQty,
+          price: t.price,
+        }))
+        return {
+          ...base,
+          terms: '不应落库',
+          items: [
+            ...asItems(base, 'items').filter((i) => String(i.id) !== String(tiered.id)),
+            {
+              id: tiered.id,
+              idx: tiered.idx,
+              materialId: tiered.materialId,
+              unitId: tiered.unitId,
+              pricingMode: 'QTY_TIERED',
+              price: null,
+              taxRate: tiered.taxRate,
+              remarks: tiered.remarks,
+              tiers: [...tiers, { minQty: '0', price: '1' }],
+            },
+          ],
+        }
+      },
+      buildEmptyReplace: (created) => ({
+        ...noopFrom(created),
+        items: [],
+      }),
+    }
+  }
+  return [
+    wrap('sales', 'salQuotations', 'sal_quotation', 'sal_quotation_item', 'sal_quotation_tier'),
+    wrap('purchase', 'purQuotations', 'pur_quotation', 'pur_quotation_item', 'pur_quotation_tier'),
+  ]
+}
 
 // ── 套件 ────────────────────────────────────────────────────────────────────
 
 run('聚合草稿合同（postgres）', () => {
   const db = createDb(url!)
+  // 报价 CASES 在 describe 体里就要 prepare——先装服务，数据在 beforeAll 播种
+  const sealed = createSealedResourceRegistry()
+  const numbering = createNumberingService(db, buildNumberingCatalog(sealed), sealed)
+  quotationFixture.registry = sealed
+  quotationFixture.service = createQuotationService(db, numbering, sealed)
 
   beforeAll(async () => {
     await sql`
@@ -381,9 +589,99 @@ run('聚合草稿合同（postgres）', () => {
         updated_at timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
       )
     `.execute(db)
+
+    // 报价业务夹具（sal/pur CASES）
+    const f = quotationFixture
+    const tag = `AC${suffix}`
+    await sql`
+      INSERT INTO bas_currency(id,name,iso_code,symbol,active)
+      VALUES (${f.currencyId}::uuid, ${tag + '币'}, ${'A' + suffix.slice(0, 2)}, '¤', true)
+    `.execute(db)
+    await sql`
+      INSERT INTO bas_company(id,code,name,short_name,base_currency_id) VALUES
+        (${f.companyId}::uuid, ${'A' + suffix}, ${tag + '公司'}, 'AC', ${f.currencyId}::uuid),
+        (${f.otherCompanyId}::uuid, ${'B' + suffix}, ${tag + '他司'}, 'AD', ${f.currencyId}::uuid)
+    `.execute(db)
+    await sql`
+      INSERT INTO sal_customers(id,code,name,short_name)
+      VALUES (${f.customerId}::uuid, ${'CU' + suffix}, ${tag + '客户'}, 'CU')
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_supplier(id,code,name,short_name)
+      VALUES (${f.supplierId}::uuid, ${'SU' + suffix}, ${tag + '供应商'}, 'SU')
+    `.execute(db)
+    await sql`
+      INSERT INTO bas_unit(id,unit_type,is_base,name,symbol,ratio)
+      VALUES (${f.unitId}::uuid, ${'ac-' + suffix}, true, ${tag + '件'}, ${'ua' + suffix}, 1)
+    `.execute(db)
+    await sql`
+      INSERT INTO inv_material_category(id,code,name,is_leaf,active)
+      VALUES (${f.categoryId}::uuid, ${'MC' + suffix}, ${tag + '分类'}, true, true)
+    `.execute(db)
+    await sql`
+      INSERT INTO inv_material(id,code,name,category_id,default_unit_id,active) VALUES
+        (${f.materialId}::uuid, ${'M' + suffix}, ${tag + '物料'}, ${f.categoryId}::uuid, ${f.unitId}::uuid, true),
+        (${f.material2Id}::uuid, ${'N' + suffix}, ${tag + '物料二'}, ${f.categoryId}::uuid, ${f.unitId}::uuid, true)
+    `.execute(db)
+
+    const admin = testActor({
+      username: `agg-q-seed-${suffix}`,
+      superAdmin: true,
+      allCompanies: true,
+    })
+    const authz = createAuthzEnforcer(sealed)
+    const permit = (resource: string, action: string): Permit => {
+      const d = authz.decideFor(admin, resource, action)
+      if (d.outcome !== 'permit') throw new Error(`seed permit ${resource}:${action}`)
+      return d.permit
+    }
+    for (const [resource, mark] of [
+      ['sales.quotation', 'SQ'],
+      ['purchase.quotation', 'PQ'],
+    ] as const) {
+      const existing = await db
+        .selectFrom('sys_numbering_rule')
+        .select('id')
+        .where('resource', '=', resource)
+        .where('enabled', '=', true)
+        .executeTakeFirst()
+      if (!existing) {
+        const rule = await numbering.create(permit('sysNumberingRules', 'create'), {
+          resource,
+          name: `${tag}${mark}规则`,
+          segments: [
+            { type: 'text', value: `A${suffix}${mark}-` },
+            { type: 'seq', padding: 4 },
+          ],
+          perCompany: false,
+          enabled: true,
+        })
+        f.ruleIds.push(rule.id)
+      }
+    }
+    f.ready = true
   })
 
   afterAll(async () => {
+    const f = quotationFixture
+    for (const id of f.ruleIds) {
+      await db.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
+    }
+    await sql`DELETE FROM sys_audit_log WHERE company_id=${f.companyId}::uuid`.execute(db)
+    await sql`DELETE FROM sal_quotation WHERE company_id=${f.companyId}::uuid`.execute(db)
+    await sql`DELETE FROM pur_quotation WHERE company_id=${f.companyId}::uuid`.execute(db)
+    await sql`
+      DELETE FROM inv_material WHERE id IN (${f.materialId}::uuid, ${f.material2Id}::uuid)
+    `.execute(db)
+    await sql`DELETE FROM inv_material_category WHERE id=${f.categoryId}::uuid`.execute(db)
+    await sql`DELETE FROM bas_unit WHERE id=${f.unitId}::uuid`.execute(db)
+    await sql`DELETE FROM sal_customers WHERE id=${f.customerId}::uuid`.execute(db)
+    await sql`DELETE FROM pur_supplier WHERE id=${f.supplierId}::uuid`.execute(db)
+    await sql`
+      DELETE FROM bas_company WHERE id IN (${f.companyId}::uuid, ${f.otherCompanyId}::uuid)
+    `.execute(db)
+    await sql`DELETE FROM bas_currency WHERE id=${f.currencyId}::uuid`.execute(db)
+
     await sql`DELETE FROM sys_audit_log WHERE resource IN ('std_ac_doc', 'std_ac_item', 'std_ac_tier')`.execute(
       db,
     )
@@ -409,6 +707,8 @@ run('聚合草稿合同（postgres）', () => {
       const { service, registry } = c.prepare(db)
       const authz = createAuthzEnforcer(registry)
       const admin = testActor({
+        // 空 userId → created_by_id 落 null，避免业务表 FK 指向不存在的 sys_user
+        userId: '',
         username: `agg-contract-${suffix}`,
         superAdmin: true,
         allCompanies: true,
