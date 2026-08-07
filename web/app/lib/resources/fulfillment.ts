@@ -1,5 +1,6 @@
 import { apiData, api } from '../api/client'
 import type { Row } from '~/components/synie-data-grid/types'
+import { aggregateDraftTransport } from './aggregate-draft-transport'
 import { createRowCommandAdapter } from './catalog/commands'
 import type { AggregateDraftAdapter } from './catalog/types'
 import { restTransport } from './rest-transport'
@@ -280,6 +281,10 @@ export function salesDeliveryDraftInput(
   return { ...input, items, packBoxes }
 }
 
+/**
+ * 测试可注入的 gateway port：与 production 端点三连同形，
+ * 供 wire 校验单测在无 HTTP 下录制 create/replace 请求。
+ */
 export interface SalesDeliveryDraftGateway {
   loadDraft(id: string): Promise<SalesDeliverySavedDraft>
   createDraft(input: SalesDeliveryDraftInput): Promise<SalesDeliverySavedDraft>
@@ -289,27 +294,7 @@ export interface SalesDeliveryDraftGateway {
   ): Promise<SalesDeliverySavedDraft>
 }
 
-const productionSalesDeliveryDraftGateway: SalesDeliveryDraftGateway = {
-  async loadDraft(id) {
-    return apiData(
-      api.sales.deliveries[':id'].draft.$get({ param: { id } }),
-    )
-  },
-  async createDraft(input) {
-    return apiData(
-      api.sales.deliveries.$post({ json: input as never }),
-    )
-  },
-  async replaceDraft(id, input) {
-    return apiData(
-      api.sales.deliveries[':id'].$put({
-        param: { id },
-        json: input as never,
-      }),
-    )
-  },
-}
-
+/** 测试 Adapter：wire 后委托 gateway（不经 HTTP）。 */
 export function createSalesDeliveryDraftAdapter(
   gateway: SalesDeliveryDraftGateway,
 ): AggregateDraftAdapter<
@@ -329,9 +314,11 @@ export function createSalesDeliveryDraftAdapter(
   }
 }
 
-export const salesDeliveryDraftAdapter = createSalesDeliveryDraftAdapter(
-  productionSalesDeliveryDraftGateway,
-)
+/** production：标准草稿三连 + 领域 wire。 */
+export const salesDeliveryDraftAdapter = aggregateDraftTransport<
+  SalesDeliveryDraftInput,
+  SalesDeliverySavedDraft
+>(api.sales.deliveries, { wire: salesDeliveryDraftInput })
 
 export const salesDeliveryClient = restTransport(
   'salDeliveries',

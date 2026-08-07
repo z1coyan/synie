@@ -1,6 +1,7 @@
-import { api, apiData } from '../api/client'
+import { api } from '../api/client'
 import type { Row } from '~/components/synie-data-grid/types'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
+import { aggregateDraftTransport } from './aggregate-draft-transport'
 import type { AggregateDraftAdapter } from './catalog/types'
 
 export type OrderSide = 'sales' | 'purchase'
@@ -171,53 +172,15 @@ function wireDraft(input: OrderDraft): OrderDraft {
   }
 }
 
-export const salesOrderDraftAdapter: AggregateDraftAdapter<
+export const salesOrderDraftAdapter = aggregateDraftTransport<
   OrderDraft,
   OrderSavedDraft
-> = {
-  async loadDraft(id) {
-    return apiData(
-      api.sales.orders[':id'].draft.$get({ param: { id } }),
-    )
-  },
-  async createDraft(input) {
-    return apiData(
-      api.sales.orders.$post({ json: wireDraft(input) as never }),
-    )
-  },
-  async replaceDraft(id, input) {
-    return apiData(
-      api.sales.orders[':id'].$put({
-        param: { id },
-        json: wireDraft(input) as never,
-      }),
-    )
-  },
-}
+>(api.sales.orders, { wire: wireDraft })
 
-export const purchaseOrderDraftAdapter: AggregateDraftAdapter<
+export const purchaseOrderDraftAdapter = aggregateDraftTransport<
   OrderDraft,
   OrderSavedDraft
-> = {
-  async loadDraft(id) {
-    return apiData(
-      api.purchase.orders[':id'].draft.$get({ param: { id } }),
-    )
-  },
-  async createDraft(input) {
-    return apiData(
-      api.purchase.orders.$post({ json: wireDraft(input) as never }),
-    )
-  },
-  async replaceDraft(id, input) {
-    return apiData(
-      api.purchase.orders[':id'].$put({
-        param: { id },
-        json: wireDraft(input) as never,
-      }),
-    )
-  },
-}
+>(api.purchase.orders, { wire: wireDraft })
 
 function clone<T>(value: T): T {
   return structuredClone(value)
