@@ -287,16 +287,16 @@ export function createVatInvoiceService(
     assertCompanyWritable(permit, normalized.companyId, '增值税发票不存在')
     return withTx(db, async (trx) => {
       await validateReferences(trx, reconciliations, normalized, null, false)
-      let docNo = (normalized.docNo ?? '').trim()
-      if (!docNo) {
-        docNo = await numbering.nextInTx(trx, {
-          resource: 'acc.vat_invoice',
-          values: {
-            company_id: normalized.companyId,
-            posting_date: new Date().toISOString(),
-          },
-        })
-      }
+      const docNo = await numbering.assignedInTx(trx, {
+        resource: 'acc.vat_invoice',
+        field: 'docNo',
+        provided: normalized.docNo,
+        // 预置规则段引用 invoice_date（键名必须与 meta 字段一致，否则日期段渲染为空）
+        values: {
+          company_id: normalized.companyId,
+          invoice_date: normalized.invoiceDate,
+        },
+      })
       try {
         const ins = await sql<{ id: string }>`
           INSERT INTO acc_vat_invoice(
@@ -355,6 +355,9 @@ export function createVatInvoiceService(
       const before = await lockInvoice(trx, permit, id)
       if (before.status !== 'DRAFT') {
         throw new ApiError('conflict', '仅草稿发票可修改或删除')
+      }
+      if (input.docNoPresent && (input.docNo ?? '').trim() !== (before.docNo ?? '')) {
+        throw ApiError.validation('增值税发票参数不合法', { docNo: ['编号创建后不可修改'] })
       }
       const merged = normalizeInput(overlay(before, input))
       await validateReferences(trx, reconciliations, merged, id, false)
@@ -764,7 +767,7 @@ function overlay(before: VatInvoice, update: VatInvoiceUpdateInput): VatInvoiceI
 
   return {
     companyId: before.companyId,
-    docNo: pick(update.docNoPresent, update.docNo, before.docNo),
+    docNo: before.docNo,
     direction: update.direction ?? before.direction,
     invoiceDate: pick(update.invoiceDatePresent, update.invoiceDate, before.invoiceDate),
     partyType: update.partyType ?? before.partyType,

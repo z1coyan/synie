@@ -183,7 +183,6 @@ describePg('hr operations integration', () => {
       {
         method: 'POST',
         body: JSON.stringify({
-          code: `${prefix}E1`,
           name: `${prefix}甲`,
           attendanceNo: `${prefix.slice(-6)}01`,
           dailyWage: '100.1',

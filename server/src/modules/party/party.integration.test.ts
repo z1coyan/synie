@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { createDb } from '~/db/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
@@ -39,6 +39,24 @@ run('PG 集成（party 客商员工）', () => {
   const supplierIds: string[] = []
   const employeeIds: string[] = []
 
+  beforeAll(async () => {
+    // 员工编号改系统生成后须持有启用规则（setup 种子规则在共享库可能被清；幂等补建）
+    const existing = await db
+      .selectFrom('sys_numbering_rule')
+      .select('id')
+      .where('resource', '=', 'hr.employee')
+      .where('enabled', '=', true)
+      .executeTakeFirst()
+    if (!existing) {
+      await numbering.create(permit('sysNumberingRules', 'create'), {
+        resource: 'hr.employee',
+        name: `员工编号-T${suffix}`,
+        segments: [{ type: 'text', value: `T(E)${suffix}-` }, { type: 'seq', padding: 4 }],
+        perCompany: false,
+      })
+    }
+  })
+
   afterAll(async () => {
     for (const id of employeeIds) {
       await db.deleteFrom('sys_audit_log').where('resource', '=', 'hr_employee').where('record_id', '=', id).execute()
@@ -76,10 +94,9 @@ run('PG 集成（party 客商员工）', () => {
   })
 
   test('员工：参保多选 + 考勤机唯一', async () => {
-    // 需要启用的编号规则；若无则显式 code
+    // 员工编号由系统按 hr.employee 规则生成，不接受手填
     const att = `A${suffix}`
     const emp = await employees.create(permit('hrEmployees', 'create'), {
-      code: `E${suffix}`,
       name: `员工-${suffix}`,
       attendanceNo: att,
       insuranceTypes: ['SOCIAL_INJURY', 'HOUSING_FUND'],
@@ -91,7 +108,6 @@ run('PG 集成（party 客商员工）', () => {
 
     await expect(
       employees.create(permit('hrEmployees', 'create'), {
-        code: `E2${suffix}`,
         name: '重复考勤',
         attendanceNo: att,
       }),

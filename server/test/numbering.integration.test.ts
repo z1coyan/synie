@@ -49,49 +49,56 @@ run('PG 集成（numbering）', () => {
     const current = await numbering.listRules(permit('read'), { limit: 200, offset: 0 })
     const occupied = new Set(current.results.filter((r) => r.enabled).map((r) => r.resource))
     let resource = catalog.find((item) => !occupied.has(item.prefix))?.prefix
-    // setup 基础种子会占满全部资源；无空位时先关掉一条启用规则腾出资源
+    // setup 基础种子会占满全部资源；无空位时先关掉一条启用规则腾出资源（测完恢复启用——
+    // 共享库上被停用的可能是仓库/部门等迁移预置规则，不恢复会坑后续套件）
+    let blockerId: string | undefined
     if (!resource) {
       const blocker = current.results.find((r) => r.enabled)
       expect(blocker).toBeTruthy()
       await numbering.updateRule(permit('update'), blocker!.id, { enabled: false })
+      blockerId = blocker!.id
       resource = blocker!.resource
     }
     expect(resource).toBeTruthy()
 
-    const suffix = crypto.randomUUID().slice(0, 8)
-    const created = await numbering.create(permit('create'), {
-      resource: resource!,
-      name: `单测-${suffix}`,
-      segments: [
-        { type: 'text', value: 'T-' },
-        { type: 'seq', padding: 3 },
-      ],
-      perCompany: false,
-    })
-    expect(created.segments.length).toBe(2)
+    try {
+      const suffix = crypto.randomUUID().slice(0, 8)
+      const created = await numbering.create(permit('create'), {
+        resource: resource!,
+        name: `单测-${suffix}`,
+        segments: [
+          { type: 'text', value: 'T-' },
+          { type: 'seq', padding: 3 },
+        ],
+        perCompany: false,
+      })
+      expect(created.segments.length).toBe(2)
 
-    const updated = await numbering.updateRule(permit('update'), created.id, {
-      name: `单测已更新-${suffix}`,
-      enabled: false,
-    })
-    expect(updated.enabled).toBe(false)
+      const updated = await numbering.updateRule(permit('update'), created.id, {
+        name: `单测已更新-${suffix}`,
+        enabled: false,
+      })
+      expect(updated.enabled).toBe(false)
 
-    await db
-      .insertInto('sys_numbering_counter')
-      .values({ rule_id: created.id, scope_key: `T|${suffix}`, value: 7 })
-      .execute()
-    const counters = await numbering.listCounters(permit('read'), {
-      limit: 200,
-      offset: 0,
-      filter: { ruleId: { kind: 'fk', values: [created.id], labels: [] } },
-    })
-    expect(counters.count).toBe(1)
-    const counterId = counters.results[0]!.id
-    const counter = await numbering.updateCounter(permit('update'), counterId, 41)
-    expect(counter.value).toBe(41)
+      await db
+        .insertInto('sys_numbering_counter')
+        .values({ rule_id: created.id, scope_key: `T|${suffix}`, value: 7 })
+        .execute()
+      const counters = await numbering.listCounters(permit('read'), {
+        limit: 200,
+        offset: 0,
+        filter: { ruleId: { kind: 'fk', values: [created.id], labels: [] } },
+      })
+      expect(counters.count).toBe(1)
+      const counterId = counters.results[0]!.id
+      const counter = await numbering.updateCounter(permit('update'), counterId, 41)
+      expect(counter.value).toBe(41)
 
-    await numbering.deleteRule(permit('delete'), created.id)
-    await expect(numbering.getCounter(permit('read'), counterId)).rejects.toMatchObject({ code: 'not_found' })
+      await numbering.deleteRule(permit('delete'), created.id)
+      await expect(numbering.getCounter(permit('read'), counterId)).rejects.toMatchObject({ code: 'not_found' })
+    } finally {
+      if (blockerId) await numbering.updateRule(permit('update'), blockerId, { enabled: true })
+    }
   })
 
   test('同一资源第二条启用规则 → conflict（非 500）', async () => {
@@ -99,10 +106,12 @@ run('PG 集成（numbering）', () => {
     const current = await numbering.listRules(permit('read'), { limit: 200, offset: 0 })
     const occupied = new Set(current.results.filter((r) => r.enabled).map((r) => r.resource))
     let resource = catalog.find((item) => !occupied.has(item.prefix))?.prefix
+    let blockerId: string | undefined
     if (!resource) {
       const blocker = current.results.find((r) => r.enabled)
       expect(blocker).toBeTruthy()
       await numbering.updateRule(permit('update'), blocker!.id, { enabled: false })
+      blockerId = blocker!.id
       resource = blocker!.resource
     }
     const suffix = crypto.randomUUID().slice(0, 8)
@@ -134,6 +143,7 @@ run('PG 集成（numbering）', () => {
       })
     } finally {
       await numbering.deleteRule(permit('delete'), first.id)
+      if (blockerId) await numbering.updateRule(permit('update'), blockerId, { enabled: true })
     }
   })
 })

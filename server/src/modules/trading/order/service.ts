@@ -235,7 +235,7 @@ export type OrderSavedDraft = Order & {
   >
 }
 
-type Numberer = Pick<NumberingService, 'nextInTx'>
+type Numberer = Pick<NumberingService, 'assignedInTx'>
 type OutsourcedDraftPort = OutsourcedConfigService['draft']
 
 export function createOrderService(
@@ -354,21 +354,20 @@ export function createOrderService(
     if (orderType !== 'REGULAR' && orderType !== spec.nonRegularType) {
       throw ApiError.validation(`${spec.label}参数不合法`, { orderType: ['订单类型不合法'] })
     }
-    let orderNo = (input.orderNo ?? '').trim()
     const partyType = lowerParty(input.partyType)
-    if (!orderNo) {
-      orderNo = await numberer.nextInTx(trx, {
-        resource: spec.numberResource,
-        values: {
-          company_id: input.companyId,
-          order_date: orderDate,
-          order_type: orderType.toLowerCase(),
-          party_type: partyType,
-          party_id: input.partyId,
-          currency_id: currencyId,
-        },
-      })
-    }
+    const orderNo = await numberer.assignedInTx(trx, {
+      resource: spec.numberResource,
+      field: 'orderNo',
+      provided: input.orderNo,
+      values: {
+        company_id: input.companyId,
+        order_date: orderDate,
+        order_type: orderType.toLowerCase(),
+        party_type: partyType,
+        party_id: input.partyId,
+        currency_id: currencyId,
+      },
+    })
     validateOrderShape(spec, {
       orderNo, orderDate, orderType, partyType, partyId: input.partyId,
       companyId: input.companyId, currencyId, exchangeRate, remarks: input.remarks ?? null,
@@ -455,9 +454,12 @@ export function createOrderService(
     ) {
       throw ApiError.validation('订单参数不合法', { isOutsourced: ['委外标记不可变更'] })
     }
+    if (input.orderNo !== undefined && input.orderNo.trim() !== before.orderNo) {
+      throw ApiError.validation('订单参数不合法', { orderNo: ['编号创建后不可修改'] })
+    }
     let after: Order = {
       ...before,
-      orderNo: input.orderNo !== undefined ? input.orderNo.trim() : before.orderNo,
+      orderNo: before.orderNo,
       orderDate: input.orderDate ? toDateOnly(input.orderDate) : before.orderDate,
       partyType: input.partyType ? input.partyType.trim().toUpperCase() : before.partyType,
       partyId: input.partyId ?? before.partyId,

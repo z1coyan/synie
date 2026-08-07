@@ -134,7 +134,7 @@ export function quotationHeadMeta(side: TradingSide): ResourceMeta {
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('quotation_no', 'quotationNo', 'string', '报价单号', {
-        required: true,
+        readonly: true,
         filterable: true,
         sortable: true,
       }),

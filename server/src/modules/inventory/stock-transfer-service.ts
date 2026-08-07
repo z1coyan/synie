@@ -202,13 +202,12 @@ export function createStockTransferService(
         true,
       )
       const docDate = input.docDate ? dateWire(input.docDate) : utcToday()
-      let docNo = input.docNo?.trim() ?? ''
-      if (!docNo) {
-        docNo = await numbering.nextInTx(trx, {
-          resource: 'inv.stock_transfer',
-          values: { company_id: input.companyId, doc_date: docDate },
-        })
-      }
+      const docNo = await numbering.assignedInTx(trx, {
+        resource: 'inv.stock_transfer',
+        field: 'docNo',
+        provided: input.docNo,
+        values: { company_id: input.companyId, doc_date: docDate },
+      })
       if (runeLen(docNo) > 32) {
         throw ApiError.validation(`${LABEL}参数不合法`, { docNo: ['最多 32 个字符'] })
       }
@@ -267,9 +266,12 @@ export function createStockTransferService(
       if (before.status !== 'DRAFT') {
         throw new ApiError('conflict', '仅草稿调拨单可修改或删除')
       }
+      if (input.docNo != null && input.docNo.trim() !== before.docNo) {
+        throw ApiError.validation(`${LABEL}参数不合法`, { docNo: ['编号创建后不可修改'] })
+      }
       const after: StockTransfer = {
         ...before,
-        docNo: input.docNo != null ? input.docNo.trim() : before.docNo,
+        docNo: before.docNo,
         docDate: input.docDate ? new Date(`${dateWire(input.docDate)}T00:00:00Z`) : before.docDate,
         summary: input.summaryPresent ? trimOrNull(input.summary) : before.summary,
         remarks: input.remarksPresent ? trimOrNull(input.remarks) : before.remarks,

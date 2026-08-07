@@ -361,6 +361,8 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
           'json',
           z
             .object({
+              // 编码由系统按编号规则生成；传入非空值由 service 一律 422
+              code: z.string().min(1).nullish(),
               name: z.string().min(1),
               isLeaf: z.boolean().optional(),
               active: z.boolean().optional(),
@@ -489,6 +491,7 @@ function materialUnitDto(item: Awaited<ReturnType<MaterialUnitService['get']>>) 
 function warehouseDto(item: Awaited<ReturnType<WarehouseService['get']>>) {
   return {
     id: item.id,
+    code: item.code,
     name: item.name,
     isLeaf: item.isLeaf,
     active: item.active,

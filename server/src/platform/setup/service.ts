@@ -409,6 +409,19 @@ async function seedNumberingRules(trx: DbHandle): Promise<void> {
       perCompany: false,
       segments: `[{"type":"text","value":"M(B)-"},{"type":"seq","padding":4}]`,
     },
+    // 仓库/部门规则已由迁移 00022 先行播种（首张公司创建早于 setup 完成即需取号），此处幂等跳过、仅作清单兜底
+    {
+      resource: 'base.warehouse',
+      name: '仓库编号',
+      perCompany: true,
+      segments: `[{"type":"text","value":"B(W)-"},{"type":"seq","padding":4}]`,
+    },
+    {
+      resource: 'sys.department',
+      name: '部门编码',
+      perCompany: true,
+      segments: `[{"type":"text","value":"B(D)-"},{"type":"seq","padding":4}]`,
+    },
   ]
   const docs: Array<{ resource: string; name: string; prefix: string; field: string; label: string }> =
     [

@@ -93,8 +93,9 @@ function createFixture(): Fixture {
       RETURNING id
     ),
     warehouse AS (
-      INSERT INTO inv_warehouse(name,company_id,is_leaf,active,allow_negative)
-      SELECT '${prefix}成品仓',company.id,true,true,false FROM company
+      -- 仓库编码列 NOT NULL(迁移 00022 起 API 侧系统取号 B(W)-;夹具直写 SQL 自带编码)
+      INSERT INTO inv_warehouse(code,name,company_id,is_leaf,active,allow_negative)
+      SELECT '${prefix}W','${prefix}成品仓',company.id,true,true,false FROM company
       RETURNING id
     )
     SELECT currency.id::text,company.id::text,unit.id::text,category.id::text,
@@ -183,6 +184,8 @@ async function openDrawer(
   tab?: { label: string; expected: string },
   /** 无 tab 的抽屉（需求单抽屉需求行同屏）：直接断言抽屉内文本 */
   inlineExpected?: string,
+  /** 抽屉内锚定文本：默认 searchText；编号只读后不再进 basic 抽屉（工序/工艺模板/BOM），传名称等可见文本 */
+  drawerExpected?: string,
 ) {
   await page.getByRole('link', { name: nav.link, exact: true }).click()
   if (nav.tab) {
@@ -201,7 +204,9 @@ async function openDrawer(
   await clickRowActionMenu(page, row, '查看')
   const drawer = page.getByRole('dialog', { name: `${label}详情` })
   await expect(drawer).toBeVisible()
-  await expect(drawer.getByText(searchText, { exact: true })).toBeVisible()
+  await expect(
+    drawer.getByText(drawerExpected ?? searchText, { exact: true }),
+  ).toBeVisible()
   if (tab) {
     await drawer.getByRole('tab', { name: tab.label, exact: true }).click()
     await expect(drawer.getByText(tab.expected, { exact: false })).toBeVisible()
@@ -217,6 +222,18 @@ async function openDrawer(
 
 /** 派生草稿 id 登记：行引用工单（source_work_order_id 无外键级联），必须先于工单清场 */
 const derivedDemandIds: string[] = []
+/** 主数据 id 登记：工序/工艺模板/BOM 编码均系统生成（不带 prefix），按 id 清场 */
+const masterDataIds = {
+  operations: [] as string[],
+  templates: [] as string[],
+  boms: [] as string[],
+}
+
+function idIn(ids: string[]): string {
+  return ids.length === 0
+    ? '(NULL::uuid)'
+    : `(${ids.map((id) => `'${id}'::uuid`).join(',')})`
+}
 
 function cleanup(fixture: Fixture | null): void {
   if (!fixture) return
@@ -233,9 +250,9 @@ function cleanup(fixture: Fixture | null): void {
     DELETE FROM mfg_output WHERE company_id='${fixture.companyId}'::uuid;
     DELETE FROM mfg_work_order WHERE company_id='${fixture.companyId}'::uuid;
     DELETE FROM mfg_demand WHERE company_id='${fixture.companyId}'::uuid;
-    DELETE FROM mfg_bom WHERE code LIKE '${prefix}%';
-    DELETE FROM mfg_process_template WHERE code LIKE '${prefix}%';
-    DELETE FROM mfg_operation WHERE code LIKE '${prefix}%';
+    DELETE FROM mfg_bom WHERE id IN ${idIn(masterDataIds.boms)};
+    DELETE FROM mfg_process_template WHERE id IN ${idIn(masterDataIds.templates)};
+    DELETE FROM mfg_operation WHERE id IN ${idIn(masterDataIds.operations)};
     DELETE FROM sys_department WHERE id='${fixture.departmentId}'::uuid;
     DELETE FROM inv_warehouse WHERE id='${fixture.warehouseId}'::uuid;
     DELETE FROM inv_material
@@ -255,6 +272,8 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
   // page.request 与浏览器同 context,自动携带会话 cookie(request fixture 不共享 cookie)
   const request = page.request
   let fixture: Fixture | null = null
+  // mfg.operation 编号规则被本 spec 临时启用时,finally 恢复停用(见下)
+  let restoreOperationRule = false
   const graphql: string[] = []
   const manufacturingREST: string[] = []
   const pageErrors: string[] = []
@@ -283,18 +302,36 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
     fixture = createFixture()
     await loginViaUI(page)
 
-    const operationCode = `${prefix}OP`
+    // run-smoke.sh 为 numbering spec 预置「mfg.operation 编号规则停用」作候选;
+    // 本 spec 建工序需系统按规则取号——直写 SQL 临时启用(与 run-smoke.sh 同口径、不留审计),
+    // finally 恢复原状(workers=1 串行,不扰动其他 spec)
+    const operationRuleState = postgres(
+      `SELECT enabled FROM sys_numbering_rule WHERE resource='mfg.operation'`,
+    )
+    if (operationRuleState === 'f') {
+      postgres(
+        `UPDATE sys_numbering_rule SET enabled=true WHERE resource='mfg.operation'`,
+      )
+      restoreOperationRule = true
+    }
+
+    // 工序/工艺模板/BOM 编码由系统按规则生成:create 不再携带 code(手填即 400),从响应读出
     const operation = await post<Row>(
       request,
       '/api/v1/manufacturing/operations',
-      { code: operationCode, name: `${prefix}冲压` },
+      { name: `${prefix}冲压` },
     )
-    const templateCode = `${prefix}RT`
+    const operationCode = String(operation.code)
+    expect(operationCode, '系统应生成工序编码').toBeTruthy()
+    masterDataIds.operations.push(operation.id)
     const template = await post<Row>(
       request,
       '/api/v1/manufacturing/process-templates',
-      { code: templateCode, name: `${prefix}标准工艺` },
+      { name: `${prefix}标准工艺` },
     )
+    const templateCode = String(template.code)
+    expect(templateCode, '系统应生成工艺模板编码').toBeTruthy()
+    masterDataIds.templates.push(template.id)
     await post<Row>(
       request,
       '/api/v1/manufacturing/process-template-items',
@@ -307,12 +344,13 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
       },
     )
 
-    const bomCode = `${prefix}BOM`
     const bom = await post<Row>(request, '/api/v1/manufacturing/boms', {
-      code: bomCode,
       materialId: fixture.materialId,
       planName: `${prefix}内制方案`,
     })
+    const bomCode = String(bom.code)
+    expect(bomCode, '系统应生成 BOM 编码').toBeTruthy()
+    masterDataIds.boms.push(bom.id)
     await post<Row>(request, '/api/v1/manufacturing/bom-components', {
       bomId: bom.id,
       materialId: fixture.componentId,
@@ -336,17 +374,18 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
       200,
     )
 
-    const demandNo = `${prefix}D`
+    // 单据编号由系统按规则生成:create 不再携带 demandNo/workOrderNo/outputNo,从响应读出
     const demand = await post<Row>(
       request,
       '/api/v1/manufacturing/demands',
       {
         companyId: fixture.companyId,
-        demandNo,
         demandDate: '2026-07-26',
         assignType: 'PURCHASE',
       },
     )
+    const demandNo = String(demand.demandNo)
+    expect(demandNo, '系统应生成履约需求单编号').toBeTruthy()
     const demandItem = await post<Row>(
       request,
       '/api/v1/manufacturing/demand-items',
@@ -361,17 +400,17 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
       },
     )
 
-    const uiDemandNo = `${prefix}UI`
     const uiDemand = await post<Row>(
       request,
       '/api/v1/manufacturing/demands',
       {
         companyId: fixture.companyId,
-        demandNo: uiDemandNo,
         demandDate: '2026-07-26',
         assignType: 'PURCHASE',
       },
     )
+    const uiDemandNo = String(uiDemand.demandNo)
+    expect(uiDemandNo, '系统应生成履约需求单编号').toBeTruthy()
     await post<Row>(request, '/api/v1/manufacturing/demand-items', {
       demandId: uiDemand.id,
       materialId: fixture.materialId,
@@ -387,23 +426,24 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
       {},
       200,
     )
-    const workOrderNo = `${prefix}WO`
     const workOrder = await post<Row>(
       request,
       '/api/v1/manufacturing/work-orders',
-      { demandItemId: demandItem.id, workOrderNo, bomId: bom.id },
+      { demandItemId: demandItem.id, bomId: bom.id },
     )
-    const outputNo = `${prefix}OUT`
+    const workOrderNo = String(workOrder.workOrderNo)
+    expect(workOrderNo, '系统应生成生产工单编号').toBeTruthy()
     const output = await post<Row>(
       request,
       '/api/v1/manufacturing/outputs',
       {
         companyId: fixture.companyId,
-        outputNo,
         outputDate: '2026-07-26',
         warehouseId: fixture.warehouseId,
       },
     )
+    const outputNo = String(output.outputNo)
+    expect(outputNo, '系统应生成生产入库单编号').toBeTruthy()
     await post<Row>(request, '/api/v1/manufacturing/output-items', {
       outputId: output.id,
       workOrderId: workOrder.id,
@@ -424,6 +464,10 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
       operationCode,
       '工序',
       pageErrors,
+      undefined,
+      undefined,
+      // 工序编码只读、不进 basic 抽屉：以工序名称锚定
+      `${prefix}冲压`,
     )
     await openDrawer(
       page,
@@ -433,6 +477,9 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
       '工艺模板',
       pageErrors,
       { label: '工艺步骤', expected: `${prefix}冲压` },
+      undefined,
+      // 工艺模板编码只读、不进抽屉：以模板名称锚定
+      `${prefix}标准工艺`,
     )
     await openDrawer(page, { link: 'BOM' }, 'mfgBoms', bomCode, 'BOM', pageErrors, {
       label: '配料',
@@ -628,6 +675,11 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
       ).toBe(true)
     }
   } finally {
+    if (restoreOperationRule) {
+      postgres(
+        `UPDATE sys_numbering_rule SET enabled=false WHERE resource='mfg.operation'`,
+      )
+    }
     cleanup(fixture)
   }
 })

@@ -334,18 +334,48 @@ async function grid(page: Page, resource: string): Promise<Locator> {
   return result;
 }
 
+/**
+ * 行操作菜单动作（闭环重试收敛）：失效刷新的行重渲染会卸载刚开的菜单，
+ * 点击也可能落在已卸载的菜单节点上变成 no-op——
+ * 「目标未开则 toggle 菜单→点动作→短超时验证目标」循环直到稳定。
+ */
+async function clickRowActionMenu(
+  page: Page,
+  row: Locator,
+  actionName: string,
+  confirm: Locator,
+): Promise<void> {
+  const item = page.getByRole("menuitem", { name: actionName, exact: true });
+  await expect(async () => {
+    if (await confirm.isVisible().catch(() => false)) return;
+    if (!(await item.isVisible().catch(() => false))) {
+      await row.getByRole("button", { name: "行操作" }).click();
+    }
+    await expect(item).toBeVisible({ timeout: 2_000 });
+    await item.click({ timeout: 2_000 });
+    await expect(confirm).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
+}
+
 async function openRow(
   page: Page,
   resource: string,
   text: string,
+  dialogName: RegExp | string,
 ): Promise<void> {
   const row = (await grid(page, resource))
     .getByRole("row")
     .filter({ hasText: text })
     .first();
   await expect(row).toBeVisible();
-  await row.getByRole("button", { name: "行操作" }).click();
-  await page.getByRole("menuitem", { name: "查看", exact: true }).click();
+  // 等失效刷新落定再开行操作菜单(竞态,helper 内重试兜底)
+  await page.waitForLoadState("networkidle");
+  await clickRowActionMenu(
+    page,
+    row,
+    "查看",
+    page.getByRole("dialog", { name: dialogName }),
+  );
 }
 
 async function closeDialog(page: Page, name: RegExp | string): Promise<void> {
@@ -353,6 +383,20 @@ async function closeDialog(page: Page, name: RegExp | string): Promise<void> {
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "关闭", exact: true }).click();
   await expect(dialog).toBeHidden();
+}
+
+/**
+ * 侧栏链接客户端导航：带路由 loader 的页面经 goto 直开走 SSR，
+ * 首屏 meta/query 发自前端服务端、浏览器观测不到（会漏 bank-accounts/query 等断言）；
+ * 财务分组在财务页面自动展开,直接点链接即可。
+ */
+async function navFinance(page: Page, linkName: string): Promise<void> {
+  const sidebar = page.getByRole("complementary");
+  const link = sidebar.getByRole("link", { name: linkName, exact: true });
+  if (!(await link.isVisible().catch(() => false))) {
+    await page.getByRole("button", { name: "财务", exact: true }).click();
+  }
+  await link.click();
 }
 
 test.setTimeout(240_000);
@@ -395,12 +439,17 @@ test("Finance 九页及操作 drawer 仅以 Go REST 消费并保持零页面错�
       await page.goto("/finance/ar-ap");
       await expect(page.getByRole("heading", { name: "应收应付" })).toBeVisible();
 
-      await page.goto("/finance/bank-accounts");
-      await openRow(page, "accBankAccounts", `${prefix}基本户`);
+      await navFinance(page, "银行账户");
+      await openRow(page, "accBankAccounts", `${prefix}基本户`, /银行账户详情/);
       await closeDialog(page, /银行账户详情/);
 
-      await page.goto("/finance/bank-import-templates");
-      await openRow(page, "accBankImportTemplates", `${prefix}导入模板`);
+      await navFinance(page, "流水导入模板");
+      await openRow(
+        page,
+        "accBankImportTemplates",
+        `${prefix}导入模板`,
+        /导入模板详情/,
+      );
       await closeDialog(page, /导入模板详情/);
     });
 
@@ -414,25 +463,19 @@ test("Finance 九页及操作 drawer 仅以 Go REST 消费并保持零页面错�
         .first();
       const rowActions = bankRow.getByRole("button", { name: "行操作" });
       await expect(rowActions).toBeVisible();
-      await rowActions.click();
-      const reconcileAction = page.getByRole("menuitem", {
-        name: "对账",
-        exact: true,
+      // 「对账」行动作已命令化(catalog CommandAdapter 收口):先弹确认框,确认即执行对账命令。
+      // 本用例只验链路与确认交互,点取消不实际执行(夹具流水对账语义不在此验收)。
+      const confirmReconcile = page.getByRole("alertdialog", {
+        name: "确认对账",
       });
-      await expect(reconcileAction).toBeVisible();
-      await reconcileAction.click();
-      const reconcile = page.getByRole("dialog", { name: /流水对账详情/ });
-      await expect(reconcile).toBeVisible();
+      await clickRowActionMenu(page, bankRow, "对账", confirmReconcile);
       await expect(
-        reconcile.getByRole("button", { name: "快速新增凭证" }),
+        confirmReconcile.getByText("将对 1 条记录执行「对账」", { exact: false }),
       ).toBeVisible();
-      const closeReconcile = reconcile.getByRole("button", {
-        name: "关闭",
-        exact: true,
-      });
-      await expect(closeReconcile).toBeVisible();
-      await closeReconcile.click();
-      await expect(reconcile).toBeHidden();
+      await confirmReconcile
+        .getByRole("button", { name: "取消", exact: true })
+        .click();
+      await expect(confirmReconcile).toBeHidden();
     });
 
     // 导入三 drawer：新增解析、历史、批次详情/失败留痕。
@@ -475,14 +518,8 @@ test("Finance 九页及操作 drawer 仅以 Go REST 消费并保持零页面错�
         name: "行操作",
       });
       await expect(historyActions).toBeVisible();
-      await historyActions.click();
-      const viewImport = page.getByRole("menuitem", {
-        name: "查看",
-        exact: true,
-      });
-      await expect(viewImport).toBeVisible();
-      await viewImport.click();
       const batch = page.getByRole("dialog", { name: /流水导入详情/ });
+      await clickRowActionMenu(page, historyRow, "查看", batch);
       await expect(batch).toContainText(`${prefix}可读解析失败`);
       await batch.getByRole("button", { name: "关闭", exact: true }).click();
       await expect(batch).toBeHidden();
@@ -491,8 +528,8 @@ test("Finance 九页及操作 drawer 仅以 Go REST 消费并保持零页面错�
     });
 
     await test.step("发票详情、新增与 OCR 入口", async () => {
-      await page.goto("/finance/invoices");
-      await openRow(page, "accVatInvoices", `${prefix}INV`);
+      await navFinance(page, "增值税发票");
+      await openRow(page, "accVatInvoices", `${prefix}INV`, /发票详情/);
       const invoice = page.getByRole("dialog", { name: /发票详情/ });
       await expect(invoice).toContainText(`${prefix}项目`);
       await invoice.getByRole("button", { name: "关闭", exact: true }).click();
@@ -513,8 +550,8 @@ test("Finance 九页及操作 drawer 仅以 Go REST 消费并保持零页面错�
     });
 
     await test.step("报销单详情、明细子表与新增入口", async () => {
-      await page.goto("/finance/expense-reports");
-      await openRow(page, "accExpenseReports", `${prefix}EXP`);
+      await navFinance(page, "报销单");
+      await openRow(page, "accExpenseReports", `${prefix}EXP`, /报销单详情/);
       const report = page.getByRole("dialog", { name: /报销单详情/ });
       await expect(
         report.getByRole("grid", { name: "报销行" }),
@@ -538,7 +575,7 @@ test("Finance 九页及操作 drawer 仅以 Go REST 消费并保持零页面错�
     await test.step("承兑交易、OCR 与持有动作入口", async () => {
       await page.goto("/finance/acceptance");
       await expect(page).toHaveURL(/\/finance\/acceptance\/transactions$/);
-      await openRow(page, "accBillTransactions", `${prefix}BT`);
+      await openRow(page, "accBillTransactions", `${prefix}BT`, /承兑交易详情/);
       const transaction = page.getByRole("dialog", { name: /承兑交易详情/ });
       await expect(transaction).toContainText(`${prefix}BILL`);
       await transaction
@@ -587,7 +624,7 @@ test("Finance 九页及操作 drawer 仅以 Go REST 消费并保持零页面错�
         "/api/v1/finance/bank-import-templates/query",
         "/api/v1/finance/bank-imports/query",
         `/api/v1/finance/bank-imports/${fixture!.importID}`,
-        "/api/v1/finance/bank-reconciliations/query",
+        // 对账已命令化:确认框直接执行命令,不再打开流水对账抽屉,无 bank-reconciliations/query
         "/api/v1/finance/vat-invoices/query",
         `/api/v1/finance/vat-invoices/${fixture!.invoiceID}`,
         "/api/v1/finance/expense-reports/query",

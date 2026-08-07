@@ -716,13 +716,13 @@ export function createBillService(
         interest: input.interest, netAmount: input.netAmount,
         toBankAccountId: input.toBankAccountId,
       }, bill, true)
-      let docNo = (input.docNo ?? '').trim()
-      if (!docNo) {
-        docNo = await numbering.nextInTx(trx, {
-          resource: 'acc.bill_transaction',
-          values: { company_id: input.companyId, posting_date: values.occurredOn },
-        })
-      }
+      const docNo = await numbering.assignedInTx(trx, {
+        resource: 'acc.bill_transaction',
+        field: 'docNo',
+        provided: input.docNo,
+        // 预置规则段引用 occurred_on（键名必须与 meta 字段一致，否则日期段渲染为空）
+        values: { company_id: input.companyId, occurred_on: values.occurredOn },
+      })
       try {
         const ins = await sql<{ id: string }>`
           INSERT INTO acc_bill_transaction(
@@ -760,8 +760,11 @@ export function createBillService(
       const before = await authorizedTx(trx, permit, id, true)
       if (before.status !== 'DRAFT') throw conflict('仅草稿承兑交易可修改或删除')
       const has = (k: string) => Object.prototype.hasOwnProperty.call(input, k)
+      if (has('docNo') && String(input.docNo ?? '').trim() !== before.docNo) {
+        throw ApiError.validation('承兑交易参数不合法', { docNo: ['编号创建后不可修改'] })
+      }
       const merged = {
-        docNo: has('docNo') ? (input.docNo as string | null) : before.docNo,
+        docNo: before.docNo,
         transactionType: before.transactionType,
         occurredOn: (input.occurredOn as string | undefined) ?? before.occurredOn,
         subStart: (input.subStart as number | undefined) ?? before.subStart,

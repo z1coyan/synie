@@ -12,6 +12,7 @@ import { createDb } from '~/db/index.ts'
 import { createIamService } from '~/modules/iam/index.ts'
 import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { testActor } from '~/platform/authz/testing.ts'
+import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { buildTestApp, createPlatformRegistry, testDatabaseUrl } from './helpers.ts'
 
 const url = testDatabaseUrl()
@@ -53,10 +54,17 @@ run('PG 集成（库存三单据：公司域授权与语义统一）', () => {
   const registry = createPlatformRegistry()
   const authz = createAuthzEnforcer(registry)
   const iam = createIamService(db, registry)
+  const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
   const admin = testActor({ superAdmin: true, allCompanies: true })
   /** 建用户走 IamService：superAdmin 现取一张 sysUsers:create 凭证 */
   const adminUserPermit = () => {
     const decision = authz.decideFor(admin, 'sysUsers', 'create')
+    if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+    return decision.permit
+  }
+  /** 建编号规则走 superAdmin 凭证 */
+  const adminRulePermit = () => {
+    const decision = authz.decideFor(admin, 'sysNumberingRules', 'create')
     if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
     return decision.permit
   }
@@ -89,6 +97,39 @@ run('PG 集成（库存三单据：公司域授权与语义统一）', () => {
   const docIds: string[] = []
   const transferIds: string[] = []
   const countIds: string[] = []
+  const createdNumberingRules: string[] = []
+
+  /** 编号规则：已有启用规则则复用，否则建本测前缀规则（并发撞唯一索引回落复用） */
+  async function ensureRule(resource: string, name: string, prefix: string): Promise<void> {
+    const existing = await db
+      .selectFrom('sys_numbering_rule')
+      .select('id')
+      .where('resource', '=', resource)
+      .where('enabled', '=', true)
+      .executeTakeFirst()
+    if (existing) return
+    try {
+      const rule = await numbering.create(adminRulePermit(), {
+        resource,
+        name,
+        segments: [
+          { type: 'text', value: prefix },
+          { type: 'seq', padding: 3 },
+        ],
+        perCompany: false,
+        enabled: true,
+      })
+      createdNumberingRules.push(rule.id)
+    } catch (err) {
+      const again = await db
+        .selectFrom('sys_numbering_rule')
+        .select('id')
+        .where('resource', '=', resource)
+        .where('enabled', '=', true)
+        .executeTakeFirst()
+      if (!again) throw err
+    }
+  }
 
   /** 覆盖式授权（role, code, scope）三元组；矩阵范围 UI 未到位前直接写授权表 */
   async function grant(
@@ -150,15 +191,13 @@ run('PG 集成（库存三单据：公司域授权与语义统一）', () => {
     return parsed.results.map((r) => r.id)
   }
 
-  /** 建一张手工出入库单（含一行）；返回头与行 id */
+  /** 建一张手工出入库单（含一行）；返回头与行 id（编号系统生成） */
   async function seedDoc(
     headers: Record<string, string>,
     companyId: string,
     warehouseId: string,
-    docNo: string,
   ): Promise<{ doc: DocDto; itemId: string }> {
     const created = await post('/stock-docs', headers, {
-      docNo,
       direction: 'IN',
       companyId,
       warehouseId,
@@ -203,15 +242,15 @@ run('PG 集成（库存三单据：公司域授权与语义统一）', () => {
         VALUES (${id}::uuid, ${code + suffix}, ${name + suffix}, ${code}, ${currencyId}::uuid)
       `.execute(db)
     }
-    for (const [id, company, name] of [
-      [warehouses.a1, companyA, '甲仓'],
-      [warehouses.b1, companyB, '乙调出仓'],
-      [warehouses.b2, companyB, '乙调入仓'],
-      [warehouses.b3, companyB, '乙在途仓'],
+    for (const [id, company, code, name] of [
+      [warehouses.a1, companyA, 'WA', '甲仓'],
+      [warehouses.b1, companyB, 'WB', '乙调出仓'],
+      [warehouses.b2, companyB, 'WC', '乙调入仓'],
+      [warehouses.b3, companyB, 'WD', '乙在途仓'],
     ] as const) {
       await sql`
-        INSERT INTO inv_warehouse (id, company_id, name, is_leaf, active)
-        VALUES (${id}::uuid, ${company}::uuid, ${name + suffix}, true, true)
+        INSERT INTO inv_warehouse (id, company_id, code, name, is_leaf, active)
+        VALUES (${id}::uuid, ${company}::uuid, ${code + suffix}, ${name + suffix}, true, true)
       `.execute(db)
     }
     await db
@@ -280,26 +319,30 @@ run('PG 集成（库存三单据：公司域授权与语义统一）', () => {
     await grant(viewerRoleId, READ_ONLY_CODES, 'all')
     await grant(globalRoleId, FULL_CODES, 'all')
 
+    // 三单据经编号规则取号（不接受手填）：已有启用规则则复用
+    await ensureRule('inv.stock_doc', `K${suffix}出入库`, `KD${suffix}-`)
+    await ensureRule('inv.stock_transfer', `K${suffix}调拨`, `KT${suffix}-`)
+    await ensureRule('inv.stock_count', `K${suffix}盘点`, `KC${suffix}-`)
+
     app = await buildTestApp(db, { registry })
     keeperHeaders = await login(keeper.user.username, keeper.password)
     viewerHeaders = await login(viewer.user.username, viewer.password)
     globalHeaders = await login(globalUser.user.username, globalUser.password)
 
     // 公司甲：一张已审核单（产生分录）+ 一张草稿单
-    const seededA = await seedDoc(keeperHeaders, companyA, warehouses.a1, `KA1-${suffix}`)
+    const seededA = await seedDoc(keeperHeaders, companyA, warehouses.a1)
     docA = seededA.doc
     docAItemId = seededA.itemId
     expect((await post(`/stock-docs/${docA.id}/audit`, keeperHeaders, {})).status).toBe(200)
-    draftA = (await seedDoc(keeperHeaders, companyA, warehouses.a1, `KA2-${suffix}`)).doc
+    draftA = (await seedDoc(keeperHeaders, companyA, warehouses.a1)).doc
 
     // 公司乙：出入库单（已审核，产生乙公司分录）+ 调拨单 + 盘点单
-    const seededB = await seedDoc(globalHeaders, companyB, warehouses.b1, `KB1-${suffix}`)
+    const seededB = await seedDoc(globalHeaders, companyB, warehouses.b1)
     docB = seededB.doc
     docBItemId = seededB.itemId
     expect((await post(`/stock-docs/${docB.id}/audit`, globalHeaders, {})).status).toBe(200)
 
     const transferRes = await post('/stock-transfers', globalHeaders, {
-      docNo: `KB2-${suffix}`,
       companyId: companyB,
       fromWarehouseId: warehouses.b1,
       toWarehouseId: warehouses.b2,
@@ -319,7 +362,6 @@ run('PG 集成（库存三单据：公司域授权与语义统一）', () => {
     transferBItemId = ((await transferItemRes.json()) as { id: string }).id
 
     const countRes = await post('/stock-counts', globalHeaders, {
-      docNo: `KB3-${suffix}`,
       companyId: companyB,
       warehouseId: warehouses.b1,
       items: [{ materialId, unitId, countedQuantity: '9' }],
@@ -372,6 +414,10 @@ run('PG 集成（库存三单据：公司域授权与语义统一）', () => {
       await db.deleteFrom('sys_role_permission').where('role_id', '=', roleId).execute()
       await db.deleteFrom('sys_role').where('id', '=', roleId).execute()
     }
+    for (const id of createdNumberingRules) {
+      await sql`DELETE FROM sys_audit_log WHERE record_id = ${id}::uuid`.execute(db)
+      await db.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
+    }
     await sql`DELETE FROM bas_company WHERE id = ANY(${[companyA, companyB]}::uuid[])`.execute(db)
     await sql`DELETE FROM bas_currency WHERE id = ${currencyId}::uuid`.execute(db)
     await db.destroy()
@@ -386,7 +432,6 @@ run('PG 集成（库存三单据：公司域授权与语义统一）', () => {
 
   test('动作码不满足一律 403：只读角色的写与工作流端点', async () => {
     const docBody = {
-      docNo: `KX1-${suffix}`,
       direction: 'IN',
       companyId: companyA,
       warehouseId: warehouses.a1,
@@ -443,14 +488,12 @@ run('PG 集成（库存三单据：公司域授权与语义统一）', () => {
 
   test('创建到未授权公司 → 404（不泄露公司存在性）', async () => {
     const doc = await post('/stock-docs', keeperHeaders, {
-      docNo: `KX2-${suffix}`,
       direction: 'IN',
       companyId: companyB,
       warehouseId: warehouses.b1,
     })
     expect(doc.status).toBe(404)
     const transfer = await post('/stock-transfers', keeperHeaders, {
-      docNo: `KX3-${suffix}`,
       companyId: companyB,
       fromWarehouseId: warehouses.b1,
       toWarehouseId: warehouses.b2,
@@ -458,7 +501,6 @@ run('PG 集成（库存三单据：公司域授权与语义统一）', () => {
     })
     expect(transfer.status).toBe(404)
     const count = await post('/stock-counts', keeperHeaders, {
-      docNo: `KX4-${suffix}`,
       companyId: companyB,
       warehouseId: warehouses.b1,
       items: [{ materialId, unitId, countedQuantity: '1' }],

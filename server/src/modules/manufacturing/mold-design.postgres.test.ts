@@ -74,6 +74,7 @@ run('PG 集成（模具设计）', () => {
       .insertInto('inv_warehouse')
       .values({
         id: warehouseId,
+        code: `MD${suffix}`,
         name: `模具仓-${suffix}`,
         company_id: companyId,
         is_leaf: true,

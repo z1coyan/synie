@@ -75,7 +75,7 @@ const DEFINITIONS = {
         order: 0,
         cols: 6,
         edit: 'createOnly',
-        placeholder: '留空自动编号',
+        placeholder: '保存后自动编号',
       },
       name: {
         order: 1,
@@ -102,7 +102,7 @@ const DEFINITIONS = {
         order: 0,
         cols: 6,
         edit: 'createOnly',
-        placeholder: '留空自动编号',
+        placeholder: '保存后自动编号',
       },
       planName: {
         order: 1,
@@ -134,7 +134,7 @@ const DEFINITIONS = {
       demandNo: {
         order: 0,
         cols: 6,
-        placeholder: '留空自动编号',
+        placeholder: '保存后自动编号',
       },
       demandDate: { order: 1, cols: 6, required: true },
       // 指派类型：纯路由声明；切离「生产」时联动清空下发车间
@@ -173,7 +173,7 @@ const DEFINITIONS = {
       workOrderNo: {
         order: 0,
         cols: 6,
-        placeholder: '留空自动编号',
+        placeholder: '保存后自动编号',
       },
       demandItemId: {
         order: 1,
@@ -332,7 +332,7 @@ const DEFINITIONS = {
       outputNo: {
         order: 0,
         cols: 6,
-        placeholder: '留空自动编号',
+        placeholder: '保存后自动编号',
       },
       outputDate: { order: 1, cols: 6, required: true },
       warehouseId: { order: 2, label: '默认仓库' },

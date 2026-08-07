@@ -20,6 +20,7 @@ import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
+import type { NumberingService } from '~/platform/numbering/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listAuthorized } from '~/db/list.ts'
 import { assertCompanyWritable, loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
@@ -29,6 +30,7 @@ import { warehouseResourceMeta } from './meta.ts'
 
 export interface Warehouse {
   id: string
+  code: string
   name: string
   isLeaf: boolean
   active: boolean
@@ -58,7 +60,7 @@ const TABLE = META.table
 const ALIAS = 'warehouse'
 const SOURCE = sql`
   FROM (
-    SELECT w.id,w.name,w.is_leaf,w.active,w.is_outsourced,w.party_type,w.party_id,
+    SELECT w.id,w.code,w.name,w.is_leaf,w.active,w.is_outsourced,w.party_type,w.party_id,
            w.allow_negative,w.inserted_at,w.updated_at,w.company_id,w.parent_id,w.account_id,
            company.code AS company_code,company.name AS company_name,
            parent.name AS parent_name,account.code AS account_code,account.name AS account_name,
@@ -69,11 +71,11 @@ const SOURCE = sql`
     LEFT JOIN bas_account account ON account.id=w.account_id
   ) warehouse
 `
-const SELECT = sql`SELECT id,name,is_leaf,active,is_outsourced,party_type,party_id,
+const SELECT = sql`SELECT id,code,name,is_leaf,active,is_outsourced,party_type,party_id,
   allow_negative,inserted_at,updated_at,company_id,parent_id,account_id,
   company_code,company_name,parent_name,account_code,account_name,has_children`
 
-export function createWarehouseService(db: Kysely<Database>, registry: Registry) {
+export function createWarehouseService(db: Kysely<Database>, numbering: NumberingService, registry: Registry) {
   const target = registry.authzTarget(WAREHOUSE_RESOURCE)
 
   async function get(permit: Permit, id: string): Promise<Warehouse> {
@@ -153,13 +155,14 @@ export function createWarehouseService(db: Kysely<Database>, registry: Registry)
           companyId: ['公司不存在'],
         })
       }
-      return seedCompanyDefaultWarehouses(trx, permit.actor, companyId, company.code)
+      return seedCompanyDefaultWarehouses(trx, numbering, permit.actor, companyId, company.code)
     })
   }
 
   async function create(
     permit: Permit,
     input: {
+      code?: string | null
       name: string
       isLeaf?: boolean
       active?: boolean
@@ -178,10 +181,17 @@ export function createWarehouseService(db: Kysely<Database>, registry: Registry)
     return withTx(db, async (trx) => {
       await lockTree(trx, normalized.companyId)
       await validateRelations(trx, null, normalized)
+      const code = await numbering.assignedInTx(trx, {
+        resource: 'base.warehouse',
+        field: 'code',
+        provided: input.code,
+        values: { company_id: normalized.companyId },
+      })
       try {
         const row = await trx
           .insertInto('inv_warehouse')
           .values({
+            code,
             name: normalized.name,
             is_leaf: normalized.isLeaf,
             active: normalized.active,
@@ -212,6 +222,11 @@ export function createWarehouseService(db: Kysely<Database>, registry: Registry)
             code: '23505',
             constraint: 'inv_warehouse_unique_name_per_company_index',
             message: '仓库名称已存在',
+          },
+          {
+            code: '23505',
+            constraint: 'inv_warehouse_unique_code_per_company_index',
+            message: '仓库编码已存在',
           },
           { code: '23505', message: '仓库唯一字段已存在' },
         ])
@@ -391,6 +406,7 @@ function mapRow(r: Record<string, unknown>): Warehouse {
   const partyType = r.party_type == null ? null : String(r.party_type).toUpperCase()
   return {
     id: String(r.id),
+    code: String(r.code),
     name: String(r.name),
     isLeaf: Boolean(r.is_leaf),
     active: Boolean(r.active),
@@ -423,6 +439,7 @@ function mapRow(r: Record<string, unknown>): Warehouse {
 
 function snap(item: Warehouse): Record<string, unknown> {
   return {
+    code: item.code,
     name: item.name,
     is_leaf: item.isLeaf,
     active: item.active,

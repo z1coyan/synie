@@ -53,7 +53,7 @@ function stockDocumentPresentation(
         defaultValue: 'IN',
         edit: 'createOnly',
       },
-      docNo: { order: 1, cols: 6, placeholder: '留空自动编号' },
+      docNo: { order: 1, cols: 6, placeholder: '保存后自动编号' },
       docDate: { order: 2, cols: 6, required: true },
       warehouseId: { order: 3, required: true, label: '仓库' },
       summary: {
@@ -121,7 +121,7 @@ function stockTransferPresentation(
     ],
     fields: {
       companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
-      docNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      docNo: { order: 0, cols: 6, placeholder: '保存后自动编号' },
       docDate: { order: 1, cols: 6, required: true },
       fromWarehouseId: {
         order: 2,
@@ -199,7 +199,7 @@ function stockCountPresentation(
     exclude: ['status', 'snapshotTakenAt', ...AUDIT_TRAIL_EXCLUDE.slice(1)],
     fields: {
       companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
-      docNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      docNo: { order: 0, cols: 6, placeholder: '保存后自动编号' },
       postingDate: { order: 1, cols: 6, required: true },
       warehouseId: { order: 2, required: true, label: '仓库' },
       summary: { order: 3, label: '摘要' },

@@ -202,13 +202,12 @@ export function createStockCountService(
     return withTx(db, async (trx) => {
       await validateLeafWarehouse(trx, input.companyId, input.warehouseId, LABEL)
       const postingDate = input.postingDate ? dateWire(input.postingDate) : utcToday()
-      let docNo = input.docNo?.trim() ?? ''
-      if (!docNo) {
-        docNo = await numbering.nextInTx(trx, {
-          resource: 'inv.stock_count',
-          values: { company_id: input.companyId, posting_date: postingDate },
-        })
-      }
+      const docNo = await numbering.assignedInTx(trx, {
+        resource: 'inv.stock_count',
+        field: 'docNo',
+        provided: input.docNo,
+        values: { company_id: input.companyId, posting_date: postingDate },
+      })
       if (runeLen(docNo) > 32) {
         throw ApiError.validation(`${LABEL}参数不合法`, { docNo: ['最多 32 个字符'] })
       }
@@ -317,9 +316,12 @@ export function createStockCountService(
       if (before.status !== 'DRAFT') {
         throw new ApiError('conflict', '仅草稿库存盘点单可修改或删除')
       }
+      if (input.docNo != null && input.docNo.trim() !== before.docNo) {
+        throw ApiError.validation(`${LABEL}参数不合法`, { docNo: ['编号创建后不可修改'] })
+      }
       const after: StockCount = {
         ...before,
-        docNo: input.docNo != null ? input.docNo.trim() : before.docNo,
+        docNo: before.docNo,
         postingDate: input.postingDate
           ? new Date(`${dateWire(input.postingDate)}T00:00:00Z`)
           : before.postingDate,

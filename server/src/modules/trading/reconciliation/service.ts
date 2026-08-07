@@ -79,7 +79,7 @@ const HEAD_SELECT = sql`SELECT id,reconciliation_no,reconciliation_type,party_ty
   posting_date,remarks,status,inserted_at,updated_at,company_id,
   debit_account_id,credit_account_id,created_by_id,gross_total,base_gross_total`
 
-type Numberer = Pick<NumberingService, 'nextInTx'>
+type Numberer = Pick<NumberingService, 'assignedInTx'>
 
 interface SourceItem {
   id: string
@@ -229,13 +229,12 @@ export function createReconciliationService(
         debitAccountId,
         creditAccountId,
       )
-      let no = (input.no ?? '').trim()
-      if (!no) {
-        no = await numberer.nextInTx(trx, {
-          resource: spec.prefix,
-          values: { company_id: input.companyId, posting_date: utcToday() },
-        })
-      }
+      const no = await numberer.assignedInTx(trx, {
+        resource: spec.prefix,
+        field: 'reconciliationNo',
+        provided: input.no,
+        values: { company_id: input.companyId, posting_date: utcToday() },
+      })
       try {
         const ins = await sql<{ id: string }>`
           INSERT INTO ${ident(spec.table)} (
@@ -311,7 +310,10 @@ export function createReconciliationService(
           throw new ApiError('conflict', '请先删除对账条目')
         }
       }
-      const no = input.no !== undefined ? input.no.trim() : String(before.reconciliation_no)
+      if (input.no !== undefined && input.no.trim() !== String(before.reconciliation_no)) {
+        throw ApiError.validation(`${spec.label}参数不合法`, { reconciliationNo: ['编号创建后不可修改'] })
+      }
+      const no = String(before.reconciliation_no)
       const debitAccountId =
         input.debitAccountId !== undefined ? input.debitAccountId : String(before.debit_account_id)
       const creditAccountId =

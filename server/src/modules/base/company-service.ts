@@ -20,6 +20,7 @@ import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
+import type { NumberingService } from '~/platform/numbering/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listAuthorized } from '~/db/list.ts'
 import { loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
@@ -78,7 +79,7 @@ const COMPANY_ALIAS = 'company'
 const COMPANY_SELECT = sql`SELECT id, code, name, short_name, parent_id, base_currency_id,
 inserted_at, updated_at, parent_name, base_currency_name`
 
-export function createCompanyService(db: Kysely<Database>, registry: Registry) {
+export function createCompanyService(db: Kysely<Database>, numbering: NumberingService, registry: Registry) {
   const target = registry.authzTarget(COMPANY_RESOURCE_NAME)
 
   async function get(permit: Permit, id: string): Promise<Company> {
@@ -139,7 +140,7 @@ export function createCompanyService(db: Kysely<Database>, registry: Registry) {
           actionName: 'create',
           changes: auditCreated(snapshot(item), AUDIT),
         })
-        await seedCompanyDefaultWarehouses(trx, permit.actor, item.id, item.code)
+        await seedCompanyDefaultWarehouses(trx, numbering, permit.actor, item.id, item.code)
         return item
       } catch (err) {
         if (err instanceof ApiError) throw err

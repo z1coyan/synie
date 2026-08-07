@@ -197,13 +197,13 @@ export function createExpenseService(
     assertCompanyWritable(permit, input.companyId, '费用报销单不存在')
     return withTx(db, async (trx) => {
       await validateEmployeeAndAccount(trx, input.companyId, input.employeeId, input.paymentAccountId)
-      let docNo = (input.docNo ?? '').trim()
-      if (!docNo) {
-        docNo = await numbering.nextInTx(trx, {
-          resource: 'acc.expense_report',
-          values: { company_id: input.companyId, posting_date: expenseDate },
-        })
-      }
+      const docNo = await numbering.assignedInTx(trx, {
+        resource: 'acc.expense_report',
+        field: 'docNo',
+        provided: input.docNo,
+        // 预置规则段引用 expense_date（键名必须与 meta 字段一致，否则日期段渲染为空）
+        values: { company_id: input.companyId, expense_date: expenseDate },
+      })
       try {
         const ins = await sql<{ id: string }>`
           INSERT INTO acc_expense_report(doc_no,expense_date,posting_date,remarks,company_id,employee_id,payment_account_id,created_by_id)
@@ -236,7 +236,7 @@ export function createExpenseService(
     return withTx(db, async (trx) => {
       const before = await authorizedReport(trx, permit, id, true)
       if (before.status !== 'DRAFT') throw conflict('仅草稿报销单可修改或删除')
-      let docNo = before.docNo
+      const docNo = before.docNo
       let expenseDate = before.expenseDate
       let postingDate = before.postingDate
       let remarks = before.remarks
@@ -246,7 +246,9 @@ export function createExpenseService(
         if (!input.docNo || !input.docNo.trim()) {
           throw ApiError.validation('费用报销单参数不合法', { docNo: ['不能为空'] })
         }
-        docNo = input.docNo.trim()
+        if (input.docNo.trim() !== docNo) {
+          throw ApiError.validation('费用报销单参数不合法', { docNo: ['编号创建后不可修改'] })
+        }
       }
       if (input.expenseDate !== undefined) expenseDate = requireDate(input.expenseDate, 'expenseDate')
       if (input.postingDatePresent) {

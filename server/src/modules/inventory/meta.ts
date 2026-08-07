@@ -265,10 +265,16 @@ export function warehouseResourceMeta(): ResourceMeta {
     classification: { presentation: 'extension', interactive: true, note: '协作方多态外键，Basic Form fail-closed' },
     permissionPrefix: 'base.warehouse',
     permissionLabel: '仓库',
+    numbering: true,
     table: 'inv_warehouse',
     authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
+      field('code', 'code', 'string', '仓库编码', {
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      }),
       field('name', 'name', 'string', '仓库名称', { required: true, filterable: true, sortable: true }),
       field('is_leaf', 'isLeaf', 'boolean', '叶子仓库', { filterable: true, sortable: true }),
       field('active', 'active', 'boolean', '启用', { filterable: true, sortable: true }),
@@ -340,6 +346,7 @@ export function warehouseResourceMeta(): ResourceMeta {
     form: {
       exclude: ['id', 'active', 'insertedAt', 'updatedAt'],
       fields: {
+        code: { placeholder: '保存后自动编号' },
         name: { required: true },
         isLeaf: { defaultValue: true },
         isOutsourced: { defaultValue: false },
@@ -507,7 +514,7 @@ export function stockDocResourceMeta(): ResourceMeta {
     authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('doc_no', 'docNo', 'string', '单据编号', { required: true, filterable: true, sortable: true }),
+      field('doc_no', 'docNo', 'string', '单据编号', { readonly: true, filterable: true, sortable: true }),
       field('direction', 'direction', 'enum', '出入库方向', {
         required: true,
         createOnly: true,
@@ -569,7 +576,7 @@ export function stockDocResourceMeta(): ResourceMeta {
     form: {
       exclude: ['id', 'status', 'auditedAt', 'insertedAt', 'updatedAt', 'createdById', 'auditedById'],
       fields: {
-        docNo: { placeholder: '留空自动编号' },
+        docNo: { placeholder: '保存后自动编号' },
         direction: { required: true, edit: 'createOnly' },
         docDate: { required: true },
         companyId: { required: true, edit: 'createOnly' },
@@ -688,7 +695,7 @@ export function stockTransferResourceMeta(): ResourceMeta {
     authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('doc_no', 'docNo', 'string', '单据编号', { required: true, filterable: true, sortable: true }),
+      field('doc_no', 'docNo', 'string', '单据编号', { readonly: true, filterable: true, sortable: true }),
       field('doc_date', 'docDate', 'date', '业务日期', { required: true, filterable: true, sortable: true }),
       field('summary', 'summary', 'string', '摘要(带入库存分录)', { filterable: true, sortable: true }),
       field('remarks', 'remarks', 'string', '备注(对内)', { filterable: true, sortable: true }),
@@ -773,7 +780,7 @@ export function stockTransferResourceMeta(): ResourceMeta {
         'receivedById',
       ],
       fields: {
-        docNo: { placeholder: '留空自动编号' },
+        docNo: { placeholder: '保存后自动编号' },
         docDate: { required: true },
         companyId: { required: true, edit: 'createOnly' },
         fromWarehouseId: { required: true },
@@ -899,7 +906,7 @@ export function stockCountResourceMeta(): ResourceMeta {
     authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('doc_no', 'docNo', 'string', '单据编号', { required: true, filterable: true, sortable: true }),
+      field('doc_no', 'docNo', 'string', '单据编号', { readonly: true, filterable: true, sortable: true }),
       field('posting_date', 'postingDate', 'date', '业务日期', {
         required: true,
         filterable: true,

@@ -776,7 +776,7 @@ function InvoicesPage() {
               purReconciliationId: null,
             }),
           },
-          docNo: { ...lay('docNo'), placeholder: '留空自动编号' },
+          docNo: { ...lay('docNo'), placeholder: '保存后自动编号' },
           // 新增态由顶部类型选择卡写入(hidden 仍校验/提交,label 供缺失校验指名「发票类型」);
           // 编辑/查看态照常展示,方向由记录本身决定
           direction: isCreate

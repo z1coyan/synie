@@ -91,15 +91,14 @@ run('PG 集成（物料类型单据准入）', () => {
     return decision.permit
   }
 
+  /** 编号由系统按规则生成：create 入参不再携带 orderNo（手填即 400「编号由系统生成,不接受手填」） */
   function orderDraftInput(
     side: 'sales' | 'purchase',
-    orderNo: string,
     materialId: string,
     isOutsourced: boolean,
   ): OrderDraftInput {
     return {
       companyId,
-      orderNo,
       orderDate: '2026-07-31',
       orderType: side === 'sales' ? 'SAMPLE' : 'SPOT',
       isOutsourced,
@@ -139,6 +138,9 @@ run('PG 集成（物料类型单据准入）', () => {
     expect(Object.values(fields).flat()).toContain(detail)
   }
 
+  /** 本测自建的编号规则（afterAll 回收；复用的他人规则不动） */
+  const createdRuleIds: string[] = []
+
   beforeAll(async () => {
     await sql`
       INSERT INTO bas_currency(id,name,iso_code,symbol,active)
@@ -171,8 +173,8 @@ run('PG 集成（物料类型单据准入）', () => {
         (${assetMaterialId}::uuid, ${'A' + suffix}, ${prefix + '资产料'}, ${categoryId}::uuid, ${unitId}::uuid, true, 'ASSET')
     `.execute(db)
     await sql`
-      INSERT INTO inv_warehouse(id,name,company_id,is_leaf,active)
-      VALUES (${warehouseId}::uuid, ${prefix + '仓'}, ${companyId}::uuid, true, true)
+      INSERT INTO inv_warehouse(id,name,code,company_id,is_leaf,active)
+      VALUES (${warehouseId}::uuid, ${prefix + '仓'}, ${'W' + suffix}, ${companyId}::uuid, true, true)
     `.execute(db)
     await sql`
       INSERT INTO bas_account(id,code,name,direction,is_group,active,company_id,currency_id,role) VALUES
@@ -212,9 +214,41 @@ run('PG 集成（物料类型单据准入）', () => {
           ${companyId}::uuid,${assetMaterialId}::uuid,${unitId}::uuid,
           ${'A' + suffix},${prefix + '资产料'},${prefix + '件'})
     `.execute(db)
+
+    // 单据编号规则不由迁移播种：已有启用规则则复用，否则建本测前缀规则
+    for (const [resource, tag] of [
+      ['sales.quotation', 'SQ'],
+      ['sales.order', 'SO'],
+      ['purchase.order', 'PO'],
+      ['sales.delivery', 'SD'],
+      ['purchase.receipt', 'PR'],
+    ] as const) {
+      const existing = await db
+        .selectFrom('sys_numbering_rule')
+        .select('id')
+        .where('resource', '=', resource)
+        .where('enabled', '=', true)
+        .executeTakeFirst()
+      if (!existing) {
+        const rule = await numbering.create(permit('sysNumberingRules', 'create'), {
+          resource,
+          name: `${prefix}${tag}规则`,
+          segments: [
+            { type: 'text', value: `T${suffix}${tag}-` },
+            { type: 'seq', padding: 4 },
+          ],
+          perCompany: false,
+          enabled: true,
+        })
+        createdRuleIds.push(rule.id)
+      }
+    }
   })
 
   afterAll(async () => {
+    for (const id of createdRuleIds) {
+      await db.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
+    }
     await sql`DELETE FROM acc_gl_entry WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM inv_stock_entry WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sys_attachment WHERE company_id=${companyId}::uuid`.execute(db)
@@ -244,7 +278,6 @@ run('PG 集成（物料类型单据准入）', () => {
   test('销售报价/销售订单条目拦资产类物料，虚拟类可进', async () => {
     const quotation = await quotations.createHead(permit(quotationSpec('sales').headResource, 'create'), 'sales', {
       companyId,
-      quotationNo: `${prefix}-SQ`,
       quotationDate: '2026-07-20',
       validUntil: '2026-08-20',
       partyType: 'CUSTOMER',
@@ -273,24 +306,24 @@ run('PG 集成（物料类型单据准入）', () => {
     expect(virtualItem.materialId).toBe(virtualMaterialId)
 
     await expectValidation(
-      orders.createDraft(permit(orderSpec('sales').headResource, 'create'), 'sales', orderDraftInput('sales', `${prefix}-SO-A`, assetMaterialId, false)),
+      orders.createDraft(permit(orderSpec('sales').headResource, 'create'), 'sales', orderDraftInput('sales', assetMaterialId, false)),
       '资产类物料不能进该单据',
     )
     const virtualOrder = await orders.createDraft(
       permit(orderSpec('sales').headResource, 'create'),
       'sales',
-      orderDraftInput('sales', `${prefix}-SO-V`, virtualMaterialId, false),
+      orderDraftInput('sales', virtualMaterialId, false),
     )
     expect(virtualOrder.items[0]?.materialId).toBe(virtualMaterialId)
   })
 
   test('委外采购订单条目与发料/副产物清单限库存类，普通采购订单放行资产类', async () => {
     await expectValidation(
-      orders.createDraft(permit(orderSpec('purchase').headResource, 'create'), 'purchase', orderDraftInput('purchase', `${prefix}-PO-OS-V`, virtualMaterialId, true)),
+      orders.createDraft(permit(orderSpec('purchase').headResource, 'create'), 'purchase', orderDraftInput('purchase', virtualMaterialId, true)),
       '仅库存类物料可进该单据',
     )
     await expectValidation(
-      orders.createDraft(permit(orderSpec('purchase').headResource, 'create'), 'purchase', orderDraftInput('purchase', `${prefix}-PO-OS-A`, assetMaterialId, true)),
+      orders.createDraft(permit(orderSpec('purchase').headResource, 'create'), 'purchase', orderDraftInput('purchase', assetMaterialId, true)),
       '仅库存类物料可进该单据',
     )
 
@@ -298,7 +331,7 @@ run('PG 集成（物料类型单据准入）', () => {
     const regular = await orders.createDraft(
       permit(orderSpec('purchase').headResource, 'create'),
       'purchase',
-      orderDraftInput('purchase', `${prefix}-PO-REG-A`, assetMaterialId, false),
+      orderDraftInput('purchase', assetMaterialId, false),
     )
     expect(regular.items[0]?.materialId).toBe(assetMaterialId)
 
@@ -306,7 +339,7 @@ run('PG 集成（物料类型单据准入）', () => {
     const outsourced = await orders.createDraft(
       permit(orderSpec('purchase').headResource, 'create'),
       'purchase',
-      orderDraftInput('purchase', `${prefix}-PO-OS-OK`, stockMaterialId, true),
+      orderDraftInput('purchase', stockMaterialId, true),
     )
     const orderItemId = outsourced.items[0]!.id
     await expectValidation(
@@ -340,7 +373,6 @@ run('PG 集成（物料类型单据准入）', () => {
     await expectValidation(
       fulfillment.createSalesDraft(permit(fulfillmentSpec('sales').headResource, 'create'), {
         companyId,
-        no: `${prefix}-SD-A`,
         documentDate: '2026-07-25',
         postingDate: '2026-07-25',
         partyType: 'customer',
@@ -355,7 +387,6 @@ run('PG 集成（物料类型单据准入）', () => {
 
     const draft = await fulfillment.createSalesDraft(permit(fulfillmentSpec('sales').headResource, 'create'), {
       companyId,
-      no: `${prefix}-SD-V`,
       documentDate: '2026-07-25',
       postingDate: '2026-07-25',
       partyType: 'customer',
@@ -394,7 +425,6 @@ run('PG 集成（物料类型单据准入）', () => {
       permit(fulfillmentSpec('purchase').headResource, 'create'),
       {
         companyId,
-        no: `${prefix}-PR-NOWH`,
         documentDate: '2026-07-25',
         postingDate: '2026-07-25',
         partyType: 'supplier',
@@ -410,7 +440,6 @@ run('PG 集成（物料类型单据准入）', () => {
       permit(fulfillmentSpec('purchase').headResource, 'create'),
       {
       companyId,
-      no: `${prefix}-PR-MIX`,
       documentDate: '2026-07-25',
       postingDate: '2026-07-25',
       partyType: 'supplier',

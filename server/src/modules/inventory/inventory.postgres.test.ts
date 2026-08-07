@@ -48,7 +48,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
   const registry = createSealedResourceRegistry()
   const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
   const authz = createAuthzEnforcer(registry)
-  const companies = createCompanyService(db, registry)
+  const companies = createCompanyService(db, numbering, registry)
   const inv = createInventoryServices(db, numbering, registry)
   let actor: Actor = testActor({
     userId: crypto.randomUUID(),
@@ -75,6 +75,46 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     const decision = authz.decideFor(actor, 'sysNumberingRules', 'create')
     if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
     return decision.permit
+  }
+  /**
+   * 单据编号规则：启用规则全局唯一，已有则复用，否则建本测前缀规则；
+   * 共享库并发建撞 one_enabled_per_resource 唯一索引时回落复用
+   */
+  async function ensureRule(resource: string, name: string, prefix: string): Promise<void> {
+    const existing = await db
+      .selectFrom('sys_numbering_rule')
+      .select('id')
+      .where('resource', '=', resource)
+      .where('enabled', '=', true)
+      .executeTakeFirst()
+    if (existing) return
+    try {
+      const rule = await numbering.create(numberingPermit(), {
+        resource,
+        name,
+        segments: [
+          { type: 'text', value: prefix },
+          { type: 'seq', padding: 4 },
+        ],
+        perCompany: false,
+        enabled: true,
+      })
+      tracked.ruleIds.push(rule.id)
+    } catch (err) {
+      const again = await db
+        .selectFrom('sys_numbering_rule')
+        .select('id')
+        .where('resource', '=', resource)
+        .where('enabled', '=', true)
+        .executeTakeFirst()
+      if (!again) throw err
+    }
+  }
+  /** 库存三单据取号规则（编号一律系统生成，不接受手填） */
+  async function ensureStockDocRules(): Promise<void> {
+    await ensureRule('inv.stock_doc', `T${suffix}出入库`, `T${suffix}D-`)
+    await ensureRule('inv.stock_transfer', `T${suffix}调拨`, `T${suffix}T-`)
+    await ensureRule('inv.stock_count', `T${suffix}盘点`, `T${suffix}C-`)
   }
   /** 主数据（分类/物料/单位转换/仓库）：夹具现取凭证（superAdmin → rowFilter 全集） */
   const masterPermit = (resource: string, action: string) => {
@@ -239,6 +279,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
 
   test('出入库审核/作废 + 调拨发货收货 + 盘点 + 余额', async () => {
     const { currencyId, unitId } = await ensureBaseline()
+    await ensureStockDocRules()
     const company = await companies.create(companyPermit(), {
       code: lettersFrom(suffix, 2),
       name: `库存测公司${suffix}`,
@@ -301,7 +342,6 @@ run('PG 集成（库存单据状态机与引擎）', () => {
 
     // 入库 10
     const inbound = await inv.stockDocs.create(permit(), {
-      docNo: `T${suffix}-IN`,
       direction: 'IN',
       companyId: company.id,
       warehouseId: fromWh!.id,
@@ -322,7 +362,6 @@ run('PG 集成（库存单据状态机与引擎）', () => {
 
     // 调拨 4
     const transfer = await inv.stockTransfers.create(permit(), {
-      docNo: `T${suffix}-TR`,
       companyId: company.id,
       fromWarehouseId: fromWh!.id,
       toWarehouseId: toWh!.id,
@@ -345,7 +384,6 @@ run('PG 集成（库存单据状态机与引擎）', () => {
 
     // 盘点：调入仓账面 4，实盘 5
     const count = await inv.stockCounts.create(permit(), {
-      docNo: `T${suffix}-CT`,
       companyId: company.id,
       warehouseId: toWh!.id,
       items: [{ materialId: mat.id, unitId, countedQuantity: '5' }],
@@ -388,6 +426,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
   test('状态机：方向锁死/停用仓拦新/已发货不可改删/实收容差/快照兜底', async () => {
     const { currencyId, unitId } = await ensureBaseline()
     const edgeSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
+    await ensureStockDocRules()
     const company = await companies.create(companyPermit(), {
       code: lettersFrom(edgeSuffix, 2),
       name: `边界测公司${edgeSuffix}`,
@@ -455,7 +494,6 @@ run('PG 集成（库存单据状态机与引擎）', () => {
 
     // 方向创建后不可改
     const draft = await inv.stockDocs.create(permit(), {
-      docNo: `B${edgeSuffix}-DIR`,
       direction: 'IN',
       companyId: company.id,
       warehouseId: whA.id,
@@ -468,7 +506,6 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     // 停用仓拦新
     await expect(
       inv.stockDocs.create(permit(), {
-        docNo: `B${edgeSuffix}-OFF`,
         direction: 'IN',
         companyId: company.id,
         warehouseId: whOff.id,
@@ -487,7 +524,6 @@ run('PG 集成（库存单据状态机与引擎）', () => {
 
     // 调拨 5：部分收货 3 → 在途留 2
     const tr = await inv.stockTransfers.create(permit(), {
-      docNo: `B${edgeSuffix}-TR`,
       companyId: company.id,
       fromWarehouseId: whA.id,
       toWarehouseId: whB.id,
@@ -532,7 +568,6 @@ run('PG 集成（库存单据状态机与引擎）', () => {
 
     // 快照兜底：开盘点后若再动库存则审核拒
     const ct = await inv.stockCounts.create(permit(), {
-      docNo: `B${edgeSuffix}-CT`,
       companyId: company.id,
       warehouseId: whB.id,
       items: [{ materialId: mat.id, unitId, countedQuantity: '3' }],
@@ -540,7 +575,6 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     tracked.countIds.push(ct.id)
     // 再入一笔到 B，使快照过期
     const late = await inv.stockDocs.create(permit(), {
-      docNo: `B${edgeSuffix}-LATE`,
       direction: 'IN',
       companyId: company.id,
       warehouseId: whB.id,
@@ -576,6 +610,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
   test('物料类型准入：非库存类物料不可进手工出入库/调拨/盘点行', async () => {
     const { currencyId, unitId } = await ensureBaseline()
     const typeSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()
+    await ensureStockDocRules()
     const company = await companies.create(companyPermit(), {
       code: await allocCompanyCode(db, `T${typeSuffix}`),
       name: `类型测公司${typeSuffix}`,
@@ -625,7 +660,6 @@ run('PG 集成（库存单据状态机与引擎）', () => {
 
     // 手工出入库行拦 VIRTUAL/ASSET
     const doc = await inv.stockDocs.create(permit(), {
-      docNo: `T${typeSuffix}-IN`,
       direction: 'IN',
       companyId: company.id,
       warehouseId: wh.id,
@@ -658,7 +692,6 @@ run('PG 集成（库存单据状态机与引擎）', () => {
 
     // 手工调拨行拦
     const transfer = await inv.stockTransfers.create(permit(), {
-      docNo: `T${typeSuffix}-TR`,
       companyId: company.id,
       fromWarehouseId: wh.id,
       toWarehouseId: whB.id,
@@ -681,7 +714,6 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     // 盘点行拦（实盘与账面两条路径共用同一折算校验）
     await expect(
       inv.stockCounts.create(permit(), {
-        docNo: `T${typeSuffix}-CT`,
         companyId: company.id,
         warehouseId: wh.id,
         items: [{ materialId: assetMat.id, unitId, countedQuantity: '1' }],
@@ -692,7 +724,6 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     })
     await expect(
       inv.stockCounts.create(permit(), {
-        docNo: `T${typeSuffix}-CT2`,
         companyId: company.id,
         warehouseId: wh.id,
         items: [{ materialId: virtualMat.id, unitId }],
@@ -706,6 +737,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
   test('物料类型：默认库存、枚举校验、有库存分录后锁定', async () => {
     const { currencyId, unitId } = await ensureBaseline()
     const lockSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()
+    await ensureStockDocRules()
     const company = await companies.create(companyPermit(), {
       code: await allocCompanyCode(db, `L${lockSuffix}`),
       name: `类型锁公司${lockSuffix}`,
@@ -755,7 +787,6 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     })
     tracked.warehouseIds.push(wh.id)
     const doc = await inv.stockDocs.create(permit(), {
-      docNo: `L${lockSuffix}-IN`,
       direction: 'IN',
       companyId: company.id,
       warehouseId: wh.id,

@@ -39,7 +39,8 @@ const userUpdateSchema = z
 
 const departmentCreateSchema = z
   .object({
-    code: z.string().min(1),
+    // 编码由系统按编号规则生成；传入非空值由 service 一律 422
+    code: z.string().min(1).nullish(),
     name: z.string().min(1),
     companyId: z.string().uuid(),
     parentId: z.string().uuid().nullable().optional(),

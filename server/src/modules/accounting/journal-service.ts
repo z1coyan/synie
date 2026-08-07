@@ -318,13 +318,12 @@ debit_total, credit_total, company_name, created_by_name, submitted_by_name`,
     input: CreateJournalInput,
   ): Promise<Journal> {
     validateCreate(input)
-    let voucherNo = (input.voucherNo ?? '').trim()
-    if (voucherNo === '') {
-      voucherNo = await numbering.nextInTx(trx, {
-        resource: 'acc.gl_journal',
-        values: { company_id: input.companyId, date: input.date },
-      })
-    }
+    const voucherNo = await numbering.assignedInTx(trx, {
+      resource: 'acc.gl_journal',
+      field: 'voucherNo',
+      provided: input.voucherNo,
+      values: { company_id: input.companyId, date: input.date },
+    })
     if ([...voucherNo].length > 32) {
       throw validation('voucherNo', '最多 32 个字符')
     }
@@ -368,9 +367,12 @@ debit_total, credit_total, company_name, created_by_name, submitted_by_name`,
       const locked = await lockAuthorizedJournal(trx, permit, id)
       if (String(locked.status) !== 'draft') throw draftError()
       const before = await loadJournal(trx, id)
+      if (input.voucherNo !== undefined && input.voucherNo.trim() !== before.voucherNo) {
+        throw ApiError.validation('会计凭证参数不合法', { voucherNo: ['编号创建后不可修改'] })
+      }
       const after: Journal = {
         ...before,
-        voucherNo: input.voucherNo !== undefined ? input.voucherNo.trim() : before.voucherNo,
+        voucherNo: before.voucherNo,
         date: input.date ?? before.date,
         postingDate: input.postingDatePresent
           ? (input.postingDate ?? null)

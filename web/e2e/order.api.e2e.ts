@@ -208,12 +208,20 @@ function cleanup(fixture: Fixture, created: Created): void {
     ...created.materialLineIds,
     ...created.byproductLineIds,
   ].filter((id): id is string => id !== null);
+  // 单据编号由系统按规则生成(不再带 prefix),头表一律按 id 清场
+  const salesOrderIds = uuidList(
+    created.salesOrderId ? [created.salesOrderId] : [],
+  );
+  const purchaseOrderIds = uuidList(
+    created.purchaseOrderId ? [created.purchaseOrderId] : [],
+  );
+  const quotationIds = uuidList(created.quotationIds);
   postgres(`
     DELETE FROM sys_audit_log WHERE record_id=ANY(${uuidList(recordIds)});
-    DELETE FROM sal_order WHERE order_no LIKE '${prefix}%';
-    DELETE FROM pur_order WHERE order_no LIKE '${prefix}%';
-    DELETE FROM sal_quotation WHERE quotation_no LIKE '${prefix}%';
-    DELETE FROM pur_quotation WHERE quotation_no LIKE '${prefix}%';
+    DELETE FROM sal_order WHERE id=ANY(${salesOrderIds});
+    DELETE FROM pur_order WHERE id=ANY(${purchaseOrderIds});
+    DELETE FROM sal_quotation WHERE id=ANY(${quotationIds});
+    DELETE FROM pur_quotation WHERE id=ANY(${quotationIds});
     DELETE FROM mfg_demand WHERE id='${fixture.demandId}'::uuid;
     DELETE FROM sys_user WHERE id='${fixture.demandUserId}'::uuid;
     DELETE FROM mfg_bom WHERE id='${fixture.bomId}'::uuid;
@@ -227,10 +235,10 @@ function cleanup(fixture: Fixture, created: Created): void {
   `);
   const residue = postgres(`
     SELECT
-      (SELECT count(*) FROM sal_order WHERE order_no LIKE '${prefix}%'),
-      (SELECT count(*) FROM pur_order WHERE order_no LIKE '${prefix}%'),
-      (SELECT count(*) FROM sal_quotation WHERE quotation_no LIKE '${prefix}%'),
-      (SELECT count(*) FROM pur_quotation WHERE quotation_no LIKE '${prefix}%'),
+      (SELECT count(*) FROM sal_order WHERE id=ANY(${salesOrderIds})),
+      (SELECT count(*) FROM pur_order WHERE id=ANY(${purchaseOrderIds})),
+      (SELECT count(*) FROM sal_quotation WHERE id=ANY(${quotationIds})),
+      (SELECT count(*) FROM pur_quotation WHERE id=ANY(${quotationIds})),
       (SELECT count(*) FROM mfg_demand WHERE id='${fixture.demandId}'::uuid),
       (SELECT count(*) FROM mfg_bom WHERE id='${fixture.bomId}'::uuid),
       (SELECT count(*) FROM inv_material WHERE code LIKE '${prefix}%'),
@@ -357,12 +365,12 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
     ] as const;
     const quoteItemBySide = new Map<string, string>();
     for (const quoteInput of quoteInputs) {
-      const quotation = await apiJSON<{ id: string }>(
+      // 报价编号由系统按规则生成,create 不再携带 quotationNo(手填即 400)
+      const quotation = await apiJSON<{ id: string; quotationNo: string }>(
         request,
         "post",
         `/api/v1/${quoteInput.side}/quotations`,
         {
-          quotationNo: `${prefix}-${quoteInput.side === "sales" ? "SQ" : "PQ"}`,
           quotationDate: "2026-07-01",
           validUntil: "2026-08-31",
           partyType: quoteInput.partyType,
@@ -412,13 +420,12 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
       );
     }
 
-    const salesNo = `${prefix}-SO`;
-    const sales = await apiJSON<{ id: string }>(
+    // 订单编号由系统按规则生成:不传 orderNo,从响应读出供后续 UI 搜索/断言
+    const sales = await apiJSON<{ id: string; orderNo: string }>(
       request,
       "post",
       "/api/v1/sales/orders",
       {
-        orderNo: salesNo,
         orderDate: "2026-07-26",
         orderType: "REGULAR",
         partyType: "CUSTOMER",
@@ -427,6 +434,8 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
       },
       201,
     );
+    const salesNo = sales.orderNo;
+    expect(salesNo, "系统应生成销售订单编号").toBeTruthy();
     created.salesOrderId = sales.id;
     const salesItem = await apiJSON<{
       id: string;
@@ -452,13 +461,11 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
     expect(Number(salesItem.amount)).toBe(250);
     expect(salesItem.pricingMode).toBe("FIXED");
 
-    const purchaseNo = `${prefix}-PO`;
-    const purchase = await apiJSON<{ id: string }>(
+    const purchase = await apiJSON<{ id: string; orderNo: string }>(
       request,
       "post",
       "/api/v1/purchase/orders",
       {
-        orderNo: purchaseNo,
         orderDate: "2026-07-26",
         orderType: "REGULAR",
         isOutsourced: true,
@@ -468,6 +475,8 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
       },
       201,
     );
+    const purchaseNo = purchase.orderNo;
+    expect(purchaseNo, "系统应生成采购订单编号").toBeTruthy();
     created.purchaseOrderId = purchase.id;
     const purchaseItem = await apiJSON<{
       id: string;

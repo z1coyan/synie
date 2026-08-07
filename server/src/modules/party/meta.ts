@@ -136,7 +136,7 @@ export function employeeResourceMeta(): ResourceMeta {
     authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('code', 'code', 'string', '员工编号', { filterable: true, sortable: true }),
+      field('code', 'code', 'string', '员工编号', { readonly: true, filterable: true, sortable: true }),
       field('name', 'name', 'string', '员工姓名', { required: true, filterable: true, sortable: true }),
       field('attendance_no', 'attendanceNo', 'string', '考勤设备编号', {
         filterable: true,
@@ -178,7 +178,7 @@ export function employeeResourceMeta(): ResourceMeta {
       kind: 'extension',
       exclude: ['id', 'insertedAt', 'updatedAt'],
       fields: {
-        code: { required: false, placeholder: '留空自动编号' },
+        code: { edit: 'readOnly', placeholder: '保存后自动编号' },
         name: { required: true },
       },
     },

@@ -5,6 +5,7 @@ import type { Permit } from '~/platform/authz/core/index.ts'
 import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createAccountService } from './account-service.ts'
 import { createCompanyService } from './company-service.ts'
 import { createCurrencyService } from './currency-service.ts'
@@ -84,7 +85,8 @@ run('PG 集成（base 主数据）', () => {
   const registry = createSealedResourceRegistry()
   const authz = createAuthzEnforcer(registry)
   const currencies = createCurrencyService(db, registry)
-  const companies = createCompanyService(db, registry)
+  const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
+  const companies = createCompanyService(db, numbering, registry)
   const units = createUnitService(db, registry)
   const accounts = createAccountService(db, registry)
   /** 取一张凭证：superAdmin 的 rowFilter 恒全集；公司边界见 scopedPermit */

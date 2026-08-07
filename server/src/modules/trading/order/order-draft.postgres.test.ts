@@ -110,13 +110,12 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
     )
   http.onError(onError)
 
+  /** 编号由系统按规则生成：create 入参不再携带 orderNo（手填即 400「编号由系统生成,不接受手填」） */
   function draftInput(
     side: TradingSide,
-    orderNo: string,
   ): OrderDraftInput {
     return {
       companyId,
-      orderNo,
       orderDate: '2026-07-31',
       orderType: side === 'sales' ? 'SAMPLE' : 'SPOT',
       isOutsourced: side === 'purchase',
@@ -229,6 +228,9 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
     }
   }
 
+  /** 本测自建的编号规则（afterAll 回收；复用的他人规则不动） */
+  const createdRuleIds: string[] = []
+
   beforeAll(async () => {
     await sql`
       INSERT INTO bas_currency(id,name,iso_code,symbol,active)
@@ -273,9 +275,38 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
       INSERT INTO sys_attachment(owner_type, owner_id, category, file_id, company_id)
       VALUES ('inv_material', ${materialId}::uuid, 'drawing', ${drawingFileId}::uuid, null)
     `.execute(db)
+
+    // 单据编号规则不由迁移播种：已有启用规则则复用，否则建本测前缀规则
+    for (const [resource, tag] of [
+      ['sales.order', 'SO'],
+      ['purchase.order', 'PO'],
+    ] as const) {
+      const existing = await db
+        .selectFrom('sys_numbering_rule')
+        .select('id')
+        .where('resource', '=', resource)
+        .where('enabled', '=', true)
+        .executeTakeFirst()
+      if (!existing) {
+        const rule = await numbering.create(permit('sysNumberingRules', 'create'), {
+          resource,
+          name: `${prefix}${tag}规则`,
+          segments: [
+            { type: 'text', value: `T${suffix}${tag}-` },
+            { type: 'seq', padding: 4 },
+          ],
+          perCompany: false,
+          enabled: true,
+        })
+        createdRuleIds.push(rule.id)
+      }
+    }
   })
 
   afterAll(async () => {
+    for (const id of createdRuleIds) {
+      await db.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
+    }
     await sql`
       DELETE FROM sys_attachment
       WHERE owner_type IN ('sal_order_item','pur_order_item')
@@ -314,7 +345,7 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
       'content-type': 'application/json',
     }
     for (const side of ['sales', 'purchase'] as const) {
-      const input = draftInput(side, `${prefix}-${side}-HTTP`)
+      const input = draftInput(side)
       const createdResponse = await http.request(
         `/api/v1/${side}/orders`,
         {
@@ -422,8 +453,10 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
 
   test('第二个嵌套条目失败时销售/采购创建均不残留表头或子记录', async () => {
     for (const side of ['sales', 'purchase'] as const) {
-      const no = `${prefix}-CR-${side[0]}`
-      const input = draftInput(side, no)
+      // 系统编号无法预知失败单的单号：用唯一条款做残留探针
+      const marker = `${prefix}-CR-${side[0]}`
+      const input = draftInput(side)
+      input.terms = marker
       input.items.push({
         ...input.items[0]!,
         idx: 2,
@@ -439,18 +472,22 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
       const count = side === 'sales'
         ? await sql<{ heads: string; items: string }>`
             SELECT
-              (SELECT count(*) FROM sal_order WHERE order_no=${no})::text AS heads,
+              (SELECT count(*) FROM sal_order
+                WHERE company_id=${companyId}::uuid AND terms=${marker})::text AS heads,
               (
                 SELECT count(*) FROM sal_order_item i
-                JOIN sal_order o ON o.id=i.order_id WHERE o.order_no=${no}
+                JOIN sal_order o ON o.id=i.order_id
+                WHERE o.company_id=${companyId}::uuid AND o.terms=${marker}
               )::text AS items
           `.execute(db)
         : await sql<{ heads: string; items: string }>`
             SELECT
-              (SELECT count(*) FROM pur_order WHERE order_no=${no})::text AS heads,
+              (SELECT count(*) FROM pur_order
+                WHERE company_id=${companyId}::uuid AND terms=${marker})::text AS heads,
               (
                 SELECT count(*) FROM pur_order_item i
-                JOIN pur_order o ON o.id=i.order_id WHERE o.order_no=${no}
+                JOIN pur_order o ON o.id=i.order_id
+                WHERE o.company_id=${companyId}::uuid AND o.terms=${marker}
               )::text AS items
           `.execute(db)
       expect(count.rows[0]).toEqual({ heads: '0', items: '0' })
@@ -461,7 +498,7 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
     const created = await orders.createDraft(
       headPermit('purchase', 'create'),
       'purchase',
-      draftInput('purchase', `${prefix}-P-RB`),
+      draftInput('purchase'),
     )
     const before = await orders.getDraft(headPermit('purchase', 'read'), 'purchase', created.id)
     const item = created.items[0]!
@@ -470,10 +507,10 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
 
     await expect(
       orders.replaceDraft(headPermit('purchase', 'update'), 'purchase', created.id, {
-        ...draftInput('purchase', created.orderNo),
+        ...draftInput('purchase'),
         terms: '失败后不可见',
         items: [{
-          ...draftInput('purchase', created.orderNo).items[0]!,
+          ...draftInput('purchase').items[0]!,
           id: item.id,
           qty: '99',
           issueLines: [{
@@ -509,7 +546,7 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
     const created = await orders.createDraft(
       headPermit('purchase', 'create'),
       'purchase',
-      draftInput('purchase', `${prefix}-PUR-RBAC`),
+      draftInput('purchase'),
     )
     // 整单替换的码级要求是端点级声明（update ∧ create ∧ delete），不再按请求形态动态追加：
     // 缺码在 HTTP guard 上 403，服务层拿到凭证即可增删子树（零鉴权代码）。
@@ -566,7 +603,7 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
     const created = await orders.createDraft(
       headPermit('purchase', 'create'),
       'purchase',
-      draftInput('purchase', `${prefix}-OC-AUDIT`),
+      draftInput('purchase'),
     )
     const item = created.items[0]!
     const mainIssue = item.issueLines.find((line) => line.materialId === rawMaterialId)!
@@ -666,7 +703,7 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
       const created = await orders.createDraft(
         headPermit(side, 'create'),
         side,
-        draftInput(side, `${prefix}-${side}-DRAW`),
+        draftInput(side),
       )
       const itemId = created.items[0]!.id
       const ownerType = orderSpec(side).itemOwnerType

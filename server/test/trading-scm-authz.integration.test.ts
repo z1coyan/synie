@@ -189,8 +189,9 @@ run('PG 集成（扫荡 10：trading 销/采全链与 scm orderflow 授权语义
       [warehouseB, companyB],
     ] as const) {
       await sql`
-        INSERT INTO inv_warehouse (id, name, company_id, is_leaf, active)
-        VALUES (${id}::uuid, ${'交易仓-' + id.slice(0, 4)}, ${companyId}::uuid, true, true)
+        INSERT INTO inv_warehouse (id, name, code, company_id, is_leaf, active)
+        VALUES (${id}::uuid, ${'交易仓-' + id.slice(0, 4)}, ${'W' + id.slice(0, 8).replace(/-/g, '')},
+          ${companyId}::uuid, true, true)
       `.execute(db)
     }
     await sql`

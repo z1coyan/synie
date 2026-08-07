@@ -23,7 +23,7 @@ export function outsourcedIssueMeta(): ResourceMeta {
     printHead: true,
     fields: [
       f('id', 'id', 'uuid', 'id', {"sortable": true, "readonly": true}),
-      f('issue_no', 'issueNo', 'string', '发料单号', {"sortable": true, "filterable": true}),
+      f('issue_no', 'issueNo', 'string', '发料单号', {"readonly": true, "sortable": true, "filterable": true}),
       f('issue_date', 'issueDate', 'date', '发料日期(库存分录业务日)', {"sortable": true, "filterable": true}),
       f('party_type', 'partyType', 'enum', '对手类型(供应商/内部公司,须与所引委外订单一致)', {"sortable": true, "filterable": true, "enumOptions": [{"label": "供应商", "value": "SUPPLIER"}, {"label": "客户", "value": "CUSTOMER"}, {"label": "内部公司", "value": "COMPANY"}, {"label": "员工", "value": "EMPLOYEE"}]}),
       f('party_id', 'partyId', 'fk', '对手', {"filterable": true, "ref": {"resource": null, "relation": null, "labelField": null, "discriminator": "partyType", "discriminatorType": "enum", "variants": [{"label": "内部公司", "labelField": "name", "resource": "basCompanies", "value": "COMPANY"}, {"label": "供应商", "labelField": "name", "resource": "purSuppliers", "value": "SUPPLIER"}]}}),
@@ -79,7 +79,7 @@ export function outsourcedIssueItemMeta(): ResourceMeta {
       f('unit_id', 'unitId', 'fk', '单位(以发料清单行为准)', {"filterable": true, "ref": {"resource": "basUnits", "relation": "unit", "labelField": "name"}}),
       f('from_warehouse_id', 'fromWarehouseId', 'fk', '调出仓(本公司启用叶子仓)', {"filterable": true, "ref": {"resource": "invWarehouses", "relation": "fromWarehouse", "labelField": "name"}}),
       f('outsourced_warehouse_id', 'outsourcedWarehouseId', 'fk', '外协仓(限绑定当前对手)', {"filterable": true, "ref": {"resource": "invWarehouses", "relation": "outsourcedWarehouse", "labelField": "name"}}),
-      f('issue_no', 'issueNo', 'string', '发料单号', {"sortable": true, "filterable": true}),
+      f('issue_no', 'issueNo', 'string', '发料单号', {"readonly": true, "sortable": true, "filterable": true}),
       f('issue_date', 'issueDate', 'date', '发料日期', {"sortable": true, "filterable": true}),
       f('issue_status', 'issueStatus', 'enum', '发料单状态', {"sortable": true, "filterable": true, "enumOptions": [{"label": "草稿", "value": "DRAFT"}, {"label": "已审核", "value": "AUDITED"}, {"label": "已作废", "value": "VOIDED"}]}),
       f('party_type', 'partyType', 'enum', '对手类型(供应商/内部公司)', {"sortable": true, "filterable": true, "enumOptions": [{"label": "供应商", "value": "SUPPLIER"}, {"label": "客户", "value": "CUSTOMER"}, {"label": "内部公司", "value": "COMPANY"}, {"label": "员工", "value": "EMPLOYEE"}]}),
@@ -107,7 +107,7 @@ export function outsourcedReceiptMeta(): ResourceMeta {
     printHead: true,
     fields: [
       f('id', 'id', 'uuid', 'id', {"sortable": true, "readonly": true}),
-      f('receipt_no', 'receiptNo', 'string', '入库单号', {"sortable": true, "filterable": true}),
+      f('receipt_no', 'receiptNo', 'string', '入库单号', {"readonly": true, "sortable": true, "filterable": true}),
       f('receipt_date', 'receiptDate', 'date', '入库日期(库存分录业务日)', {"sortable": true, "filterable": true}),
       f('posting_date', 'postingDate', 'date', '过账日期(总账;有金额审核时必填)', {"sortable": true, "filterable": true}),
       f('party_type', 'partyType', 'enum', '对手类型(供应商/内部公司,须与所引委外订单一致)', {"sortable": true, "filterable": true, "enumOptions": [{"label": "供应商", "value": "SUPPLIER"}, {"label": "客户", "value": "CUSTOMER"}, {"label": "内部公司", "value": "COMPANY"}, {"label": "员工", "value": "EMPLOYEE"}]}),
@@ -176,7 +176,7 @@ export function outsourcedReceiptItemMeta(): ResourceMeta {
       f('material_id', 'materialId', 'fk', '物料(成品,须与订单条目一致)', {"filterable": true, "ref": {"resource": "invMaterials", "relation": "material", "labelField": "name"}}),
       f('unit_id', 'unitId', 'fk', '单位', {"filterable": true, "ref": {"resource": "basUnits", "relation": "unit", "labelField": "name"}}),
       f('warehouse_id', 'warehouseId', 'fk', '入库仓库', {"filterable": true, "ref": {"resource": "invWarehouses", "relation": "warehouse", "labelField": "name"}}),
-      f('receipt_no', 'receiptNo', 'string', '入库单号', {"sortable": true, "filterable": true}),
+      f('receipt_no', 'receiptNo', 'string', '入库单号', {"readonly": true, "sortable": true, "filterable": true}),
       f('receipt_date', 'receiptDate', 'date', '入库日期', {"sortable": true, "filterable": true}),
       f('receipt_status', 'receiptStatus', 'enum', '入库单状态', {"sortable": true, "filterable": true, "enumOptions": [{"label": "草稿", "value": "DRAFT"}, {"label": "已审核", "value": "AUDITED"}, {"label": "已作废", "value": "VOIDED"}]}),
       f('party_type', 'partyType', 'enum', '对手类型(供应商/内部公司)', {"sortable": true, "filterable": true, "enumOptions": [{"label": "供应商", "value": "SUPPLIER"}, {"label": "客户", "value": "CUSTOMER"}, {"label": "内部公司", "value": "COMPANY"}, {"label": "员工", "value": "EMPLOYEE"}]}),
@@ -227,7 +227,7 @@ export function outsourcedReceiptItemMaterialMeta(): ResourceMeta {
       f('material_id', 'materialId', 'fk', '材料(以发料清单行为准)', {"filterable": true, "ref": {"resource": "invMaterials", "relation": "material", "labelField": "name"}}),
       f('unit_id', 'unitId', 'fk', '单位(以发料清单行为准)', {"filterable": true, "ref": {"resource": "basUnits", "relation": "unit", "labelField": "name"}}),
       f('outsourced_warehouse_id', 'outsourcedWarehouseId', 'fk', '外协仓(可空,审核前必填;限绑定母单对手)', {"filterable": true, "ref": {"resource": "invWarehouses", "relation": "outsourcedWarehouse", "labelField": "name"}}),
-      f('receipt_no', 'receiptNo', 'string', '入库单号', {"sortable": true, "filterable": true}),
+      f('receipt_no', 'receiptNo', 'string', '入库单号', {"readonly": true, "sortable": true, "filterable": true}),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     // exclude 保留历史审计面：头快照列不进审计 diff
@@ -263,7 +263,7 @@ export function outsourcedReceiptItemByproductMeta(): ResourceMeta {
       f('material_id', 'materialId', 'fk', '物料(以副产物清单行为准)', {"filterable": true, "ref": {"resource": "invMaterials", "relation": "material", "labelField": "name"}}),
       f('unit_id', 'unitId', 'fk', '单位(以副产物清单行为准)', {"filterable": true, "ref": {"resource": "basUnits", "relation": "unit", "labelField": "name"}}),
       f('warehouse_id', 'warehouseId', 'fk', '入仓(可空,审核前必填;本公司启用叶子仓)', {"filterable": true, "ref": {"resource": "invWarehouses", "relation": "warehouse", "labelField": "name"}}),
-      f('receipt_no', 'receiptNo', 'string', '入库单号', {"sortable": true, "filterable": true}),
+      f('receipt_no', 'receiptNo', 'string', '入库单号', {"readonly": true, "sortable": true, "filterable": true}),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     // exclude 保留历史审计面：头快照列不进审计 diff

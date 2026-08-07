@@ -12,10 +12,13 @@ const candidates = [
   { prefix: 'acc.gl_journal', label: '会计凭证' },
 ]
 
+const pgContainer = process.env.SYNIE_PG_CONTAINER ?? 'synie-postgres-1'
+const pgDb = process.env.SYNIE_PG_DB ?? 'synie'
+
 function postgres(sql: string): string {
   return execFileSync(
     'docker',
-    ['exec', 'synie-postgres-1', 'psql', '-U', 'synie', '-d', 'synie', '-Atc', sql],
+    ['exec', pgContainer, 'psql', '-U', 'synie', '-d', pgDb, '-Atc', sql],
     { encoding: 'utf8' },
   )
 }

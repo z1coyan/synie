@@ -128,6 +128,7 @@ export function reconciliationHeadMeta(side: TradingSide): ResourceMeta {
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('reconciliation_no', 'reconciliationNo', 'string', '对账单号', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
@@ -343,6 +344,7 @@ export function reconciliationItemMeta(side: TradingSide): ResourceMeta {
       }),
       ...sourceFields,
       f('reconciliation_no', 'reconciliationNo', 'string', '对账单号', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),

@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { loginViaUI } from "./fixtures/session";
 
 const pgContainer = process.env.SYNIE_PG_CONTAINER ?? "synie-postgres-1";
@@ -223,6 +223,29 @@ function cleanup(): void {
   expect(Number(remaining), "HR E2E fixture 必须 cleanup=0").toBe(0);
 }
 
+/**
+ * 行操作菜单动作（闭环重试收敛）：失效刷新的行重渲染会卸载刚开的菜单，
+ * 点击也可能落在已卸载的菜单节点上变成 no-op——
+ * 「抽屉未开则 toggle 菜单→点动作→短超时验证抽屉」循环直到稳定。
+ */
+async function clickRowActionMenu(
+  page: Page,
+  row: Locator,
+  actionName: string,
+  confirm: Locator,
+): Promise<void> {
+  const item = page.getByRole("menuitem", { name: actionName, exact: true });
+  await expect(async () => {
+    if (await confirm.isVisible().catch(() => false)) return;
+    if (!(await item.isVisible().catch(() => false))) {
+      await row.getByRole("button", { name: "行操作" }).click();
+    }
+    await expect(item).toBeVisible({ timeout: 2_000 });
+    await item.click({ timeout: 2_000 });
+    await expect(confirm).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
+}
+
 async function openGridDrawer(
   page: Page,
   route: string,
@@ -240,9 +263,10 @@ async function openGridDrawer(
   ).toBeVisible();
   const row = grid.getByRole("row").filter({ hasText: rowText }).first();
   await expect(row).toBeVisible();
-  await row.getByRole("button", { name: "行操作" }).click();
-  await page.getByRole("menuitem", { name: "查看", exact: true }).click();
+  // 等失效刷新落定再开行操作菜单(竞态,helper 内重试兜底)
+  await page.waitForLoadState("networkidle");
   const drawer = page.getByRole("dialog", { name: drawerName });
+  await clickRowActionMenu(page, row, "查看", drawer);
   await expect(drawer).toBeVisible();
   await expect(drawer.getByText(expectedText, { exact: false })).toBeVisible();
   await drawer.getByRole("button", { name: "关闭", exact: true }).click();
@@ -344,9 +368,8 @@ test("考勤五页与薪资三页以 Go REST 展示关键业务事实", async ({
       .getByRole("grid", { name: "hrPayrolls 数据表格" })
       .getByRole("row")
       .filter({ hasText: `${prefix}验收员工` });
-    await payrollRow.getByRole("button", { name: "行操作" }).click();
-    await page.getByRole("menuitem", { name: "查看", exact: true }).click();
     const payrollDrawer = page.getByRole("dialog", { name: "工资单详情" });
+    await clickRowActionMenu(page, payrollRow, "查看", payrollDrawer);
     await expect(
       payrollDrawer.getByRole("grid", { name: "发放记录" }),
     ).toContainText(`${prefix}发放备注`);
@@ -359,7 +382,8 @@ test("考勤五页与薪资三页以 Go REST 展示关键业务事实", async ({
       "/hr/payroll/payments",
       "hrPayrollPayments",
       `${prefix}验收员工`,
-      "发放记录详情",
+      // 抽屉标题取 catalog 文档标签「工资发放」
+      "工资发放详情",
       `${prefix}发放备注`,
       pageErrors,
     );

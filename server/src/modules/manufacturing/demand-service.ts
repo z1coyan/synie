@@ -147,13 +147,12 @@ export function createDemandService(
       const assignedDeptId = await resolveAssignedDept(trx, input.companyId, input.assignedDeptId)
       assertAssignLink(assignType, assignedDeptId)
       const demandDate = input.demandDate ? toDateOnly(input.demandDate) : utcToday()
-      let no = (input.demandNo ?? '').trim()
-      if (!no) {
-        no = await numbering.nextInTx(trx, {
-          resource: 'mfg.demand',
-          values: { company_id: input.companyId, demand_date: demandDate },
-        })
-      }
+      const no = await numbering.assignedInTx(trx, {
+        resource: 'mfg.demand',
+        field: 'demandNo',
+        provided: input.demandNo,
+        values: { company_id: input.companyId, demand_date: demandDate },
+      })
       validateNo(no, 'demandNo')
       try {
         const row = await trx
@@ -231,7 +230,9 @@ export function createDemandService(
         throw new ApiError('conflict', '仅草稿履约需求单可修改或删除')
       }
       const after: Demand = { ...before }
-      if (input.demandNo !== undefined) after.demandNo = input.demandNo.trim()
+      if (input.demandNo !== undefined && input.demandNo.trim() !== before.demandNo) {
+        throw ApiError.validation('履约需求单参数不合法', { demandNo: ['编号创建后不可修改'] })
+      }
       if (input.demandDate !== undefined) after.demandDate = toDateOnly(input.demandDate)
       if (input.assignTypePresent) after.assignType = parseAssignType(input.assignType)
       // 单头需求日只影响之后新建行的默认值，不追溯既有行

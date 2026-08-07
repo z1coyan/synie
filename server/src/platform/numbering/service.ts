@@ -323,6 +323,36 @@ export function createNumberingService(
     return withTx(db, (trx) => nextInTx(trx, input))
   }
 
+  /**
+   * create 链路编号唯一入口：编号一律由系统按启用规则生成。
+   * provided 非空（调用方手填）即 422，不做静默覆盖；field 用于校验错误定位（对齐表单字段名）。
+   */
+  async function assigned(input: {
+    resource: string
+    field: string
+    provided?: string | null
+    values?: Record<string, unknown>
+  }): Promise<string> {
+    return withTx(db, (trx) => assignedInTx(trx, input))
+  }
+
+  async function assignedInTx(
+    handle: DbHandle,
+    input: {
+      resource: string
+      field: string
+      provided?: string | null
+      values?: Record<string, unknown>
+    },
+  ): Promise<string> {
+    if (input.provided?.trim()) {
+      throw ApiError.validation('编号由系统生成,不接受手填', {
+        [input.field]: ['编号由系统生成,不接受手填'],
+      })
+    }
+    return nextInTx(handle, { resource: input.resource, values: input.values })
+  }
+
   async function nextInTx(
     handle: DbHandle,
     input: { resource: string; values?: Record<string, unknown> },
@@ -337,7 +367,9 @@ export function createNumberingService(
       .where('resource', '=', input.resource)
       .where('enabled', '=', true)
       .executeTakeFirst()
-    if (!ruleRow) throw new ApiError('conflict', '未配置启用的编号规则')
+    if (!ruleRow) {
+      throw new ApiError('conflict', '未配置启用的编号规则,请先在 系统管理 → 编号规则 配置并启用')
+    }
     const rule = mapRule(ruleRow)
     const values = input.values ?? {}
     const parts: Array<{ text?: string; sequence?: boolean }> = []
@@ -416,6 +448,8 @@ export function createNumberingService(
     updateCounter,
     next,
     nextInTx,
+    assigned,
+    assignedInTx,
   }
 }
 

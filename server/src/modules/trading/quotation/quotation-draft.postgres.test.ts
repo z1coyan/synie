@@ -32,11 +32,8 @@ const run = url ? describe : describe.skip
 run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
   const db = createDb(url!)
   const authz = createAuthzEnforcer(registry)
-  const quotations = createQuotationService(
-    db,
-    createNumberingService(db, buildNumberingCatalog(registry), registry),
-    registry,
-  )
+  const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
+  const quotations = createQuotationService(db, numbering, registry)
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `QD${suffix}`
 
@@ -94,13 +91,12 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
     )
   http.onError(onError)
 
+  /** 编号由系统按规则生成：create 入参不再携带 quotationNo（手填即 400「编号由系统生成,不接受手填」） */
   function draftInput(
     side: TradingSide,
-    quotationNo: string,
   ): QuotationDraftInput {
     return {
       companyId,
-      quotationNo,
       quotationDate: '2026-07-31',
       validUntil: '2026-08-31',
       partyType: side === 'sales' ? 'CUSTOMER' : 'SUPPLIER',
@@ -201,6 +197,9 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
     }
   }
 
+  /** 本测自建的编号规则（afterAll 回收；复用的他人规则不动） */
+  const createdRuleIds: string[] = []
+
   beforeAll(async () => {
     await sql`
       INSERT INTO bas_currency(id,name,iso_code,symbol,active)
@@ -233,9 +232,38 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
         (${materialId}::uuid, ${'M' + suffix}, ${prefix + '物料'}, ${categoryId}::uuid, ${unitId}::uuid, true),
         (${material2Id}::uuid, ${'N' + suffix}, ${prefix + '物料二'}, ${categoryId}::uuid, ${unitId}::uuid, true)
     `.execute(db)
+
+    // 单据编号规则不由迁移播种：已有启用规则则复用，否则建本测前缀规则
+    for (const [resource, tag] of [
+      ['sales.quotation', 'SQ'],
+      ['purchase.quotation', 'PQ'],
+    ] as const) {
+      const existing = await db
+        .selectFrom('sys_numbering_rule')
+        .select('id')
+        .where('resource', '=', resource)
+        .where('enabled', '=', true)
+        .executeTakeFirst()
+      if (!existing) {
+        const rule = await numbering.create(permitFor(actor, 'sysNumberingRules', 'create'), {
+          resource,
+          name: `${prefix}${tag}规则`,
+          segments: [
+            { type: 'text', value: `T${suffix}${tag}-` },
+            { type: 'seq', padding: 4 },
+          ],
+          perCompany: false,
+          enabled: true,
+        })
+        createdRuleIds.push(rule.id)
+      }
+    }
   })
 
   afterAll(async () => {
+    for (const id of createdRuleIds) {
+      await db.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
+    }
     await sql`DELETE FROM sys_audit_log WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sal_quotation WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM pur_quotation WHERE company_id=${companyId}::uuid`.execute(db)
@@ -260,7 +288,7 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
     }
     for (const side of ['sales', 'purchase'] as const) {
       const pathSide = side
-      const input = draftInput(side, `${prefix}-${side}-HTTP`)
+      const input = draftInput(side)
       const createdResponse = await http.request(
         `/api/v1/${pathSide}/quotations`,
         {
@@ -333,8 +361,10 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
 
   test('任一嵌套价格档创建失败时销售/采购均不残留表头或条目', async () => {
     for (const side of ['sales', 'purchase'] as const) {
-      const no = `${prefix}-CR-${side[0]}`
-      const input = draftInput(side, no)
+      // 系统编号无法预知失败单的单号：用唯一条款做残留探针
+      const marker = `${prefix}-CR-${side[0]}`
+      const input = draftInput(side)
+      input.terms = marker
       input.items[1]!.tiers.push({ minQty: '0', price: '1' })
 
       await expect(
@@ -343,23 +373,25 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
 
       const headCount = side === 'sales'
         ? await sql<{ count: string }>`
-            SELECT count(*)::text AS count FROM sal_quotation WHERE quotation_no=${no}
+            SELECT count(*)::text AS count FROM sal_quotation
+            WHERE company_id=${companyId}::uuid AND terms=${marker}
           `.execute(db)
         : await sql<{ count: string }>`
-            SELECT count(*)::text AS count FROM pur_quotation WHERE quotation_no=${no}
+            SELECT count(*)::text AS count FROM pur_quotation
+            WHERE company_id=${companyId}::uuid AND terms=${marker}
           `.execute(db)
       const itemCount = side === 'sales'
         ? await sql<{ count: string }>`
             SELECT count(*)::text AS count
             FROM sal_quotation_item i
             JOIN sal_quotation q ON q.id=i.quotation_id
-            WHERE q.quotation_no=${no}
+            WHERE q.company_id=${companyId}::uuid AND q.terms=${marker}
           `.execute(db)
         : await sql<{ count: string }>`
             SELECT count(*)::text AS count
             FROM pur_quotation_item i
             JOIN pur_quotation q ON q.id=i.quotation_id
-            WHERE q.quotation_no=${no}
+            WHERE q.company_id=${companyId}::uuid AND q.terms=${marker}
           `.execute(db)
       expect(headCount.rows[0]?.count).toBe('0')
       expect(itemCount.rows[0]?.count).toBe('0')
@@ -371,7 +403,7 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
       const created = await quotations.createDraft(
         permit(),
         side,
-        draftInput(side, `${prefix}-RR-${side[0]}`),
+        draftInput(side),
       )
       const before = await quotations.getDraft(permit(), side, created.id)
       const fixedItem = created.items[0]!
@@ -380,7 +412,7 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
 
       await expect(
         quotations.replaceDraft(permit(), side, created.id, {
-          ...draftInput(side, created.quotationNo),
+          ...draftInput(side),
           terms: '失败后不可见',
           items: [
             {
@@ -420,7 +452,7 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
     const changed = await quotations.createDraft(
       permit(),
       'purchase',
-      draftInput('purchase', `${prefix}-PUR-PARTY-CHANGE`),
+      draftInput('purchase'),
     )
     const changedResult = await quotations.replaceDraft(permit(), 'purchase', changed.id, {
       ...replaceInputFromSaved(changed),
@@ -433,7 +465,7 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
     const rollback = await quotations.createDraft(
       permit(),
       'purchase',
-      draftInput('purchase', `${prefix}-PUR-PARTY-ROLLBACK`),
+      draftInput('purchase'),
     )
     const before = await quotations.getDraft(permit(), 'purchase', rollback.id)
     await expect(
@@ -459,7 +491,7 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
     const created = await quotations.createDraft(
       permit(),
       'purchase',
-      draftInput('purchase', `${prefix}-PUR-RBAC`),
+      draftInput('purchase'),
     )
     const updatePermit = permitFor(updateOnlyActor, 'purQuotations', 'update')
 
@@ -501,7 +533,7 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
     const created = await quotations.createDraft(
       permit(),
       'purchase',
-      draftInput('purchase', `${prefix}-PUR-PUT403`),
+      draftInput('purchase'),
     )
     const body = JSON.stringify(replaceInputFromSaved(created))
 
@@ -525,7 +557,7 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
     const created = await quotations.createDraft(
       permit(),
       'purchase',
-      draftInput('purchase', `${prefix}-PUR-403`),
+      draftInput('purchase'),
     )
     const tieredItem = created.items[1]!
     const paths = [
@@ -565,14 +597,14 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
    * 故一律用公司域 actor，并断言「本公司的行在结果里」。
    */
   test('别名回归：公司域 actor 能在头/条目/价格档三条列表路径看到本公司的行', async () => {
-    const no = `${prefix}-PUR-ALIAS`
-    const created = await quotations.createDraft(permit(), 'purchase', draftInput('purchase', no))
+    const created = await quotations.createDraft(permit(), 'purchase', draftInput('purchase'))
     const tieredItem = created.items[1]!
     const scoped = permitFor(scopedActor([companyId], 'read'), 'purQuotations', 'read')
 
     const heads = await quotations.listHeads(scoped, 'purchase', {
       limit: 200,
-      filter: { quotationNo: { kind: 'text', op: 'eq', value: no } },
+      // 按系统生成的报价单号收窄
+      filter: { quotationNo: { kind: 'text', op: 'eq', value: created.quotationNo } },
     })
     expect(heads.results.map((r) => r.id)).toContain(created.id)
 
@@ -597,8 +629,7 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
   })
 
   test('跨公司单条一律 404（头/条目/价格档），列表为空集', async () => {
-    const no = `${prefix}-PUR-XCOMP`
-    const created = await quotations.createDraft(permit(), 'purchase', draftInput('purchase', no))
+    const created = await quotations.createDraft(permit(), 'purchase', draftInput('purchase'))
     const tieredItem = created.items[1]!
     const outsider = permitFor(scopedActor([otherCompanyId], 'read'), 'purQuotations', 'read')
 
@@ -617,7 +648,7 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
 
     const heads = await quotations.listHeads(outsider, 'purchase', {
       limit: 200,
-      filter: { quotationNo: { kind: 'text', op: 'eq', value: no } },
+      filter: { quotationNo: { kind: 'text', op: 'eq', value: created.quotationNo } },
     })
     expect(heads.results).toEqual([])
     expect(heads.count).toBe(0)
@@ -629,7 +660,7 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
       quotations.createDraft(
         outsider,
         'purchase',
-        draftInput('purchase', `${prefix}-PUR-CGATE`),
+        draftInput('purchase'),
       ),
     ).rejects.toMatchObject({ code: 'not_found' })
   })
@@ -638,7 +669,7 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
     const created = await quotations.createDraft(
       permit(),
       'purchase',
-      draftInput('purchase', `${prefix}-PUR-409`),
+      draftInput('purchase'),
     )
     await quotations.auditHead(permit(), 'purchase', created.id)
     await expect(

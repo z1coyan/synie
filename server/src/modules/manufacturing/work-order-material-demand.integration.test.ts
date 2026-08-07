@@ -164,32 +164,47 @@ run('PG 集成（工单物料需求派生）', () => {
     await db
       .insertInto('inv_warehouse')
       .values([
-        { id: warehouseAId, company_id: companyId, name: `派生仓A-${suffix}`, is_leaf: true, active: true, allow_negative: true },
-        { id: warehouseBId, company_id: companyId, name: `派生仓B-${suffix}`, is_leaf: true, active: true, allow_negative: true },
-        { id: otherWarehouseId, company_id: otherCompanyId, name: `派生外仓-${suffix}`, is_leaf: true, active: true, allow_negative: true },
+        { id: warehouseAId, company_id: companyId, code: `WA${suffix.slice(0, 6)}`, name: `派生仓A-${suffix}`, is_leaf: true, active: true, allow_negative: true },
+        { id: warehouseBId, company_id: companyId, code: `WB${suffix.slice(0, 6)}`, name: `派生仓B-${suffix}`, is_leaf: true, active: true, allow_negative: true },
+        { id: otherWarehouseId, company_id: otherCompanyId, code: `WO${suffix.slice(0, 6)}`, name: `派生外仓-${suffix}`, is_leaf: true, active: true, allow_negative: true },
       ])
       .execute()
 
-    // 派生草稿经编号规则取 demand_no：已有启用规则则复用，否则建本测前缀规则
-    const existing = await db
-      .selectFrom('sys_numbering_rule')
-      .select('id')
-      .where('resource', '=', 'mfg.demand')
-      .where('enabled', '=', true)
-      .executeTakeFirst()
-    if (!existing) {
-      const rule = await numbering.create(permitFor('sysNumberingRules', 'create'), {
-        resource: 'mfg.demand',
-        name: `T${suffix}需求`,
-        segments: [
-          { type: 'text', value: `TD${suffix}-` },
-          { type: 'seq', padding: 3 },
-        ],
-        perCompany: false,
-        enabled: true,
-      })
-      cleanupIds.rules.push(rule.id)
+    // 派生草稿/工单/BOM 经编号规则取号：已有启用规则则复用，否则建本测前缀规则
+    // （共享库并发建撞 one_enabled_per_resource 唯一索引时回落复用）
+    async function ensureRule(resource: string, name: string, prefix: string): Promise<void> {
+      const existing = await db
+        .selectFrom('sys_numbering_rule')
+        .select('id')
+        .where('resource', '=', resource)
+        .where('enabled', '=', true)
+        .executeTakeFirst()
+      if (existing) return
+      try {
+        const rule = await numbering.create(permitFor('sysNumberingRules', 'create'), {
+          resource,
+          name,
+          segments: [
+            { type: 'text', value: prefix },
+            { type: 'seq', padding: 3 },
+          ],
+          perCompany: false,
+          enabled: true,
+        })
+        cleanupIds.rules.push(rule.id)
+      } catch (err) {
+        const again = await db
+          .selectFrom('sys_numbering_rule')
+          .select('id')
+          .where('resource', '=', resource)
+          .where('enabled', '=', true)
+          .executeTakeFirst()
+        if (!again) throw err
+      }
     }
+    await ensureRule('mfg.demand', `T${suffix}需求`, `TD${suffix}-`)
+    await ensureRule('mfg.work_order', `T${suffix}工单`, `TW${suffix}-`)
+    await ensureRule('mfg.bom', `T${suffix}BOM`, `TB${suffix}-`)
   }
 
   async function cleanup(): Promise<void> {
@@ -262,16 +277,13 @@ run('PG 集成（工单物料需求派生）', () => {
     }
   })
 
-  /** 业务单据走服务：需求单(确认) → 工单；bomId 给定时创建即快照 */
-  let seq = 0
+  /** 业务单据走服务：需求单(确认) → 工单；bomId 给定时创建即快照（编号一律系统生成） */
   async function makeWorkOrder(opts: { qty: string; bomId?: string }): Promise<{
     id: string
     workOrderNo: string
   }> {
-    seq += 1
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
-      demandNo: `DM${suffix}-${seq}`,
       assignType: 'purchase',
     })
     cleanupIds.demands.push(demand.id)
@@ -286,7 +298,6 @@ run('PG 集成（工单物料需求派生）', () => {
     await mfg.demands.confirmDemand(permit, demand.id)
     const wo = await mfg.workOrders.createWorkOrder(permitFor('mfgWorkOrders', 'create'), {
       demandItemId: line.id,
-      workOrderNo: `WD${suffix}-${seq}`,
       qty: opts.qty,
       bomId: opts.bomId ?? null,
     })
@@ -304,9 +315,7 @@ run('PG 集成（工单物料需求派生）', () => {
     /** BOM 母物料：默认成品；多级递归用例传子物料（嵌件A） */
     bomMaterialId: string = materialId,
   ): Promise<string> {
-    seq += 1
     const bom = await mfg.master.createBom(permitFor('mfgBoms', 'create'), {
-      code: `BB${suffix}-${seq}`,
       materialId: bomMaterialId,
       status: 'active',
     })
@@ -907,10 +916,8 @@ run('PG 集成（工单物料需求派生）', () => {
         [{ materialId: compCId, unitId, quantity: '2' }],
         compAId,
       )
-      seq += 1
       const childWo = await mfg.workOrders.createWorkOrder(permitFor('mfgWorkOrders', 'create'), {
         demandItemId: childItem.id,
-        workOrderNo: `WD${suffix}-C${seq}`,
         qty: '4',
         bomId: childBomId,
       })

@@ -250,28 +250,35 @@ test("销售采购对账 Grid、Drawer 与默认科目设置全程使用 Go REST
     );
     expect(defaults.id).toBeTruthy();
 
-    const salesNo = `${prefix}-SR`;
-    const purchaseNo = `${prefix}-PR`;
+    // 对账单编号由系统按规则生成:create 不再携带 reconciliationNo(手填即 400),从响应读出
     const common = {
       reconciliationType: "REGULAR",
       companyId: fixture.companyId,
     };
-    await post(request, "/api/v1/sales/reconciliations", {
+    const salesReconciliation = await post<{
+      id: string;
+      reconciliationNo: string;
+    }>(request, "/api/v1/sales/reconciliations", {
       ...common,
-      reconciliationNo: salesNo,
       partyType: "CUSTOMER",
       partyId: fixture.customerId,
       debitAccountId: fixture.salesDebitId,
       creditAccountId: fixture.salesCreditId,
     });
-    await post(request, "/api/v1/purchase/reconciliations", {
+    const purchaseReconciliation = await post<{
+      id: string;
+      reconciliationNo: string;
+    }>(request, "/api/v1/purchase/reconciliations", {
       ...common,
-      reconciliationNo: purchaseNo,
       partyType: "SUPPLIER",
       partyId: fixture.supplierId,
       debitAccountId: fixture.purchaseDebitId,
       creditAccountId: fixture.purchaseCreditId,
     });
+    const salesNo = salesReconciliation.reconciliationNo;
+    const purchaseNo = purchaseReconciliation.reconciliationNo;
+    expect(salesNo, "系统应生成销售对账单编号").toBeTruthy();
+    expect(purchaseNo, "系统应生成采购对账单编号").toBeTruthy();
 
     expect(pageErrors, "对账页面加载前不应有运行时错误").toEqual([]);
     await openReconciliationDrawer(

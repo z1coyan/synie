@@ -170,13 +170,12 @@ export function createWorkOrderService(
           : decimal(qty).mul(decimal(item.baseQty).div(decimal(item.qty))),
       )
       const needDate = item.needDate ?? utcToday()
-      let no = (input.workOrderNo ?? '').trim()
-      if (!no) {
-        no = await numbering.nextInTx(trx, {
-          resource: 'mfg.work_order',
-          values: { company_id: item.companyId, need_date: needDate },
-        })
-      }
+      const no = await numbering.assignedInTx(trx, {
+        resource: 'mfg.work_order',
+        field: 'workOrderNo',
+        provided: input.workOrderNo,
+        values: { company_id: item.companyId, need_date: needDate },
+      })
       validateNo(no, 'workOrderNo')
       try {
         const row = await trx
@@ -280,6 +279,9 @@ export function createWorkOrderService(
       const before = await lockWorkOrder(trx, permit, id)
       if (before.status !== 'in_progress') {
         throw new ApiError('conflict', '仅进行中的生产工单可修改')
+      }
+      if (no !== before.workOrderNo) {
+        throw ApiError.validation('生产工单参数不合法', { workOrderNo: ['编号创建后不可修改'] })
       }
       const after = { ...before, workOrderNo: no }
       const changes = auditDiff(woSnap(before), woSnap(after), WO_AUDIT)
@@ -519,22 +521,18 @@ export function createWorkOrderService(
       await ensureMaterial(trx, wo.materialId)
       const planName = trimOptional(input.planName)
       const note = trimOptional(input.note)
-      let code = (input.code ?? '').trim()
-      if (runeCount(code) > 32) {
-        throw ApiError.validation('BOM参数不合法', { code: ['最多 32 个字符'] })
-      }
       if (planName && runeCount(planName) > 64) {
         throw ApiError.validation('BOM参数不合法', { planName: ['最多 64 个字符'] })
       }
       if (note && runeCount(note) > 255) {
         throw ApiError.validation('BOM参数不合法', { note: ['最多 255 个字符'] })
       }
-      if (!code) {
-        code = await numbering.nextInTx(trx, {
-          resource: 'mfg.bom',
-          values: { material_id: wo.materialId },
-        })
-      }
+      const code = await numbering.assignedInTx(trx, {
+        resource: 'mfg.bom',
+        field: 'code',
+        provided: input.code,
+        values: { material_id: wo.materialId },
+      })
       let bomRow
       try {
         bomRow = await trx

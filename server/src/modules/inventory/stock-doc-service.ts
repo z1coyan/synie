@@ -195,17 +195,16 @@ export function createStockDocService(
     return withTx(db, async (trx) => {
       await validateLeafWarehouse(trx, input.companyId, input.warehouseId, LABEL)
       const docDate = input.docDate ? dateWire(input.docDate) : utcToday()
-      let docNo = input.docNo?.trim() ?? ''
-      if (!docNo) {
-        docNo = await numbering.nextInTx(trx, {
-          resource: 'inv.stock_doc',
-          values: {
-            company_id: input.companyId,
-            doc_date: docDate,
-            direction: input.direction,
-          },
-        })
-      }
+      const docNo = await numbering.assignedInTx(trx, {
+        resource: 'inv.stock_doc',
+        field: 'docNo',
+        provided: input.docNo,
+        values: {
+          company_id: input.companyId,
+          doc_date: docDate,
+          direction: input.direction,
+        },
+      })
       if (runeLen(docNo) > 32) {
         throw ApiError.validation(`${LABEL}参数不合法`, { docNo: ['最多 32 个字符'] })
       }
@@ -265,9 +264,12 @@ export function createStockDocService(
       if (input.direction != null && input.direction !== before.direction) {
         throw ApiError.validation(`${LABEL}参数不合法`, { direction: ['出入库方向不可变更'] })
       }
+      if (input.docNo != null && input.docNo.trim() !== before.docNo) {
+        throw ApiError.validation(`${LABEL}参数不合法`, { docNo: ['编号创建后不可修改'] })
+      }
       const after: StockDoc = {
         ...before,
-        docNo: input.docNo != null ? input.docNo.trim() : before.docNo,
+        docNo: before.docNo,
         docDate: input.docDate ? new Date(`${dateWire(input.docDate)}T00:00:00Z`) : before.docDate,
         summary: input.summaryPresent ? trimOrNull(input.summary) : before.summary,
         remarks: input.remarksPresent ? trimOrNull(input.remarks) : before.remarks,

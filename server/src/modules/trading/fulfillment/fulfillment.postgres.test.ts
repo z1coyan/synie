@@ -172,14 +172,15 @@ run('PG 集成（履约聚合草稿）', () => {
     )
   http.onError(onError)
 
-  function draftInput(no: string, itemQty = '10', packQty = '10') {
+  /** 编号由系统按规则生成：create 入参不再携带 no（手填即 400「编号由系统生成,不接受手填」） */
+  function draftInput(itemQty = '10', packQty = '10', remarks: string | null = null) {
     return {
       companyId,
-      no,
       documentDate: '2026-07-25',
       postingDate: '2026-07-25',
       partyType: 'customer',
       partyId: customerId,
+      remarks,
       warehouseId,
       debitAccountId,
       creditAccountId,
@@ -198,24 +199,24 @@ run('PG 集成（履约聚合草稿）', () => {
       }],
     }
   }
-  function httpDraftInput(no: string, itemQty = '10', packQty = '10') {
-    const input = draftInput(no, itemQty, packQty)
-    const { no: deliveryNo, documentDate: deliveryDate, ...rest } = input
-    return { ...rest, deliveryNo, deliveryDate }
+  function httpDraftInput(itemQty = '10', packQty = '10') {
+    const input = draftInput(itemQty, packQty)
+    const { documentDate: deliveryDate, ...rest } = input
+    return { ...rest, deliveryDate }
   }
-  function purchaseReceiptDraftInput(no: string, items = [{
+  function purchaseReceiptDraftInput(items = [{
     idx: 1,
     qty: '10',
     orderItemId: purchaseOrderItemId,
     warehouseId,
-  }]) {
+  }], remarks: string | null = null) {
     return {
       companyId,
-      no,
       documentDate: '2026-07-25',
       postingDate: '2026-07-25',
       partyType: 'supplier',
       partyId: supplierId,
+      remarks,
       warehouseId,
       debitAccountId,
       creditAccountId: payableAccountId,
@@ -280,6 +281,9 @@ run('PG 集成（履约聚合草稿）', () => {
     }
   }
 
+  /** 本测自建的编号规则（afterAll 回收；复用的他人规则不动） */
+  const createdRuleIds: string[] = []
+
   beforeAll(async () => {
     await sql`
       INSERT INTO bas_currency(id,name,iso_code,symbol,active)
@@ -315,8 +319,8 @@ run('PG 集成（履约聚合草稿）', () => {
         (${material2Id}::uuid, ${'N' + suffix}, ${prefix + '物料二'}, ${categoryId}::uuid, ${unitId}::uuid, true)
     `.execute(db)
     await sql`
-      INSERT INTO inv_warehouse(id,name,company_id)
-      VALUES (${warehouseId}::uuid, ${prefix + '仓'}, ${companyId}::uuid)
+      INSERT INTO inv_warehouse(id,name,code,company_id)
+      VALUES (${warehouseId}::uuid, ${prefix + '仓'}, ${'W' + suffix}, ${companyId}::uuid)
     `.execute(db)
     await sql`
       INSERT INTO bas_account(id,code,name,direction,is_group,active,company_id,currency_id,role) VALUES
@@ -370,9 +374,38 @@ run('PG 集成（履约聚合草稿）', () => {
       VALUES (${crypto.randomUUID()}::uuid, ${companyId}::uuid, ${warehouseId}::uuid, ${materialId}::uuid,
         100000, now(), 'test.seed', ${crypto.randomUUID()}::uuid, ${prefix + '-SEED'})
     `.execute(db)
+
+    // 单据编号规则不由迁移播种：已有启用规则则复用，否则建本测前缀规则
+    for (const [resource, tag] of [
+      ['sales.delivery', 'SD'],
+      ['purchase.receipt', 'PR'],
+    ] as const) {
+      const existing = await db
+        .selectFrom('sys_numbering_rule')
+        .select('id')
+        .where('resource', '=', resource)
+        .where('enabled', '=', true)
+        .executeTakeFirst()
+      if (!existing) {
+        const rule = await numbering.create(p('sysNumberingRules', 'create'), {
+          resource,
+          name: `${prefix}${tag}规则`,
+          segments: [
+            { type: 'text', value: `T${suffix}${tag}-` },
+            { type: 'seq', padding: 4 },
+          ],
+          perCompany: false,
+          enabled: true,
+        })
+        createdRuleIds.push(rule.id)
+      }
+    }
   })
 
   afterAll(async () => {
+    for (const id of createdRuleIds) {
+      await db.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
+    }
     await sql`DELETE FROM acc_gl_entry WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM inv_stock_entry WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sys_audit_log WHERE company_id=${companyId}::uuid`.execute(db)
@@ -395,10 +428,10 @@ run('PG 集成（履约聚合草稿）', () => {
   })
 
   test('整单创建在一个事务中返回完整权威草稿', async () => {
-    const no = `${prefix}-ATOMIC-CREATE`
-    const draft = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), draftInput(no))
+    const draft = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), draftInput())
 
-    expect(draft.deliveryNo).toBe(no)
+    // 编号由系统按规则生成
+    expect(draft.deliveryNo.length).toBeGreaterThan(0)
     expect(draft.status).toBe('DRAFT')
     expect(draft.items).toHaveLength(1)
     expect(draft.items[0]?.deliveryId).toBe(draft.id)
@@ -411,8 +444,7 @@ run('PG 集成（履约聚合草稿）', () => {
   })
 
   test('装箱箱/装箱行写路径落审计：创建、改行、删行删箱', async () => {
-    const no = `${prefix}-PACK-AUDIT`
-    const draft = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), draftInput(no))
+    const draft = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), draftInput())
     const box = draft.packBoxes[0]!
     const line = box.lines[0]!
 
@@ -475,9 +507,8 @@ run('PG 集成（履约聚合草稿）', () => {
   })
 
   test('采购入库完整草稿经 Hono seam 整单创建、读取与替换', async () => {
-    const no = `${prefix}-PUR-DRAFT`
-    const serviceInput = purchaseReceiptDraftInput(no)
-    const { no: receiptNo, documentDate: receiptDate, ...wireInput } = serviceInput
+    const serviceInput = purchaseReceiptDraftInput()
+    const { documentDate: receiptDate, ...wireInput } = serviceInput
     const headers = {
       authorization: 'Bearer test',
       'content-type': 'application/json',
@@ -485,7 +516,7 @@ run('PG 集成（履约聚合草稿）', () => {
     const createdResponse = await http.request('/api/v1/purchase/receipts', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ ...wireInput, receiptNo, receiptDate }),
+      body: JSON.stringify({ ...wireInput, receiptDate }),
     })
     expect(createdResponse.status).toBe(201)
     const created = await createdResponse.json() as {
@@ -493,7 +524,8 @@ run('PG 集成（履约聚合草稿）', () => {
       receiptNo: string
       items: Array<{ id: string; qty: string; receiptId: string }>
     }
-    expect(created.receiptNo).toBe(no)
+    // 编号由系统按规则生成
+    expect(created.receiptNo.length).toBeGreaterThan(0)
     expect(created.items).toHaveLength(1)
     expect(created.items[0]?.receiptId).toBe(created.id)
 
@@ -511,7 +543,7 @@ run('PG 集成（履约聚合草稿）', () => {
         headers,
         body: JSON.stringify({
           ...wireInput,
-          receiptNo,
+          receiptNo: created.receiptNo,
           receiptDate,
           remarks: '整单替换',
           items: [{ ...wireInput.items[0], id: created.items[0]!.id, qty: '12' }],
@@ -529,11 +561,12 @@ run('PG 集成（履约聚合草稿）', () => {
   })
 
   test('采购入库第二条明细失败时回滚表头与第一条明细', async () => {
-    const no = `${prefix}-PUR-ROLLBACK`
+    // 系统编号无法预知失败单的单号：用唯一备注做残留探针
+    const marker = `${prefix}-PUR-ROLLBACK`
     await expect(
       fulfillment.createPurchaseReceiptDraft(
         p(PUR_HEAD, 'create'),
-        purchaseReceiptDraftInput(no, [
+        purchaseReceiptDraftInput([
           {
             idx: 1,
             qty: '10',
@@ -546,26 +579,26 @@ run('PG 集成（履约聚合草稿）', () => {
             orderItemId: purchaseOrderItemId,
             warehouseId,
           },
-        ]),
+        ], marker),
       ),
     ).rejects.toThrow(/入库条目参数不合法/)
 
     const heads = await sql<{ count: string }>`
-      SELECT count(*)::text AS count FROM pur_receipt WHERE receipt_no=${no}
+      SELECT count(*)::text AS count FROM pur_receipt
+      WHERE company_id=${companyId}::uuid AND remarks=${marker}
     `.execute(db)
     expect(heads.rows[0]?.count).toBe('0')
     const items = await sql<{ count: string }>`
       SELECT count(*)::text AS count
       FROM pur_receipt_item i
       JOIN pur_receipt h ON h.id=i.receipt_id
-      WHERE h.receipt_no=${no}
+      WHERE h.company_id=${companyId}::uuid AND h.remarks=${marker}
     `.execute(db)
     expect(items.rows[0]?.count).toBe('0')
   })
 
   test('完整草稿读取覆盖超过默认分页的子记录且无静默截断', async () => {
-    const no = `${prefix}-FULL-DRAFT`
-    const created = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), draftInput(no))
+    const created = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), draftInput())
     // 默认 list 上限 200；直接插入超过分页数量的条目，证明 getSalesDraft 不走分页
     const extra = 210
     for (let i = 0; i < extra; i++) {
@@ -620,24 +653,27 @@ run('PG 集成（履约聚合草稿）', () => {
   })
 
   test('整单创建的嵌套行失败时不残留表头、子记录或操作日志', async () => {
-    const no = `${prefix}-ATOMIC-ROLLBACK`
+    // 系统编号无法预知失败单的单号：用唯一备注做残留探针（审计 changes 含 remarks 快照）
+    const marker = `${prefix}-ATOMIC-ROLLBACK`
     await expect(
-      fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), draftInput(no, '10', '0')),
+      fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), draftInput('10', '0', marker)),
     ).rejects.toThrow(/装箱行参数不合法/)
 
     const heads = await sql<{ n: string }>`
-      SELECT count(*)::text AS n FROM sal_delivery WHERE delivery_no=${no}
+      SELECT count(*)::text AS n FROM sal_delivery
+      WHERE company_id=${companyId}::uuid AND remarks=${marker}
     `.execute(db)
     const items = await sql<{ n: string }>`
       SELECT count(*)::text AS n
       FROM sal_delivery_item i
       JOIN sal_delivery h ON h.id=i.delivery_id
-      WHERE h.delivery_no=${no}
+      WHERE h.company_id=${companyId}::uuid AND h.remarks=${marker}
     `.execute(db)
     const logs = await sql<{ n: string }>`
       SELECT count(*)::text AS n
       FROM sys_audit_log
-      WHERE company_id=${companyId}::uuid AND record_label=${no}
+      WHERE company_id=${companyId}::uuid AND resource='sal_delivery'
+        AND changes::text LIKE ${'%' + marker + '%'}
     `.execute(db)
     expect(heads.rows[0]?.n).toBe('0')
     expect(items.rows[0]?.n).toBe('0')
@@ -646,7 +682,7 @@ run('PG 集成（履约聚合草稿）', () => {
 
   test('整单 HTTP 的结构错误与领域错误使用同一 bracket 索引路径', async () => {
     const structureInput = {
-      ...httpDraftInput(`${prefix}-HTTP-STRUCT`),
+      ...httpDraftInput(),
       packBoxes: [{ lines: [{ idx: 1, qty: 0, materialId }] }],
     }
     const structureResponse = await http.request('/api/v1/sales/deliveries', {
@@ -665,7 +701,6 @@ run('PG 集成（履约聚合草稿）', () => {
 
     const domainInput = {
       ...structureInput,
-      deliveryNo: `${prefix}-HTTP-DOMAIN`,
       packBoxes: [{ lines: [{ idx: 1, qty: '0', materialId }] }],
     }
     const domainResponse = await http.request('/api/v1/sales/deliveries', {
@@ -682,19 +717,21 @@ run('PG 集成（履约聚合草稿）', () => {
     }
     expect(domainBody.error.fields?.['packBoxes[0].lines[0].qty']).toEqual(['必须大于 0'])
 
+    // 手填编号行为用例：create 传 deliveryNo 一律拒绝（编号由系统按规则生成）
     const headerResponse = await http.request('/api/v1/sales/deliveries', {
       method: 'POST',
       headers: {
         authorization: 'Bearer test',
         'content-type': 'application/json',
       },
-      body: JSON.stringify(httpDraftInput('X'.repeat(33))),
+      body: JSON.stringify({ ...httpDraftInput(), deliveryNo: 'X'.repeat(33) }),
     })
     expect(headerResponse.status).toBe(400)
     const headerBody = await headerResponse.json() as {
-      error: { fields?: Record<string, string[]> }
+      error: { message: string; fields?: Record<string, string[]> }
     }
-    expect(headerBody.error.fields?.['header.deliveryNo']).toBeDefined()
+    expect(headerBody.error.message).toBe('编号由系统生成,不接受手填')
+    expect(headerBody.error.fields?.['header.deliveryNo']).toEqual(['编号由系统生成,不接受手填'])
   })
 
   test('整单 HTTP 创建与替换返回完整权威草稿', async () => {
@@ -704,14 +741,16 @@ run('PG 集成（履约聚合草稿）', () => {
         authorization: 'Bearer test',
         'content-type': 'application/json',
       },
-      body: JSON.stringify(httpDraftInput(`${prefix}-HTTP-SAVE`)),
+      body: JSON.stringify(httpDraftInput()),
     })
     expect(createResponse.status).toBe(201)
     const created = await createResponse.json() as {
       id: string
+      deliveryNo: string
       items: Array<{ id: string }>
       packBoxes: Array<{ id: string; boxNo: string; lines: Array<{ id: string }> }>
     }
+    expect(created.deliveryNo.length).toBeGreaterThan(0)
     expect(created.items[0]?.id).toBeTruthy()
     expect(created.packBoxes[0]?.boxNo).toBe('1')
     expect(created.packBoxes[0]?.lines[0]?.id).toBeTruthy()
@@ -723,7 +762,7 @@ run('PG 集成（履约聚合草稿）', () => {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        ...httpDraftInput(`${prefix}-HTTP-SAVE`),
+        ...httpDraftInput(),
         partyType: 'COMPANY',
         partyId: companyId,
       }),
@@ -742,7 +781,7 @@ run('PG 集成（履约聚合草稿）', () => {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        ...httpDraftInput(`${prefix}-HTTP-SAVE`),
+        ...httpDraftInput(),
         remarks: 'HTTP 替换',
         items: [],
         packBoxes: [],
@@ -766,13 +805,13 @@ run('PG 集成（履约聚合草稿）', () => {
         authorization: 'Bearer read-only',
         'content-type': 'application/json',
       },
-      body: JSON.stringify(httpDraftInput(`${prefix}-DENIED-CREATE`)),
+      body: JSON.stringify(httpDraftInput()),
     })
     expect(deniedCreate.status).toBe(403)
 
     const created = await fulfillment.createSalesDraft(
       p(SAL_HEAD, 'create'),
-      draftInput(`${prefix}-DENIED-UPDATE`),
+      draftInput(),
     )
     const deniedReplace = await http.request(`/api/v1/sales/deliveries/${created.id}`, {
       method: 'PUT',
@@ -780,7 +819,7 @@ run('PG 集成（履约聚合草稿）', () => {
         authorization: 'Bearer read-only',
         'content-type': 'application/json',
       },
-      body: JSON.stringify(httpDraftInput(created.deliveryNo)),
+      body: JSON.stringify(httpDraftInput()),
     })
     expect(deniedReplace.status).toBe(403)
   })
@@ -788,7 +827,7 @@ run('PG 集成（履约聚合草稿）', () => {
   test('销售发货子资源只保留 query/get，Meta 不再声明细粒度写能力', async () => {
     const created = await fulfillment.createSalesDraft(
       p(SAL_HEAD, 'create'),
-      draftInput(`${prefix}-READ-ONLY`),
+      draftInput(),
     )
     const tokenHeaders = { authorization: 'Bearer test' }
     const jsonHeaders = { ...tokenHeaders, 'content-type': 'application/json' }
@@ -837,9 +876,8 @@ run('PG 集成（履约聚合草稿）', () => {
   })
 
   test('整单替换以完整快照同时新增、修改和删除子记录', async () => {
-    const no = `${prefix}-ATOMIC-REPLACE`
     const created = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), {
-      ...draftInput(no),
+      ...draftInput(),
       items: [
         { idx: 1, qty: '10', orderItemId, warehouseId },
         { idx: 2, qty: '5', orderItemId: orderItem2Id, warehouseId },
@@ -857,7 +895,7 @@ run('PG 集成（履约聚合草稿）', () => {
     const removedLine = removedBox.lines[0]!
 
     const replaced = await fulfillment.replaceSalesDraft(p(SAL_HEAD, 'update'), created.id, {
-      ...draftInput(no),
+      ...draftInput(),
       remarks: '完整快照已替换',
       items: [
         { id: keptItem.id, idx: 1, qty: '12', orderItemId, warehouseId },
@@ -888,7 +926,7 @@ run('PG 集成（履约聚合草稿）', () => {
     await expect(fulfillment.getPackLine(p(PACK_LINE_RESOURCE, 'read'), removedLine.id)).rejects.toThrow(/不存在/)
 
     const cleared = await fulfillment.replaceSalesDraft(p(SAL_HEAD, 'update'), created.id, {
-      ...draftInput(no),
+      ...draftInput(),
       items: [],
       packBoxes: [],
     })
@@ -899,7 +937,7 @@ run('PG 集成（履约聚合草稿）', () => {
   test('整单替换先移除旧来源条目，允许同步切换往来方与新来源', async () => {
     const sales = await fulfillment.createSalesDraft(
       p(SAL_HEAD, 'create'),
-      draftInput(`${prefix}-SALES-PARTY-SWITCH`),
+      draftInput(),
     )
     const replacedSales = await fulfillment.replaceSalesDraft(p(SAL_HEAD, 'update'), sales.id, {
       ...salesReplaceInput(sales),
@@ -914,7 +952,7 @@ run('PG 集成（履约聚合草稿）', () => {
 
     const purchase = await fulfillment.createPurchaseReceiptDraft(
       p(PUR_HEAD, 'create'),
-      purchaseReceiptDraftInput(`${prefix}-PUR-PARTY-SWITCH`),
+      purchaseReceiptDraftInput(),
     )
     const replacedPurchase = await fulfillment.replacePurchaseReceiptDraft(
       p(PUR_HEAD, 'update'),
@@ -934,7 +972,7 @@ run('PG 集成（履约聚合草稿）', () => {
   test('切换往来方后若新子项失败，销售与采购完整草稿均回滚', async () => {
     const sales = await fulfillment.createSalesDraft(
       p(SAL_HEAD, 'create'),
-      draftInput(`${prefix}-S-PTY-RB`),
+      draftInput(),
     )
     const salesBefore = await fulfillment.getSalesDraft(p(SAL_HEAD, 'read'), sales.id)
     await expect(
@@ -952,7 +990,7 @@ run('PG 集成（履约聚合草稿）', () => {
 
     const purchase = await fulfillment.createPurchaseReceiptDraft(
       p(PUR_HEAD, 'create'),
-      purchaseReceiptDraftInput(`${prefix}-PUR-PARTY-ROLLBACK`),
+      purchaseReceiptDraftInput(),
     )
     const purchaseBefore = await fulfillment.getPurchaseReceiptDraft(p(PUR_HEAD, 'read'), purchase.id)
     await expect(
@@ -973,7 +1011,7 @@ run('PG 集成（履约聚合草稿）', () => {
     // 新形态由路由 guard(update, allOf[create, delete]) 承担，服务层只收 Permit。
     const sales = await fulfillment.createSalesDraft(
       p(SAL_HEAD, 'create'),
-      draftInput(`${prefix}-SALES-UPDATE-ONLY`),
+      draftInput(),
     )
     const replacedSales = await fulfillment.replaceSalesDraft(
       p(SAL_HEAD, 'update'),
@@ -990,7 +1028,7 @@ run('PG 集成（履约聚合草稿）', () => {
 
     const purchase = await fulfillment.createPurchaseReceiptDraft(
       p(PUR_HEAD, 'create'),
-      purchaseReceiptDraftInput(`${prefix}-PUR-DIFF-RBAC`),
+      purchaseReceiptDraftInput(),
     )
     // 只带 update 码的主体也能拿到凭证（allOf 由路由声明，不在服务层）
     const updateOnlyPermit = p(PUR_HEAD, 'update', limitedActor('purchase.receipt', ['update']))
@@ -1018,10 +1056,10 @@ run('PG 集成（履约聚合草稿）', () => {
 
     const sales = await fulfillment.createSalesDraft(
       p(SAL_HEAD, 'create'),
-      draftInput(`${prefix}-PUT-CODES-S`),
+      draftInput(),
     )
     const salesBody = JSON.stringify({
-      ...httpDraftInput(sales.deliveryNo),
+      ...httpDraftInput(),
       items: [],
       packBoxes: [],
     })
@@ -1042,9 +1080,9 @@ run('PG 集成（履约聚合草稿）', () => {
 
     const purchase = await fulfillment.createPurchaseReceiptDraft(
       p(PUR_HEAD, 'create'),
-      purchaseReceiptDraftInput(`${prefix}-PUT-CODES-P`),
+      purchaseReceiptDraftInput(),
     )
-    const purchaseWire = purchaseReceiptDraftInput(purchase.receiptNo)
+    const purchaseWire = purchaseReceiptDraftInput()
     const purchaseBody = JSON.stringify({
       companyId: purchaseWire.companyId,
       receiptNo: purchase.receiptNo,
@@ -1074,15 +1112,14 @@ run('PG 集成（履约聚合草稿）', () => {
   })
 
   test('整单替换的嵌套行失败时保持保存前的完整草稿', async () => {
-    const no = `${prefix}-ARR`
-    const created = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), draftInput(no))
+    const created = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), draftInput())
     const item = created.items[0]!
     const box = created.packBoxes[0]!
     const line = box.lines[0]!
 
     await expect(
       fulfillment.replaceSalesDraft(p(SAL_HEAD, 'update'), created.id, {
-        ...draftInput(no),
+        ...draftInput(),
         remarks: '不应落库',
         items: [{ id: item.id, idx: 1, qty: '99', orderItemId, warehouseId }],
         packBoxes: [{
@@ -1100,11 +1137,11 @@ run('PG 集成（履约聚合草稿）', () => {
   test('整单替换拒绝未知、跨单和重复的子记录身份并返回索引路径', async () => {
     const first = await fulfillment.createSalesDraft(
       p(SAL_HEAD, 'create'),
-      draftInput(`${prefix}-ATOMIC-ID-A`),
+      draftInput(),
     )
     const second = await fulfillment.createSalesDraft(
       p(SAL_HEAD, 'create'),
-      draftInput(`${prefix}-ATOMIC-ID-B`),
+      draftInput(),
     )
     const firstItem = first.items[0]!
     const firstBox = first.packBoxes[0]!
@@ -1113,7 +1150,7 @@ run('PG 集成（履约聚合草稿）', () => {
     const invalidDrafts = [
       {
         input: {
-          ...draftInput(first.deliveryNo),
+          ...draftInput(),
           items: [{ id: crypto.randomUUID(), idx: 1, qty: '10', orderItemId, warehouseId }],
           packBoxes: [],
         },
@@ -1121,7 +1158,7 @@ run('PG 集成（履约聚合草稿）', () => {
       },
       {
         input: {
-          ...draftInput(first.deliveryNo),
+          ...draftInput(),
           items: [{
             id: second.items[0]!.id,
             idx: 1,
@@ -1135,7 +1172,7 @@ run('PG 集成（履约聚合草稿）', () => {
       },
       {
         input: {
-          ...draftInput(first.deliveryNo),
+          ...draftInput(),
           items: [
             { id: firstItem.id, idx: 1, qty: '10', orderItemId, warehouseId },
             { id: firstItem.id, idx: 2, qty: '10', orderItemId, warehouseId },
@@ -1146,7 +1183,7 @@ run('PG 集成（履约聚合草稿）', () => {
       },
       {
         input: {
-          ...draftInput(first.deliveryNo),
+          ...draftInput(),
           items: [{ id: firstItem.id, idx: 1, qty: '10', orderItemId, warehouseId }],
           packBoxes: [
             { id: firstBox.id, lines: [] },
@@ -1157,7 +1194,7 @@ run('PG 集成（履约聚合草稿）', () => {
       },
       {
         input: {
-          ...draftInput(first.deliveryNo),
+          ...draftInput(),
           items: [{ id: firstItem.id, idx: 1, qty: '10', orderItemId, warehouseId }],
           packBoxes: [{
             id: firstBox.id,
@@ -1185,7 +1222,7 @@ run('PG 集成（履约聚合草稿）', () => {
   test('发货单删除级联删除箱与装箱行', async () => {
     const draft = await fulfillment.createSalesDraft(
       p(SAL_HEAD, 'create'),
-      draftInput(`${prefix}-CASCADE`),
+      draftInput(),
     )
     const box = draft.packBoxes[0]!
     const line = box.lines[0]!
@@ -1195,7 +1232,7 @@ run('PG 集成（履约聚合草稿）', () => {
   })
 
   test('状态守卫 409：审核后整单替换锁死（领域不变量不进权限系统）', async () => {
-    const input = draftInput(`${prefix}-LOCKED`)
+    const input = draftInput()
     const draft = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), input)
     const audited = await fulfillment.auditHead(p(SAL_HEAD, 'audit'), 'sales', draft.id)
     expect(audited.status).toBe('AUDITED')
@@ -1208,7 +1245,7 @@ run('PG 集成（履约聚合草稿）', () => {
     const replaceResponse = await http.request(`/api/v1/sales/deliveries/${draft.id}`, {
       method: 'PUT',
       headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
-      body: JSON.stringify(httpDraftInput(draft.deliveryNo)),
+      body: JSON.stringify(httpDraftInput()),
     })
     expect(replaceResponse.status).toBe(409)
   })
@@ -1216,7 +1253,7 @@ run('PG 集成（履约聚合草稿）', () => {
   test('全有或全无回归：装箱与发货不一致拒审、一致放行', async () => {
     const bad = await fulfillment.createSalesDraft(
       p(SAL_HEAD, 'create'),
-      draftInput(`${prefix}-BAD-PACK`, '10', '8'),
+      draftInput('10', '8'),
     )
     await expect(fulfillment.auditHead(p(SAL_HEAD, 'audit'), 'sales', bad.id)).rejects.toThrow(
       /装箱清单与发货量不一致/,
@@ -1224,7 +1261,7 @@ run('PG 集成（履约聚合草稿）', () => {
 
     const good = await fulfillment.createSalesDraft(
       p(SAL_HEAD, 'create'),
-      draftInput(`${prefix}-GOOD-PACK`),
+      draftInput(),
     )
     const audited = await fulfillment.auditHead(p(SAL_HEAD, 'audit'), 'sales', good.id)
     expect(audited.status).toBe('AUDITED')
@@ -1232,7 +1269,7 @@ run('PG 集成（履约聚合草稿）', () => {
 
   test('可先装箱后补条目：装箱行物料不强制属于本单发货条目', async () => {
     const draft = await fulfillment.createSalesDraft(p(SAL_HEAD, 'create'), {
-      ...draftInput(`${prefix}-PACK-FIRST`),
+      ...draftInput(),
       items: [],
       packBoxes: [{
         lines: [{ idx: 1, qty: '3', materialId: material2Id }],
@@ -1250,11 +1287,11 @@ run('PG 集成（履约聚合草稿）', () => {
   test('别名回归：六条列表路径正负成对（本公司可见 / 跨公司空集）', async () => {
     const sales = await fulfillment.createSalesDraft(
       p(SAL_HEAD, 'create'),
-      draftInput(`${prefix}-ALIAS-S`),
+      draftInput(),
     )
     const purchase = await fulfillment.createPurchaseReceiptDraft(
       p(PUR_HEAD, 'create'),
-      purchaseReceiptDraftInput(`${prefix}-ALIAS-P`),
+      purchaseReceiptDraftInput(),
     )
     // 前提自检：本用例必须跑在非 bypass 的行过滤上
     expect(p(SAL_HEAD, 'read', scopedActor).rowFilter.company).not.toBe('bypass')
@@ -1346,11 +1383,11 @@ run('PG 集成（履约聚合草稿）', () => {
   test('跨公司：单条一律 not_found，列表为空集', async () => {
     const sales = await fulfillment.createSalesDraft(
       p(SAL_HEAD, 'create'),
-      draftInput(`${prefix}-XCOMPANY-S`),
+      draftInput(),
     )
     const purchase = await fulfillment.createPurchaseReceiptDraft(
       p(PUR_HEAD, 'create'),
-      purchaseReceiptDraftInput(`${prefix}-XCOMPANY-P`),
+      purchaseReceiptDraftInput(),
     )
     const notFound = { code: 'not_found' }
 

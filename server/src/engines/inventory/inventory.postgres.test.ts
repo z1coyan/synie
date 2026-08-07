@@ -90,6 +90,7 @@ run('PG 集成（库存引擎不变量）', () => {
       .values([
         {
           id: warehouseId,
+          code: `TW1${suffix}`,
           name: `库存主仓-${suffix}`,
           company_id: companyId,
           is_leaf: true,
@@ -98,6 +99,7 @@ run('PG 集成（库存引擎不变量）', () => {
         },
         {
           id: otherWhId,
+          code: `TW2${suffix}`,
           name: `库存二仓-${suffix}`,
           company_id: companyId,
           is_leaf: true,
@@ -106,6 +108,7 @@ run('PG 集成（库存引擎不变量）', () => {
         },
         {
           id: groupWhId,
+          code: `TW3${suffix}`,
           name: `库存汇总仓-${suffix}`,
           company_id: companyId,
           is_leaf: false,
@@ -114,6 +117,7 @@ run('PG 集成（库存引擎不变量）', () => {
         },
         {
           id: allowNegWhId,
+          code: `TW4${suffix}`,
           name: `允许负库存仓-${suffix}`,
           company_id: companyId,
           is_leaf: true,
@@ -122,6 +126,7 @@ run('PG 集成（库存引擎不变量）', () => {
         },
         {
           id: otherCoWhId,
+          code: `TW5${suffix}`,
           name: `他司仓-${suffix}`,
           company_id: otherCompanyId,
           is_leaf: true,

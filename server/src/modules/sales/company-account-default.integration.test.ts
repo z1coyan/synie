@@ -13,6 +13,7 @@ import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { onError } from '~/platform/http/errors.ts'
 import { createRegistry } from '~/platform/meta/registry.ts'
+import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { createAccountService } from '../base/account-service.ts'
 import { createCompanyService } from '../base/company-service.ts'
@@ -67,7 +68,8 @@ run('PG 集成（公司默认过账科目）', () => {
   const sealed = createSealedResourceRegistry()
   const baseAuthz = createAuthzEnforcer(sealed)
   const currencies = createCurrencyService(db, sealed)
-  const companies = createCompanyService(db, sealed)
+  const numbering = createNumberingService(db, buildNumberingCatalog(sealed), sealed)
+  const companies = createCompanyService(db, numbering, sealed)
   const accounts = createAccountService(db, sealed)
   const defaults = createCompanyAccountDefaultService(db, sealed)
   const actor = superActor()

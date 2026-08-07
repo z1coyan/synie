@@ -224,9 +224,10 @@ run('PG 集成（扫荡 11：inventory/manufacturing 余量授权语义）', () 
     await db
       .insertInto('inv_warehouse')
       .values([
-        { id: warehouseRootA, name: `甲根仓-${suffix}`, is_leaf: false, company_id: companyA },
+        { id: warehouseRootA, code: `WR${suffix}`, name: `甲根仓-${suffix}`, is_leaf: false, company_id: companyA },
         {
           id: warehouseOutsourcedA,
+          code: `WQ${suffix}`,
           name: `甲外协仓-${suffix}`,
           is_leaf: true,
           company_id: companyA,
@@ -235,7 +236,7 @@ run('PG 集成（扫荡 11：inventory/manufacturing 余量授权语义）', () 
           party_type: 'supplier',
           party_id: supplierId,
         },
-        { id: warehouseB, name: `乙仓-${suffix}`, is_leaf: true, company_id: companyB },
+        { id: warehouseB, code: `WW${suffix}`, name: `乙仓-${suffix}`, is_leaf: true, company_id: companyB },
       ])
       .execute()
     await db

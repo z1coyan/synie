@@ -120,7 +120,7 @@ export function orderHeadMeta(side: TradingSide): ResourceMeta {
         ]
   const fields: ResourceMeta['fields'] = [
     f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-    f('order_no', 'orderNo', 'string', '订单号', { required: true, filterable: true, sortable: true }),
+    f('order_no', 'orderNo', 'string', '订单号', { readonly: true, filterable: true, sortable: true }),
     f('order_date', 'orderDate', 'date', '订单日期', { required: true, filterable: true, sortable: true }),
     f('order_type', 'orderType', 'enum', '订单类型', {
       required: true,

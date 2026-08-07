@@ -285,26 +285,40 @@ run('PG 集成（车间权限收口：需求单限定入口授权）', () => {
     await grant(plannerRoleId, PLANNER_CODES, 'all')
     await grant(shopRoleId, SHOP_CODES, 'dept')
 
-    // 派生草稿经编号规则取 demand_no：已有启用规则则复用，否则建本测前缀规则
-    const existingRule = await db
-      .selectFrom('sys_numbering_rule')
-      .select('id')
-      .where('resource', '=', 'mfg.demand')
-      .where('enabled', '=', true)
-      .executeTakeFirst()
-    if (!existingRule) {
-      const rule = await numbering.create(adminPermit('sysNumberingRules', 'create'), {
-        resource: 'mfg.demand',
-        name: `W${suffix}需求`,
-        segments: [
-          { type: 'text', value: `WD${suffix}-` },
-          { type: 'seq', padding: 3 },
-        ],
-        perCompany: false,
-        enabled: true,
-      })
-      createdNumberingRules.push(rule.id)
+    // 派生草稿/工单经编号规则取号：已有启用规则则复用，否则建本测前缀规则
+    // （共享库并发建撞 one_enabled_per_resource 唯一索引时回落复用）
+    async function ensureRule(resource: string, name: string, prefix: string): Promise<void> {
+      const existing = await db
+        .selectFrom('sys_numbering_rule')
+        .select('id')
+        .where('resource', '=', resource)
+        .where('enabled', '=', true)
+        .executeTakeFirst()
+      if (existing) return
+      try {
+        const rule = await numbering.create(adminPermit('sysNumberingRules', 'create'), {
+          resource,
+          name,
+          segments: [
+            { type: 'text', value: prefix },
+            { type: 'seq', padding: 3 },
+          ],
+          perCompany: false,
+          enabled: true,
+        })
+        createdNumberingRules.push(rule.id)
+      } catch (err) {
+        const again = await db
+          .selectFrom('sys_numbering_rule')
+          .select('id')
+          .where('resource', '=', resource)
+          .where('enabled', '=', true)
+          .executeTakeFirst()
+        if (!again) throw err
+      }
     }
+    await ensureRule('mfg.demand', `W${suffix}需求`, `WD${suffix}-`)
+    await ensureRule('mfg.work_order', `W${suffix}工单`, `WW${suffix}-`)
 
     app = await buildTestApp(db, { registry })
     plannerHeaders = await login(planner.user.username, planner.password)
@@ -314,7 +328,6 @@ run('PG 集成（车间权限收口：需求单限定入口授权）', () => {
     // 来源需求单：计划建单 → 确认 → 下发车间 A（全链路本身即计划回归断言）
     const created = await post('/demands', plannerHeaders, {
       companyId,
-      demandNo: `WS1-${suffix}`,
       assignType: 'STOCK',
     })
     expect(created.status).toBe(201)
@@ -341,7 +354,6 @@ run('PG 集成（车间权限收口：需求单限定入口授权）', () => {
     // 车间 A 从下发到本车间的需求行开工单（带 BOM → 创建即快照，盖章归属车间 A）
     const wo = await post('/work-orders', shopAHeaders, {
       demandItemId: sourceItemId,
-      workOrderNo: `WW${suffix}`,
       qty: '10',
       bomId,
     })
@@ -518,7 +530,7 @@ run('PG 集成（车间权限收口：需求单限定入口授权）', () => {
 
   test('车间手工建单 403；销售勾选纳入端点 403；下发/关闭/作废码不授', async () => {
     // 手工建单
-    const create = await post('/demands', shopAHeaders, { companyId, demandNo: `WX-${suffix}` })
+    const create = await post('/demands', shopAHeaders, { companyId })
     expect(create.status).toBe(403)
     // 勾选销售条目纳入（写路径 = 建行，码为 mfg.demand:create）
     const tick = await post('/demand-items', shopAHeaders, {
@@ -548,7 +560,6 @@ run('PG 集成（车间权限收口：需求单限定入口授权）', () => {
 
     const created = await post('/demands', plannerHeaders, {
       companyId,
-      demandNo: `WS2-${suffix}`,
       assignType: 'STOCK',
     })
     expect(created.status).toBe(201)

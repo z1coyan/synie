@@ -174,10 +174,17 @@ function cleanup(created: Created): void {
     ...created.itemIds,
     ...created.tierIds,
   ].filter((id): id is string => id !== null);
+  // 报价编号由系统按规则生成(不再带 prefix),头表一律按 id 清场
+  const salesQuotationIds = uuidList(
+    created.salesQuotationId ? [created.salesQuotationId] : [],
+  );
+  const purchaseQuotationIds = uuidList(
+    created.purchaseQuotationId ? [created.purchaseQuotationId] : [],
+  );
   postgres(`
     DELETE FROM sys_audit_log WHERE record_id=ANY(${uuidList(recordIds)});
-    DELETE FROM sal_quotation WHERE quotation_no LIKE '${prefix}%';
-    DELETE FROM pur_quotation WHERE quotation_no LIKE '${prefix}%';
+    DELETE FROM sal_quotation WHERE id=ANY(${salesQuotationIds});
+    DELETE FROM pur_quotation WHERE id=ANY(${purchaseQuotationIds});
     DELETE FROM inv_material WHERE code LIKE '${prefix}%';
     DELETE FROM inv_material_category WHERE code LIKE '${prefix}%';
     DELETE FROM bas_unit WHERE symbol LIKE '${prefix}%';
@@ -188,8 +195,8 @@ function cleanup(created: Created): void {
   `);
   const residue = postgres(`
     SELECT
-      (SELECT count(*) FROM sal_quotation WHERE quotation_no LIKE '${prefix}%'),
-      (SELECT count(*) FROM pur_quotation WHERE quotation_no LIKE '${prefix}%'),
+      (SELECT count(*) FROM sal_quotation WHERE id=ANY(${salesQuotationIds})),
+      (SELECT count(*) FROM pur_quotation WHERE id=ANY(${purchaseQuotationIds})),
       (SELECT count(*) FROM sal_quotation_item WHERE id=ANY(${uuidList(created.itemIds)})),
       (SELECT count(*) FROM pur_quotation_item WHERE id=ANY(${uuidList(created.itemIds)})),
       (SELECT count(*) FROM sal_quotation_tier WHERE id=ANY(${uuidList(created.tierIds)})),
@@ -267,15 +274,15 @@ test("销售/采购报价以 Go REST 完成混合定价、审核、过期、候�
     }
   });
 
-  const salesNo = `${prefix}-SAL`;
-  const purchaseNo = `${prefix}-PUR`;
+  // 报价编号由系统按规则生成:create 不传 quotationNo(手填即 400),从响应读出
+  let salesNo = "";
+  let purchaseNo = "";
   try {
     const fixture = createFixture();
     await loginViaUI(page);
     const sideInputs = [
       {
         side: "sales",
-        quotationNo: salesNo,
         partyType: "CUSTOMER",
         partyId: fixture.customerId,
         quotationDate: "2026-07-01",
@@ -283,7 +290,6 @@ test("销售/采购报价以 Go REST 完成混合定价、审核、过期、候�
       },
       {
         side: "purchase",
-        quotationNo: purchaseNo,
         partyType: "SUPPLIER",
         partyId: fixture.supplierId,
         quotationDate: "2026-07-01",
@@ -292,12 +298,15 @@ test("销售/采购报价以 Go REST 完成混合定价、审核、过期、候�
     ] as const;
 
     for (const input of sideInputs) {
-      const quotation = await apiJSON<{ id: string; status: string }>(
+      const quotation = await apiJSON<{
+        id: string;
+        status: string;
+        quotationNo: string;
+      }>(
         request,
         "post",
         `/api/v1/${input.side}/quotations`,
         {
-          quotationNo: input.quotationNo,
           quotationDate: input.quotationDate,
           validUntil: input.validUntil,
           partyType: input.partyType,
@@ -309,8 +318,14 @@ test("销售/采购报价以 Go REST 完成混合定价、审核、过期、候�
         201,
       );
       expect(quotation.status).toBe("DRAFT");
-      if (input.side === "sales") created.salesQuotationId = quotation.id;
-      else created.purchaseQuotationId = quotation.id;
+      expect(quotation.quotationNo, "系统应生成报价编号").toBeTruthy();
+      if (input.side === "sales") {
+        created.salesQuotationId = quotation.id;
+        salesNo = quotation.quotationNo;
+      } else {
+        created.purchaseQuotationId = quotation.id;
+        purchaseNo = quotation.quotationNo;
+      }
 
       const fixed = await apiJSON<{ id: string; price: string }>(
         request,

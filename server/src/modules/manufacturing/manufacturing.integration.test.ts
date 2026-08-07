@@ -43,6 +43,40 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
     return decision.permit
   }
+  /**
+   * 编号规则：启用规则全局唯一，已有则复用，否则建本测前缀规则；
+   * 共享库并发建撞 one_enabled_per_resource 唯一索引时回落复用
+   */
+  async function ensureRule(resource: string, name: string, prefix: string): Promise<void> {
+    const existing = await db
+      .selectFrom('sys_numbering_rule')
+      .select('id')
+      .where('resource', '=', resource)
+      .where('enabled', '=', true)
+      .executeTakeFirst()
+    if (existing) return
+    try {
+      const rule = await numbering.create(masterPermit('sysNumberingRules', 'create'), {
+        resource,
+        name,
+        segments: [
+          { type: 'text', value: prefix },
+          { type: 'seq', padding: 4 },
+        ],
+        perCompany: false,
+        enabled: true,
+      })
+      cleanupIds.rules.push(rule.id)
+    } catch (err) {
+      const again = await db
+        .selectFrom('sys_numbering_rule')
+        .select('id')
+        .where('resource', '=', resource)
+        .where('enabled', '=', true)
+        .executeTakeFirst()
+      if (!again) throw err
+    }
+  }
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10)
   const currencyId = crypto.randomUUID()
   const companyId = crypto.randomUUID()
@@ -63,6 +97,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     workOrders: [] as string[],
     outputs: [] as string[],
     files: [] as string[],
+    rules: [] as string[],
   }
 
   async function seed(): Promise<void> {
@@ -129,6 +164,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       .insertInto('inv_warehouse')
       .values({
         id: warehouseId,
+        code: `MW${suffix}`,
         name: `制造仓-${suffix}`,
         company_id: companyId,
         is_leaf: true,
@@ -146,6 +182,14 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
         path: `/${workshopId}/`,
       })
       .execute()
+
+    // 主数据与单据编号规则（编号一律系统生成，不接受手填）：已有启用规则则复用
+    await ensureRule('mfg.operation', `T${suffix}工序`, `TO${suffix}-`)
+    await ensureRule('mfg.route_template', `T${suffix}模板`, `TT${suffix}-`)
+    await ensureRule('mfg.bom', `T${suffix}BOM`, `TB${suffix}-`)
+    await ensureRule('mfg.demand', `T${suffix}需求`, `TD${suffix}-`)
+    await ensureRule('mfg.work_order', `T${suffix}工单`, `TW${suffix}-`)
+    await ensureRule('mfg.output', `T${suffix}入库`, `TI${suffix}-`)
   }
 
   async function cleanup(): Promise<void> {
@@ -196,6 +240,10 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       await db.deleteFrom('sys_audit_log').where('record_id', '=', id).execute()
       await db.deleteFrom('mfg_operation').where('id', '=', id).execute()
     }
+    for (const id of cleanupIds.rules) {
+      await db.deleteFrom('sys_audit_log').where('record_id', '=', id).execute()
+      await db.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
+    }
     await db.deleteFrom('inv_warehouse').where('id', '=', warehouseId).execute()
     await db.deleteFrom('sys_department').where('id', '=', workshopId).execute()
     await db
@@ -222,14 +270,12 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
 
   test('工序/工艺模板/BOM 配料与模板带入', async () => {
     const op = await mfg.master.createOperation(masterPermit('mfgOperations', 'create'), {
-      code: `OP${suffix}`,
       name: `冲网-${suffix}`,
     })
     cleanupIds.operations.push(op.id)
-    expect(op.code).toBe(`OP${suffix}`)
+    expect(op.code.trim().length).toBeGreaterThan(0)
 
     const tpl = await mfg.master.createTemplate(masterPermit('mfgProcessTemplates', 'create'), {
-      code: `T${suffix}`,
       name: `模板-${suffix}`,
     })
     cleanupIds.templates.push(tpl.id)
@@ -242,7 +288,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     })
 
     const bom = await mfg.master.createBom(masterPermit('mfgBoms', 'create'), {
-      code: `B${suffix}`,
       materialId,
       planName: '自用',
     })
@@ -287,7 +332,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     await mfg.master.activateBom(masterPermit('mfgBoms', 'update'), bom.id)
 
     const draftOnly = await mfg.master.createBom(masterPermit('mfgBoms', 'create'), {
-      code: `BD${suffix}`,
       materialId,
       planName: '可删草稿',
     })
@@ -297,7 +341,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const d = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'purchase',
-      demandNo: `DBOM${suffix}`,
     })
     cleanupIds.demands.push(d.id)
     const li = await mfg.demands.createDemandItem(permit, {
@@ -311,7 +354,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     await mfg.demands.confirmDemand(permit, d.id)
     const woBom = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: li.id,
-      workOrderNo: `WOB${suffix}`,
     })
     cleanupIds.workOrders.push(woBom.id)
     const applied = await mfg.workOrders.applyBom(permit, woBom.id, bom.id)
@@ -327,7 +369,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'purchase',
-      demandNo: `DST${suffix}`,
       demandDate: '2026-07-20',
     })
     cleanupIds.demands.push(demand.id)
@@ -368,13 +409,12 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
   test('指派类型：草稿保存即必填，与下发车间联动校验', async () => {
     // 缺指派类型 → validation
     await expect(
-      mfg.demands.createDemand(permit, { companyId, demandNo: `DA0${suffix}` }),
+      mfg.demands.createDemand(permit, { companyId }),
     ).rejects.toMatchObject({ code: 'validation', fields: { assignType: expect.anything() } })
     // 生产必须填下发车间
     await expect(
       mfg.demands.createDemand(permit, {
         companyId,
-        demandNo: `DA1${suffix}`,
         assignType: 'make',
       }),
     ).rejects.toMatchObject({
@@ -385,7 +425,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     await expect(
       mfg.demands.createDemand(permit, {
         companyId,
-        demandNo: `DA2${suffix}`,
         assignType: 'stock',
         assignedDeptId: workshopId,
       }),
@@ -398,7 +437,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'purchase',
-      demandNo: `DA3${suffix}`,
       needDate: '2026-08-10',
     })
     cleanupIds.demands.push(demand.id)
@@ -438,7 +476,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'stock',
-      demandNo: `DD${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
     await mfg.demands.createDemandItem(permit, {
@@ -477,7 +514,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'purchase',
-      demandNo: `DN${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
     await expect(
@@ -509,7 +545,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'purchase',
-      demandNo: `DSRC${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
     const line = await mfg.demands.createDemandItem(permit, {
@@ -569,7 +604,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'purchase',
-      demandNo: `DDR${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
     const line = await mfg.demands.createDemandItem(permit, {
@@ -631,7 +665,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'purchase',
-      demandNo: `D${suffix}`,
       remarks: '集成测试',
     })
     cleanupIds.demands.push(demand.id)
@@ -655,7 +688,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     // 分批：先开 40，再开 60；满量后不可再开
     const wo = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line.id,
-      workOrderNo: `WO${suffix}`,
       qty: '40',
     })
     cleanupIds.workOrders.push(wo.id)
@@ -666,7 +698,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
 
     const wo2 = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line.id,
-      workOrderNo: `WO2${suffix}`,
       qty: '60',
     })
     cleanupIds.workOrders.push(wo2.id)
@@ -675,7 +706,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     await expect(
       mfg.workOrders.createWorkOrder(permit, {
         demandItemId: line.id,
-        workOrderNo: `WO3${suffix}`,
         qty: '1',
       }),
     ).rejects.toMatchObject({ code: 'conflict' })
@@ -686,7 +716,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
 
     const output = await mfg.outputs.createOutput(permit, {
       companyId,
-      outputNo: `O${suffix}`,
       warehouseId,
       outputDate: '2026-08-02',
     })
@@ -705,7 +734,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     // 子行列表（via 链编译成宿主 EXISTS，别名须与投影子查询一致）
     const itemsPage = await mfg.outputs.listOutputItems(permit, { outputId: output.id })
     expect(itemsPage.count).toBe(1)
-    expect(itemsPage.results[0]!.outputNo).toBe(`O${suffix}`)
+    expect(itemsPage.results[0]!.outputNo).toBe(output.outputNo)
     const demandItemsPage = await mfg.demands.listDemandItems(permit, { demandId: demand.id })
     expect(demandItemsPage.count).toBe(1)
     const woPage = await mfg.workOrders.listWorkOrders(permit, { companyId })
@@ -725,7 +754,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
 
     const output2 = await mfg.outputs.createOutput(permit, {
       companyId,
-      outputNo: `O2${suffix}`,
       warehouseId,
     })
     cleanupIds.outputs.push(output2.id)
@@ -746,7 +774,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     // 工单2(60) 一次入满 → 需求行双投影完成
     const output3 = await mfg.outputs.createOutput(permit, {
       companyId,
-      outputNo: `O3${suffix}`,
       warehouseId,
     })
     cleanupIds.outputs.push(output3.id)
@@ -778,7 +805,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'purchase',
-      demandNo: `DT${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
     const line = await mfg.demands.createDemandItem(permit, {
@@ -792,14 +818,12 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     await mfg.demands.confirmDemand(permit, demand.id)
     const wo = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line.id,
-      workOrderNo: `WOT${suffix}`,
     })
     cleanupIds.workOrders.push(wo.id)
 
     // 默认容差 0：超入 1 应失败
     const output = await mfg.outputs.createOutput(permit, {
       companyId,
-      outputNo: `OX${suffix}`,
       warehouseId,
     })
     cleanupIds.outputs.push(output.id)
@@ -832,7 +856,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'purchase',
-      demandNo: `DTM${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
     const line = await mfg.demands.createDemandItem(permit, {
@@ -846,12 +869,10 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     await mfg.demands.confirmDemand(permit, demand.id)
     const wo = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line.id,
-      workOrderNo: `WOTM${suffix}`,
     })
     cleanupIds.workOrders.push(wo.id)
     const output = await mfg.outputs.createOutput(permit, {
       companyId,
-      outputNo: `OXM${suffix}`,
       warehouseId,
     })
     cleanupIds.outputs.push(output.id)
@@ -887,7 +908,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'purchase',
-      demandNo: `DS${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
     const stockLine = await mfg.demands.createDemandItem(permit, {
@@ -907,7 +927,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demand2 = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'purchase',
-      demandNo: `DC${suffix}`,
     })
     cleanupIds.demands.push(demand2.id)
     const buyLine = await mfg.demands.createDemandItem(permit, {
@@ -953,7 +972,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'purchase',
-      demandNo: `DDRAW${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
     const line = await mfg.demands.createDemandItem(permit, {
@@ -967,7 +985,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     await mfg.demands.confirmDemand(permit, demand.id)
     const wo = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line.id,
-      workOrderNo: `WODRAW${suffix}`,
       qty: '8',
     })
     cleanupIds.workOrders.push(wo.id)
@@ -992,7 +1009,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demand2 = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'purchase',
-      demandNo: `DNODRAW${suffix}`,
     })
     cleanupIds.demands.push(demand2.id)
     const line2 = await mfg.demands.createDemandItem(permit, {
@@ -1006,7 +1022,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     await mfg.demands.confirmDemand(permit, demand2.id)
     const wo2 = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line2.id,
-      workOrderNo: `WONODRAW${suffix}`,
       qty: '1',
     })
     cleanupIds.workOrders.push(wo2.id)
@@ -1021,7 +1036,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
 
   test('创建工单可直接挂启用中 BOM 并快照', async () => {
     const bom = await mfg.master.createBom(masterPermit('mfgBoms', 'create'), {
-      code: `BCR${suffix}`,
       materialId,
       planName: '创建时挂',
       status: 'active',
@@ -1036,7 +1050,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'purchase',
-      demandNo: `DCR${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
     const line = await mfg.demands.createDemandItem(permit, {
@@ -1050,7 +1063,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     await mfg.demands.confirmDemand(permit, demand.id)
     const wo = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line.id,
-      workOrderNo: `WOCR${suffix}`,
       qty: '6',
       bomId: bom.id,
     })
@@ -1065,7 +1077,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'purchase',
-      demandNo: `DINL${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
     const line = await mfg.demands.createDemandItem(permit, {
@@ -1079,13 +1090,11 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     await mfg.demands.confirmDemand(permit, demand.id)
     const wo = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line.id,
-      workOrderNo: `WOINL${suffix}`,
       qty: '12',
     })
     cleanupIds.workOrders.push(wo.id)
 
     const { workOrder, bom } = await mfg.workOrders.createInlineBom(permit, wo.id, {
-      code: `BINL${suffix}`,
       planName: '工单内嵌',
       components: [
         {
@@ -1112,7 +1121,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'purchase',
-      demandNo: `DMX${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
     const line = await mfg.demands.createDemandItem(permit, {
@@ -1127,7 +1135,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
 
     const wo = await mfg.workOrders.createWorkOrder(permit, {
       demandItemId: line.id,
-      workOrderNo: `WOMX${suffix}`,
       qty: '40',
     })
     cleanupIds.workOrders.push(wo.id)
@@ -1165,7 +1172,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
 
     const output = await mfg.outputs.createOutput(permit, {
       companyId,
-      outputNo: `OMX${suffix}`,
       warehouseId,
     })
     cleanupIds.outputs.push(output.id)
@@ -1226,7 +1232,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     // BOM 母物料/配料行/副产品行均限库存类
     await expect(
       mfg.master.createBom(masterPermit('mfgBoms', 'create'), {
-        code: `BV${suffix}`,
         materialId: virtualMaterialId,
       }),
     ).rejects.toMatchObject({
@@ -1234,7 +1239,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       fields: { materialId: ['仅库存类物料可进该单据'] },
     })
     const bom = await mfg.master.createBom(masterPermit('mfgBoms', 'create'), {
-      code: `BS${suffix}`,
       materialId,
     })
     cleanupIds.boms.push(bom.id)
@@ -1265,7 +1269,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const demand = await mfg.demands.createDemand(permit, {
       companyId,
       assignType: 'purchase',
-      demandNo: `DMT${suffix}`,
     })
     cleanupIds.demands.push(demand.id)
     const line = await mfg.demands.createDemandItem(permit, {

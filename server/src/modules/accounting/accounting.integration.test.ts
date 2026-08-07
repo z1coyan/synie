@@ -2,7 +2,7 @@
  * 手工会计凭证 / 总账分录 / 应收应付报表 PG 集成测试。
  * 门控 SYNIE_TEST_DATABASE_URL。
  */
-import { afterAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { createDb } from '~/db/index.ts'
 import { withTx } from '~/db/tx.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
@@ -50,6 +50,24 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
   const journalPermit = () => permit('accGlJournals', 'read')
   const linePermit = () => permit('accGlJournalLines', 'read')
   const entryPermit = () => permit('accGlEntries', 'read')
+
+  beforeAll(async () => {
+    // 凭证编号改系统生成后须持有启用规则（共享库规则可能被清；幂等补建）
+    const existing = await db
+      .selectFrom('sys_numbering_rule')
+      .select('id')
+      .where('resource', '=', 'acc.gl_journal')
+      .where('enabled', '=', true)
+      .executeTakeFirst()
+    if (!existing) {
+      await numbering.create(permit('sysNumberingRules', 'create'), {
+        resource: 'acc.gl_journal',
+        name: `凭证编号-T${crypto.randomUUID().slice(0, 6)}`,
+        segments: [{ type: 'text', value: 'T(J)-' }, { type: 'seq', padding: 4 }],
+        perCompany: false,
+      })
+    }
+  })
 
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
   const prefix = `GLJ${suffix}`
@@ -175,7 +193,6 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
     const date = '2026-07-26'
 
     const journal = await journals.create(journalPermit(), {
-      voucherNo: `${prefix}-A`,
       date,
       companyId: fx.companyId,
       remarks: `${prefix}创建`,
@@ -292,7 +309,6 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
   test('仅草稿可删；删除头 cascade 行且不伪造行 destroy 审计', async () => {
     const fx = await seedFixture()
     const journal = await journals.create(journalPermit(), {
-      voucherNo: `${prefix}-DEL`,
       date: '2026-07-26',
       companyId: fx.companyId,
     })
@@ -324,7 +340,6 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
   test('审核无过账日期 → validation；配平失败 → 引擎 validation', async () => {
     const fx = await seedFixture()
     const journal = await journals.create(journalPermit(), {
-      voucherNo: `${prefix}-BAD`,
       date: '2026-07-26',
       companyId: fx.companyId,
     })
@@ -355,7 +370,6 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
   test('红冲：引擎 reverse 取负对冲 + is_reversed；重复红冲 conflict', async () => {
     const fx = await seedFixture()
     const journal = await journals.create(journalPermit(), {
-      voucherNo: `${prefix}-REV`,
       date: '2026-07-26',
       companyId: fx.companyId,
     })

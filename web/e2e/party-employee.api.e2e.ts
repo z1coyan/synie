@@ -5,9 +5,9 @@ import { loginViaUI, sessionCookieHeader } from "./fixtures/session";
 const goAPIURL = process.env.SYNIE_API_URL ?? process.env.GO_API_URL ?? 'http://127.0.0.1:8080/api/v1'
 const pgDb = process.env.SYNIE_PG_DB ?? "synie";
 const suffix = Date.now().toString(36).toUpperCase();
-const customerCode = `E2E_C_${suffix}`;
-const supplierCode = `E2E_S_${suffix}`;
-const employeeCode = `E2E_E_${suffix}`;
+// 客户/供应商编码仍手填,但服务端新增 ^[A-Za-z0-9]+$ 校验——不得含下划线等符号
+const customerCode = `E2EC${suffix}`;
+const supplierCode = `E2ES${suffix}`;
 
 type CreatedRecord = {
   path: "/base/customers" | "/base/suppliers" | "/hr/employees";
@@ -227,7 +227,18 @@ test("客户、供应商、员工 Grid/Drawer 全程使用 Go REST", async ({ pa
       created,
     });
 
-    await page.goto("/hr/employees");
+    // 侧栏链接客户端导航进员工页:路由 loader 在浏览器侧预取 meta(goto 直开走 SSR,
+    // meta 请求发自前端服务端、浏览器观测不到,会漏 GET meta/resources/hrEmployees);
+    // 限定侧栏分组取链接,避开面包屑同名「员工档案」
+    const sidebar = page.getByRole("complementary");
+    const employeesLink = sidebar.getByRole("link", {
+      name: "员工档案",
+      exact: true,
+    });
+    if (!(await employeesLink.isVisible().catch(() => false))) {
+      await page.getByRole("button", { name: "人事", exact: true }).click();
+    }
+    await employeesLink.click();
     await expect(
       page.getByRole("heading", { name: "员工档案", exact: true }),
     ).toBeVisible();
@@ -239,7 +250,7 @@ test("客户、供应商、员工 Grid/Drawer 全程使用 Go REST", async ({ pa
 
     const createEmployee = page.getByRole("dialog", { name: "新增员工" });
     await expect(createEmployee).toBeVisible();
-    await createEmployee.getByLabel("员工编号").fill(employeeCode);
+    // 员工编号由系统按 hr.employee 编号规则生成(表单字段只读),创建后从响应读出
     await createEmployee
       .getByLabel("员工姓名")
       .fill(`浏览器测试员工-${suffix}`);
@@ -264,6 +275,8 @@ test("客户、供应商、员工 Grid/Drawer 全程使用 Go REST", async ({ pa
       .click();
     const employeeBody = await expectOK(createEmployeeResponse);
     const employeeID = String(employeeBody?.id);
+    const employeeCode = String(employeeBody?.code ?? "");
+    expect(employeeCode, "系统应生成员工编号").toBeTruthy();
     assertUUID(employeeID);
     expect(Number(employeeBody?.dailyWage)).toBe(300.5);
     expect(Number(employeeBody?.monthlyAllowance)).toBe(800);
@@ -351,7 +364,10 @@ test("客户、供应商、员工 Grid/Drawer 全程使用 Go REST", async ({ pa
     await expectOK(deleteEmployeeResponse);
     await expect(employeeRow).toBeHidden();
 
-    expect(restRequests).toEqual(
+    expect(
+      restRequests,
+      `实际 party/employee REST 请求:\n${restRequests.join("\n")}`,
+    ).toEqual(
       expect.arrayContaining([
         "GET /api/v1/meta/resources/salCustomers",
         "POST /api/v1/base/customers/query",

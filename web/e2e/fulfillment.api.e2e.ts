@@ -129,6 +129,31 @@ async function openDeliveryEdit(
   return drawer;
 }
 
+/**
+ * 公司选择器兜底：新建抽屉默认公司=授权公司按编码升序首家(form-defaults.ts)。
+ * 已默认选中目标公司时跳过(选择器不再呈现「请选择…」占位),否则点开重选。
+ */
+async function ensureDrawerCompany(
+  page: Page,
+  drawer: Locator,
+  companyName: string,
+): Promise<void> {
+  // 「公司*」标签是 group 的兄弟文本节点,不能按 group 文本过滤;
+  // 以「内部含 公司 字样触发钮」定位公司选择器 group(选中/未选中两态同构)
+  const group = drawer
+    .getByRole("group")
+    .filter({ has: page.getByRole("button", { name: /公司/ }) })
+    .first();
+  await expect(group).toBeVisible();
+  if (await group.getByText(companyName).isVisible().catch(() => false)) {
+    return;
+  }
+  await group.click();
+  const option = page.getByRole("option").filter({ hasText: companyName }).first();
+  await expect(option).toBeVisible();
+  await option.click();
+}
+
 async function chooseDrawerOption(
   page: Page,
   drawer: Locator,
@@ -188,12 +213,13 @@ function cleanup(ids: string[]): void {
     ids.length === 0
       ? "ARRAY[]::uuid[]"
       : `ARRAY[${ids.map((id) => `'${id}'::uuid`).join(",")}]`;
+  // 单据编号由系统按规则生成(不再带 prefix),头表一律按 id 清场
   postgres(`
     DELETE FROM sys_audit_log WHERE record_id=ANY(${records});
-    DELETE FROM sal_delivery WHERE delivery_no LIKE '${prefix}%';
-    DELETE FROM pur_receipt WHERE receipt_no LIKE '${prefix}%';
-    DELETE FROM pur_outsourced_issue WHERE issue_no LIKE '${prefix}%';
-    DELETE FROM pur_outsourced_receipt WHERE receipt_no LIKE '${prefix}%';
+    DELETE FROM sal_delivery WHERE id=ANY(${records});
+    DELETE FROM pur_receipt WHERE id=ANY(${records});
+    DELETE FROM pur_outsourced_issue WHERE id=ANY(${records});
+    DELETE FROM pur_outsourced_receipt WHERE id=ANY(${records});
     DELETE FROM bas_account WHERE code LIKE '${prefix}%';
     DELETE FROM sal_customers WHERE code LIKE '${prefix}%';
     DELETE FROM pur_supplier WHERE code LIKE '${prefix}%';
@@ -255,54 +281,61 @@ test("标准与委外履约页面使用 Go REST 且业务 GraphQL 为零", async
       debitAccountId: fixture.debitAccountId,
       creditAccountId: fixture.creditAccountId,
     };
+    // 单据编号由系统按规则生成:create 不再携带编号(手填即 400),从响应读出
+    const salesDeliveryDoc = await post<{ id: string; deliveryNo: string }>(
+      request,
+      "/api/v1/sales/deliveries",
+      {
+        deliveryDate: "2026-07-26",
+        companyId: fixture.companyId,
+        partyType: "CUSTOMER",
+        partyId: fixture.customerId,
+        debitAccountId: fixture.debitAccountId,
+        creditAccountId: fixture.creditAccountId,
+        items: [],
+        packBoxes: [],
+      },
+    );
+    const purchaseReceiptDoc = await post<{ id: string; receiptNo: string }>(
+      request,
+      "/api/v1/purchase/receipts",
+      common,
+    );
+    const outsourcedIssueDoc = await post<{ id: string; issueNo: string }>(
+      request,
+      "/api/v1/purchase/outsourced-issues",
+      {
+        issueDate: "2026-07-26",
+        companyId: fixture.companyId,
+        partyType: "SUPPLIER",
+        partyId: fixture.supplierId,
+      },
+    );
+    const outsourcedReceiptDoc = await post<{ id: string; receiptNo: string }>(
+      request,
+      "/api/v1/purchase/outsourced-receipts",
+      common,
+    );
     const documents = [
-      await post<{ id: string }>(
-        request,
-        "/api/v1/sales/deliveries",
-        {
-          deliveryNo: `${prefix}-SD`,
-          deliveryDate: "2026-07-26",
-          companyId: fixture.companyId,
-          partyType: "CUSTOMER",
-          partyId: fixture.customerId,
-          debitAccountId: fixture.debitAccountId,
-          creditAccountId: fixture.creditAccountId,
-          items: [],
-          packBoxes: [],
-        },
-      ),
-      await post<{ id: string }>(
-        request,
-        "/api/v1/purchase/receipts",
-        { ...common, receiptNo: `${prefix}-PR` },
-      ),
-      await post<{ id: string }>(
-        request,
-        "/api/v1/purchase/outsourced-issues",
-        {
-          issueNo: `${prefix}-OI`,
-          issueDate: "2026-07-26",
-          companyId: fixture.companyId,
-          partyType: "SUPPLIER",
-          partyId: fixture.supplierId,
-        },
-      ),
-      await post<{ id: string }>(
-        request,
-        "/api/v1/purchase/outsourced-receipts",
-        { ...common, receiptNo: `${prefix}-OR` },
-      ),
+      salesDeliveryDoc,
+      purchaseReceiptDoc,
+      outsourcedIssueDoc,
+      outsourcedReceiptDoc,
     ];
     created.push(...documents.map((document) => document.id));
 
     for (const [path, resource, number] of [
-      ["/sales/deliveries/deliveries", "salDeliveries", `${prefix}-SD`],
-      ["/purchase/receipts/receipts", "purReceipts", `${prefix}-PR`],
-      ["/purchase/outsourced-issues/issues", "purOutsourcedIssues", `${prefix}-OI`],
+      ["/sales/deliveries/deliveries", "salDeliveries", salesDeliveryDoc.deliveryNo],
+      ["/purchase/receipts/receipts", "purReceipts", purchaseReceiptDoc.receiptNo],
+      [
+        "/purchase/outsourced-issues/issues",
+        "purOutsourcedIssues",
+        outsourcedIssueDoc.issueNo,
+      ],
       [
         "/purchase/outsourced-receipts/receipts",
         "purOutsourcedReceipts",
-        `${prefix}-OR`,
+        outsourcedReceiptDoc.receiptNo,
       ],
     ] as const) {
       await page.goto(path);
@@ -312,8 +345,9 @@ test("标准与委外履约页面使用 Go REST 且业务 GraphQL 为零", async
       await expect(page.getByText(number, { exact: true })).toBeVisible();
     }
 
-    const salesDelivery = documents[0]!;
-    const deliveryNo = `${prefix}-SD`;
+    const salesDelivery = salesDeliveryDoc;
+    const deliveryNo = salesDeliveryDoc.deliveryNo;
+    expect(deliveryNo, "系统应生成销售发货单编号").toBeTruthy();
     const deliveryPath = `/api/v1/sales/deliveries/${salesDelivery.id}`;
     const replaceRoute = `**${deliveryPath}`;
     const auditPath = `${deliveryPath}/audit`;
@@ -328,12 +362,7 @@ test("标准与委外履约页面使用 Go REST 且业务 GraphQL 为零", async
       const drawer = page.getByRole("dialog", { name: "新增销售发货单" });
       await expect(drawer).toBeVisible();
 
-      await chooseDrawerOption(
-        page,
-        drawer,
-        "公司",
-        `${prefix}验收公司`,
-      );
+      await ensureDrawerCompany(page, drawer, `${prefix}验收公司`);
       await chooseDrawerOption(page, drawer, "对手类型", "客户");
       await chooseDrawerOption(
         page,

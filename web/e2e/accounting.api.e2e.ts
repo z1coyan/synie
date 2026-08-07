@@ -3,6 +3,7 @@ import {
   expect,
   test,
   type APIRequestContext,
+  type Locator,
   type Page,
 } from "@playwright/test";
 import { loginViaUI } from "./fixtures/session";
@@ -164,14 +165,15 @@ function cleanup(created: Created): void {
   const customer = created.customerId
     ? `'${created.customerId}'::uuid`
     : "NULL::uuid";
+  // 凭证编号由系统按规则生成(不再带 prefix),凭证/分录一律按 id 清场
   postgres(`
     DELETE FROM sys_audit_log WHERE record_id=ANY(${recordArray});
     DELETE FROM acc_gl_entry
-      WHERE voucher_id=${journal} OR voucher_no LIKE '${prefix}%';
+      WHERE voucher_id=${journal} OR id=ANY(${uuidList(created.entryIds)});
     DELETE FROM acc_gl_journal_line
       WHERE journal_id=${journal} OR id=ANY(${uuidList(created.lineIds)});
     DELETE FROM acc_gl_journal
-      WHERE id=${journal} OR voucher_no LIKE '${prefix}%';
+      WHERE id=${journal};
     DELETE FROM sal_customers
       WHERE id=${customer} OR code LIKE '${prefix}%';
     DELETE FROM bas_account WHERE code LIKE '${prefix}%';
@@ -180,9 +182,9 @@ function cleanup(created: Created): void {
   `);
   const residue = postgres(`
     SELECT
-      (SELECT count(*) FROM acc_gl_journal WHERE voucher_no LIKE '${prefix}%'),
+      (SELECT count(*) FROM acc_gl_journal WHERE id=${journal}),
       (SELECT count(*) FROM acc_gl_journal_line WHERE id=ANY(${uuidList(created.lineIds)})),
-      (SELECT count(*) FROM acc_gl_entry WHERE voucher_no LIKE '${prefix}%'),
+      (SELECT count(*) FROM acc_gl_entry WHERE voucher_id=${journal}),
       (SELECT count(*) FROM sal_customers WHERE code LIKE '${prefix}%'),
       (SELECT count(*) FROM bas_account WHERE code LIKE '${prefix}%'),
       (SELECT count(*) FROM bas_company WHERE code LIKE '${prefix}%'),
@@ -199,7 +201,46 @@ async function rowForVoucher(page: Page, voucherNo: string) {
   await search.fill(voucherNo);
   const row = page.getByRole("row").filter({ hasText: voucherNo });
   await expect(row).toBeVisible();
+  // 等搜索防抖/URL 同步/失效刷新落定再开行操作：重渲染会卸载已开的菜单（竞态，helper 内重试兜底）
+  await page.waitForLoadState("networkidle");
   return row;
+}
+
+/**
+ * 行操作菜单动作（toggle 重试收敛）：搜索防抖/URL 同步触发的行重渲染会卸载刚开的菜单，
+ * 「不可见则 toggle、短超时验证可见」循环直到稳定（同 manufacturing spec 先例）。
+ */
+async function clickRowActionMenu(
+  page: Page,
+  row: Locator,
+  actionName: string,
+): Promise<void> {
+  const item = page.getByRole("menuitem", { name: actionName, exact: true });
+  await expect(async () => {
+    if (!(await item.isVisible().catch(() => false))) {
+      await row.getByRole("button", { name: "行操作" }).click();
+    }
+    await expect(item).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
+  await item.click();
+}
+
+/**
+ * 侧栏链接客户端导航进会计凭证页：路由 loader 在浏览器侧预取 meta
+ * （goto 直开走 SSR，meta 请求发自前端服务端、浏览器观测不到，
+ * 会漏 GET /api/v1/meta/resources/accGlJournals）。
+ */
+async function gotoJournalsViaSidebar(page: Page): Promise<void> {
+  // 侧栏分组内取链接,避开面包屑同名「会计凭证」
+  const sidebar = page.getByRole("complementary");
+  const journalsLink = sidebar.getByRole("link", {
+    name: "会计凭证",
+    exact: true,
+  });
+  if (!(await journalsLink.isVisible().catch(() => false))) {
+    await page.getByRole("button", { name: "财务", exact: true }).click();
+  }
+  await journalsLink.click();
 }
 
 test.setTimeout(240_000);
@@ -234,7 +275,6 @@ test("财务三页面以 Go REST 完成两行凭证审核、报表下钻与取�
     }
   });
 
-  const voucherNo = `${prefix}-A`;
   const customerName = `${prefix}浏览器客户`;
 
   try {
@@ -254,12 +294,16 @@ test("财务三页面以 Go REST 完成两行凭证审核、报表下钻与取�
     created.customerId = customer.id;
 
     // REST 建立草稿头和两行；浏览器页面执行状态动作并验证只读消费面。
-    const journal = await apiJSON<{ id: string; status: string }>(
+    // 凭证编号由系统按规则生成:create 不再携带 voucherNo(手填即 400),从响应读出
+    const journal = await apiJSON<{
+      id: string;
+      status: string;
+      voucherNo: string;
+    }>(
       request,
       "post",
       "/api/v1/accounting/gl-journals",
       {
-        voucherNo,
         date: postingDate,
         postingDate,
         companyId: f.companyId,
@@ -269,6 +313,8 @@ test("财务三页面以 Go REST 完成两行凭证审核、报表下钻与取�
     );
     created.journalId = journal.id;
     expect(journal.status).toBe("DRAFT");
+    const voucherNo = journal.voucherNo;
+    expect(voucherNo, "系统应生成凭证编号").toBeTruthy();
 
     for (const input of [
       {
@@ -319,7 +365,7 @@ test("财务三页面以 Go REST 完成两行凭证审核、报表下钻与取�
     expect(lineList.count).toBe(2);
     expect(lineList.results.map((line) => line.idx)).toEqual([1, 2]);
 
-    await page.goto("/finance/journals");
+    await gotoJournalsViaSidebar(page);
     await expect(
       page.getByRole("heading", { name: "会计凭证", exact: true }),
     ).toBeVisible();
@@ -328,8 +374,7 @@ test("财务三页面以 Go REST 完成两行凭证审核、报表下钻与取�
     ).toBeVisible();
     let row = await rowForVoucher(page, voucherNo);
     await expect(row).toContainText("草稿");
-    await row.getByRole("button", { name: "行操作" }).click();
-    await page.getByRole("menuitem", { name: "审核", exact: true }).click();
+    await clickRowActionMenu(page, row, "审核");
     const auditDialog = page.getByRole("alertdialog", {
       name: "审核过账",
     });
@@ -407,14 +452,13 @@ test("财务三页面以 Go REST 完成两行凭证审核、报表下钻与取�
       page.getByRole("row").filter({ hasText: voucherNo }),
     ).toBeVisible();
 
-    await page.goto("/finance/journals");
+    await gotoJournalsViaSidebar(page);
     await expect(
       page.getByRole("grid", { name: "accGlJournals 数据表格" }),
     ).toBeVisible();
     row = await rowForVoucher(page, voucherNo);
     await expect(row).toContainText("已审核");
-    await row.getByRole("button", { name: "行操作" }).click();
-    await page.getByRole("menuitem", { name: "取消", exact: true }).click();
+    await clickRowActionMenu(page, row, "取消");
     const cancelDialog = page.getByRole("alertdialog", {
       name: "确认取消",
     });

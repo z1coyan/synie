@@ -70,7 +70,7 @@ export function vatInvoiceResourceMeta(): ResourceMeta {
     authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('doc_no', 'docNo', 'string', '内部单据编号', { filterable: true, sortable: true }),
+      field('doc_no', 'docNo', 'string', '内部单据编号', { readonly: true, filterable: true, sortable: true }),
       field('direction', 'direction', 'enum', '开票方向', {
         required: true,
         enumOptions: directionOptions,
@@ -688,7 +688,7 @@ export function expenseReportResourceMeta(): ResourceMeta {
     authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('doc_no', 'docNo', 'string', '单据编号(留空自动取号)', { filterable: true, sortable: true }),
+      field('doc_no', 'docNo', 'string', '单据编号', { readonly: true, filterable: true, sortable: true }),
       field('expense_date', 'expenseDate', 'date', '报销日期', { filterable: true, sortable: true }),
       field('posting_date', 'postingDate', 'date', '过账日期', { filterable: true, sortable: true }),
       field('remarks', 'remarks', 'string', '备注', { filterable: true, sortable: true }),
@@ -859,7 +859,7 @@ export function billTransactionResourceMeta(): ResourceMeta {
     authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('doc_no', 'docNo', 'string', '单据编号', { filterable: true, sortable: true }),
+      field('doc_no', 'docNo', 'string', '单据编号', { readonly: true, filterable: true, sortable: true }),
       field('transaction_type', 'transactionType', 'enum', '交易类型', {
         enumOptions: billTxTypeOptions, filterable: true, sortable: true,
       }),

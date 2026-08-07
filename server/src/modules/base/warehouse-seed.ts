@@ -3,6 +3,7 @@ import { auditCreated, writeAudit } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { warehouseResourceMeta } from '~/modules/inventory/meta.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
+import type { NumberingService } from '~/platform/numbering/service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 
 const WAREHOUSE_AUDIT = auditFieldsOf(warehouseResourceMeta())
@@ -10,9 +11,11 @@ const WAREHOUSE_AUDIT = auditFieldsOf(warehouseResourceMeta())
 /**
  * 公司新建同事务种子三仓：根「所有仓库」+ 叶「默认仓库」+ 叶「在途」。
  * 幂等：公司下已有仓库则跳过（对齐 server-go warehouse.SeedCompanyDefaults）。
+ * 仓库编码按 base.warehouse 编号规则逐仓取号（同一计数桶串行取三个）。
  */
 export async function seedCompanyDefaultWarehouses(
   trx: DbHandle,
+  numbering: NumberingService,
   actor: Actor,
   companyId: string,
   companyCode: string,
@@ -24,10 +27,19 @@ export async function seedCompanyDefaultWarehouses(
     .executeTakeFirst()
   if (existing) return 0
 
+  const takeCode = () =>
+    numbering.assignedInTx(trx, {
+      resource: 'base.warehouse',
+      field: 'code',
+      values: { company_id: companyId },
+    })
+
   try {
+    const rootCode = await takeCode()
     const root = await trx
       .insertInto('inv_warehouse')
       .values({
+        code: rootCode,
         name: `${companyCode} - 所有仓库`,
         is_leaf: false,
         company_id: companyId,
@@ -36,11 +48,14 @@ export async function seedCompanyDefaultWarehouses(
       .returningAll()
       .executeTakeFirstOrThrow()
 
+    const leafNames = [`${companyCode} - 默认仓库`, `${companyCode} - 在途`]
+    const leafCodes = [await takeCode(), await takeCode()]
     const leaves = await Promise.all(
-      [`${companyCode} - 默认仓库`, `${companyCode} - 在途`].map((name) =>
+      leafNames.map((name, i) =>
         trx
           .insertInto('inv_warehouse')
           .values({
+            code: leafCodes[i]!,
             name,
             is_leaf: true,
             company_id: companyId,
@@ -62,6 +77,7 @@ export async function seedCompanyDefaultWarehouses(
         companyId,
         changes: auditCreated(
           {
+            code: row.code,
             name: row.name,
             is_leaf: row.is_leaf,
             active: row.active,

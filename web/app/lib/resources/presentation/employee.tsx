@@ -23,7 +23,7 @@ export function createEmployeePresentation(
     label: '员工',
     exclude: ['id', 'insertedAt', 'updatedAt'],
     fields: {
-      code: { order: 0, cols: 6, required: false, placeholder: '留空自动编号' },
+      code: { order: 0, cols: 6, required: false, placeholder: '保存后自动编号' },
       name: { order: 1, cols: 6, required: true },
       attendanceNo: { order: 2, cols: 6 },
       phone: { order: 3, cols: 6 },

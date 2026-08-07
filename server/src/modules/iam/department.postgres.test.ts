@@ -12,6 +12,7 @@ import { testActor } from '~/platform/authz/testing.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createDepartmentService } from './department-service.ts'
 import { createIamService } from './service.ts'
 import { DEPARTMENT_RESOURCE, USER_RESOURCE } from './meta.ts'
@@ -23,7 +24,11 @@ run('PG 集成（部门）', () => {
   const db = createDb(url!)
   const registry = createSealedResourceRegistry()
   const authz = createAuthzEnforcer(registry)
-  const departments = createDepartmentService(db, registry)
+  const departments = createDepartmentService(
+    db,
+    createNumberingService(db, buildNumberingCatalog(registry), registry),
+    registry,
+  )
   const iam = createIamService(db, registry)
 
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
@@ -63,7 +68,7 @@ run('PG 集成（部门）', () => {
 
   async function newDept(
     p: Permit,
-    input: { code: string; name: string; companyId: string; parentId?: string | null },
+    input: { name: string; companyId: string; parentId?: string | null },
   ) {
     const item = await departments.create(p, input)
     created.push(item.id)
@@ -112,7 +117,6 @@ run('PG 集成（部门）', () => {
   describe('创建与物化路径', () => {
     test('一级部门：path = /{id}/，无上级', async () => {
       const root = await newDept(inA('create'), {
-        code: `HQ-${suffix}`,
         name: '总部',
         companyId: companyA,
       })
@@ -124,12 +128,10 @@ run('PG 集成（部门）', () => {
 
     test('子部门：path 追加在父路径之后，父级 hasChildren 翻真', async () => {
       const parent = await newDept(inA('create'), {
-        code: `P-${suffix}`,
         name: '生产部',
         companyId: companyA,
       })
       const child = await newDept(inA('create'), {
-        code: `PS-${suffix}`,
         name: '冲压车间',
         companyId: companyA,
         parentId: parent.id,
@@ -141,7 +143,7 @@ run('PG 集成（部门）', () => {
 
     test('公司不在凭证边界内 → not_found（不泄露公司存在性）', async () => {
       const err = await departments
-        .create(inA('create'), { code: `X-${suffix}`, name: '越界部', companyId: companyB })
+        .create(inA('create'), { name: '越界部', companyId: companyB })
         .catch((e: unknown) => e)
       expect(err).toBeInstanceOf(ApiError)
       expect((err as ApiError).code).toBe('not_found')
@@ -149,13 +151,11 @@ run('PG 集成（部门）', () => {
 
     test('上级部门跨公司 → 校验失败', async () => {
       const foreign = await newDept(inB('create'), {
-        code: `FB-${suffix}`,
         name: 'B 公司总部',
         companyId: companyB,
       })
       const err = await departments
         .create(inA('create'), {
-          code: `Y-${suffix}`,
           name: '错挂部',
           companyId: companyA,
           parentId: foreign.id,
@@ -164,11 +164,28 @@ run('PG 集成（部门）', () => {
       expect((err as ApiError).code).toBe('validation')
     })
 
-    test('同公司部门编码唯一', async () => {
-      const err = await departments
-        .create(inA('create'), { code: `HQ-${suffix}`, name: '重码部', companyId: companyA })
+    test('系统生成编码：唯一、按规则成形、手填一律 422', async () => {
+      const one = await newDept(inA('create'), { name: '编码甲', companyId: companyA })
+      const two = await newDept(inA('create'), { name: '编码乙', companyId: companyA })
+      expect(one.code).not.toBe(two.code)
+      // 迁移 00022 预置规则：B(D)- + 4 位补零序号，按公司分桶
+      expect(one.code).toMatch(/^B\(D\)-\d{4}$/)
+      expect(two.code).toMatch(/^B\(D\)-\d{4}$/)
+
+      const manual = await departments
+        .create(inA('create'), { code: 'HQ-1', name: '手填部', companyId: companyA } as never)
         .catch((e: unknown) => e)
-      expect((err as ApiError).message).toContain('部门编码已存在')
+      expect((manual as ApiError).code).toBe('validation')
+      expect((manual as ApiError).message).toContain('编号由系统生成,不接受手填')
+
+      // 服务层撞号已无入口；DB 唯一索引仍是最后防线（直插重码 → 23505）
+      const dup = await sql`
+        INSERT INTO sys_department (company_id, code, name, path)
+        VALUES (${companyA}::uuid, ${one.code}, '重码部', ${`/${crypto.randomUUID()}/`})
+      `
+        .execute(db)
+        .catch((e: unknown) => e)
+      expect((dup as { code?: string }).code).toBe('23505')
     })
   })
 
@@ -195,21 +212,18 @@ run('PG 集成（部门）', () => {
 
   describe('移动节点：整棵子树重算路径', () => {
     test('移动后子树 path 全部改写，子树查询随之生效', async () => {
-      const a = await newDept(inA('create'), { code: `M1-${suffix}`, name: '甲', companyId: companyA })
+      const a = await newDept(inA('create'), { name: '甲', companyId: companyA })
       const b = await newDept(inA('create'), {
-        code: `M2-${suffix}`,
         name: '乙',
         companyId: companyA,
         parentId: a.id,
       })
       const c = await newDept(inA('create'), {
-        code: `M3-${suffix}`,
         name: '丙',
         companyId: companyA,
         parentId: b.id,
       })
       const target = await newDept(inA('create'), {
-        code: `M4-${suffix}`,
         name: '丁',
         companyId: companyA,
       })
@@ -222,9 +236,8 @@ run('PG 集成（部门）', () => {
     })
 
     test('移到自身或自身后代 → 校验失败（防成环）', async () => {
-      const p = await newDept(inA('create'), { code: `C1-${suffix}`, name: '环父', companyId: companyA })
+      const p = await newDept(inA('create'), { name: '环父', companyId: companyA })
       const kid = await newDept(inA('create'), {
-        code: `C2-${suffix}`,
         name: '环子',
         companyId: companyA,
         parentId: p.id,
@@ -240,9 +253,8 @@ run('PG 集成（部门）', () => {
     })
 
     test('置空上级 → 升为一级部门', async () => {
-      const p = await newDept(inA('create'), { code: `U1-${suffix}`, name: '提升父', companyId: companyA })
+      const p = await newDept(inA('create'), { name: '提升父', companyId: companyA })
       const kid = await newDept(inA('create'), {
-        code: `U2-${suffix}`,
         name: '提升子',
         companyId: companyA,
         parentId: p.id,
@@ -267,7 +279,6 @@ run('PG 集成（部门）', () => {
   describe('启停与用户挂接', () => {
     test('停用部门后不可再挂用户；已挂接的存量保留', async () => {
       const dept = await newDept(inA('create'), {
-        code: `S1-${suffix}`,
         name: '待停用部',
         companyId: companyA,
       })
@@ -290,7 +301,6 @@ run('PG 集成（部门）', () => {
 
     test('用户读取面带部门名（fk 列需要 department 关系,否则前端只能印 uuid）', async () => {
       const dept = await newDept(inA('create'), {
-        code: `N1-${suffix}`,
         name: '有名字的部',
         companyId: companyA,
       })
@@ -316,7 +326,6 @@ run('PG 集成（部门）', () => {
 
     test('部门所在公司不在用户公司授权集内 → 校验失败并提示先授权', async () => {
       const foreign = await newDept(inB('create'), {
-        code: `S2-${suffix}`,
         name: 'B 公司部门',
         companyId: companyB,
       })
@@ -333,9 +342,8 @@ run('PG 集成（部门）', () => {
 
   describe('删除守卫', () => {
     test('有下级部门不可删', async () => {
-      const p = await newDept(inA('create'), { code: `D1-${suffix}`, name: '删父', companyId: companyA })
+      const p = await newDept(inA('create'), { name: '删父', companyId: companyA })
       await newDept(inA('create'), {
-        code: `D2-${suffix}`,
         name: '删子',
         companyId: companyA,
         parentId: p.id,
@@ -346,7 +354,6 @@ run('PG 集成（部门）', () => {
 
     test('仍有用户挂接不可删', async () => {
       const dept = await newDept(inA('create'), {
-        code: `D3-${suffix}`,
         name: '有人部',
         companyId: companyA,
       })
@@ -358,7 +365,6 @@ run('PG 集成（部门）', () => {
 
     test('叶子且无人挂接可删；跨公司删除 → not_found', async () => {
       const leaf = await newDept(inA('create'), {
-        code: `D4-${suffix}`,
         name: '可删部',
         companyId: companyA,
       })
@@ -373,7 +379,6 @@ run('PG 集成（部门）', () => {
   describe('审计', () => {
     test('创建/更新/删除均落审计行', async () => {
       const dept = await newDept(inA('create'), {
-        code: `A1-${suffix}`,
         name: '审计部',
         companyId: companyA,
       })

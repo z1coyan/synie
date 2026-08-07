@@ -77,6 +77,26 @@ run('PG 集成（增值税发票）', () => {
   const today = '2099-03-15'
 
   beforeAll(async () => {
+    // 发票编号改系统生成后须持有启用规则（共享库规则可能被清；幂等补建）
+    const existing = await db
+      .selectFrom('sys_numbering_rule')
+      .select('id')
+      .where('resource', '=', 'acc.vat_invoice')
+      .where('enabled', '=', true)
+      .executeTakeFirst()
+    if (!existing) {
+      const decision = authz.decideFor(actor, 'sysNumberingRules', 'create')
+      if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+      await numbering.create(decision.permit, {
+        resource: 'acc.vat_invoice',
+        name: `发票编号-T${suffix}`,
+        segments: [{ type: 'text', value: `T(I)${suffix}-` }, { type: 'seq', padding: 4 }],
+        perCompany: false,
+      })
+    }
+  })
+
+  beforeAll(async () => {
     await sql`
       INSERT INTO bas_currency(id,name,iso_code,symbol,active)
       VALUES (${currencyId}::uuid, ${prefix + '币'}, ${'I' + suffix.slice(0, 2)}, '¤', true)
@@ -126,8 +146,8 @@ run('PG 集成（增值税发票）', () => {
       )
     `.execute(db)
     await sql`
-      INSERT INTO inv_warehouse(id,name,company_id)
-      VALUES (${warehouseId}::uuid, ${prefix + '仓'}, ${companyId}::uuid)
+      INSERT INTO inv_warehouse(id,code,name,company_id)
+      VALUES (${warehouseId}::uuid, ${'W' + suffix}, ${prefix + '仓'}, ${companyId}::uuid)
     `.execute(db)
     await sql`
       INSERT INTO sal_order(id,order_no,order_date,party_type,party_id,status,company_id,exchange_rate,currency_id,order_type)
@@ -228,7 +248,6 @@ run('PG 集成（增值税发票）', () => {
   test('费用票：手填编号 + 审核过账 + 作废冲销', async () => {
     const inv = await svc.create(permit(), {
       companyId,
-      docNo: `${prefix}EXP`,
       direction: 'INBOUND',
       invoiceDate: today,
       partyType: 'EMPLOYEE',
@@ -271,7 +290,6 @@ run('PG 集成（增值税发票）', () => {
   test('费用票红冲产生原分录 + 红冲分录', async () => {
     const inv = await svc.create(permit(), {
       companyId,
-      docNo: `${prefix}REV`,
       direction: 'INBOUND',
       invoiceDate: today,
       partyType: 'EMPLOYEE',
@@ -308,7 +326,6 @@ run('PG 集成（增值税发票）', () => {
   test('销项发票审核结单对账 + 关闭待办；作废 reopen + 复活待办', async () => {
     const inv = await svc.create(permit(), {
       companyId,
-      docNo: `${prefix}SAL`,
       direction: 'OUTBOUND',
       invoiceDate: today,
       partyType: 'CUSTOMER',
@@ -368,7 +385,6 @@ run('PG 集成（增值税发票）', () => {
   test('仅草稿可改删；对账关联缺失校验', async () => {
     const inv = await svc.create(permit(), {
       companyId,
-      docNo: `${prefix}DR`,
       direction: 'INBOUND',
       partyType: 'EMPLOYEE',
       partyId: employeeId,

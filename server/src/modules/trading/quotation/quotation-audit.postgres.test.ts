@@ -24,11 +24,8 @@ const run = url ? describe : describe.skip
 run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
   const db = createDb(url!)
   const authz = createAuthzEnforcer(registry)
-  const quotations = createQuotationService(
-    db,
-    createNumberingService(db, buildNumberingCatalog(registry), registry),
-    registry,
-  )
+  const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
+  const quotations = createQuotationService(db, numbering, registry)
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `QA${suffix}`
 
@@ -53,16 +50,20 @@ run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
    * 本文件只验领域行为（草稿门/条目校验/落章/回翻），superAdmin 凭证的 rowFilter 恒全集；
    * 逐动作码门控与公司边界见 quotation-draft.postgres.test.ts。凭证每次现取。
    */
-  const permit = (): Permit => {
-    const decision = authz.decideFor(actor, 'salQuotations', 'read')
+  const permit = (): Permit => permitFor('salQuotations', 'read')
+  function permitFor(resource: string, action: string): Permit {
+    const decision = authz.decideFor(actor, resource, action)
     if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
     return decision.permit
   }
 
-  function input(side: TradingSide, quotationNo: string): QuotationDraftInput {
+  /** 本测自建的编号规则（afterAll 回收；复用的他人规则不动） */
+  const createdRuleIds: string[] = []
+
+  /** 编号由系统按规则生成：create 入参不再携带 quotationNo（手填即 400「编号由系统生成,不接受手填」） */
+  function input(side: TradingSide): QuotationDraftInput {
     return {
       companyId,
-      quotationNo,
       quotationDate: '2026-07-31',
       validUntil: '2026-08-31',
       partyType: side === 'sales' ? 'CUSTOMER' : 'SUPPLIER',
@@ -114,9 +115,38 @@ run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
       INSERT INTO inv_material(id,code,name,category_id,default_unit_id,active)
       VALUES (${materialId}::uuid, ${'M' + suffix}, ${prefix + '物料'}, ${categoryId}::uuid, ${unitId}::uuid, true)
     `.execute(db)
+
+    // 单据编号规则不由迁移播种：已有启用规则则复用，否则建本测前缀规则
+    for (const [resource, tag] of [
+      ['sales.quotation', 'SQ'],
+      ['purchase.quotation', 'PQ'],
+    ] as const) {
+      const existing = await db
+        .selectFrom('sys_numbering_rule')
+        .select('id')
+        .where('resource', '=', resource)
+        .where('enabled', '=', true)
+        .executeTakeFirst()
+      if (!existing) {
+        const rule = await numbering.create(permitFor('sysNumberingRules', 'create'), {
+          resource,
+          name: `${prefix}${tag}规则`,
+          segments: [
+            { type: 'text', value: `T${suffix}${tag}-` },
+            { type: 'seq', padding: 4 },
+          ],
+          perCompany: false,
+          enabled: true,
+        })
+        createdRuleIds.push(rule.id)
+      }
+    }
   })
 
   afterAll(async () => {
+    for (const id of createdRuleIds) {
+      await db.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
+    }
     await sql`DELETE FROM sys_audit_log WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sal_quotation WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM pur_quotation WHERE company_id=${companyId}::uuid`.execute(db)
@@ -132,7 +162,7 @@ run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
 
   test('销售/采购均走完 草稿→已审核→已作废，审核落章且留审计', async () => {
     for (const side of ['sales', 'purchase'] as const) {
-      const created = await quotations.createDraft(permit(), side, input(side, `${prefix}-${side}`))
+      const created = await quotations.createDraft(permit(), side, input(side))
       expect(created.status).toBe('DRAFT')
 
       const audited = await quotations.auditHead(permit(), side, created.id)
@@ -163,7 +193,7 @@ run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
 
   test('空条目报价单不可审核', async () => {
     const created = await quotations.createDraft(permit(), 'sales', {
-      ...input('sales', `${prefix}-EMPTY`),
+      ...input('sales'),
       items: [],
     })
     await expect(quotations.auditHead(permit(), 'sales', created.id)).rejects.toThrow(
@@ -178,7 +208,7 @@ run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
 
   test('数量梯度条目缺价格档不可审核', async () => {
     const created = await quotations.createDraft(permit(), 'sales', {
-      ...input('sales', `${prefix}-TIERLESS`),
+      ...input('sales'),
       items: [
         {
           idx: 1,

@@ -285,7 +285,7 @@ export interface ResolveOrderResult {
   taxRate: Decimal
 }
 
-type Numberer = Pick<NumberingService, 'nextInTx'>
+type Numberer = Pick<NumberingService, 'assignedInTx'>
 
 export function createQuotationService(
   db: Kysely<Database>,
@@ -436,20 +436,19 @@ export function createQuotationService(
     }
     const currencyId = input.currencyId ?? company.base_currency_id
     const quotationDate = input.quotationDate ? toDateOnly(input.quotationDate) : utcToday()
-    let quotationNo = (input.quotationNo ?? '').trim()
-    if (!quotationNo) {
-      quotationNo = await numberer.nextInTx(trx, {
-        resource: spec.prefix,
-        values: {
-          company_id: input.companyId,
-          quotation_date: quotationDate,
-          valid_until: toDateOnly(input.validUntil),
-          party_type: lowerParty(input.partyType),
-          party_id: input.partyId,
-          currency_id: currencyId,
-        },
-      })
-    }
+    const quotationNo = await numberer.assignedInTx(trx, {
+      resource: spec.prefix,
+      field: 'quotationNo',
+      provided: input.quotationNo,
+      values: {
+        company_id: input.companyId,
+        quotation_date: quotationDate,
+        valid_until: toDateOnly(input.validUntil),
+        party_type: lowerParty(input.partyType),
+        party_id: input.partyId,
+        currency_id: currencyId,
+      },
+    })
     const partyType = lowerParty(input.partyType)
     validateHeadShape(spec, {
       quotationNo,
@@ -513,9 +512,12 @@ export function createQuotationService(
     const spec = quotationSpec(side)
     const locked = await lockDraftHead(trx, permit, side, id, '')
     const before = mapHead(locked)
+    if (input.quotationNo !== undefined && input.quotationNo.trim() !== before.quotationNo) {
+      throw ApiError.validation('报价参数不合法', { quotationNo: ['编号创建后不可修改'] })
+    }
     const after: Quotation = {
       ...before,
-      quotationNo: input.quotationNo !== undefined ? input.quotationNo.trim() : before.quotationNo,
+      quotationNo: before.quotationNo,
       quotationDate: input.quotationDate
         ? toDateOnly(input.quotationDate)
         : before.quotationDate,

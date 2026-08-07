@@ -109,13 +109,12 @@ export function createOutputService(
     return withTx(db, async (trx) => {
       await validateWarehouse(trx, input.warehouseId, input.companyId)
       const outputDate = input.outputDate ? toDateOnly(input.outputDate) : utcToday()
-      let no = (input.outputNo ?? '').trim()
-      if (!no) {
-        no = await numbering.nextInTx(trx, {
-          resource: 'mfg.output',
-          values: { company_id: input.companyId, output_date: outputDate },
-        })
-      }
+      const no = await numbering.assignedInTx(trx, {
+        resource: 'mfg.output',
+        field: 'outputNo',
+        provided: input.outputNo,
+        values: { company_id: input.companyId, output_date: outputDate },
+      })
       validateNo(no, 'outputNo')
       try {
         const row = await trx
@@ -187,7 +186,9 @@ export function createOutputService(
         throw new ApiError('conflict', '仅草稿生产入库单可修改或删除')
       }
       const after = { ...before }
-      if (input.outputNo !== undefined) after.outputNo = input.outputNo.trim()
+      if (input.outputNo !== undefined && input.outputNo.trim() !== before.outputNo) {
+        throw ApiError.validation('生产入库单参数不合法', { outputNo: ['编号创建后不可修改'] })
+      }
       if (input.outputDate !== undefined) after.outputDate = toDateOnly(input.outputDate)
       if (input.warehouseIdPresent) after.warehouseId = input.warehouseId ?? null
       if (input.remarksPresent) after.remarks = input.remarks ?? null

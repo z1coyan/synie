@@ -104,7 +104,7 @@ function headMeta(
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', codeLabel, {
-        required: true,
+        readonly: true,
         createOnly: true,
         filterable: true,
         sortable: true,
@@ -126,7 +126,7 @@ function headMeta(
     form: {
       exclude: ['id', 'insertedAt', 'updatedAt'],
       fields: {
-        code: { placeholder: '留空自动取号' },
+        code: { placeholder: '保存后自动编号' },
         name: {},
       },
     },
@@ -230,7 +230,7 @@ export function bomResourceMeta(): ResourceMeta {
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', '编号', {
-        required: true,
+        readonly: true,
         createOnly: true,
         filterable: true,
         sortable: true,
@@ -266,7 +266,7 @@ export function bomResourceMeta(): ResourceMeta {
     form: {
       exclude: ['id', 'status', 'insertedAt', 'updatedAt'],
       fields: {
-        code: { placeholder: '留空自动取号' },
+        code: { placeholder: '保存后自动编号' },
         materialId: { required: true },
       },
     },
@@ -421,7 +421,7 @@ export function demandResourceMeta(): ResourceMeta {
     authz: { kind: 'company', dept: { column: 'assigned_dept_id', mode: 'assigned' } },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('demand_no', 'demandNo', 'string', '需求单号', { filterable: true, sortable: true }),
+      field('demand_no', 'demandNo', 'string', '需求单号', { readonly: true, filterable: true, sortable: true }),
       field('demand_date', 'demandDate', 'date', '业务日期', { filterable: true, sortable: true }),
       // 指派类型：纯路由声明（不占量、不约束行级安排、关闭不联动状态机）；
       // make ⇔ 下发车间非空的联动由 service 硬校验（DB 另有 CHECK 兜底）
@@ -633,6 +633,7 @@ export function workOrderResourceMeta(): ResourceMeta {
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('work_order_no', 'workOrderNo', 'string', '工单号', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
@@ -802,7 +803,7 @@ export function outputResourceMeta(): ResourceMeta {
     authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('output_no', 'outputNo', 'string', '入库单号', { filterable: true, sortable: true }),
+      field('output_no', 'outputNo', 'string', '入库单号', { readonly: true, filterable: true, sortable: true }),
       field('output_date', 'outputDate', 'date', '入库日期(库存分录业务日)', {
         filterable: true,
         sortable: true,

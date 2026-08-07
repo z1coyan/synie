@@ -173,9 +173,9 @@ run('PG 集成（订单收发货历史投影）', () => {
       )
     `.execute(db)
     await sql`
-      INSERT INTO inv_warehouse(id,name,company_id) VALUES
-        (${warehouseId}::uuid, ${`仓A${suffix}`}, ${companyId}::uuid),
-        (${otherWarehouseId}::uuid, ${`仓B${suffix}`}, ${otherCompanyId}::uuid)
+      INSERT INTO inv_warehouse(id,name,code,company_id) VALUES
+        (${warehouseId}::uuid, ${`仓A${suffix}`}, ${`WA${suffix}`}, ${companyId}::uuid),
+        (${otherWarehouseId}::uuid, ${`仓B${suffix}`}, ${`WB${suffix}`}, ${otherCompanyId}::uuid)
     `.execute(db)
     await sql`
       INSERT INTO bas_account(id,code,name,direction,is_group,active,company_id,currency_id) VALUES

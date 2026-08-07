@@ -82,8 +82,9 @@ run('PG 集成（委外发料/入库生命周期）', () => {
   const orderItemId = crypto.randomUUID()
   const orderMaterialId = crypto.randomUUID()
   const orderByproductId = crypto.randomUUID()
+  /** 编号桩：本文件不验取号；手填编号已从入参移除（真实服务会拒收） */
   const numberer = {
-    nextInTx: async () => `AUTO-${suffix}-${crypto.randomUUID().slice(0, 4)}`,
+    assignedInTx: async () => `AUTO-${suffix}-${crypto.randomUUID().slice(0, 4)}`,
   }
   const outsourcedConfig = createOutsourcedConfigService(db, registry)
   const outsourced = createOutsourcedService(
@@ -203,12 +204,12 @@ run('PG 集成（委外发料/入库生命周期）', () => {
       VALUES (${supplierId}::uuid, ${'SU' + suffix}, ${'供应商' + suffix}, ${'SU' + suffix.slice(0, 4)})
     `.execute(db)
     await sql`
-      INSERT INTO inv_warehouse(id, name, is_leaf, active, is_outsourced, company_id)
-      VALUES (${mainWhId}::uuid, ${'主仓' + suffix}, true, true, false, ${companyId}::uuid)
+      INSERT INTO inv_warehouse(id, name, code, is_leaf, active, is_outsourced, company_id)
+      VALUES (${mainWhId}::uuid, ${'主仓' + suffix}, ${'WM' + suffix}, true, true, false, ${companyId}::uuid)
     `.execute(db)
     await sql`
-      INSERT INTO inv_warehouse(id, name, is_leaf, active, is_outsourced, party_type, party_id, company_id)
-      VALUES (${outWhId}::uuid, ${'外协仓' + suffix}, true, true, true, 'supplier', ${supplierId}::uuid, ${companyId}::uuid)
+      INSERT INTO inv_warehouse(id, name, code, is_leaf, active, is_outsourced, party_type, party_id, company_id)
+      VALUES (${outWhId}::uuid, ${'外协仓' + suffix}, ${'WO' + suffix}, true, true, true, 'supplier', ${supplierId}::uuid, ${companyId}::uuid)
     `.execute(db)
     await sql`
       INSERT INTO bas_account(id, code, name, direction, is_group, active, company_id, currency_id, role)
@@ -284,7 +285,6 @@ run('PG 集成（委外发料/入库生命周期）', () => {
   test('发料审核：库存双分录 + issued_qty；入库审核：三库存+投影+总账；作废全回滚', async () => {
     const issue = await outsourced.createIssue(permit(ISSUE_RESOURCE, 'create'), {
       companyId,
-      issueNo: `OI-${suffix}`,
       partyType: 'SUPPLIER',
       partyId: supplierId,
       fromWarehouseId: mainWhId,
@@ -318,7 +318,6 @@ run('PG 集成（委外发料/入库生命周期）', () => {
 
     const receipt = await outsourced.createReceipt(permit(RECEIPT_RESOURCE, 'create'), {
       companyId,
-      receiptNo: `OR-${suffix}`,
       partyType: 'SUPPLIER',
       partyId: supplierId,
       warehouseId: mainWhId,
@@ -451,7 +450,6 @@ run('PG 集成（委外发料/入库生命周期）', () => {
   async function seedAuthzFixture() {
     const issue = await outsourced.createIssue(permit(ISSUE_RESOURCE, 'create'), {
       companyId,
-      issueNo: `AZ-I-${suffix}-${crypto.randomUUID().slice(0, 4)}`,
       partyType: 'SUPPLIER',
       partyId: supplierId,
       fromWarehouseId: mainWhId,
@@ -465,7 +463,6 @@ run('PG 集成（委外发料/入库生命周期）', () => {
     })
     const receipt = await outsourced.createReceipt(permit(RECEIPT_RESOURCE, 'create'), {
       companyId,
-      receiptNo: `AZ-R-${suffix}-${crypto.randomUUID().slice(0, 4)}`,
       partyType: 'SUPPLIER',
       partyId: supplierId,
       warehouseId: mainWhId,
@@ -633,7 +630,6 @@ run('PG 集成（委外发料/入库生命周期）', () => {
   test('状态守卫 409：非草稿发料单不可改（领域不变量不在权限系统里）', async () => {
     const issue = await outsourced.createIssue(permit(ISSUE_RESOURCE, 'create'), {
       companyId,
-      issueNo: `AZ-S-${suffix}-${crypto.randomUUID().slice(0, 4)}`,
       partyType: 'SUPPLIER',
       partyId: supplierId,
       fromWarehouseId: mainWhId,

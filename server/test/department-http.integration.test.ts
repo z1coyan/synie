@@ -134,13 +134,20 @@ run('PG 集成（部门端点 guard）', () => {
 
   test('持 create 可建；目标公司不在授权集内 → 404（不泄露公司存在性）', async () => {
     await grant(['sys.department:read', 'sys.department:create'])
-    const ok = await post('', { code: `Q2-${suffix}`, name: '端点部', companyId: companyA })
+    const ok = await post('', { name: '端点部', companyId: companyA })
     expect(ok.status).toBe(201)
-    const body = (await ok.json()) as { id: string; company: { id: string }; enabled: boolean }
+    const body = (await ok.json()) as {
+      id: string
+      code: string
+      company: { id: string }
+      enabled: boolean
+    }
     expect(body.company.id).toBe(companyA)
     expect(body.enabled).toBe(true)
+    // 编码由系统按迁移预置规则生成（B(D)- + 4 位序号，按公司分桶）
+    expect(body.code).toMatch(/^B\(D\)-\d{4}$/)
 
-    const foreign = await post('', { code: `Q3-${suffix}`, name: '越界部', companyId: companyB })
+    const foreign = await post('', { name: '越界部', companyId: companyB })
     expect(foreign.status).toBe(404)
   })
 

@@ -94,10 +94,10 @@ function assembleDomain(
   // 业务域 DocBuilder 显式装配（platform 不内置业务表查询）
   registerSalesOrderDocBuilder(printing, db, opts.registry)
   registerWorkOrderDocBuilder(printing, db, opts.registry)
-  const base = createBaseServices(db, opts.registry)
+  const base = createBaseServices(db, numbering, opts.registry)
   const market = createMarketService(db, { settings, registry: opts.registry })
   const iam = createIamService(db, opts.registry)
-  const departments = createDepartmentService(db, opts.registry)
+  const departments = createDepartmentService(db, numbering, opts.registry)
   const party = createPartyServices(db, numbering, opts.registry)
   const hr = createHrServices(db, files, {
     employees: party.employees,

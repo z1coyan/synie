@@ -165,6 +165,9 @@ run('PG 集成（销售/采购对账）', () => {
       body: body === undefined ? undefined : JSON.stringify(body),
     })
 
+  /** 本测自建的编号规则（afterAll 回收；复用的他人规则不动） */
+  const createdRuleIds: string[] = []
+
   beforeAll(async () => {
     await sql`
       INSERT INTO bas_currency(id,name,iso_code,symbol,active)
@@ -197,8 +200,8 @@ run('PG 集成（销售/采购对账）', () => {
       VALUES (${materialId}::uuid, ${'M' + suffix}, ${prefix + '物料'}, ${categoryId}::uuid, ${unitId}::uuid, true)
     `.execute(db)
     await sql`
-      INSERT INTO inv_warehouse(id,name,company_id)
-      VALUES (${warehouseId}::uuid, ${prefix + '仓'}, ${companyId}::uuid)
+      INSERT INTO inv_warehouse(id,name,code,company_id)
+      VALUES (${warehouseId}::uuid, ${prefix + '仓'}, ${'W' + suffix}, ${companyId}::uuid)
     `.execute(db)
     await sql`
       INSERT INTO bas_account(id,code,name,direction,is_group,active,company_id,currency_id,role) VALUES
@@ -276,9 +279,38 @@ run('PG 集成（销售/采购对账）', () => {
         ${materialId}::uuid,${unitId}::uuid,${warehouseId}::uuid,0
       )
     `.execute(db)
+
+    // 单据编号规则不由迁移播种：已有启用规则则复用，否则建本测前缀规则
+    for (const [resource, tag] of [
+      ['sales.reconciliation', 'SR'],
+      ['purchase.reconciliation', 'PR'],
+    ] as const) {
+      const existing = await db
+        .selectFrom('sys_numbering_rule')
+        .select('id')
+        .where('resource', '=', resource)
+        .where('enabled', '=', true)
+        .executeTakeFirst()
+      if (!existing) {
+        const rule = await numbering.create(permitFor(actor, 'sysNumberingRules', 'create'), {
+          resource,
+          name: `${prefix}${tag}规则`,
+          segments: [
+            { type: 'text', value: `T${suffix}${tag}-` },
+            { type: 'seq', padding: 4 },
+          ],
+          perCompany: false,
+          enabled: true,
+        })
+        createdRuleIds.push(rule.id)
+      }
+    }
   })
 
   afterAll(async () => {
+    for (const id of createdRuleIds) {
+      await db.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
+    }
     await sql`DELETE FROM sys_todo WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sys_audit_log WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM acc_gl_entry WHERE company_id=${companyId}::uuid`.execute(db)
@@ -307,14 +339,12 @@ run('PG 集成（销售/采购对账）', () => {
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
       partyId: customerId,
-      no: `${prefix}-SR-LIST`,
     })
     const purchaseHead = await svc.createHead(headPermit('purchase', 'create'), 'purchase', {
       companyId,
       kind: 'REGULAR',
       partyType: 'SUPPLIER',
       partyId: supplierId,
-      no: `${prefix}-PR-LIST`,
     })
     const salesItem = await svc.createItem(itemPermit('sales', 'create'), 'sales', {
       reconciliationId: salesHead.id,
@@ -363,7 +393,6 @@ run('PG 集成（销售/采购对账）', () => {
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
       partyId: customerId,
-      no: `${prefix}-SR-REG`,
     })
     expect(head.debitAccountId).toBe(salesDebitId)
     expect(head.creditAccountId).toBe(salesCreditId)
@@ -410,7 +439,6 @@ run('PG 集成（销售/采购对账）', () => {
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
       partyId: customerId,
-      no: `${prefix}-SR-PART`,
       debitAccountId: salesDebitId,
       creditAccountId: salesCreditId,
     })
@@ -432,7 +460,6 @@ run('PG 集成（销售/采购对账）', () => {
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
       partyId: customerId,
-      no: `${prefix}-SR-OVER`,
       debitAccountId: salesDebitId,
       creditAccountId: salesCreditId,
     })
@@ -469,7 +496,6 @@ run('PG 集成（销售/采购对账）', () => {
       kind: 'GIFT_SAMPLE',
       partyType: 'CUSTOMER',
       partyId: customerId,
-      no: `${prefix}-SR-GIFT`,
       debitAccountId: salesDebitId,
       creditAccountId: salesCreditId,
     })
@@ -515,7 +541,6 @@ run('PG 集成（销售/采购对账）', () => {
       kind: 'REGULAR',
       partyType: 'SUPPLIER',
       partyId: supplierId,
-      no: `${prefix}-PR-REG`,
       debitAccountId: purchaseDebitId,
       creditAccountId: purchaseCreditId,
     })
@@ -544,7 +569,6 @@ run('PG 集成（销售/采购对账）', () => {
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
       partyId: customerId,
-      no: `${prefix}-SR-ALIAS`,
       debitAccountId: salesDebitId,
       creditAccountId: salesCreditId,
     })
@@ -553,7 +577,6 @@ run('PG 集成（销售/采购对账）', () => {
       kind: 'REGULAR',
       partyType: 'SUPPLIER',
       partyId: supplierId,
-      no: `${prefix}-PR-ALIAS`,
       debitAccountId: purchaseDebitId,
       creditAccountId: purchaseCreditId,
     })
@@ -610,7 +633,6 @@ run('PG 集成（销售/采购对账）', () => {
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
       partyId: customerId,
-      no: `${prefix}-SR-EDIT`,
       debitAccountId: salesDebitId,
       creditAccountId: salesCreditId,
     })
@@ -646,7 +668,6 @@ run('PG 集成（销售/采购对账）', () => {
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
       partyId: customerId,
-      no: `${prefix}-SR-SCOPE`,
       debitAccountId: salesDebitId,
       creditAccountId: salesCreditId,
     })
@@ -684,7 +705,6 @@ run('PG 集成（销售/采购对账）', () => {
             kind: 'REGULAR',
             partyType: 'CUSTOMER',
             partyId: customerId,
-            no: `${prefix}-SR-DENY`,
           }),
         'not_found',
       )
@@ -700,7 +720,6 @@ run('PG 集成（销售/采购对账）', () => {
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
       partyId: customerId,
-      no: `${prefix}-SR-STATE`,
       debitAccountId: salesDebitId,
       creditAccountId: salesCreditId,
     })
@@ -744,7 +763,6 @@ run('PG 集成（销售/采购对账）', () => {
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
       partyId: customerId,
-      no: `${prefix}-SR-HTTP`,
       debitAccountId: salesDebitId,
       creditAccountId: salesCreditId,
     })
@@ -791,7 +809,6 @@ run('PG 集成（销售/采购对账）', () => {
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
       partyId: customerId,
-      no: `${prefix}-SR-LOCK`,
       debitAccountId: salesDebitId,
       creditAccountId: salesCreditId,
     })
@@ -827,7 +844,6 @@ run('PG 集成（销售/采购对账）', () => {
       kind: 'REGULAR',
       partyType: 'CUSTOMER',
       partyId: customerId,
-      no: `${prefix}-SR-INV`,
       debitAccountId: salesDebitId,
       creditAccountId: salesCreditId,
     })

@@ -18,6 +18,7 @@ import { auditCreated, auditDestroyed, auditDiff, writeAudit } from '~/platform/
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
+import type { NumberingService } from '~/platform/numbering/service.ts'
 import { DEPARTMENT_RESOURCE, departmentResourceMeta } from './meta.ts'
 
 export interface Department {
@@ -35,7 +36,8 @@ export interface Department {
 }
 
 export interface DepartmentInput {
-  code: string
+  /** 部门编码由系统按编号规则生成（sys.department），传值一律 422 */
+  code?: string | null
   name: string
   companyId: string
   parentId?: string | null
@@ -77,7 +79,7 @@ const WRITE_CONFLICTS = [
   { code: '23503', message: '部门已被引用或关联目标不存在' },
 ] as const
 
-export function createDepartmentService(db: Kysely<Database>, registry: Registry) {
+export function createDepartmentService(db: Kysely<Database>, numbering: NumberingService, registry: Registry) {
   const target = registry.authzTarget(DEPARTMENT_RESOURCE)
 
   async function get(permit: Permit, id: string): Promise<Department> {
@@ -111,13 +113,18 @@ export function createDepartmentService(db: Kysely<Database>, registry: Registry
 
   async function create(permit: Permit, input: DepartmentInput): Promise<Department> {
     assertCompanyWritable(permit, input.companyId, '公司不存在')
-    const code = input.code.trim()
     const name = input.name.trim()
-    validateCodeAndName(code, name)
     const parentId = input.parentId ?? null
     return withTx(db, async (trx) => {
       await lockCompanyTree(trx, input.companyId)
       const parent = await resolveParent(trx, input.companyId, null, parentId)
+      const code = await numbering.assignedInTx(trx, {
+        resource: 'sys.department',
+        field: 'code',
+        provided: input.code,
+        values: { company_id: input.companyId },
+      })
+      validateCodeAndName(code, name)
       const id = crypto.randomUUID()
       try {
         await trx
@@ -153,7 +160,10 @@ export function createDepartmentService(db: Kysely<Database>, registry: Registry
       await lockCompanyTree(trx, await companyOf(trx, id))
       const locked = await lockRow(trx, permit, id)
       const before = await getInTx(trx, id)
-      const code = (patch.code ?? before.code).trim()
+      if (patch.code !== undefined && patch.code.trim() !== before.code) {
+        throw ApiError.validation('部门参数不合法', { code: ['部门编码创建后不可修改'] })
+      }
+      const code = before.code
       const name = (patch.name ?? before.name).trim()
       validateCodeAndName(code, name)
       const enabled = patch.enabled ?? before.enabled

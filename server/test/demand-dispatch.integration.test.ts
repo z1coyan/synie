@@ -12,6 +12,7 @@ import { createDb } from '~/db/index.ts'
 import { createIamService } from '~/modules/iam/index.ts'
 import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { testActor } from '~/platform/authz/testing.ts'
+import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { buildTestApp, createPlatformRegistry, testDatabaseUrl } from './helpers.ts'
 
 const url = testDatabaseUrl()
@@ -48,10 +49,17 @@ run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
   const registry = createPlatformRegistry()
   const authz = createAuthzEnforcer(registry)
   const iam = createIamService(db, registry)
+  const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
   const admin = testActor({ superAdmin: true, allCompanies: true })
   /** 建用户走 IamService：superAdmin 现取一张 sysUsers:create 凭证 */
   const adminUserPermit = () => {
     const decision = authz.decideFor(admin, 'sysUsers', 'create')
+    if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
+    return decision.permit
+  }
+  /** 建编号规则走 superAdmin 凭证 */
+  const adminRulePermit = () => {
+    const decision = authz.decideFor(admin, 'sysNumberingRules', 'create')
     if (decision.outcome !== 'permit') throw new Error('夹具应当 permit')
     return decision.permit
   }
@@ -77,6 +85,39 @@ run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
 
   const createdDemands: string[] = []
   const createdWorkOrders: string[] = []
+  const createdNumberingRules: string[] = []
+
+  /** 编号规则：已有启用规则则复用，否则建本测前缀规则（并发撞唯一索引回落复用） */
+  async function ensureRule(resource: string, name: string, prefix: string): Promise<void> {
+    const existing = await db
+      .selectFrom('sys_numbering_rule')
+      .select('id')
+      .where('resource', '=', resource)
+      .where('enabled', '=', true)
+      .executeTakeFirst()
+    if (existing) return
+    try {
+      const rule = await numbering.create(adminRulePermit(), {
+        resource,
+        name,
+        segments: [
+          { type: 'text', value: prefix },
+          { type: 'seq', padding: 3 },
+        ],
+        perCompany: false,
+        enabled: true,
+      })
+      createdNumberingRules.push(rule.id)
+    } catch (err) {
+      const again = await db
+        .selectFrom('sys_numbering_rule')
+        .select('id')
+        .where('resource', '=', resource)
+        .where('enabled', '=', true)
+        .executeTakeFirst()
+      if (!again) throw err
+    }
+  }
 
   /** 覆盖式授权（role, code, scope）三元组；矩阵范围 UI 未到位前直接写授权表 */
   async function grant(
@@ -130,14 +171,12 @@ run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
     ownerDeptId: string | null
   }
 
-  /** 建一张需求单（含一行）；返回头与行 id。指派类型随下发车间联动：有车间=生产，无=库存 */
+  /** 建一张需求单（含一行）；返回头与行 id。指派类型随下发车间联动：有车间=生产，无=库存（编号系统生成） */
   async function seedDemand(
-    no: string,
     assignedDeptId: string | null,
   ): Promise<{ demand: DemandDto; itemId: string }> {
     const created = await post('/demands', plannerHeaders, {
       companyId,
-      demandNo: no,
       assignType: assignedDeptId ? 'MAKE' : 'STOCK',
       ...(assignedDeptId ? { assignedDeptId } : {}),
     })
@@ -269,20 +308,24 @@ run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
     await grant(plannerRoleId, PLANNER_CODES, 'all')
     await grant(shopRoleId, SHOP_CODES, 'dept')
 
+    // 需求单/工单经编号规则取号（不接受手填）：已有启用规则则复用
+    await ensureRule('mfg.demand', `D${suffix}需求`, `DD${suffix}-`)
+    await ensureRule('mfg.work_order', `D${suffix}工单`, `DW${suffix}-`)
+
     app = await buildTestApp(db, { registry })
     plannerHeaders = await login(planner.user.username, planner.password)
     shopHeaders = await login(shop.user.username, shop.password)
 
-    const stamp = await seedDemand(`DS1-${suffix}`, null)
+    const stamp = await seedDemand(null)
     stampItemId = stamp.itemId
     stampDemand = await confirmAndDispatch(stamp.demand.id, stampDeptId)
 
-    const assembly = await seedDemand(`DS2-${suffix}`, null)
+    const assembly = await seedDemand(null)
     assemblyItemId = assembly.itemId
     assemblyDemand = await confirmAndDispatch(assembly.demand.id, assemblyDeptId)
 
     // 草稿未下发单（改派动线与不可见集合都靠它）
-    const draft = await seedDemand(`DS3-${suffix}`, null)
+    const draft = await seedDemand(null)
     draftDemandId = draft.demand.id
   })
 
@@ -327,6 +370,10 @@ run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
       await db.deleteFrom('sys_role').where('id', '=', roleId).execute()
     }
     await sql`DELETE FROM sys_department WHERE id = ANY(${[stampDeptId, assemblyDeptId, otherCompanyDeptId]}::uuid[])`.execute(db)
+    for (const id of createdNumberingRules) {
+      await sql`DELETE FROM sys_audit_log WHERE record_id = ${id}::uuid`.execute(db)
+      await db.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
+    }
     await sql`DELETE FROM bas_company WHERE id = ANY(${[companyId, otherCompanyId]}::uuid[])`.execute(db)
     await sql`DELETE FROM bas_currency WHERE id = ${currencyId}::uuid`.execute(db)
     await db.destroy()
@@ -375,7 +422,7 @@ run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
   })
 
   test('草稿态表单可填可改下发车间（create 与 patch 两条路径）', async () => {
-    const withDept = await seedDemand(`DS4-${suffix}`, stampDeptId)
+    const withDept = await seedDemand(stampDeptId)
     expect(withDept.demand.assignedDeptId).toBe(stampDeptId)
     // 草稿可见于车间（行谓词只看指派列，不看状态）
     expect(await demandIds(shopHeaders)).toContain(withDept.demand.id)
@@ -430,7 +477,6 @@ run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
   test('车间经理从下发到本车间的需求行建工单：归属部门盖章为本部门', async () => {
     const res = await post('/work-orders', shopHeaders, {
       demandItemId: stampItemId,
-      workOrderNo: `WOS-${suffix}`,
     })
     expect(res.status).toBe(201)
     const wo = (await res.json()) as WorkOrderDto
@@ -442,7 +488,6 @@ run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
   test('他车间的需求行不可达 → 建工单 not_found（不泄露需求行存在性）', async () => {
     const res = await post('/work-orders', shopHeaders, {
       demandItemId: assemblyItemId,
-      workOrderNo: `WOX-${suffix}`,
     })
     expect(res.status).toBe(404)
   })
@@ -450,7 +495,6 @@ run('PG 集成（需求单下发车间：assigned/stamped 两形态）', () => {
   test('无部门用户建的工单盖 NULL：仅 all 范围可见', async () => {
     const res = await post('/work-orders', plannerHeaders, {
       demandItemId: assemblyItemId,
-      workOrderNo: `WOP-${suffix}`,
     })
     expect(res.status).toBe(201)
     const wo = (await res.json()) as WorkOrderDto

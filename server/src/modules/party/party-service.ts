@@ -324,10 +324,11 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
       insuranceTypes?: string[]
     },
   ): Promise<Employee> {
-    let code = input.code?.trim() || ''
-    if (!code) {
-      code = await numbering.next({ resource: 'hr.employee' })
-    }
+    const code = await numbering.assigned({
+      resource: 'hr.employee',
+      field: 'code',
+      provided: input.code,
+    })
     const normalized = normalizeEmployee({
       code,
       name: input.name,
@@ -455,8 +456,11 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
         notFoundMessage: '员工不存在',
       })
       const before = mapEmployee(locked as never)
+      if (input.code !== undefined && input.code.trim() !== before.code) {
+        throw ApiError.validation('员工参数不合法', { code: ['员工编号创建后不可修改'] })
+      }
       const draft = {
-        code: input.code ?? before.code,
+        code: before.code,
         name: input.name ?? before.name,
         attendanceNo: input.attendanceNoPresent ? (input.attendanceNo ?? null) : before.attendanceNo,
         idNumber: input.idNumberPresent ? (input.idNumber ?? null) : before.idNumber,
@@ -555,11 +559,15 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
 
 export type EmployeeService = ReturnType<typeof createEmployeeService>
 
+/** 客户/供应商编码会作为段嵌入其他单据编号（如物料编号含客户编号段），禁分隔符/空白 */
+const PARTY_CODE_RE = /^[A-Za-z0-9]+$/
+
 function normalizeParty(code: string, name: string, shortName?: string | null) {
   code = code.trim()
   name = name.trim()
   const fields: Record<string, string[]> = {}
   if (!code || [...code].length > 32) fields.code = ['不能为空且最多 32 个字符']
+  else if (!PARTY_CODE_RE.test(code)) fields.code = ['只能包含字母和数字']
   if (!name || [...name].length > 128) fields.name = ['不能为空且最多 128 个字符']
   let sn: string | null = null
   if (shortName !== undefined && shortName !== null) {

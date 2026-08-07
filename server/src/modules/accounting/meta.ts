@@ -49,7 +49,7 @@ export function journalResourceMeta(): ResourceMeta {
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('voucher_no', 'voucherNo', 'string', '凭证编号', {
-        required: true,
+        readonly: true,
         filterable: true,
         sortable: true,
       }),

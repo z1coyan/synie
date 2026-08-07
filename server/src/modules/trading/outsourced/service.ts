@@ -176,7 +176,7 @@ const CHILD_AUDIT = mergeAuditFields(
   }),
 )
 
-type Numberer = Pick<NumberingService, 'nextInTx'>
+type Numberer = Pick<NumberingService, 'assignedInTx'>
 
 export function createOutsourcedService(
   db: Kysely<Database>,
@@ -319,13 +319,12 @@ export function createOutsourcedService(
     assertCompanyWritable(permit, input.companyId, '公司不存在')
     return withTx(db, async (trx) => {
       const issueDate = input.issueDate ? toDateOnly(input.issueDate) : utcToday()
-      let issueNo = (input.issueNo ?? '').trim()
-      if (!issueNo) {
-        issueNo = await numberer.nextInTx(trx, {
-          resource: ISSUE_PREFIX,
-          values: { company_id: input.companyId, issue_date: issueDate },
-        })
-      }
+      const issueNo = await numberer.assignedInTx(trx, {
+        resource: ISSUE_PREFIX,
+        field: 'issueNo',
+        provided: input.issueNo,
+        values: { company_id: input.companyId, issue_date: issueDate },
+      })
       const partyType = lowerParty(input.partyType)
       const draft = {
         issueNo,
@@ -388,8 +387,11 @@ export function createOutsourcedService(
     return withTx(db, async (trx) => {
       const beforeRow = await lockDraftIssue(trx, permit, id)
       const before = mapIssue(beforeRow)
+      if (input.issueNo !== undefined && input.issueNo.trim() !== before.issueNo) {
+        throw ApiError.validation('委外发料单参数不合法', { issueNo: ['编号创建后不可修改'] })
+      }
       const after = {
-        issueNo: input.issueNo !== undefined ? input.issueNo.trim() : before.issueNo,
+        issueNo: before.issueNo,
         issueDate: input.issueDate ? toDateOnly(input.issueDate) : before.issueDate,
         partyType: input.partyType !== undefined ? lowerParty(input.partyType) : lowerParty(before.partyType),
         partyId: input.partyId ?? before.partyId,
@@ -777,13 +779,12 @@ export function createOutsourcedService(
     assertCompanyWritable(permit, input.companyId, '公司不存在')
     return withTx(db, async (trx) => {
       const receiptDate = input.receiptDate ? toDateOnly(input.receiptDate) : utcToday()
-      let receiptNo = (input.receiptNo ?? '').trim()
-      if (!receiptNo) {
-        receiptNo = await numberer.nextInTx(trx, {
-          resource: RECEIPT_PREFIX,
-          values: { company_id: input.companyId, receipt_date: receiptDate },
-        })
-      }
+      const receiptNo = await numberer.assignedInTx(trx, {
+        resource: RECEIPT_PREFIX,
+        field: 'receiptNo',
+        provided: input.receiptNo,
+        values: { company_id: input.companyId, receipt_date: receiptDate },
+      })
       const { debit, credit } = await resolveReceiptAccounts(
         trx,
         input.companyId,
@@ -860,8 +861,11 @@ export function createOutsourcedService(
     return withTx(db, async (trx) => {
       const beforeRow = await lockDraftReceipt(trx, permit, id)
       const before = mapReceipt(beforeRow)
+      if (input.receiptNo !== undefined && input.receiptNo.trim() !== before.receiptNo) {
+        throw ApiError.validation('委外入库单参数不合法', { receiptNo: ['编号创建后不可修改'] })
+      }
       const after = {
-        receiptNo: input.receiptNo !== undefined ? input.receiptNo.trim() : before.receiptNo,
+        receiptNo: before.receiptNo,
         receiptDate: input.receiptDate ? toDateOnly(input.receiptDate) : before.receiptDate,
         postingDate: input.postingDatePresent
           ? input.postingDate

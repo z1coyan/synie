@@ -667,7 +667,7 @@ export function AcceptanceTransactionDrawer({
             />
           ),
         },
-        docNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
+        docNo: { order: 0, cols: 6, placeholder: '保存后自动编号' },
         bankAccountId: {
           order: 1,
           required: true,

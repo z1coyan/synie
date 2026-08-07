@@ -274,7 +274,7 @@ export interface PurchaseReceiptDraftDto {
   items: ReturnType<typeof mapItemDto>[]
 }
 
-type Numberer = Pick<NumberingService, 'nextInTx'>
+type Numberer = Pick<NumberingService, 'assignedInTx'>
 
 export function createFulfillmentService(
   db: Kysely<Database>,
@@ -377,13 +377,13 @@ export function createFulfillmentService(
   ) {
     const spec = fulfillmentSpec(side)
     const documentDate = input.documentDate ? toDateOnly(input.documentDate) : utcToday()
-    let no = (input.no ?? '').trim()
-    if (!no) {
-      no = await numberer.nextInTx(trx, {
-        resource: spec.numberResource,
-        values: { company_id: input.companyId, document_date: documentDate },
-      })
-    }
+    const no = await numberer.assignedInTx(trx, {
+      resource: spec.numberResource,
+      field: 'number',
+      provided: input.no,
+      // 规则段引用 meta 字段名（delivery_date/receipt_date），values 键必须同名，否则日期段渲染为空
+      values: { company_id: input.companyId, [spec.dateCol]: documentDate },
+    })
     const partyType = lowerParty(input.partyType)
     const head: FulfillmentHead = {
       id: '',
@@ -456,9 +456,12 @@ export function createFulfillmentService(
     const spec = fulfillmentSpec(side)
     const beforeRow = await lockDraftHead(trx, permit, spec, id)
     const before = mapHead(beforeRow)
+    if (input.no !== undefined && input.no.trim() !== before.no) {
+      throw ApiError.validation(`${spec.label}参数不合法`, { number: ['编号创建后不可修改'] })
+    }
     const after: FulfillmentHead = {
       ...before,
-      no: input.no !== undefined ? input.no.trim() : before.no,
+      no: before.no,
       documentDate: input.documentDate ? toDateOnly(input.documentDate) : before.documentDate,
       postingDate: input.postingDatePresent
         ? (input.postingDate ? toDateOnly(input.postingDate) : null)

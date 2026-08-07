@@ -308,8 +308,9 @@ test("操作日志、待办页与铃铛全程使用 Go REST", async ({ page }) =
       .getByRole("button", { name: `${prefix}-SR`, exact: true })
       .click();
     expect((await readResponse).ok()).toBeTruthy();
+    // 供应链拆分后销售对账路由为 /sales/reconciliations(原 /scm/sales-reconciliations)
     await expect(page).toHaveURL(
-      /\/scm\/sales-reconciliations\/reconciliations/,
+      /\/sales\/reconciliations\/reconciliations/,
     );
 
     expect(pageErrors, "系统运维消费面不应产生运行时错误").toEqual([]);

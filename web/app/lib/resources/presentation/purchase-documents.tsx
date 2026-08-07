@@ -76,7 +76,7 @@ const DEFINITIONS = {
       quotationNo: {
         order: 0,
         cols: 6,
-        placeholder: '留空自动编号',
+        placeholder: '保存后自动编号',
       },
       quotationDate: { order: 1, cols: 6, required: true },
       validUntil: {
@@ -121,7 +121,7 @@ const DEFINITIONS = {
       orderNo: {
         order: 0,
         cols: 6,
-        placeholder: '留空自动编号',
+        placeholder: '保存后自动编号',
       },
       orderDate: { order: 1, cols: 6, required: true },
       ...tradingPartyFields({
@@ -166,7 +166,7 @@ const DEFINITIONS = {
       receiptNo: {
         order: 0,
         cols: 6,
-        placeholder: '留空自动编号',
+        placeholder: '保存后自动编号',
       },
       receiptDate: { order: 1, cols: 6, required: true },
       postingDate: {
@@ -272,7 +272,7 @@ const DEFINITIONS = {
       receiptNo: {
         order: 0,
         cols: 6,
-        placeholder: '留空自动编号',
+        placeholder: '保存后自动编号',
       },
       receiptDate: {
         order: 1,
@@ -442,7 +442,7 @@ const DEFINITIONS = {
       issueNo: {
         order: 0,
         cols: 6,
-        placeholder: '留空自动编号',
+        placeholder: '保存后自动编号',
       },
       issueDate: {
         order: 1,
@@ -539,7 +539,7 @@ const DEFINITIONS = {
       reconciliationNo: {
         order: 0,
         cols: 6,
-        placeholder: '留空自动编号',
+        placeholder: '保存后自动编号',
       },
       reconciliationType: {
         order: 1,

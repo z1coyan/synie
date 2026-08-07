@@ -130,10 +130,11 @@ export function createMasterService(
   ): Promise<Operation> {
     const { code, name, note } = normalizeHead(input.code ?? '', input.name, input.note, '工序')
     return withTx(db, async (trx) => {
-      let finalCode = code
-      if (!finalCode) {
-        finalCode = await numbering.nextInTx(trx, { resource: 'mfg.operation' })
-      }
+      const finalCode = await numbering.assignedInTx(trx, {
+        resource: 'mfg.operation',
+        field: 'code',
+        provided: code,
+      })
       try {
         const row = await trx
           .insertInto('mfg_operation')
@@ -248,10 +249,11 @@ export function createMasterService(
   ): Promise<ProcessTemplate> {
     const { code, name, note } = normalizeHead(input.code ?? '', input.name, input.note, '工艺模板')
     return withTx(db, async (trx) => {
-      let finalCode = code
-      if (!finalCode) {
-        finalCode = await numbering.nextInTx(trx, { resource: 'mfg.route_template' })
-      }
+      const finalCode = await numbering.assignedInTx(trx, {
+        resource: 'mfg.route_template',
+        field: 'code',
+        provided: code,
+      })
       try {
         const row = await trx
           .insertInto('mfg_process_template')
@@ -526,13 +528,12 @@ export function createMasterService(
     const status = parseBomStatus(input.status ?? 'draft', { allowDraft: true })
     return withTx(db, async (trx) => {
       await ensureMaterial(trx, input.materialId)
-      let code = n.code
-      if (!code) {
-        code = await numbering.nextInTx(trx, {
-          resource: 'mfg.bom',
-          values: { material_id: input.materialId },
-        })
-      }
+      const code = await numbering.assignedInTx(trx, {
+        resource: 'mfg.bom',
+        field: 'code',
+        provided: n.code,
+        values: { material_id: input.materialId },
+      })
       try {
         const row = await trx
           .insertInto('mfg_bom')

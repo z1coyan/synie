@@ -26,12 +26,13 @@ export function departmentResourceMeta(): ResourceMeta {
     classification: { presentation: 'basic', interactive: true },
     permissionPrefix: 'sys.department',
     permissionLabel: '部门',
+    numbering: true,
     table: 'sys_department',
     authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', '部门编码', {
-        required: true,
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
@@ -77,7 +78,8 @@ export function departmentResourceMeta(): ResourceMeta {
       // enabled 走独立行动作（启停不进表单）；path 是物化实现细节，不投影
       exclude: ['id', 'enabled', 'hasChildren', 'insertedAt', 'updatedAt'],
       fields: {
-        code: { placeholder: '如 PROD、PROD-STAMP', span: 6 },
+        // basic form 的只读事实由字段级 readonly 投影，form 层不得重复声明 edit
+        code: { placeholder: '保存后自动编号', span: 6 },
         name: { placeholder: '如 冲压车间', span: 6 },
         parentId: { placeholder: '留空即公司下的一级部门' },
       },

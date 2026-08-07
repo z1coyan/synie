@@ -1,5 +1,28 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { loginViaUI } from './fixtures/session'
+
+/**
+ * 行操作菜单动作（闭环重试收敛）：失效刷新的行重渲染会卸载刚开的菜单，
+ * 点击也可能落在已卸载的菜单节点上变成 no-op——
+ * 「目标未现则 toggle 菜单→点动作→短超时验证目标」循环直到稳定。
+ */
+async function clickRowActionMenu(
+  page: Page,
+  row: Locator,
+  actionName: string,
+  confirm: Locator,
+): Promise<void> {
+  const item = page.getByRole('menuitem', { name: actionName, exact: true })
+  await expect(async () => {
+    if (await confirm.isVisible().catch(() => false)) return
+    if (!(await item.isVisible().catch(() => false))) {
+      await row.getByRole('button', { name: '行操作' }).click()
+    }
+    await expect(item).toBeVisible({ timeout: 2_000 })
+    await item.click({ timeout: 2_000 })
+    await expect(confirm).toBeVisible({ timeout: 2_000 })
+  }).toPass({ timeout: 20_000 })
+}
 
 const suffix = Date.now().toString(36)
 const storageName = `e2e-local-${suffix}`
@@ -56,9 +79,18 @@ test('存储 Grid/Drawer、multipart 文件与文件详情只使用 Go REST', as
     await storageSearch.fill(storageName)
     const storageRow = page.getByRole('row').filter({ hasText: storageName })
     await expect(storageRow).toBeVisible()
-    await storageRow.getByRole('button', { name: '行操作' }).click()
-    await page.getByRole('menuitem', { name: '设为默认', exact: true }).click()
-    await expect(page.getByText(`已将「${storageLabel}」设为默认存储`)).toBeVisible()
+    // 等搜索/失效刷新落定再开行操作菜单(竞态,helper 内重试兜底)
+    await page.waitForLoadState('networkidle')
+    // 「设为默认」行动作已命令化:先弹确认框,确认后执行并出 toast
+    const confirmSetDefault = page.getByRole('alertdialog', {
+      name: '确认设为默认',
+    })
+    await clickRowActionMenu(page, storageRow, '设为默认', confirmSetDefault)
+    await confirmSetDefault
+      .getByRole('button', { name: '确认', exact: true })
+      .click()
+    // 命令化后成功 toast 为统一口径「{动作}成功(N 条)」
+    await expect(page.getByText('设为默认成功(1 条)')).toBeVisible()
 
     const storageQuery = await page.request.post('/api/v1/system/storages/query', {
       data: {
@@ -92,9 +124,9 @@ test('存储 Grid/Drawer、multipart 文件与文件详情只使用 Go REST', as
     await page.getByRole('searchbox', { name: '搜索' }).fill(filename)
     const fileRow = page.getByRole('row').filter({ hasText: filename })
     await expect(fileRow).toBeVisible()
-    await fileRow.getByRole('button', { name: '行操作' }).click()
-    await page.getByRole('menuitem', { name: '查看', exact: true }).click()
+    await page.waitForLoadState('networkidle')
     const fileDrawer = page.getByRole('dialog', { name: '文件详情' })
+    await clickRowActionMenu(page, fileRow, '查看', fileDrawer)
     await expect(fileDrawer).toContainText(filename)
     await expect(fileDrawer.getByText('业务挂接(0)')).toBeVisible()
 

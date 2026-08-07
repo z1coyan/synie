@@ -170,7 +170,7 @@ export function fulfillmentHeadMeta(side: TradingSide): ResourceMeta {
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f(spec.numberCol, spec.numberApi, 'string', sales ? '发货单号' : '入库单号', {
-        required: true, filterable: true, sortable: true,
+        readonly: true, filterable: true, sortable: true,
       }),
       f(spec.dateCol, spec.dateApi, 'date', sales ? '发货日期(库存分录业务日)' : '入库日期(库存分录业务日)', {
         required: true, filterable: true, sortable: true,

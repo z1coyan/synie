@@ -346,7 +346,7 @@ function ExpenseReportsPage() {
           employeeId: { required: true, order: 1, cols: 6, label: '员工' },
           expenseDate: { required: true, order: 2, cols: 6, label: '报销日期', defaultValue: todayLocal() },
           postingDate: { order: 3, cols: 6, label: '过账日期', placeholder: '审核前必填' },
-          docNo: { order: 4, cols: 6, label: '单据编号', placeholder: '留空自动编号' },
+          docNo: { order: 4, cols: 6, label: '单据编号', placeholder: '保存后自动编号' },
           paymentAccountId: {
             required: true,
             order: 5,

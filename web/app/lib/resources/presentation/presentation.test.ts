@@ -97,7 +97,7 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
     expect(emp.fields.name?.required).toBe(true)
     expect(emp.fields.code).toMatchObject({
       required: false,
-      placeholder: '留空自动编号',
+      placeholder: '保存后自动编号',
     })
     expect(emp.fields.code?.edit).toBeUndefined()
 

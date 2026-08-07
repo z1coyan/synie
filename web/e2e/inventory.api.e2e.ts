@@ -19,17 +19,20 @@ async function expectOK(
   return text === '' ? null : (JSON.parse(text) as Record<string, unknown>)
 }
 
+const pgContainer = process.env.SYNIE_PG_CONTAINER ?? 'synie-postgres-1'
+const pgDb = process.env.SYNIE_PG_DB ?? 'synie'
+
 function postgres(sql: string): string {
   return execFileSync(
     'docker',
     [
       'exec',
-      'synie-postgres-1',
+      pgContainer,
       'psql',
       '-U',
       'synie',
       '-d',
-      'synie',
+      pgDb,
       '-v',
       'ON_ERROR_STOP=1',
       '-Atc',
@@ -44,8 +47,9 @@ async function cleanupCategory(
   id: string,
 ): Promise<void> {
   // 直连 API origin,cookie 域是前端 origin,需显式带 Cookie 头
+  // 端点已自 /inventory/material-categories 迁往 /base/material-categories(scm 拆分归并)
   const response = await fetch(
-    `${goAPIURL}/inventory/material-categories/${id}`,
+    `${goAPIURL}/base/material-categories/${id}`,
     {
       method: 'DELETE',
       headers: cookie,
@@ -74,10 +78,14 @@ test('库存主数据、流水、余额与三类单据页面全程使用 Go REST
     if (pathname === '/graphql') {
       graphqlRequests.push({ url: outgoing.url(), body: outgoing.postData() })
     }
+    // 主数据端点已自 /api/v1/inventory/* 迁往 /api/v1/base/*(scm 拆分归并);
+    // auth/me 只经 SSR 发出,浏览器侧观测不到,不进观测清单
     if (
       pathname.startsWith('/api/v1/inventory/') ||
-      pathname.startsWith('/api/v1/meta/resources/inv') ||
-      pathname === '/api/v1/auth/me'
+      pathname.startsWith('/api/v1/base/material-categories') ||
+      pathname.startsWith('/api/v1/base/materials') ||
+      pathname.startsWith('/api/v1/base/warehouses') ||
+      pathname.startsWith('/api/v1/meta/resources/inv')
     ) {
       restRequests.push(`${outgoing.method()} ${pathname}`)
     }
@@ -234,7 +242,6 @@ test('库存主数据、流水、余额与三类单据页面全程使用 Go REST
         'POST /api/v1/inventory/stock-docs/query',
         'POST /api/v1/inventory/stock-transfers/query',
         'POST /api/v1/inventory/stock-counts/query',
-        'GET /api/v1/auth/me',
       ]),
     )
     expect(graphqlRequests).toEqual([])

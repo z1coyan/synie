@@ -779,6 +779,10 @@ export interface InvWarehouse {
   account_id: string | null;
   active: Generated<boolean>;
   allow_negative: Generated<boolean>;
+  /**
+   * 仓库编码：系统按编号规则生成（公司内唯一），创建后不可改，不接受手填
+   */
+  code: string;
   company_id: string;
   id: Generated<string>;
   inserted_at: Generated<Timestamp>;
