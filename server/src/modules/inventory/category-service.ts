@@ -1,30 +1,23 @@
 /**
- * 物料分类（全局共享树，无公司列）。
+ * 物料分类（全局共享树，无公司列）——标准派生服务。
  *
- * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
- * 列表 `listAuthorized`、单条 `loadAuthorizedFrom`、写前取行 `loadAuthorized(forUpdate)`。
- * global 形态只有码级判定（矩阵不开行级范围）；树结构约束（叶子/下级/引用）是领域不变量，留在本文件。
+ * CRUD/批量/审计/授权由 `platform/standard` 按 meta 派生；树写侧不变量由内核 tree 承担
+ * （整表 advisory 锁、父子校验与递归 CTE 防环、有下级不可删）；无物化路径列，故不声明
+ * pathColumn。列表与单条的父名/含下级投影由内核 projection 复刻（写后同事务重载）。
+ *
+ * 本文件只留领域不变量（钩子）：
+ * - 上级不能是叶子分类（tree.onParent）
+ * - 叶子标记翻转的双向保护（有下级不可改叶子；下挂物料不可改非叶子）
+ * - 删除前的物料引用保护
  */
-import type { ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import { withTx, type DbHandle } from '~/db/tx.ts'
+import type { DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import {
-  auditCreated,
-  auditDestroyed,
-  auditDiff,
-  writeAudit,
-} from '~/platform/audit/write.ts'
-import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
-import { mapWriteError } from '~/db/dberr.ts'
-import { listAuthorized } from '~/db/list.ts'
-import { loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
-import { runeLen, toDate } from './helpers.ts'
-import { materialCategoryResourceMeta } from './meta.ts'
+import { createStandardService, type StandardService } from '~/platform/standard/service.ts'
+import { runeLen } from './helpers.ts'
 
 export interface MaterialCategory {
   id: string
@@ -37,14 +30,11 @@ export interface MaterialCategory {
   parentId: string | null
   parent: { id: string; name: string } | null
   hasChildren: boolean
+  [key: string]: unknown
 }
-
-const AUDIT = auditFieldsOf(materialCategoryResourceMeta())
-const META = materialCategoryResourceMeta()
 
 export const CATEGORY_RESOURCE = 'invMaterialCategories'
 
-const TABLE = META.table
 /** 列表与单条共用同一份投影（别名与 listAuthorized 的 alias 必须逐字一致） */
 const ALIAS = 'material_category'
 const SOURCE = sql`
@@ -56,262 +46,87 @@ const SOURCE = sql`
     LEFT JOIN inv_material_category p ON p.id=c.parent_id
   ) material_category
 `
-const SELECT = sql`SELECT id,code,name,is_leaf,active,inserted_at,updated_at,
-  parent_id,parent_name,has_children`
+const SELECT_EXTRA = sql`parent_name,has_children`
 
-export function createMaterialCategoryService(db: Kysely<Database>, registry: Registry) {
-  const target = registry.authzTarget(CATEGORY_RESOURCE)
-
-  async function get(permit: Permit, id: string): Promise<MaterialCategory> {
-    return loadAuthorizedFrom({
-      db,
-      permit,
-      target,
-      alias: ALIAS,
-      source: SOURCE,
-      select: SELECT,
-      id,
-      mapRow,
-      notFoundMessage: '物料分类不存在',
-    })
-  }
-
-  async function list(permit: Permit, query: Partial<ListQuery>) {
-    return listAuthorized({
-      db,
-      permit,
-      target,
-      alias: ALIAS,
-      resource: META,
-      source: SOURCE,
-      select: SELECT,
-      defaultOrder: sql`"code" ASC, "id" ASC`,
-      query,
-      mapRow,
-    })
-  }
-
-  async function create(
-    permit: Permit,
-    input: {
-      code: string
-      name: string
-      isLeaf?: boolean
-      active?: boolean
-      parentId?: string | null
+export function createMaterialCategoryService(
+  db: Kysely<Database>,
+  registry: Registry,
+): StandardService<MaterialCategory> {
+  return createStandardService<MaterialCategory>({
+    db,
+    registry,
+    resource: CATEGORY_RESOURCE,
+    notFound: '物料分类不存在',
+    defaultOrder: sql`"code" ASC, "id" ASC`,
+    projection: { source: SOURCE, alias: ALIAS, selectExtra: SELECT_EXTRA, mapExtra },
+    writeErrors: [
+      {
+        code: '23505',
+        constraint: 'inv_material_category_unique_code_index',
+        message: '分类编号已存在',
+      },
+      { code: '23505', message: '物料分类唯一字段已存在' },
+    ],
+    tree: {
+      childBlockMessage: '存在下级分类,不能删除',
+      // 自身/不存在/成环由内核判；叶子父不可挂子分类是本资源的个性约束
+      onParent: (_trx, { parent }) => {
+        if (parent.isLeaf) {
+          throw ApiError.validation('物料分类参数不合法', {
+            parentId: ['上级分类是叶子分类,不能挂子分类'],
+          })
+        }
+      },
     },
-  ): Promise<MaterialCategory> {
-    const code = input.code.trim()
-    const name = input.name.trim()
-    validateNames(code, name)
-    const isLeaf = input.isLeaf ?? true
-    const active = input.active ?? true
-    const parentId = input.parentId ?? null
-    return withTx(db, async (trx) => {
-      await lockTree(trx)
-      await validateParent(trx, null, parentId)
-      try {
-        const row = await trx
-          .insertInto('inv_material_category')
-          .values({ code, name, is_leaf: isLeaf, active, parent_id: parentId })
-          .returningAll()
-          .executeTakeFirstOrThrow()
-        const item = await getInTx(trx, row.id)
-        await writeAudit(trx, permit.actor, {
-          resource: 'inv_material_category',
-          recordId: item.id,
-          recordLabel: item.name,
-          actionType: 'create',
-          actionName: 'create',
-          changes: auditCreated(snap(item), AUDIT),
-        })
-        return item
-      } catch (err) {
-        throw mapWriteError(err, '创建物料分类失败', [
-          { code: '23505', constraint: 'inv_material_category_unique_code_index', message: '分类编号已存在' },
-          { code: '23505', message: '物料分类唯一字段已存在' },
-        ])
-      }
-    })
-  }
-
-  async function update(
-    permit: Permit,
-    id: string,
-    input: {
-      code?: string
-      name?: string
-      isLeaf?: boolean
-      active?: boolean
-      parentId?: string | null
-      parentIdPresent?: boolean
-    },
-  ): Promise<MaterialCategory> {
-    return withTx(db, async (trx) => {
-      await lockTree(trx)
-      const locked = await loadAuthorized({
-        db: trx,
-        permit,
-        target,
-        table: TABLE,
-        id,
-        forUpdate: true,
-        notFoundMessage: '物料分类不存在',
-      })
-      const before = await getInTx(trx, id)
-      const code = (input.code ?? before.code).trim()
-      const name = (input.name ?? before.name).trim()
-      validateNames(code, name)
-      const isLeaf = input.isLeaf ?? before.isLeaf
-      const active = input.active ?? before.active
-      const parentId = input.parentIdPresent ? (input.parentId ?? null) : before.parentId
-      await validateParent(trx, id, parentId)
-      if (isLeaf !== Boolean(locked.is_leaf)) {
-        if (isLeaf) {
-          const child = await trx
-            .selectFrom('inv_material_category')
-            .select('id')
-            .where('parent_id', '=', id)
-            .executeTakeFirst()
-          if (child) {
+    hooks: {
+      validate: ({ draft }) => normalizeCategory(draft),
+      beforeWrite: async (trx, { action, draft, before }) => {
+        if (action !== 'update' || !before) return
+        if (draft.isLeaf === before.isLeaf) return
+        const id = String(draft.id)
+        if (draft.isLeaf) {
+          if (await hasChild(trx, id)) {
             throw ApiError.validation('物料分类参数不合法', {
               isLeaf: ['存在下级分类,不能改为叶子分类'],
             })
           }
-        } else {
-          const mat = await trx
-            .selectFrom('inv_material')
-            .select('id')
-            .where('category_id', '=', id)
-            .executeTakeFirst()
-          if (mat) {
-            throw ApiError.validation('物料分类参数不合法', {
-              isLeaf: ['分类下存在物料,不能改为非叶子分类'],
-            })
-          }
-        }
-      }
-      const after: MaterialCategory = {
-        ...before,
-        code,
-        name,
-        isLeaf,
-        active,
-        parentId,
-      }
-      const changes = auditDiff(snap(before), snap(after), AUDIT)
-      if (Object.keys(changes).length === 0) return before
-      try {
-        await trx
-          .updateTable('inv_material_category')
-          .set({
-            code,
-            name,
-            is_leaf: isLeaf,
-            active,
-            parent_id: parentId,
-            updated_at: sql`(now() AT TIME ZONE 'utc')`,
+        } else if (await hasMaterial(trx, id)) {
+          throw ApiError.validation('物料分类参数不合法', {
+            isLeaf: ['分类下存在物料,不能改为非叶子分类'],
           })
-          .where('id', '=', id)
-          .execute()
-      } catch (err) {
-        throw mapWriteError(err, '更新物料分类失败', [
-          { code: '23505', constraint: 'inv_material_category_unique_code_index', message: '分类编号已存在' },
-          { code: '23505', message: '物料分类唯一字段已存在' },
-        ])
-      }
-      const updated = await getInTx(trx, id)
-      await writeAudit(trx, permit.actor, {
-        resource: 'inv_material_category',
-        recordId: id,
-        recordLabel: updated.name,
-        actionType: 'update',
-        actionName: 'update',
-        changes,
-      })
-      return updated
-    })
-  }
-
-  async function remove(permit: Permit, id: string): Promise<void> {
-    await withTx(db, async (trx) => {
-      await lockTree(trx)
-      await loadAuthorized({
-        db: trx,
-        permit,
-        target,
-        table: TABLE,
-        id,
-        forUpdate: true,
-        notFoundMessage: '物料分类不存在',
-      })
-      const child = await trx
-        .selectFrom('inv_material_category')
-        .select('id')
-        .where('parent_id', '=', id)
-        .executeTakeFirst()
-      if (child) throw new ApiError('conflict', '存在下级分类,不能删除')
-      const mat = await trx
-        .selectFrom('inv_material')
-        .select('id')
-        .where('category_id', '=', id)
-        .executeTakeFirst()
-      if (mat) throw new ApiError('conflict', '分类下存在物料,不能删除')
-      const item = await getInTx(trx, id)
-      await trx.deleteFrom('inv_material_category').where('id', '=', id).execute()
-      await writeAudit(trx, permit.actor, {
-        resource: 'inv_material_category',
-        recordId: id,
-        recordLabel: item.name,
-        actionType: 'destroy',
-        actionName: 'destroy',
-        changes: auditDestroyed(snap(item), AUDIT),
-      })
-    })
-  }
-
-  return { get, list, create, update, remove }
+        }
+      },
+      beforeDelete: async (trx, { item }) => {
+        if (await hasMaterial(trx, String(item.id))) {
+          throw new ApiError('conflict', '分类下存在物料,不能删除')
+        }
+      },
+    },
+  })
 }
 
 export type MaterialCategoryService = ReturnType<typeof createMaterialCategoryService>
 
-async function getInTx(db: DbHandle, id: string): Promise<MaterialCategory> {
-  const rows = await sql<Record<string, unknown>>`
-    ${SELECT}${SOURCE} WHERE id = ${id}::uuid
-  `.execute(db)
-  if (rows.rows.length === 0) throw new ApiError('not_found', '物料分类不存在')
-  return mapRow(rows.rows[0]!)
-}
-
-function mapRow(r: Record<string, unknown>): MaterialCategory {
+/** 投影附加列 → wire 嵌套引用对象（上级分类 + 含下级标记） */
+function mapExtra(r: Record<string, unknown>): Record<string, unknown> {
   const parentId = r.parent_id == null ? null : String(r.parent_id)
   const parentName = r.parent_name == null ? null : String(r.parent_name)
   return {
-    id: String(r.id),
-    code: String(r.code),
-    name: String(r.name),
-    isLeaf: Boolean(r.is_leaf),
-    active: Boolean(r.active),
-    insertedAt: toDate(r.inserted_at),
-    updatedAt: toDate(r.updated_at),
-    parentId,
     parent: parentId && parentName ? { id: parentId, name: parentName } : null,
     hasChildren: Boolean(r.has_children),
   }
 }
 
-function snap(item: MaterialCategory): Record<string, unknown> {
-  return {
-    code: item.code,
-    name: item.name,
-    is_leaf: item.isLeaf,
-    active: item.active,
-    parent_id: item.parentId,
-  }
-}
-
-function validateNames(code: string, name: string): void {
+/**
+ * 领域规范化 + 不变量（原地改 draft）。
+ * wire schema 已做 trim/长度校验；此处补服务直调路径（种子数据等）的同等约束。
+ */
+function normalizeCategory(draft: Record<string, unknown>): void {
   const fields: Record<string, string[]> = {}
+  const code = typeof draft.code === 'string' ? draft.code.trim() : ''
+  const name = typeof draft.name === 'string' ? draft.name.trim() : ''
+  draft.code = code
+  draft.name = name
   if (!code || runeLen(code) > 32) fields.code = ['不能为空且最多 32 个字符']
   if (!name || runeLen(name) > 128) fields.name = ['不能为空且最多 128 个字符']
   if (Object.keys(fields).length > 0) {
@@ -319,30 +134,20 @@ function validateNames(code: string, name: string): void {
   }
 }
 
-async function lockTree(db: DbHandle): Promise<void> {
-  await sql`SELECT pg_advisory_xact_lock(hashtextextended('inv_material_category', 0))`.execute(db)
+async function hasChild(db: DbHandle, id: string): Promise<boolean> {
+  const row = await db
+    .selectFrom('inv_material_category')
+    .select('id')
+    .where('parent_id', '=', id)
+    .executeTakeFirst()
+  return Boolean(row)
 }
 
-async function validateParent(
-  db: DbHandle,
-  id: string | null,
-  parentId: string | null,
-): Promise<void> {
-  if (!parentId) return
-  if (id && parentId === id) {
-    throw ApiError.validation('物料分类参数不合法', { parentId: ['上级分类不能选择自身'] })
-  }
-  const parent = await db
-    .selectFrom('inv_material_category')
-    .select(['id', 'is_leaf'])
-    .where('id', '=', parentId)
+async function hasMaterial(db: DbHandle, categoryId: string): Promise<boolean> {
+  const row = await db
+    .selectFrom('inv_material')
+    .select('id')
+    .where('category_id', '=', categoryId)
     .executeTakeFirst()
-  if (!parent) {
-    throw ApiError.validation('物料分类参数不合法', { parentId: ['上级分类不存在'] })
-  }
-  if (parent.is_leaf) {
-    throw ApiError.validation('物料分类参数不合法', {
-      parentId: ['上级分类是叶子分类,不能挂子分类'],
-    })
-  }
+  return Boolean(row)
 }

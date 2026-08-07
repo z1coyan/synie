@@ -1,6 +1,14 @@
 /**
- * 生产入库：草稿行维护 + 库存过账骨架 + 工单/需求完工回写。
+ * 生产入库：单头与入库行均走标准动作内核（platform/standard）。
+ *
+ * 审核/作废迁 workflow 转移（shapes.ts 登记形状 inventory-doc）：effect 只做
+ * 「收集校验 → 库存引擎 → 工单/需求投影回写」，状态翻转 / 盖章 / 审计交内核 transition。
  * 引擎复用 engines/inventory，禁止直写分录表。
+ *
+ * 两处按动作弹射（内核缺 extraWhere/母单投影原语，见迁移决策日志）：
+ * - `listOutputs`：单头列表带 companyId 领域过滤；
+ * - `listOutputItems`：行列表 join 母单暴露 output_no/date/status 投影列，
+ *   而 create/update/get 逐字冻结为「不带母单投影」（三列出 null）。
  *
  * 授权全由平台承担（工单 07）：服务只收 Permit，行谓词由 loadAuthorized/listAuthorized 编译。
  * 入库行引用生产工单，故行的写路由额外要求 `mfg.work_order:read`（guard allOf）——
@@ -9,35 +17,24 @@
 import { decimal, toDecimalString } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import { withTx, type DbHandle } from '~/db/tx.ts'
+import type { DbHandle, TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import type { InventoryEngine, StockLine } from '~/engines/inventory/types.ts'
-import {
-  auditCreated,
-  auditDestroyed,
-  auditDiff,
-  writeAudit,
-} from '~/platform/audit/write.ts'
-import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import type { AuthzTarget } from '~/platform/meta/resource-authz.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
+import { mapRow } from '~/platform/standard/fields.ts'
+import { createStandardChildService } from '~/platform/standard/child.ts'
+import { auditStamp, createStandardService, type StandardService } from '~/platform/standard/service.ts'
 import { listAuthorized } from '~/db/list.ts'
-import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
 import { utcToday } from '~/db/dates.ts'
 import {
-  auditInventoryDocInTx,
-  voidInventoryDocInTx,
-} from '~/platform/posting/skeleton.ts'
-import {
-  asDate,
-  asInt,
+  MFG_WRITE_MAPPINGS,
   deriveItemProjection,
   mfgWriteError,
   normalizeList,
-  numStr,
+  parsePositiveQty,
   toDateOnly,
   validateNo,
   validateRemarks,
@@ -62,10 +59,12 @@ export const OUTPUT_RESOURCE = 'mfgOutputs'
 export const OUTPUT_ITEM_RESOURCE = 'mfgOutputItems'
 
 const OUTPUT_TABLE = 'mfg_output'
-const OUTPUT_ITEM_TABLE = 'mfg_output_item'
-const OUT_AUDIT = auditFieldsOf(outputResourceMeta())
+const OUT_META = outputResourceMeta()
+const ITEM_META = outputItemResourceMeta()
 
-const ITEM_AUDIT = auditFieldsOf(outputItemResourceMeta())
+const LABEL = '生产入库单'
+const ITEM_LABEL = '生产入库行'
+const VOUCHER_TYPE = 'mfg.output'
 
 export function createOutputService(
   db: Kysely<Database>,
@@ -77,19 +76,157 @@ export function createOutputService(
   const itemTarget = registry.authzTarget(OUTPUT_ITEM_RESOURCE)
   const workOrderTarget = registry.authzTarget(WORK_ORDER_RESOURCE)
 
-  const lockOutput = (trx: DbHandle, permit: Permit, id: string) =>
-    loadOutputAuthorized(trx, permit, target, id, true)
+  const base: StandardService<Output> = createStandardService<Output>({
+    db,
+    registry,
+    resource: OUTPUT_RESOURCE,
+    notFound: `${LABEL}不存在`,
+    defaultOrder: sql`"inserted_at" DESC, "id" DESC`,
+    writeErrors: MFG_WRITE_MAPPINGS,
+    numbering: { service: numbering, field: 'outputNo' },
+    hooks: {
+      validate: ({ action, draft }) => {
+        if (typeof draft.outputNo === 'string') draft.outputNo = draft.outputNo.trim()
+        // 入库日期是库存分录业务日，同时进取号 values（规则段 output_date）；
+        // create 缺省当日（空串同缺省，冻结旧口径），update 只做日期切片
+        const blankDate =
+          draft.outputDate === undefined ||
+          draft.outputDate === null ||
+          String(draft.outputDate).trim() === ''
+        if (action === 'create') {
+          draft.outputDate = blankDate ? utcToday() : toDateOnly(String(draft.outputDate))
+        } else if (!blankDate) {
+          draft.outputDate = toDateOnly(String(draft.outputDate))
+        }
+        const no = typeof draft.outputNo === 'string' ? draft.outputNo : ''
+        // create 未给单号即自动取号（校验落在取号之后），给了则与 update 同校验
+        if (action === 'update' || no !== '') validateNo(no, 'outputNo')
+        validateRemarks(draft.remarks as string | null | undefined)
+      },
+      beforeWrite: async (trx, { draft }) => {
+        await validateWarehouse(trx, draft.warehouseId as string | null, String(draft.companyId))
+      },
+      // created_by_id 是 readonly 列且本资源不声明 owner 绑定，随 INSERT 一并落库
+      insertColumns: ({ permit }) => ({ created_by_id: permit.actor.userId || null }),
+    },
+    workflow: {
+      mutableMessage: `仅草稿${LABEL}可修改或删除`,
+      transitions: [
+        {
+          key: 'audit',
+          label: '审核',
+          from: ['DRAFT'],
+          to: 'AUDITED',
+          guardMessage: `仅草稿${LABEL}可审核`,
+          stamps: ({ permit }) => auditStamp(permit),
+          effect: async (trx, { before }) => {
+            const items = await loadOutputItemsForUpdate(trx, String(before.id))
+            const orders = await lockOutputWorkOrders(trx, items)
+            await checkOutput(trx, before as Output, items, orders)
+            // 审核锁内按当前类型复核：工单创建后物料可能被改为非库存类（尚无分录时允许改）
+            const typeRows = await trx
+              .selectFrom('inv_material')
+              .select(['id', 'material_type'])
+              .where('id', 'in', items.map((i) => i.materialId))
+              .execute()
+            if (typeRows.some((r) => r.material_type !== 'STOCK')) {
+              throw new ApiError('conflict', '工单物料类型已变更为非库存类,不能生产入库')
+            }
+            const stockLines: StockLine[] = items.map((item) => ({
+              warehouseId: item.warehouseId,
+              materialId: item.materialId,
+              quantity: item.baseQty,
+              direction: 'in' as const,
+              remarks: item.remarks ?? (before.remarks as string | null),
+            }))
+            if (stockLines.length > 0) {
+              await inventory.post(
+                trx,
+                {
+                  type: VOUCHER_TYPE,
+                  id: String(before.id),
+                  no: String(before.outputNo),
+                  companyId: String(before.companyId),
+                  postingDate: String(before.outputDate),
+                },
+                stockLines,
+              )
+            }
+            await updateWorkOrderProjection(trx, orders, 1)
+          },
+        },
+        {
+          key: 'void',
+          label: '作废',
+          from: ['AUDITED'],
+          to: 'VOIDED',
+          guardMessage: `仅已审核${LABEL}可作废`,
+          effect: async (trx, { before }) => {
+            const items = await loadOutputItemsForUpdate(trx, String(before.id))
+            const orders = await lockOutputWorkOrders(trx, items)
+            await updateWorkOrderProjection(trx, orders, -1)
+            await inventory.cancel(trx, { type: VOUCHER_TYPE, id: String(before.id) }, new Date())
+          },
+        },
+      ],
+    },
+  })
 
-  /** 入库行的母单（授权按母单自身的行谓词判定） */
-  async function parentOf(trx: DbHandle, permit: Permit, itemId: string): Promise<Output> {
-    const row = await trx
-      .selectFrom('mfg_output_item')
-      .select('output_id')
-      .where('id', '=', itemId)
-      .executeTakeFirst()
-    if (!row) throw new ApiError('not_found', '生产入库行不存在')
-    return loadOutputAuthorized(trx, permit, target, row.output_id, true)
-  }
+  const items = createStandardChildService<OutputItem>({
+    db,
+    registry,
+    resource: OUTPUT_ITEM_RESOURCE,
+    notFound: `${ITEM_LABEL}不存在`,
+    writeErrors: MFG_WRITE_MAPPINGS,
+    parent: {
+      resource: OUTPUT_RESOURCE,
+      fkField: 'outputId',
+      notFound: `${LABEL}不存在`,
+      gate: (parent) => {
+        if (parent.status !== 'DRAFT') {
+          throw new ApiError('conflict', `仅草稿${LABEL}可编辑单据行`)
+        }
+      },
+      inheritFields: ['companyId'],
+    },
+    // 行充实（工单快照 + 单位折算）在 beforeWrite 写进 draft，随 INSERT/UPDATE 落库
+    derivedFields: ['materialId', 'baseQty', 'materialCode', 'materialName', 'materialSpec', 'unitName'],
+    recordLabel: (item) => String(item.idx),
+    hooks: {
+      validate: ({ draft }) => {
+        validateRemarks(draft.remarks as string | null | undefined)
+      },
+      beforeWrite: async (trx, { permit, draft, parent }) => {
+        const workOrder = await loadWorkOrderAuthorized(
+          trx,
+          permit,
+          workOrderTarget,
+          String(draft.workOrderId),
+          false,
+        )
+        if (workOrder.status === 'voided') {
+          throw new ApiError('conflict', '生产工单已作废')
+        }
+        if (workOrder.companyId !== parent.companyId) {
+          throw new ApiError('conflict', '生产工单不属于本公司')
+        }
+        await validateWarehouse(trx, String(draft.warehouseId), String(parent.companyId))
+        const projection = await deriveItemProjection(
+          trx,
+          workOrder.materialId,
+          String(draft.unitId),
+          String(draft.qty),
+        )
+        // 物料快照取工单口径（工单建单时定型），单位与折算取当前单位换算
+        draft.materialId = workOrder.materialId
+        draft.materialCode = workOrder.materialCode
+        draft.materialName = workOrder.materialName
+        draft.materialSpec = workOrder.materialSpec
+        draft.unitName = projection.unitName
+        draft.baseQty = projection.baseQty
+      },
+    },
+  })
 
   async function createOutput(
     permit: Permit,
@@ -101,71 +238,7 @@ export function createOutputService(
       remarks?: string | null
     },
   ): Promise<Output> {
-    if (!input.companyId) {
-      throw ApiError.validation('生产入库单参数不合法', { companyId: ['必填'] })
-    }
-    assertCompanyWritable(permit, input.companyId, '公司不存在')
-    validateRemarks(input.remarks)
-    return withTx(db, async (trx) => {
-      await validateWarehouse(trx, input.warehouseId, input.companyId)
-      const outputDate = input.outputDate ? toDateOnly(input.outputDate) : utcToday()
-      const no = await numbering.assignedInTx(trx, {
-        resource: 'mfg.output',
-        field: 'outputNo',
-        provided: input.outputNo,
-        values: { company_id: input.companyId, output_date: outputDate },
-      })
-      validateNo(no, 'outputNo')
-      try {
-        const row = await trx
-          .insertInto('mfg_output')
-          .values({
-            output_no: no,
-            output_date: outputDate,
-            remarks: input.remarks ?? null,
-            status: 'draft',
-            company_id: input.companyId,
-            warehouse_id: input.warehouseId ?? null,
-            created_by_id: permit.actor.userId || null,
-          })
-          .returningAll()
-          .executeTakeFirstOrThrow()
-        const item = mapOutput(row)
-        await writeAudit(trx, permit.actor, {
-          resource: 'mfg_output',
-          recordId: item.id,
-          recordLabel: item.outputNo,
-          actionType: 'create',
-          actionName: 'create',
-          companyId: item.companyId,
-          changes: auditCreated(outSnap(item), OUT_AUDIT),
-        })
-        return item
-      } catch (err) {
-        throw mfgWriteError('创建生产入库单失败', err)
-      }
-    })
-  }
-
-  async function getOutput(permit: Permit, id: string): Promise<Output> {
-    return loadOutputAuthorized(db, permit, target, id, false)
-  }
-
-  async function listOutputs(permit: Permit, query: ListQueryInput) {
-    const q = normalizeList(query)
-    return listAuthorized({
-      db,
-      permit,
-      target,
-      alias: OUTPUT_TABLE,
-      resource: outputResourceMeta(),
-      source: sql` FROM mfg_output`,
-      select: sql`SELECT *`,
-      defaultOrder: sql`"inserted_at" DESC, "id" DESC`,
-      query: q,
-      extraWhere: q.companyId ? sql`company_id = ${q.companyId}` : null,
-      mapRow: mapOutputRecord,
-    })
+    return base.create(permit, input)
   }
 
   async function updateOutput(
@@ -180,72 +253,29 @@ export function createOutputService(
       remarksPresent?: boolean
     },
   ): Promise<Output> {
-    return withTx(db, async (trx) => {
-      const before = await lockOutput(trx, permit, id)
-      if (before.status !== 'draft') {
-        throw new ApiError('conflict', '仅草稿生产入库单可修改或删除')
-      }
-      const after = { ...before }
-      if (input.outputNo !== undefined && input.outputNo.trim() !== before.outputNo) {
-        throw ApiError.validation('生产入库单参数不合法', { outputNo: ['编号创建后不可修改'] })
-      }
-      if (input.outputDate !== undefined) after.outputDate = toDateOnly(input.outputDate)
-      if (input.warehouseIdPresent) after.warehouseId = input.warehouseId ?? null
-      if (input.remarksPresent) after.remarks = input.remarks ?? null
-      validateNo(after.outputNo, 'outputNo')
-      validateRemarks(after.remarks)
-      await validateWarehouse(trx, after.warehouseId, after.companyId)
-      const changes = auditDiff(outSnap(before), outSnap(after), OUT_AUDIT)
-      if (Object.keys(changes).length > 0) {
-        try {
-          await trx
-            .updateTable('mfg_output')
-            .set({
-              output_no: after.outputNo,
-              output_date: after.outputDate,
-              warehouse_id: after.warehouseId,
-              remarks: after.remarks,
-              updated_at: sql`(now() AT TIME ZONE 'utc')`,
-            })
-            .where('id', '=', id)
-            .execute()
-        } catch (err) {
-          throw mfgWriteError('更新生产入库单失败', err)
-        }
-        await writeAudit(trx, permit.actor, {
-          resource: 'mfg_output',
-          recordId: id,
-          recordLabel: after.outputNo,
-          actionType: 'update',
-          actionName: 'update',
-          companyId: after.companyId,
-          changes,
-        })
-      }
-      return after
-    })
+    const patch: Record<string, unknown> = {}
+    if (input.outputNo !== undefined) patch.outputNo = input.outputNo
+    if (input.outputDate !== undefined) patch.outputDate = input.outputDate
+    if (input.warehouseIdPresent) patch.warehouseId = input.warehouseId ?? null
+    if (input.remarksPresent) patch.remarks = input.remarks ?? null
+    return base.update(permit, id, patch)
   }
 
-  async function deleteOutput(permit: Permit, id: string): Promise<void> {
-    await withTx(db, async (trx) => {
-      const item = await lockOutput(trx, permit, id)
-      if (item.status !== 'draft') {
-        throw new ApiError('conflict', '仅草稿生产入库单可修改或删除')
-      }
-      try {
-        await trx.deleteFrom('mfg_output').where('id', '=', id).execute()
-      } catch (err) {
-        throw mfgWriteError('删除生产入库单失败', err)
-      }
-      await writeAudit(trx, permit.actor, {
-        resource: 'mfg_output',
-        recordId: id,
-        recordLabel: item.outputNo,
-        actionType: 'destroy',
-        actionName: 'destroy',
-        companyId: item.companyId,
-        changes: auditDestroyed(outSnap(item), OUT_AUDIT),
-      })
+  /** 单头列表（弹射）：companyId 领域过滤内核无 extraWhere 原语 */
+  async function listOutputs(permit: Permit, query: ListQueryInput) {
+    const q = normalizeList(query)
+    return listAuthorized<Output>({
+      db,
+      permit,
+      target,
+      alias: OUTPUT_TABLE,
+      resource: OUT_META,
+      source: sql` FROM mfg_output`,
+      select: sql`SELECT *`,
+      defaultOrder: sql`"inserted_at" DESC, "id" DESC`,
+      query: q,
+      extraWhere: q.companyId ? sql`company_id = ${q.companyId}` : null,
+      mapRow: (r) => mapRow(OUT_META, r) as Output,
     })
   }
 
@@ -261,98 +291,9 @@ export function createOutputService(
       remarks?: string | null
     },
   ): Promise<OutputItem> {
-    validateRemarks(input.remarks)
-    return withTx(db, async (trx) => {
-      const parent = await lockOutput(trx, permit, input.outputId)
-      if (parent.status !== 'draft') {
-        throw new ApiError('conflict', '仅草稿生产入库单可编辑单据行')
-      }
-      const workOrder = await loadWorkOrderAuthorized(
-        trx,
-        permit,
-        workOrderTarget,
-        input.workOrderId,
-        false,
-      )
-      if (workOrder.status === 'voided') {
-        throw new ApiError('conflict', '生产工单已作废')
-      }
-      if (workOrder.companyId !== parent.companyId) {
-        throw new ApiError('conflict', '生产工单不属于本公司')
-      }
-      await validateWarehouse(trx, input.warehouseId, parent.companyId)
-      const projection = await deriveItemProjection(
-        trx,
-        workOrder.materialId,
-        input.unitId,
-        input.qty,
-      )
-      try {
-        const row = await trx
-          .insertInto('mfg_output_item')
-          .values({
-            output_id: parent.id,
-            company_id: parent.companyId,
-            idx: String(input.idx),
-            work_order_id: input.workOrderId,
-            material_id: workOrder.materialId,
-            unit_id: input.unitId,
-            warehouse_id: input.warehouseId,
-            qty: toDecimalString(decimal(input.qty)),
-            base_qty: projection.baseQty,
-            material_code: workOrder.materialCode,
-            material_name: workOrder.materialName,
-            material_spec: workOrder.materialSpec,
-            unit_name: projection.unitName,
-            remarks: input.remarks ?? null,
-          })
-          .returningAll()
-          .executeTakeFirstOrThrow()
-        const result = mapOutputItem(row)
-        await writeAudit(trx, permit.actor, {
-          resource: 'mfg_output_item',
-          recordId: result.id,
-          recordLabel: String(result.idx),
-          actionType: 'create',
-          actionName: 'create',
-          companyId: result.companyId,
-          changes: auditCreated(itemSnap(result), ITEM_AUDIT),
-        })
-        return result
-      } catch (err) {
-        throw mfgWriteError('创建生产入库行失败', err)
-      }
-    })
-  }
-
-  async function getOutputItem(permit: Permit, id: string): Promise<OutputItem> {
-    return loadOutputItemAuthorized(db, permit, itemTarget, id, false)
-  }
-
-  async function listOutputItems(permit: Permit, query: ListQueryInput & { outputId?: string }) {
-    const q = normalizeList(query)
-    const parts = [
-      q.companyId ? sql`company_id = ${q.companyId}` : null,
-      query.outputId ? sql`output_id = ${query.outputId}` : null,
-    ].filter(Boolean)
-    // 列名须与 ResourceMeta.dbColumn 一致（filterbuild 按 apiName→dbColumn 排序筛选）
-    return listAuthorized({
-      db,
-      permit,
-      target: itemTarget,
-      alias: 'mfg_output_items',
-      resource: outputItemResourceMeta(),
-      source: sql` FROM (
-        SELECT i.*, h.output_no, h.output_date, h.status AS output_status
-        FROM mfg_output_item i
-        JOIN mfg_output h ON h.id = i.output_id
-      ) mfg_output_items`,
-      select: sql`SELECT *`,
-      defaultOrder: sql`"idx" ASC, "id" ASC`,
-      query: q,
-      extraWhere: parts.length ? sql`${sql.join(parts as never, sql` AND `)}` : null,
-      mapRow: mapOutputItemRecord,
-    })
+    // 数量合法性先于内核 normalizeInput（decimal() 对非法串抛裸错，wire 须保 422）
+    parsePositiveQty(input.qty, 'qty')
+    return withParentProjection(await items.create(permit, input))
   }
 
   async function updateOutputItem(
@@ -368,240 +309,86 @@ export function createOutputService(
       remarksPresent?: boolean
     },
   ): Promise<OutputItem> {
-    return withTx(db, async (trx) => {
-      const parent = await parentOf(trx, permit, id)
-      if (parent.status !== 'draft') {
-        throw new ApiError('conflict', '仅草稿生产入库单可编辑单据行')
-      }
-      const before = await loadOutputItemAuthorized(trx, permit, itemTarget, id, true)
-      const after = { ...before }
-      if (input.idx !== undefined) after.idx = input.idx
-      if (input.workOrderId !== undefined) after.workOrderId = input.workOrderId
-      if (input.unitId !== undefined) after.unitId = input.unitId
-      if (input.qty !== undefined) after.qty = input.qty
-      if (input.warehouseId !== undefined) after.warehouseId = input.warehouseId
-      if (input.remarksPresent) after.remarks = input.remarks ?? null
-      validateRemarks(after.remarks)
-      const workOrder = await loadWorkOrderAuthorized(
-        trx,
-        permit,
-        workOrderTarget,
-        after.workOrderId,
-        false,
-      )
-      if (workOrder.status === 'voided') {
-        throw new ApiError('conflict', '生产工单已作废')
-      }
-      if (workOrder.companyId !== parent.companyId) {
-        throw new ApiError('conflict', '生产工单不属于本公司')
-      }
-      await validateWarehouse(trx, after.warehouseId, parent.companyId)
-      const projection = await deriveItemProjection(
-        trx,
-        workOrder.materialId,
-        after.unitId,
-        after.qty,
-      )
-      after.baseQty = projection.baseQty
-      after.materialId = workOrder.materialId
-      after.materialCode = workOrder.materialCode
-      after.materialName = workOrder.materialName
-      after.materialSpec = workOrder.materialSpec
-      after.unitName = projection.unitName
-      after.qty = toDecimalString(decimal(after.qty))
-      const changes = auditDiff(itemSnap(before), itemSnap(after), ITEM_AUDIT)
-      if (Object.keys(changes).length > 0) {
-        try {
-          await trx
-            .updateTable('mfg_output_item')
-            .set({
-              idx: String(after.idx),
-              work_order_id: after.workOrderId,
-              material_id: after.materialId,
-              unit_id: after.unitId,
-              warehouse_id: after.warehouseId,
-              qty: after.qty,
-              base_qty: after.baseQty,
-              material_code: after.materialCode,
-              material_name: after.materialName,
-              material_spec: after.materialSpec,
-              unit_name: after.unitName,
-              remarks: after.remarks,
-              updated_at: sql`(now() AT TIME ZONE 'utc')`,
-            })
-            .where('id', '=', id)
-            .execute()
-        } catch (err) {
-          throw mfgWriteError('更新生产入库行失败', err)
-        }
-        await writeAudit(trx, permit.actor, {
-          resource: 'mfg_output_item',
-          recordId: id,
-          recordLabel: String(after.idx),
-          actionType: 'update',
-          actionName: 'update',
-          companyId: after.companyId,
-          changes,
-        })
-      }
-      return loadOutputItemAuthorized(trx, permit, itemTarget, id, false)
-    })
+    if (input.qty !== undefined) parsePositiveQty(input.qty, 'qty')
+    const patch: Record<string, unknown> = {}
+    if (input.idx !== undefined) patch.idx = input.idx
+    if (input.workOrderId !== undefined) patch.workOrderId = input.workOrderId
+    if (input.unitId !== undefined) patch.unitId = input.unitId
+    if (input.qty !== undefined) patch.qty = input.qty
+    if (input.warehouseId !== undefined) patch.warehouseId = input.warehouseId
+    if (input.remarksPresent) patch.remarks = input.remarks ?? null
+    return withParentProjection(await items.update(permit, id, patch))
   }
 
-  async function deleteOutputItem(permit: Permit, id: string): Promise<void> {
-    await withTx(db, async (trx) => {
-      const parent = await parentOf(trx, permit, id)
-      if (parent.status !== 'draft') {
-        throw new ApiError('conflict', '仅草稿生产入库单可编辑单据行')
-      }
-      const item = await loadOutputItemAuthorized(trx, permit, itemTarget, id, true)
-      await trx.deleteFrom('mfg_output_item').where('id', '=', id).execute()
-      await writeAudit(trx, permit.actor, {
-        resource: 'mfg_output_item',
-        recordId: id,
-        recordLabel: String(item.idx),
-        actionType: 'destroy',
-        actionName: 'destroy',
-        companyId: item.companyId,
-        changes: auditDestroyed(itemSnap(item), ITEM_AUDIT),
-      })
-    })
-  }
-
-  async function auditOutput(permit: Permit, id: string): Promise<Output> {
-    return withTx(db, async (trx) => {
-      // 投影用工单锁：collect 内装载，postProjection 闭包复用
-      let lockedOrders: Map<string, LockedWorkOrder> | null = null
-      return auditInventoryDocInTx(trx, permit.actor, inventory, {
-        voucherType: 'mfg.output',
-        headTable: 'mfg_output',
-        setPostingDate: false,
-        lockDraft: async (t) => {
-          const before = await lockOutput(t, permit, id)
-          if (before.status !== 'draft') {
-            throw new ApiError('conflict', '仅草稿生产入库单可审核')
-          }
-          return before
-        },
-        collect: async (t, before) => {
-          const items = await loadOutputItemsForUpdate(t, id)
-          lockedOrders = await lockOutputWorkOrders(t, items)
-          await checkOutput(t, before, items, lockedOrders)
-          // 审核锁内按当前类型复核：工单创建后物料可能被改为非库存类（尚无分录时允许改）
-          const typeRows = await t
-            .selectFrom('inv_material')
-            .select(['id', 'material_type'])
-            .where('id', 'in', items.map((i) => i.materialId))
-            .execute()
-          if (typeRows.some((r) => r.material_type !== 'STOCK')) {
-            throw new ApiError('conflict', '工单物料类型已变更为非库存类,不能生产入库')
-          }
-          const stockLines: StockLine[] = items.map((item) => ({
-            warehouseId: item.warehouseId,
-            materialId: item.materialId,
-            quantity: item.baseQty,
-            direction: 'in' as const,
-            remarks: item.remarks ?? before.remarks,
-          }))
-          return { stockLines, postingDate: before.outputDate }
-        },
-        postProjection: async (t) => {
-          if (!lockedOrders) throw new ApiError('internal', '生产入库投影未初始化')
-          await updateWorkOrderProjection(t, lockedOrders, 1)
-        },
-        voucherOf: (h) => ({ id: h.id, no: h.outputNo, companyId: h.companyId }),
-        reload: async (t, headId) =>
-          loadOutputAuthorized(t, permit, target, headId, false),
-        snapshot: outSnap,
-        auditFields: OUT_AUDIT,
-      })
-    })
-  }
-
-  async function voidOutput(permit: Permit, id: string): Promise<Output> {
-    return withTx(db, async (trx) => {
-      let lockedOrders: Map<string, LockedWorkOrder> | null = null
-      return voidInventoryDocInTx(trx, permit.actor, inventory, {
-        voucherType: 'mfg.output',
-        headTable: 'mfg_output',
-        lockAudited: async (t) => {
-          const before = await lockOutput(t, permit, id)
-          if (before.status !== 'audited') {
-            throw new ApiError('conflict', '仅已审核生产入库单可作废')
-          }
-          const items = await loadOutputItemsForUpdate(t, id)
-          lockedOrders = await lockOutputWorkOrders(t, items)
-          return before
-        },
-        reverseProjection: async (t) => {
-          if (!lockedOrders) throw new ApiError('internal', '生产入库投影未初始化')
-          await updateWorkOrderProjection(t, lockedOrders, -1)
-        },
-        voucherOf: (h) => ({ id: h.id, no: h.outputNo, companyId: h.companyId }),
-        reload: async (t, headId) =>
-          loadOutputAuthorized(t, permit, target, headId, false),
-        snapshot: outSnap,
-        auditFields: OUT_AUDIT,
-      })
+  /** 行列表（弹射）：join 母单暴露 output_no/date/status，且带 companyId/outputId 过滤 */
+  async function listOutputItems(permit: Permit, query: ListQueryInput & { outputId?: string }) {
+    const q = normalizeList(query)
+    const parts = [
+      q.companyId ? sql`company_id = ${q.companyId}` : null,
+      query.outputId ? sql`output_id = ${query.outputId}` : null,
+    ].filter(Boolean)
+    // 列名须与 ResourceMeta.dbColumn 一致（filterbuild 按 apiName→dbColumn 排序筛选）
+    return listAuthorized<OutputItem>({
+      db,
+      permit,
+      target: itemTarget,
+      alias: 'mfg_output_items',
+      resource: ITEM_META,
+      source: sql` FROM (
+        SELECT i.*, h.output_no, h.output_date, h.status AS output_status
+        FROM mfg_output_item i
+        JOIN mfg_output h ON h.id = i.output_id
+      ) mfg_output_items`,
+      select: sql`SELECT *`,
+      defaultOrder: sql`"idx" ASC, "id" ASC`,
+      query: q,
+      extraWhere: parts.length ? sql`${sql.join(parts as never, sql` AND `)}` : null,
+      mapRow: mapOutputItemRecord,
     })
   }
 
   return {
     createOutput,
-    getOutput,
+    getOutput: (permit: Permit, id: string) => base.get(permit, id),
     listOutputs,
     updateOutput,
-    deleteOutput,
+    deleteOutput: (permit: Permit, id: string) => base.remove(permit, id),
     createOutputItem,
-    getOutputItem,
+    getOutputItem: async (permit: Permit, id: string) =>
+      withParentProjection(await items.get(permit, id)),
     listOutputItems,
     updateOutputItem,
-    deleteOutputItem,
-    auditOutput,
-    voidOutput,
+    deleteOutputItem: (permit: Permit, id: string) => items.remove(permit, id),
+    auditOutput: (permit: Permit, id: string) => base.transition(permit, id, 'audit'),
+    voidOutput: (permit: Permit, id: string) => base.transition(permit, id, 'void'),
   }
 }
 
 export type OutputService = ReturnType<typeof createOutputService>
 
-/** 按 Permit 取入库单行（可锁）；不命中一律 not_found */
-async function loadOutputAuthorized(
-  db: DbHandle,
-  permit: Permit,
-  target: AuthzTarget,
-  id: string,
-  forUpdate: boolean,
-): Promise<Output> {
-  const row = await loadAuthorized({
-    db,
-    permit,
-    target,
-    table: OUTPUT_TABLE,
-    id,
-    forUpdate,
-    notFoundMessage: '生产入库单不存在',
-  })
-  return mapOutputRecord(row)
+/** 单条读写不带母单投影（逐字冻结旧形状）：三列显式补 null，不得漏键 */
+function withParentProjection(item: OutputItem): OutputItem {
+  return {
+    ...item,
+    outputNo: item.outputNo ?? null,
+    outputDate: item.outputDate ?? null,
+    outputStatus: item.outputStatus ?? null,
+  }
 }
 
-/** 按 Permit 取入库行（可锁）；via 链把判定递归到母单自身的行谓词 */
-async function loadOutputItemAuthorized(
-  db: DbHandle,
-  permit: Permit,
-  target: AuthzTarget,
-  id: string,
-  forUpdate: boolean,
-): Promise<OutputItem> {
-  const row = await loadAuthorized({
-    db,
-    permit,
-    target,
-    table: OUTPUT_ITEM_TABLE,
-    id,
-    forUpdate,
-    notFoundMessage: '生产入库行不存在',
-  })
-  return mapOutputItemRecord(row)
+/** 列表行：物理列走 meta 映射，join 出的母单三列单独规范化（空串按 null） */
+function mapOutputItemRecord(row: Record<string, unknown>): OutputItem {
+  const item = mapRow(ITEM_META, row) as OutputItem
+  const no = row.output_no
+  return {
+    ...item,
+    outputNo: no == null || no === '' ? null : String(no),
+    outputDate: row.output_date == null ? null : toDateOnly(row.output_date as Date | string),
+    outputStatus:
+      row.output_status == null || row.output_status === ''
+        ? null
+        : (String(row.output_status).toUpperCase() as OutputStatus),
+  }
 }
 
 async function loadOutputItemsForUpdate(db: DbHandle, outputId: string): Promise<OutputItem[]> {
@@ -613,7 +400,7 @@ async function loadOutputItemsForUpdate(db: DbHandle, outputId: string): Promise
     .orderBy('id', 'asc')
     .forUpdate()
     .execute()
-  return rows.map(mapOutputItem)
+  return rows.map((row) => mapRow(ITEM_META, row) as OutputItem)
 }
 
 interface LockedWorkOrder {
@@ -659,7 +446,7 @@ async function outputRatio(db: DbHandle): Promise<ReturnType<typeof decimal>> {
 }
 
 async function checkOutput(
-  db: DbHandle,
+  db: TrxHandle,
   output: Output,
   items: OutputItem[],
   orders: Map<string, LockedWorkOrder>,
@@ -703,7 +490,7 @@ async function checkOutput(
 }
 
 async function updateWorkOrderProjection(
-  db: DbHandle,
+  db: TrxHandle,
   orders: Map<string, LockedWorkOrder>,
   direction: 1 | -1,
 ): Promise<void> {
@@ -735,158 +522,3 @@ async function updateWorkOrderProjection(
     await recomputeDemandItemProjections(db, order.demandItemId)
   }
 }
-
-function mapOutput(row: {
-  id: string
-  output_no: string
-  output_date: Date | string
-  remarks: string | null
-  status: string
-  audited_at: Date | null
-  company_id: string
-  warehouse_id: string | null
-  created_by_id: string | null
-  audited_by_id: string | null
-  inserted_at: Date
-  updated_at: Date
-}): Output {
-  return {
-    id: row.id,
-    outputNo: row.output_no,
-    outputDate: asDate(row.output_date),
-    remarks: row.remarks,
-    status: row.status as OutputStatus,
-    auditedAt: row.audited_at ? new Date(row.audited_at) : null,
-    companyId: row.company_id,
-    warehouseId: row.warehouse_id,
-    createdById: row.created_by_id,
-    auditedById: row.audited_by_id,
-    insertedAt: new Date(row.inserted_at),
-    updatedAt: new Date(row.updated_at),
-  }
-}
-
-function mapOutputRecord(r: Record<string, unknown>): Output {
-  return mapOutput({
-    id: String(r.id),
-    output_no: String(r.output_no),
-    output_date: r.output_date as Date,
-    remarks: r.remarks == null ? null : String(r.remarks),
-    status: String(r.status),
-    audited_at: r.audited_at == null ? null : (r.audited_at as Date),
-    company_id: String(r.company_id),
-    warehouse_id: r.warehouse_id == null ? null : String(r.warehouse_id),
-    created_by_id: r.created_by_id == null ? null : String(r.created_by_id),
-    audited_by_id: r.audited_by_id == null ? null : String(r.audited_by_id),
-    inserted_at: r.inserted_at as Date,
-    updated_at: r.updated_at as Date,
-  })
-}
-
-function mapOutputItem(row: {
-  id: string
-  output_id: string
-  company_id: string
-  idx: string | number | bigint
-  work_order_id: string
-  material_id: string
-  unit_id: string
-  warehouse_id: string
-  qty: unknown
-  base_qty: unknown
-  material_code: string
-  material_name: string
-  material_spec: string | null
-  unit_name: string
-  remarks: string | null
-  output_no?: string | null
-  output_date?: Date | string | null
-  output_status?: string | null
-  inserted_at: Date
-  updated_at: Date
-}): OutputItem {
-  return {
-    id: row.id,
-    outputId: row.output_id,
-    companyId: row.company_id,
-    idx: asInt(row.idx),
-    workOrderId: row.work_order_id,
-    materialId: row.material_id,
-    unitId: row.unit_id,
-    warehouseId: row.warehouse_id,
-    qty: numStr(row.qty),
-    baseQty: numStr(row.base_qty),
-    materialCode: row.material_code,
-    materialName: row.material_name,
-    materialSpec: row.material_spec,
-    unitName: row.unit_name,
-    remarks: row.remarks,
-    outputNo: row.output_no == null || row.output_no === '' ? null : String(row.output_no),
-    outputDate: row.output_date == null ? null : asDate(row.output_date),
-    outputStatus:
-      row.output_status == null || row.output_status === ''
-        ? null
-        : (String(row.output_status) as OutputStatus),
-    insertedAt: new Date(row.inserted_at),
-    updatedAt: new Date(row.updated_at),
-  }
-}
-
-function mapOutputItemRecord(r: Record<string, unknown>): OutputItem {
-  return mapOutputItem({
-    id: String(r.id),
-    output_id: String(r.output_id),
-    company_id: String(r.company_id),
-    idx: r.idx as number,
-    work_order_id: String(r.work_order_id),
-    material_id: String(r.material_id),
-    unit_id: String(r.unit_id),
-    warehouse_id: String(r.warehouse_id),
-    qty: r.qty,
-    base_qty: r.base_qty,
-    material_code: String(r.material_code),
-    material_name: String(r.material_name),
-    material_spec: r.material_spec == null ? null : String(r.material_spec),
-    unit_name: String(r.unit_name),
-    remarks: r.remarks == null ? null : String(r.remarks),
-    output_no: r.output_no == null ? null : String(r.output_no),
-    output_date: r.output_date == null ? null : (r.output_date as Date | string),
-    output_status: r.output_status == null ? null : String(r.output_status),
-    inserted_at: r.inserted_at as Date,
-    updated_at: r.updated_at as Date,
-  })
-}
-
-function outSnap(item: Output) {
-  return {
-    output_no: item.outputNo,
-    output_date: item.outputDate,
-    remarks: item.remarks,
-    status: item.status,
-    audited_at: item.auditedAt,
-    company_id: item.companyId,
-    warehouse_id: item.warehouseId,
-    created_by_id: item.createdById,
-    audited_by_id: item.auditedById,
-  }
-}
-
-function itemSnap(item: OutputItem) {
-  return {
-    idx: item.idx,
-    qty: item.qty,
-    base_qty: item.baseQty,
-    material_code: item.materialCode,
-    material_name: item.materialName,
-    material_spec: item.materialSpec,
-    unit_name: item.unitName,
-    remarks: item.remarks,
-    output_id: item.outputId,
-    company_id: item.companyId,
-    work_order_id: item.workOrderId,
-    material_id: item.materialId,
-    unit_id: item.unitId,
-    warehouse_id: item.warehouseId,
-  }
-}
-

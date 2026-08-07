@@ -22,6 +22,13 @@ const crud = [
   { key: 'delete', label: '删除', scope: 'row' as const, isDanger: true },
 ]
 
+/** 标准派生资源的动作词表：CRUD + 批量（批量端点由 platform/standard 派生） */
+const standardActions = [
+  ...crud,
+  { key: 'batch_update', label: '批量编辑', scope: 'bulk' as const },
+  { key: 'batch_delete', label: '批量删除', scope: 'bulk' as const, isDanger: true },
+]
+
 export function customerResourceMeta(): ResourceMeta {
   return {
     name: CUSTOMER_RESOURCE_NAME,
@@ -33,9 +40,24 @@ export function customerResourceMeta(): ResourceMeta {
     authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('code', 'code', 'string', '客户编号', { required: true, filterable: true, sortable: true }),
-      field('name', 'name', 'string', '客户名称', { required: true, filterable: true, sortable: true }),
-      field('short_name', 'shortName', 'string', '简称', { filterable: true, sortable: true }),
+      field('code', 'code', 'string', '客户编号', {
+        required: true,
+        maxLength: 32,
+        filterable: true,
+        sortable: true,
+      }),
+      field('name', 'name', 'string', '客户名称', {
+        required: true,
+        maxLength: 128,
+        filterable: true,
+        sortable: true,
+      }),
+      field('short_name', 'shortName', 'string', '简称', {
+        nullable: true,
+        maxLength: 64,
+        filterable: true,
+        sortable: true,
+      }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         readonly: true,
         filterable: true,
@@ -47,7 +69,7 @@ export function customerResourceMeta(): ResourceMeta {
         sortable: true,
       }),
     ],
-    actions: crud,
+    actions: standardActions,
     form: {
       kind: 'basic',
       exclude: ['id', 'insertedAt', 'updatedAt'],
@@ -76,15 +98,22 @@ export function supplierResourceMeta(): ResourceMeta {
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', '供应商编号', {
         required: true,
+        maxLength: 32,
         filterable: true,
         sortable: true,
       }),
       field('name', 'name', 'string', '供应商名称', {
         required: true,
+        maxLength: 128,
         filterable: true,
         sortable: true,
       }),
-      field('short_name', 'shortName', 'string', '简称', { filterable: true, sortable: true }),
+      field('short_name', 'shortName', 'string', '简称', {
+        nullable: true,
+        maxLength: 64,
+        filterable: true,
+        sortable: true,
+      }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         readonly: true,
         filterable: true,
@@ -96,7 +125,7 @@ export function supplierResourceMeta(): ResourceMeta {
         sortable: true,
       }),
     ],
-    actions: crud,
+    actions: standardActions,
     form: {
       kind: 'basic',
       exclude: ['id', 'insertedAt', 'updatedAt'],
@@ -136,24 +165,56 @@ export function employeeResourceMeta(): ResourceMeta {
     authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('code', 'code', 'string', '员工编号', { readonly: true, filterable: true, sortable: true }),
-      field('name', 'name', 'string', '员工姓名', { required: true, filterable: true, sortable: true }),
+      // 员工编号系统生成（ADR 2026-08-06-system-generated-numbering）：readonly 不进 wire
+      field('code', 'code', 'string', '员工编号', {
+        readonly: true,
+        maxLength: 32,
+        filterable: true,
+        sortable: true,
+      }),
+      field('name', 'name', 'string', '员工姓名', {
+        required: true,
+        maxLength: 64,
+        filterable: true,
+        sortable: true,
+      }),
       field('attendance_no', 'attendanceNo', 'string', '考勤设备编号', {
+        nullable: true,
+        maxLength: 64,
         filterable: true,
         sortable: true,
       }),
-      field('id_number', 'idNumber', 'string', '身份证号', { filterable: true, sortable: true }),
+      field('id_number', 'idNumber', 'string', '身份证号', {
+        nullable: true,
+        maxLength: 32,
+        filterable: true,
+        sortable: true,
+      }),
       field('household_registration', 'householdRegistration', 'string', '户籍', {
+        nullable: true,
+        maxLength: 128,
         filterable: true,
         sortable: true,
       }),
-      field('phone', 'phone', 'string', '手机号码', { filterable: true, sortable: true }),
+      field('phone', 'phone', 'string', '手机号码', {
+        nullable: true,
+        maxLength: 32,
+        filterable: true,
+        sortable: true,
+      }),
       field('current_address', 'currentAddress', 'string', '现居住地', {
+        nullable: true,
+        maxLength: 256,
         filterable: true,
         sortable: true,
       }),
-      field('daily_wage', 'dailyWage', 'decimal', '日薪', { filterable: true, sortable: true }),
+      field('daily_wage', 'dailyWage', 'decimal', '日薪', {
+        nullable: true,
+        filterable: true,
+        sortable: true,
+      }),
       field('monthly_allowance', 'monthlyAllowance', 'decimal', '月补贴', {
+        nullable: true,
         filterable: true,
         sortable: true,
       }),
@@ -172,7 +233,7 @@ export function employeeResourceMeta(): ResourceMeta {
         sortable: true,
       }),
     ],
-    actions: crud,
+    actions: standardActions,
     // 身份证影像：Presentation Extension
     form: {
       kind: 'extension',
@@ -242,10 +303,12 @@ export function partyAddressResourceMeta(): ResourceMeta {
         sortable: true,
       }),
       field('contact_name', 'contactName', 'string', '联系人', {
+        nullable: true,
         filterable: true,
         sortable: true,
       }),
       field('contact_phone', 'contactPhone', 'string', '电话', {
+        nullable: true,
         filterable: true,
         sortable: true,
       }),
@@ -276,7 +339,7 @@ export function partyAddressResourceMeta(): ResourceMeta {
         filterable: true,
         sortable: true,
       }),
-      field('remarks', 'remarks', 'string', '备注'),
+      field('remarks', 'remarks', 'string', '备注', { nullable: true }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         readonly: true,
         filterable: true,
@@ -288,7 +351,7 @@ export function partyAddressResourceMeta(): ResourceMeta {
         sortable: true,
       }),
     ],
-    actions: crud,
+    actions: standardActions,
     form: {
       kind: 'basic',
       exclude: ['id', 'insertedAt', 'updatedAt'],

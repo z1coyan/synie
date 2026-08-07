@@ -25,12 +25,6 @@ export {
   type PartyAddressService,
 } from './address-service.ts'
 export {
-  customerRoutes,
-  supplierRoutes,
-  employeeRoutes,
-  partyAddressRoutes,
-} from './routes.ts'
-export {
   allPartyResourceMetas,
   partyAddressResourceMeta,
   CUSTOMER_RESOURCE_NAME,

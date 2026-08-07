@@ -37,27 +37,30 @@ export const POSTING_SHAPES = {
   'purchase.outsourced_receipt': entry('fulfillment'),
 
   // ---- 库存单据：仅库存引擎 ----
-  'inv.stock_doc': entry('inventory-doc'),
-  'inv.stock_count': entry('inventory-doc', 'actionName=approve/cancel，voidStatus=cancelled'),
-  'mfg.output': entry('inventory-doc', 'postProjection 回写工单完工与需求行'),
+  'inv.stock_doc': entry('inventory-doc', '已迁 platform/standard workflow：effect 直调库存引擎，不再走本骨架'),
+  'inv.stock_count': entry(
+    'inventory-doc',
+    'actionName=approve/cancel，voidStatus=cancelled；已迁 platform/standard workflow，不再走本骨架',
+  ),
+  'mfg.output': entry('inventory-doc', 'postProjection 回写工单完工与需求行；已迁 platform/standard workflow，不再走本骨架'),
   'purchase.outsourced_issue': entry(
     'inventory-doc',
     '投影行键为 orderItemMaterialId（非履约 PostingProjectionLine），经闭包 postProjection 注入',
   ),
 
   // ---- 总账单据：仅 GL 引擎 ----
-  'acc.expense_report': entry('gl-doc'),
-  'acc.bill': entry('gl-doc', 'REALLOCATE 经 skipGl；作废含 replayBill'),
-  'acc.vat_invoice': entry('gl-doc', '红冲经 resolveGlEnd=reverse；flipToEnded 清对账关联'),
+  'acc.expense_report': entry('gl-doc', '已迁 platform/standard workflow，不再走本骨架'),
+  'acc.bill': entry('gl-doc', 'REALLOCATE 由 effect 不调引擎实现；作废含 replayBill；已迁 platform/standard workflow'),
+  'acc.vat_invoice': entry('gl-doc', '红冲经 gl.reverse；对账结单/重开挂 after；已迁 platform/standard workflow'),
 
   // ---- 状态翻转：无引擎段 ----
-  'sales.quotation': entry('status-flip', '审核校验条目非空与梯度完整'),
-  'purchase.quotation': entry('status-flip', '同销售报价'),
+  'sales.quotation': entry('status-flip', '审核校验条目非空与梯度完整；已迁 platform/standard workflow，不再走本骨架'),
+  'purchase.quotation': entry('status-flip', '同销售报价；已迁 platform/standard workflow，不再走本骨架'),
 
   // ---- 例外：不套骨架（原因写在 note） ----
   'inv.stock_transfer': entry(
     'exception',
-    '发货/收货两段状态机（draft→shipped→received），字段 shipped_at/received_at，收货还逐行写 received_qty 并各写审计；非单段 audit/void 形状',
+    '发货/收货两段状态机（draft→shipped→received），字段 shipped_at/received_at，收货还逐行写 received_qty 并各写审计；已迁 platform/standard workflow（ship/receive 两转移）',
   ),
   'acc.gl_journal': entry(
     'exception',

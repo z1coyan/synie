@@ -20,6 +20,13 @@ const crud = [
   { key: 'delete', label: '删除', scope: 'row' as const, isDanger: true },
 ]
 
+/** 标准派生资源的动作词表：CRUD + 批量（批量端点由 platform/standard 派生） */
+const standardCrud = [
+  ...crud,
+  { key: 'batch_update', label: '批量编辑', scope: 'bulk' as const },
+  { key: 'batch_delete', label: '批量删除', scope: 'bulk' as const, isDanger: true },
+]
+
 const directionOptions = [
   { value: 'IN', label: '入库' },
   { value: 'OUT', label: '出库' },
@@ -66,8 +73,18 @@ export function materialCategoryResourceMeta(): ResourceMeta {
     authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('code', 'code', 'string', '分类编号', { required: true, filterable: true, sortable: true }),
-      field('name', 'name', 'string', '分类名称', { required: true, filterable: true, sortable: true }),
+      field('code', 'code', 'string', '分类编号', {
+        required: true,
+        maxLength: 32,
+        filterable: true,
+        sortable: true,
+      }),
+      field('name', 'name', 'string', '分类名称', {
+        required: true,
+        maxLength: 128,
+        filterable: true,
+        sortable: true,
+      }),
       field('is_leaf', 'isLeaf', 'boolean', '叶子分类', { filterable: true, sortable: true }),
       field('active', 'active', 'boolean', '启用', { filterable: true, sortable: true }),
       field('has_children', 'hasChildren', 'boolean', '含下级分类', {
@@ -85,6 +102,7 @@ export function materialCategoryResourceMeta(): ResourceMeta {
         sortable: true,
       }),
       field('parent_id', 'parentId', 'fk', '上级分类', {
+        nullable: true,
         filterable: true,
         ref: {
           resource: 'invMaterialCategories',
@@ -93,7 +111,7 @@ export function materialCategoryResourceMeta(): ResourceMeta {
         },
       }),
     ],
-    actions: crud,
+    actions: standardCrud,
     form: {
       kind: 'basic',
       exclude: ['id', 'active', 'insertedAt', 'updatedAt', 'hasChildren'],
@@ -132,16 +150,35 @@ export function materialResourceMeta(): ResourceMeta {
     authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('code', 'code', 'string', '物料编号', { readonly: true, filterable: true, sortable: true }),
+      // createOnly 而非 readonly：自动编号由内核在 create 写入（显式传入则跳过取号），编辑态不可改
+      field('code', 'code', 'string', '物料编号', {
+        createOnly: true,
+        maxLength: 64,
+        filterable: true,
+        sortable: true,
+      }),
+      // 列内存大写（00013 迁移的 CHECK 白名单），wire 同为大写 token
       field('material_type', 'materialType', 'enum', '物料类型', {
-        required: true,
         filterable: true,
         sortable: true,
         enumOptions: materialTypeOptions,
+        enumStorage: 'upper',
       }),
-      field('name', 'name', 'string', '物料名称', { required: true, filterable: true, sortable: true }),
-      field('spec', 'spec', 'string', '物料规格', { filterable: true, sortable: true }),
+      field('name', 'name', 'string', '物料名称', {
+        required: true,
+        maxLength: 128,
+        filterable: true,
+        sortable: true,
+      }),
+      field('spec', 'spec', 'string', '物料规格', {
+        nullable: true,
+        maxLength: 128,
+        filterable: true,
+        sortable: true,
+      }),
       field('customer_part_no', 'customerPartNo', 'string', '客户方产品编号(仅客户物料可填)', {
+        nullable: true,
+        maxLength: 64,
         filterable: true,
         sortable: true,
       }),
@@ -171,11 +208,12 @@ export function materialResourceMeta(): ResourceMeta {
         ref: { resource: 'basUnits', relation: 'defaultUnit', labelField: 'name' },
       }),
       field('customer_id', 'customerId', 'fk', '所属客户(仅客户物料)', {
+        nullable: true,
         filterable: true,
         ref: { resource: 'salCustomers', relation: 'customer', labelField: 'name' },
       }),
     ],
-    actions: crud,
+    actions: standardCrud,
     // 单位转换 tab + 客户料 effects + 图纸附件 → Presentation Extension
     form: {
       kind: 'extension',
@@ -233,8 +271,10 @@ export function materialUnitResourceMeta(): ResourceMeta {
         filterable: true,
         sortable: true,
       }),
+      // 母物料创建后不可改（转换行随物料走，与既有 update wire 一致）
       field('material_id', 'materialId', 'fk', '物料', {
         required: true,
+        createOnly: true,
         filterable: true,
         ref: { resource: 'invMaterials', relation: 'material', labelField: 'name' },
       }),

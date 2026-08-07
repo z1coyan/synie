@@ -274,14 +274,10 @@ run('PG 集成（公司默认过账科目）', () => {
       }),
     ).rejects.toMatchObject({ code: 'conflict' })
 
-    // 销售 Tab partial：只改发货两槽，不覆盖入库两槽
+    // 销售 Tab partial：只改发货两槽，不覆盖入库两槽（present-key 语义：缺省即不动）
     const afterSales = await defaults.update(permitFor(actor, 'update'), created.id, {
-      deliveryDebitPresent: true,
       deliveryDebitAccountId: null,
-      deliveryCreditPresent: true,
       deliveryCreditAccountId: deliveryCreditId,
-      receiptDebitPresent: false,
-      receiptCreditPresent: false,
     })
     expect(afterSales.deliveryDebitAccountId).toBeNull()
     expect(afterSales.deliveryCreditAccountId).toBe(deliveryCreditId)
@@ -290,11 +286,7 @@ run('PG 集成（公司默认过账科目）', () => {
 
     // 采购 Tab partial：只改入库两槽
     const afterPurchase = await defaults.update(permitFor(actor, 'update'), created.id, {
-      deliveryDebitPresent: false,
-      deliveryCreditPresent: false,
-      receiptDebitPresent: true,
       receiptDebitAccountId: receiptDebitId,
-      receiptCreditPresent: true,
       receiptCreditAccountId: receiptCreditId,
     })
     expect(afterPurchase.deliveryDebitAccountId).toBeNull()
@@ -335,7 +327,6 @@ run('PG 集成（公司默认过账科目）', () => {
     const write = () => permitFor(writer, 'update')
     await expect(
       defaults.update(write(), otherDefaultId, {
-        receiptDebitPresent: true,
         receiptDebitAccountId: null,
       }),
     ).rejects.toMatchObject({ code: 'not_found' })
@@ -374,5 +365,19 @@ run('PG 集成（公司默认过账科目）', () => {
     })
     expect(foreignCreate.status).toBe(404)
     httpActor = actor
+  })
+
+  test('HTTP PATCH present-key：请求体未出现的槽位不被覆盖', async () => {
+    httpActor = actor
+    const res = await call(`/${defaultId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ deliveryDebitAccountId: deliveryDebitId }),
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.deliveryDebitAccountId).toBe(deliveryDebitId)
+    // 入库两槽未出现在请求体 → 保持现值（取代旧路由的 *Present 布尔）
+    expect(body.receiptDebitAccountId).toBe(receiptDebitId)
+    expect(body.receiptCreditAccountId).toBe(receiptCreditId)
   })
 })

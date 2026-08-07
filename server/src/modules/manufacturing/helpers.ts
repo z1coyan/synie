@@ -15,7 +15,8 @@ import type { DemandItemStatus, ListQueryInput } from './types.ts'
 
 export { toDateOnly }
 
-const MFG_WRITE_MAPPINGS: readonly PgWriteMapping[] = [
+/** 制造域写错映射（标准动作内核的 writeErrors 与 mfgWriteError 共用同一张表） */
+export const MFG_WRITE_MAPPINGS: readonly PgWriteMapping[] = [
   { code: '23505', constraint: 'mfg_work_order_active_demand_item', message: '该需求行已有未作废生产工单' },
   { code: '23505', constraint: 'mfg_demand_unique_demand_no', message: '需求单号已存在' },
   { code: '23505', constraint: 'mfg_work_order_unique_work_order_no', message: '工单号已存在' },

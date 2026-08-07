@@ -1,10 +1,14 @@
 /**
- * 库存盘点单：刷新/审核/作废；审核走 withTx + 库存过账骨架 + 快照兜底。
+ * 库存盘点单：单头走标准动作内核（get/list/update/remove + workflow 转移），
+ * 审核（approve）/作废（cancel）两个转移的 effect 调库存引擎。
  *
- * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
- * 列表 `listAuthorized`、写前取行 `loadAuthorized`（不命中一律 not_found）、
- * create 走 `assertCompanyWritable`。模块内零鉴权代码。
- * 状态前置条件（草稿才能改等）是领域不变量，留在本文件抛 conflict。
+ * 三处按动作弹射（见迁移决策日志）：
+ * - `create`：`created_by_id` / `snapshot_taken_at` 是 readonly 列，内核 insert 写不进；
+ *   且建单时按 items/loadAll 联动建行，属跨资源编排，不进钩子；
+ * - `refresh`：重算账面快照是领域动作（无状态迁移），内核工作流表达不了；
+ * - 盘点明细 CRUD：账面/折算/物料快照列 readonly，子行内核 update 不写这些列。
+ *
+ * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
  * `refresh` 无独立动作码（meta 未声明），沿用 update 的门控。
  */
 import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
@@ -13,24 +17,17 @@ import type { Kysely } from 'kysely'
 import type { InventoryEngine, StockLine } from '~/engines/inventory/index.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import {
-  auditCreated,
-  auditDestroyed,
-  auditDiff,
-  writeAudit,
-} from '~/platform/audit/write.ts'
+import { auditCreated, auditDestroyed, auditDiff, writeAudit } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
+import { mapRow, snapshot } from '~/platform/standard/fields.ts'
+import { auditStamp, createStandardService, type StandardService } from '~/platform/standard/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listAuthorized } from '~/db/list.ts'
 import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
-import {
-  auditInventoryDocInTx,
-  voidInventoryDocInTx,
-} from '~/platform/posting/skeleton.ts'
 import {
   currentBookQty,
   dateWire,
@@ -38,7 +35,6 @@ import {
   runeLen,
   toDate,
   trimOrNull,
-  upperStatus,
   validateLeafWarehouse,
   validateOptionalText,
   wireDecimal,
@@ -48,10 +44,11 @@ import { stockCountItemResourceMeta, stockCountResourceMeta } from './meta.ts'
 
 export type CountStatus = 'DRAFT' | 'AUDITED' | 'CANCELLED'
 
+/** wire 形单头（内核口径：date 为 YYYY-MM-DD 字符串，datetime 为 Date） */
 export interface StockCount {
   id: string
   docNo: string
-  postingDate: Date
+  postingDate: string
   summary: string | null
   remarks: string | null
   status: CountStatus
@@ -63,6 +60,7 @@ export interface StockCount {
   warehouseId: string
   createdById: string | null
   auditedById: string | null
+  [key: string]: unknown
 }
 
 export interface StockCountItem {
@@ -83,12 +81,12 @@ export interface StockCountItem {
   unitId: string
 }
 
-const DOC_AUDIT = auditFieldsOf(stockCountResourceMeta())
-
-const ITEM_AUDIT = auditFieldsOf(stockCountItemResourceMeta())
-
 const DOC_META = stockCountResourceMeta()
 const ITEM_META = stockCountItemResourceMeta()
+
+const DOC_AUDIT = auditFieldsOf(DOC_META)
+const ITEM_AUDIT = auditFieldsOf(ITEM_META)
+
 const LABEL = '库存盘点单'
 const ITEM_LABEL = '库存盘点单行'
 const VOUCHER_TYPE = 'inv.stock_count'
@@ -99,6 +97,8 @@ export const COUNT_ITEM_RESOURCE = 'invStockCountItems'
 const DOC_TABLE = 'inv_stock_count'
 const ITEM_TABLE = 'inv_stock_count_item'
 
+const DOC_WRITE_ERRORS = [{ code: '23505', message: '单据编号已存在' }] as const
+
 export function createStockCountService(
   db: Kysely<Database>,
   numbering: NumberingService,
@@ -108,13 +108,129 @@ export function createStockCountService(
   const docTarget = registry.authzTarget(COUNT_RESOURCE)
   const itemTarget = registry.authzTarget(COUNT_ITEM_RESOURCE)
 
+  const base: StandardService<StockCount> = createStandardService<StockCount>({
+    db,
+    registry,
+    resource: COUNT_RESOURCE,
+    notFound: `${LABEL}不存在`,
+    defaultOrder: sql`"doc_no" ASC, "id" ASC`,
+    writeErrors: [...DOC_WRITE_ERRORS],
+    hooks: {
+      // create 走手写路径；本钩子只服务 update
+      validate: ({ action, draft }) => {
+        if (action !== 'update') return
+        normalizeDocDraft(draft)
+        const fields: Record<string, string[]> = {}
+        const docNo = String(draft.docNo ?? '')
+        if (!docNo || runeLen(docNo) > 32) fields.docNo = ['不能为空且最多 32 个字符']
+        validateOptionalText(fields, 'summary', draft.summary as string | null, 512)
+        validateOptionalText(fields, 'remarks', draft.remarks as string | null, 512)
+        if (Object.keys(fields).length > 0) {
+          throw ApiError.validation(`${LABEL}参数不合法`, fields)
+        }
+      },
+      beforeWrite: async (trx, { draft }) => {
+        await validateLeafWarehouse(trx, String(draft.companyId), String(draft.warehouseId), LABEL)
+      },
+    },
+    workflow: {
+      mutableMessage: `仅草稿${LABEL}可修改或删除`,
+      transitions: [
+        {
+          key: 'approve',
+          label: '审核',
+          from: ['DRAFT'],
+          to: 'AUDITED',
+          guardMessage: `仅草稿${LABEL}可审核`,
+          stamps: ({ permit }) => auditStamp(permit),
+          effect: async (trx, { before }) => {
+            const id = String(before.id)
+            const items = await trx
+              .selectFrom('inv_stock_count_item')
+              .selectAll()
+              .where('count_id', '=', id)
+              .execute()
+            if (items.length === 0) {
+              throw new ApiError('conflict', '审核前必须至少填写一行盘点明细')
+            }
+            const lockKeys: string[] = []
+            const seen = new Set<string>()
+            for (const raw of items) {
+              const item = mapItem(raw)
+              if (item.countedQuantity == null || item.convertedCounted == null) {
+                throw new ApiError('conflict', '审核前每行都必须填写实盘数量')
+              }
+              if (!seen.has(item.materialId)) {
+                seen.add(item.materialId)
+                lockKeys.push(`inv_stock:${String(before.warehouseId)}:${item.materialId}`)
+              }
+            }
+            lockKeys.sort()
+            for (const key of lockKeys) {
+              await sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}::text, 0))`.execute(trx)
+            }
+            // 库内列对列比较，避免 JS Date 绑参时区偏移（timestamp without time zone）
+            const stale = await sql<{ exists: boolean }>`
+              SELECT EXISTS(
+                SELECT 1
+                FROM inv_stock_entry e
+                JOIN inv_stock_count c ON c.id = ${id}::uuid
+                WHERE e.company_id = c.company_id
+                  AND e.warehouse_id = c.warehouse_id
+                  AND (
+                    e.inserted_at > c.snapshot_taken_at
+                    OR e.cancelled_at > c.snapshot_taken_at
+                  )
+              ) AS exists
+            `.execute(trx)
+            if (stale.rows[0]?.exists) {
+              throw new ApiError('conflict', '库存已在快照后变化，请先刷新账面数量')
+            }
+            const stockLines: StockLine[] = []
+            for (const raw of items) {
+              const item = mapItem(raw)
+              const delta = decimal(item.convertedCounted!).minus(decimal(item.bookQuantity))
+              if (delta.isZero()) continue
+              // 方向进 direction；数量为绝对值（引擎 interface 瘦身后）
+              stockLines.push({
+                warehouseId: String(before.warehouseId),
+                materialId: item.materialId,
+                quantity: delta.isNegative() ? delta.neg() : delta,
+                direction: delta.isNegative() ? 'out' : 'in',
+                remarks: before.summary as string | null,
+              })
+            }
+            if (stockLines.length > 0) {
+              await inventory.post(
+                trx,
+                {
+                  type: VOUCHER_TYPE,
+                  id,
+                  no: String(before.docNo),
+                  companyId: String(before.companyId),
+                  postingDate: String(before.postingDate),
+                },
+                stockLines,
+              )
+            }
+          },
+        },
+        {
+          key: 'cancel',
+          label: '作废',
+          from: ['AUDITED'],
+          to: 'CANCELLED',
+          guardMessage: `仅已审核${LABEL}可作废`,
+          effect: async (trx, { before }) => {
+            await inventory.cancel(trx, { type: VOUCHER_TYPE, id: String(before.id) }, new Date())
+          },
+        },
+      ],
+    },
+  })
+
   /** 按 Permit 取单头（可锁）；不命中一律 not_found */
-  async function loadCount(
-    handle: DbHandle,
-    permit: Permit,
-    id: string,
-    forUpdate: boolean,
-  ): Promise<StockCount> {
+  async function loadCount(handle: DbHandle, permit: Permit, id: string, forUpdate: boolean): Promise<StockCount> {
     const row = await loadAuthorized({
       db: handle,
       permit,
@@ -124,7 +240,7 @@ export function createStockCountService(
       forUpdate,
       notFoundMessage: `${LABEL}不存在`,
     })
-    return mapDoc(row as never)
+    return mapRow(DOC_META, row) as StockCount
   }
 
   /** 锁草稿单头：行编辑的公共前置（授权 → 状态守卫） */
@@ -147,26 +263,10 @@ export function createStockCountService(
     return lockDraftCount(trx, permit, row.count_id)
   }
 
-  async function get(permit: Permit, id: string): Promise<StockCount> {
-    return loadCount(db, permit, id, false)
-  }
-
-  async function list(permit: Permit, query: Partial<ListQuery>) {
-    return listAuthorized({
-      db,
-      permit,
-      target: docTarget,
-      alias: DOC_TABLE,
-      resource: DOC_META,
-      source: sql` FROM inv_stock_count`,
-      select: sql`SELECT id,doc_no,posting_date,summary,remarks,status,audited_at,snapshot_taken_at,
-        inserted_at,updated_at,company_id,warehouse_id,created_by_id,audited_by_id`,
-      defaultOrder: sql`"doc_no" ASC, "id" ASC`,
-      query,
-      mapRow: (r) => mapDoc(r as never),
-    })
-  }
-
+  /**
+   * 创建（手写）：取号 + 录入人/快照时间盖章 + items/loadAll 联动建行
+   * —— 三者都不在内核可写列/钩子纪律内。
+   */
   async function create(
     permit: Permit,
     input: {
@@ -203,7 +303,7 @@ export function createStockCountService(
       await validateLeafWarehouse(trx, input.companyId, input.warehouseId, LABEL)
       const postingDate = input.postingDate ? dateWire(input.postingDate) : utcToday()
       const docNo = await numbering.assignedInTx(trx, {
-        resource: 'inv.stock_count',
+        resource: VOUCHER_TYPE,
         field: 'docNo',
         provided: input.docNo,
         values: { company_id: input.companyId, posting_date: postingDate },
@@ -227,15 +327,15 @@ export function createStockCountService(
           })
           .returningAll()
           .executeTakeFirstOrThrow()
-        const count = mapDoc(row)
+        const count = mapRow(DOC_META, row) as StockCount
         await writeAudit(trx, permit.actor, {
-          resource: 'inv_stock_count',
+          resource: DOC_TABLE,
           recordId: count.id,
           recordLabel: count.docNo,
           companyId: count.companyId,
           actionType: 'create',
           actionName: 'create',
-          changes: auditCreated(docSnap(count), DOC_AUDIT),
+          changes: auditCreated(snapshot(DOC_META, count, DOC_AUDIT), DOC_AUDIT),
         })
         if (input.loadAll) {
           const projections = await sql<{
@@ -291,111 +391,20 @@ export function createStockCountService(
         return count
       } catch (err) {
         if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '创建库存盘点单失败', [
-          { code: '23505', message: '单据编号已存在' },
-        ])
+        throw mapWriteError(err, '创建库存盘点单失败', [...DOC_WRITE_ERRORS])
       }
     })
   }
 
-  async function update(
-    permit: Permit,
-    id: string,
-    input: {
-      docNo?: string
-      postingDate?: string
-      summary?: string | null
-      summaryPresent?: boolean
-      remarks?: string | null
-      remarksPresent?: boolean
-      warehouseId?: string
-    },
-  ): Promise<StockCount> {
-    return withTx(db, async (trx) => {
-      const before = await loadCount(trx, permit, id, true)
-      if (before.status !== 'DRAFT') {
-        throw new ApiError('conflict', '仅草稿库存盘点单可修改或删除')
-      }
-      if (input.docNo != null && input.docNo.trim() !== before.docNo) {
-        throw ApiError.validation(`${LABEL}参数不合法`, { docNo: ['编号创建后不可修改'] })
-      }
-      const after: StockCount = {
-        ...before,
-        docNo: before.docNo,
-        postingDate: input.postingDate
-          ? new Date(`${dateWire(input.postingDate)}T00:00:00Z`)
-          : before.postingDate,
-        summary: input.summaryPresent ? trimOrNull(input.summary) : before.summary,
-        remarks: input.remarksPresent ? trimOrNull(input.remarks) : before.remarks,
-        warehouseId: input.warehouseId ?? before.warehouseId,
-      }
-      const fields: Record<string, string[]> = {}
-      if (!after.docNo || runeLen(after.docNo) > 32) fields.docNo = ['不能为空且最多 32 个字符']
-      validateOptionalText(fields, 'summary', after.summary, 512)
-      validateOptionalText(fields, 'remarks', after.remarks, 512)
-      if (Object.keys(fields).length > 0) {
-        throw ApiError.validation(`${LABEL}参数不合法`, fields)
-      }
-      await validateLeafWarehouse(trx, after.companyId, after.warehouseId, LABEL)
-      const changes = auditDiff(docSnap(before), docSnap(after), DOC_AUDIT)
-      if (Object.keys(changes).length === 0) return before
-      try {
-        const row = await trx
-          .updateTable('inv_stock_count')
-          .set({
-            doc_no: after.docNo,
-            posting_date: dateWire(after.postingDate),
-            summary: after.summary,
-            remarks: after.remarks,
-            warehouse_id: after.warehouseId,
-            updated_at: sql`(now() AT TIME ZONE 'utc')`,
-          })
-          .where('id', '=', id)
-          .returningAll()
-          .executeTakeFirstOrThrow()
-        const item = mapDoc(row)
-        await writeAudit(trx, permit.actor, {
-          resource: 'inv_stock_count',
-          recordId: item.id,
-          recordLabel: item.docNo,
-          companyId: item.companyId,
-          actionType: 'update',
-          actionName: 'update',
-          changes,
-        })
-        return item
-      } catch (err) {
-        throw mapWriteError(err, '更新库存盘点单失败', [
-          { code: '23505', message: '单据编号已存在' },
-        ])
-      }
-    })
-  }
-
-  async function remove(permit: Permit, id: string): Promise<void> {
-    await withTx(db, async (trx) => {
-      const item = await loadCount(trx, permit, id, true)
-      if (item.status !== 'DRAFT') {
-        throw new ApiError('conflict', '仅草稿库存盘点单可修改或删除')
-      }
-      await trx.deleteFrom('inv_stock_count').where('id', '=', id).execute()
-      await writeAudit(trx, permit.actor, {
-        resource: 'inv_stock_count',
-        recordId: item.id,
-        recordLabel: item.docNo,
-        companyId: item.companyId,
-        actionType: 'destroy',
-        actionName: 'destroy',
-        changes: auditDestroyed(docSnap(item), DOC_AUDIT),
-      })
-    })
-  }
-
+  /**
+   * 刷新账面数量（手写）：重算每行 book_quantity 并重置快照时间。
+   * 领域动作、无状态迁移，内核工作流表达不了。
+   */
   async function refresh(permit: Permit, id: string): Promise<StockCount> {
     return withTx(db, async (trx) => {
       const before = await loadCount(trx, permit, id, true)
       if (before.status !== 'DRAFT') {
-        throw new ApiError('conflict', '仅草稿库存盘点单可刷新账面数量')
+        throw new ApiError('conflict', `仅草稿${LABEL}可刷新账面数量`)
       }
       const items = await trx
         .selectFrom('inv_stock_count_item')
@@ -418,7 +427,7 @@ export function createStockCountService(
         const changes = auditDiff(itemSnap(beforeItem), itemSnap(afterItem), ITEM_AUDIT)
         if (Object.keys(changes).length > 0) {
           await writeAudit(trx, permit.actor, {
-            resource: 'inv_stock_count_item',
+            resource: ITEM_TABLE,
             recordId: afterItem.id,
             recordLabel: afterItem.materialCode,
             companyId: afterItem.companyId,
@@ -437,134 +446,22 @@ export function createStockCountService(
         .where('id', '=', id)
         .returningAll()
         .executeTakeFirstOrThrow()
-      const after = mapDoc(row)
+      const after = mapRow(DOC_META, row) as StockCount
       await writeAudit(trx, permit.actor, {
-        resource: 'inv_stock_count',
+        resource: DOC_TABLE,
         recordId: after.id,
         recordLabel: after.docNo,
         companyId: after.companyId,
         actionType: 'update',
         actionName: 'refresh',
-        changes: auditDiff(docSnap(before), docSnap(after), DOC_AUDIT),
+        changes: auditDiff(
+          snapshot(DOC_META, before, DOC_AUDIT),
+          snapshot(DOC_META, after, DOC_AUDIT),
+          DOC_AUDIT,
+        ),
       })
       return after
     })
-  }
-
-  async function approve(permit: Permit, id: string): Promise<StockCount> {
-    return withTx(db, async (trx) =>
-      auditInventoryDocInTx(trx, permit.actor, inventory, {
-        voucherType: VOUCHER_TYPE,
-        headTable: 'inv_stock_count',
-        actionName: 'approve',
-        setPostingDate: false,
-        lockDraft: async (t) => {
-          const before = await loadCount(t, permit, id, true)
-          if (before.status !== 'DRAFT') {
-            throw new ApiError('conflict', '仅草稿库存盘点单可审核')
-          }
-          return before
-        },
-        collect: async (t, before) => {
-          const items = await t
-            .selectFrom('inv_stock_count_item')
-            .selectAll()
-            .where('count_id', '=', id)
-            .execute()
-          if (items.length === 0) {
-            throw new ApiError('conflict', '审核前必须至少填写一行盘点明细')
-          }
-          const lockKeys: string[] = []
-          const seen = new Set<string>()
-          for (const raw of items) {
-            const item = mapItem(raw)
-            if (item.countedQuantity == null || item.convertedCounted == null) {
-              throw new ApiError('conflict', '审核前每行都必须填写实盘数量')
-            }
-            if (!seen.has(item.materialId)) {
-              seen.add(item.materialId)
-              lockKeys.push(`inv_stock:${before.warehouseId}:${item.materialId}`)
-            }
-          }
-          lockKeys.sort()
-          for (const key of lockKeys) {
-            await sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}::text, 0))`.execute(t)
-          }
-          // 库内列对列比较，避免 JS Date 绑参时区偏移（timestamp without time zone）
-          const stale = await sql<{ exists: boolean }>`
-            SELECT EXISTS(
-              SELECT 1
-              FROM inv_stock_entry e
-              JOIN inv_stock_count c ON c.id = ${id}::uuid
-              WHERE e.company_id = c.company_id
-                AND e.warehouse_id = c.warehouse_id
-                AND (
-                  e.inserted_at > c.snapshot_taken_at
-                  OR e.cancelled_at > c.snapshot_taken_at
-                )
-            ) AS exists
-          `.execute(t)
-          if (stale.rows[0]?.exists) {
-            throw new ApiError('conflict', '库存已在快照后变化，请先刷新账面数量')
-          }
-          const stockLines: StockLine[] = []
-          for (const raw of items) {
-            const item = mapItem(raw)
-            const delta = decimal(item.convertedCounted!).minus(decimal(item.bookQuantity))
-            if (delta.isZero()) continue
-            // 方向进 direction；数量为绝对值（引擎 interface 瘦身后）
-            stockLines.push({
-              warehouseId: before.warehouseId,
-              materialId: item.materialId,
-              quantity: delta.isNegative() ? delta.neg() : delta,
-              direction: delta.isNegative() ? 'out' : 'in',
-              remarks: before.summary,
-            })
-          }
-          return { stockLines, postingDate: dateWire(before.postingDate) }
-        },
-        voucherOf: (h) => ({ id: h.id, no: h.docNo, companyId: h.companyId }),
-        reload: async (t, headId) => {
-          const row = await t
-            .selectFrom('inv_stock_count')
-            .selectAll()
-            .where('id', '=', headId)
-            .executeTakeFirstOrThrow()
-          return mapDoc(row)
-        },
-        snapshot: docSnap,
-        auditFields: DOC_AUDIT,
-      }),
-    )
-  }
-
-  async function cancel(permit: Permit, id: string): Promise<StockCount> {
-    return withTx(db, async (trx) =>
-      voidInventoryDocInTx(trx, permit.actor, inventory, {
-        voucherType: VOUCHER_TYPE,
-        headTable: 'inv_stock_count',
-        voidStatus: 'cancelled',
-        actionName: 'cancel',
-        lockAudited: async (t) => {
-          const before = await loadCount(t, permit, id, true)
-          if (before.status !== 'AUDITED') {
-            throw new ApiError('conflict', '仅已审核库存盘点单可作废')
-          }
-          return before
-        },
-        voucherOf: (h) => ({ id: h.id, no: h.docNo, companyId: h.companyId }),
-        reload: async (t, headId) => {
-          const row = await t
-            .selectFrom('inv_stock_count')
-            .selectAll()
-            .where('id', '=', headId)
-            .executeTakeFirstOrThrow()
-          return mapDoc(row)
-        },
-        snapshot: docSnap,
-        auditFields: DOC_AUDIT,
-      }),
-    )
   }
 
   /** 行的可达性经 via 链递归到母单自身的行谓词 */
@@ -649,13 +546,7 @@ export function createStockCountService(
       const remark = input.remarkPresent ? trimOrNull(input.remark) : before.remark
       const counted = parseCounted(countedRaw)
       validateItemInput(materialId, unitId, counted, remark)
-      const projection = await projectCountItem(
-        trx,
-        count.warehouseId,
-        materialId,
-        unitId,
-        counted,
-      )
+      const projection = await projectCountItem(trx, count.warehouseId, materialId, unitId, counted)
       const after: StockCountItem = {
         ...before,
         materialId,
@@ -694,7 +585,7 @@ export function createStockCountService(
         .executeTakeFirstOrThrow()
       const item = mapItem(row)
       await writeAudit(trx, permit.actor, {
-        resource: 'inv_stock_count_item',
+        resource: ITEM_TABLE,
         recordId: item.id,
         recordLabel: item.materialCode,
         companyId: item.companyId,
@@ -719,7 +610,7 @@ export function createStockCountService(
       const item = mapItem(locked)
       await trx.deleteFrom('inv_stock_count_item').where('id', '=', id).execute()
       await writeAudit(trx, permit.actor, {
-        resource: 'inv_stock_count_item',
+        resource: ITEM_TABLE,
         recordId: item.id,
         recordLabel: item.materialCode,
         companyId: item.companyId,
@@ -731,14 +622,11 @@ export function createStockCountService(
   }
 
   return {
-    get,
-    list,
+    ...base,
     create,
-    update,
-    remove,
     refresh,
-    approve,
-    cancel,
+    approve: (permit: Permit, id: string) => base.transition(permit, id, 'approve'),
+    cancel: (permit: Permit, id: string) => base.transition(permit, id, 'cancel'),
     getItem,
     queryItems,
     createItem,
@@ -748,6 +636,14 @@ export function createStockCountService(
 }
 
 export type StockCountService = ReturnType<typeof createStockCountService>
+
+/** 单头 wire 规范化（trim / 业务日切片）：服务直调路径与路由同口径 */
+function normalizeDocDraft(draft: Record<string, unknown>): void {
+  if (typeof draft.docNo === 'string') draft.docNo = draft.docNo.trim()
+  if (typeof draft.postingDate === 'string') draft.postingDate = dateWire(draft.postingDate)
+  draft.summary = trimOrNull(draft.summary as string | null | undefined)
+  draft.remarks = trimOrNull(draft.remarks as string | null | undefined)
+}
 
 async function createItemInTx(
   db: DbHandle,
@@ -823,7 +719,7 @@ async function insertCountItem(
     .executeTakeFirstOrThrow()
   const item = mapItem(row)
   await writeAudit(db, permit.actor, {
-    resource: 'inv_stock_count_item',
+    resource: ITEM_TABLE,
     recordId: item.id,
     recordLabel: item.materialCode,
     companyId: item.companyId,
@@ -848,7 +744,7 @@ async function projectCountItem(
   let materialSpec: string | null
   let unitName: string
   if (counted != null) {
-    const p = await projectStockItem(db, materialId, unitId, counted, '库存盘点单行')
+    const p = await projectStockItem(db, materialId, unitId, counted, ITEM_LABEL)
     convertedCounted = p.baseQty
     materialCode = p.materialCode
     materialName = p.materialName
@@ -856,7 +752,7 @@ async function projectCountItem(
     unitName = p.unitName
   } else {
     // 仍需校验单位合法
-    const p = await projectStockItem(db, materialId, unitId, decimal(1), '库存盘点单行')
+    const p = await projectStockItem(db, materialId, unitId, decimal(1), ITEM_LABEL)
     materialCode = p.materialCode
     materialName = p.materialName
     materialSpec = p.materialSpec
@@ -870,40 +766,6 @@ async function projectCountItem(
     materialName,
     materialSpec,
     unitName,
-  }
-}
-
-function mapDoc(row: {
-  id: string
-  doc_no: string
-  posting_date: Date | string
-  summary: string | null
-  remarks: string | null
-  status: string
-  audited_at: Date | string | null
-  snapshot_taken_at: Date | string
-  inserted_at: Date | string
-  updated_at: Date | string
-  company_id: string
-  warehouse_id: string
-  created_by_id: string | null
-  audited_by_id: string | null
-}): StockCount {
-  return {
-    id: row.id,
-    docNo: row.doc_no,
-    postingDate: toDate(row.posting_date),
-    summary: row.summary,
-    remarks: row.remarks,
-    status: upperStatus(row.status) as CountStatus,
-    auditedAt: row.audited_at ? toDate(row.audited_at) : null,
-    snapshotTakenAt: toDate(row.snapshot_taken_at),
-    insertedAt: toDate(row.inserted_at),
-    updatedAt: toDate(row.updated_at),
-    companyId: row.company_id,
-    warehouseId: row.warehouse_id,
-    createdById: row.created_by_id,
-    auditedById: row.audited_by_id,
   }
 }
 
@@ -949,22 +811,6 @@ function mapItem(row: {
   }
 }
 
-function docSnap(item: StockCount): Record<string, unknown> {
-  return {
-    doc_no: item.docNo,
-    posting_date: item.postingDate,
-    summary: item.summary,
-    remarks: item.remarks,
-    status: item.status,
-    audited_at: item.auditedAt,
-    snapshot_taken_at: item.snapshotTakenAt,
-    company_id: item.companyId,
-    warehouse_id: item.warehouseId,
-    created_by_id: item.createdById,
-    audited_by_id: item.auditedById,
-  }
-}
-
 function itemSnap(item: StockCountItem): Record<string, unknown> {
   return {
     counted_quantity: item.countedQuantity,
@@ -985,11 +831,11 @@ function itemSnap(item: StockCountItem): Record<string, unknown> {
 function parseCounted(raw: string | null | undefined): ReturnType<typeof decimal> | null {
   if (raw == null || raw === '') return null
   if (!isDecimalString(raw)) {
-    throw ApiError.validation('库存盘点单行参数不合法', { countedQuantity: ['数量不合法'] })
+    throw ApiError.validation(`${ITEM_LABEL}参数不合法`, { countedQuantity: ['数量不合法'] })
   }
   const d = decimal(raw)
   if (d.isNegative()) {
-    throw ApiError.validation('库存盘点单行参数不合法', { countedQuantity: ['不能小于零'] })
+    throw ApiError.validation(`${ITEM_LABEL}参数不合法`, { countedQuantity: ['不能小于零'] })
   }
   return d
 }
@@ -1006,6 +852,6 @@ function validateItemInput(
   if (counted != null && counted.isNegative()) fields.countedQuantity = ['不能小于零']
   if (remark != null && runeLen(remark) > 512) fields.remark = ['最多 512 个字符']
   if (Object.keys(fields).length > 0) {
-    throw ApiError.validation('库存盘点单行参数不合法', fields)
+    throw ApiError.validation(`${ITEM_LABEL}参数不合法`, fields)
   }
 }

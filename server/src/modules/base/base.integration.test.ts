@@ -237,9 +237,9 @@ run('PG 集成（base 主数据）', () => {
     expect(updated.name).toContain('已更新')
     expect(updated.ratio).toBe('0.000002')
 
+    // 删除后 not_found 由 standard-contract 的计量单位描述符继承
     await units.remove(permitOf(actor, 'basUnits', 'delete'), child.id)
     createdUnitIds.splice(createdUnitIds.indexOf(child.id), 1)
-    await expect(units.get(permitOf(actor, 'basUnits', 'read'), child.id)).rejects.toMatchObject({ code: 'not_found' })
 
     await units.remove(permitOf(actor, 'basUnits', 'delete'), base.id)
     createdUnitIds.splice(createdUnitIds.indexOf(base.id), 1)
@@ -298,6 +298,15 @@ run('PG 集成（base 主数据）', () => {
     })
     createdAccountIds.push(leaf.id)
 
+    // 嵌套 wire 形状（投影派生）：parent / company / currency / hasChildren / 时间戳
+    expect(child.parent).toEqual({ id: root.id, name: `根-${suffix}` })
+    expect(root.parent).toBeNull()
+    expect(root.company).toEqual({ id: companyA.id, name: `科目公司A-${suffix}` })
+    expect(root.currency).toBeNull()
+    expect(leaf.hasChildren).toBe(false)
+    expect(root.insertedAt).toBeInstanceOf(Date)
+    expect(root.updatedAt).toBeInstanceOf(Date)
+
     const listed = await accounts.list(permitOf(scoped, 'basAccounts', 'read'), { limit: 20, offset: 0, search: suffix })
     expect(listed.count).toBe(3)
     for (const item of listed.results) {
@@ -306,14 +315,30 @@ run('PG 集成（base 主数据）', () => {
 
     await expect(accounts.get(permitOf(outsider, 'basAccounts', 'read'), root.id)).rejects.toMatchObject({ code: 'not_found' })
 
+    // PATCH 即 present-key 语义：parentId 出现即写（内核树能力拒下级成环）
     await expect(
-      accounts.update(permitOf(scoped, 'basAccounts', 'update'), root.id, {
-        parentId: leaf.id,
-        parentIdPresent: true,
-      }),
+      accounts.update(permitOf(scoped, 'basAccounts', 'update'), root.id, { parentId: leaf.id }),
     ).rejects.toMatchObject({ code: 'validation' })
 
-    await expect(accounts.remove(permitOf(scoped, 'basAccounts', 'delete'), root.id)).rejects.toMatchObject({ code: 'conflict' })
+    await expect(accounts.remove(permitOf(scoped, 'basAccounts', 'delete'), root.id)).rejects.toMatchObject({
+      code: 'conflict',
+      message: '存在子科目，不能删除',
+    })
+
+    // 跨公司父级：内核树能力拒绝（父子封闭在一家公司内）
+    const bothCompanies = companyActor([companyA.id, companyB.id])
+    await expect(
+      accounts.create(permitOf(bothCompanies, 'basAccounts', 'create'), {
+        code: `X${suffix}`,
+        name: `跨公司-${suffix}`,
+        direction: 'DEBIT',
+        parentId: root.id,
+        companyId: companyB.id,
+      }),
+    ).rejects.toMatchObject({
+      code: 'validation',
+      fields: { parentId: ['上级会计科目必须属于同一公司'] },
+    })
 
     const updated = await accounts.update(permitOf(scoped, 'basAccounts', 'update'), leaf.id, {
       name: `叶已更新-${suffix}`,
@@ -394,12 +419,39 @@ run('PG 集成（base 主数据）', () => {
     })
     createdCompanyIds.push(child.id)
 
+    // 嵌套 wire 形状（投影派生）：parent / baseCurrency / 时间戳
+    expect(child.parent).toEqual({ id: parent.id, name: `环父-${suffix}` })
+    expect(parent.parent).toBeNull()
+    expect(child.baseCurrency).toEqual({ id: cny.id, name: cny.name })
+    expect(child.insertedAt).toBeInstanceOf(Date)
+    expect(child.updatedAt).toBeInstanceOf(Date)
+
     await expect(
-      companies.update(permitOf(actor, 'basCompanies', 'update'), parent.id, {
-        parentId: child.id,
-        parentIdPresent: true,
-      }),
+      companies.update(permitOf(actor, 'basCompanies', 'update'), parent.id, { parentId: child.id }),
     ).rejects.toBeInstanceOf(ApiError)
+
+    // 有下级公司即拒删（内核树保护先于 parent_id 外键冲突；文案与既有 FK 路径逐字一致）
+    await expect(companies.remove(permitOf(actor, 'basCompanies', 'delete'), parent.id)).rejects.toMatchObject({
+      code: 'conflict',
+      message: '公司已被业务数据引用,不可删除',
+    })
+
+    const renamed = await companies.update(permitOf(actor, 'basCompanies', 'update'), child.id, {
+      name: `环子改-${suffix}`,
+    })
+    expect(renamed.name).toBe(`环子改-${suffix}`)
+    expect(renamed.parent).toEqual({ id: parent.id, name: `环父-${suffix}` })
+    // 无差异补丁：直接返回现值，不落库不审计（updated_at 不动）
+    const noop = await companies.update(permitOf(actor, 'basCompanies', 'update'), child.id, {
+      name: `环子改-${suffix}`,
+    })
+    expect(noop.updatedAt.getTime()).toBe(renamed.updatedAt.getTime())
+    // present-key 语义：parentId 显式 null 即清空上级
+    const detached = await companies.update(permitOf(actor, 'basCompanies', 'update'), child.id, {
+      parentId: null,
+    })
+    expect(detached.parentId).toBeNull()
+    expect(detached.parent).toBeNull()
 
     for (const id of [child.id, parent.id]) {
       await db.deleteFrom('sys_audit_log').where('resource', '=', 'inv_warehouse').where('company_id', '=', id).execute()

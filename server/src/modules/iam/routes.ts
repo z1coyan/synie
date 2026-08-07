@@ -8,6 +8,7 @@ import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { deriveWireSchemas } from '~/platform/standard/wire.ts'
 import type { DepartmentService } from './department-service.ts'
 import { DEPARTMENT_RESOURCE, ROLE_MENU_RESOURCE, ROLE_RESOURCE, USER_RESOURCE } from './meta.ts'
 import type { IamService } from './service.ts'
@@ -34,25 +35,6 @@ const userUpdateSchema = z
     departmentId: z.string().uuid().nullable().optional(),
     roleIds: z.array(z.string().uuid()).optional(),
     companyIds: z.array(z.string().uuid()).optional(),
-  })
-  .strict()
-
-const departmentCreateSchema = z
-  .object({
-    // 编码由系统按编号规则生成；传入非空值由 service 一律 422
-    code: z.string().min(1).nullish(),
-    name: z.string().min(1),
-    companyId: z.string().uuid(),
-    parentId: z.string().uuid().nullable().optional(),
-  })
-  .strict()
-
-const departmentUpdateSchema = z
-  .object({
-    code: z.string().min(1).optional(),
-    name: z.string().min(1).optional(),
-    enabled: z.boolean().optional(),
-    parentId: z.string().uuid().nullable().optional(),
   })
   .strict()
 
@@ -241,6 +223,12 @@ export function iamRoleRoutes(deps: { auth: AuthService; authz: AuthzEnforcer; i
  * 部门路由：新授权体系的首个真实消费者。
  * 每个端点挂 `guard(资源, 动作)`（必须在 requireAuth 之后），handler 用 `permitOf(c)` 取凭证——
  * 服务层收 Permit，绕过鉴权直调服务在编译期不成立。
+ *
+ * 手写路由（按动作弹射）：本资源只有 read/create/update/delete 四码、无批量端点，
+ * 故标准路由（要求完整词表）不适用；wire schema 自 meta 派生，DTO 保持手写显式形状
+ * （hc 类型链需要精确键型——toDto 的 Record 会宽化 ApiType）。
+ * PATCH 为 present-key 语义：出现即写、null 清空、缺省不动（zod 可选字段天然如此，
+ * 取代旧版 `parentIdPresent` 布尔）。
  */
 export function iamDepartmentRoutes(deps: {
   auth: AuthService
@@ -249,6 +237,7 @@ export function iamDepartmentRoutes(deps: {
 }) {
   const { auth, authz, departments } = deps
   const guard = (action: string) => authz.guard(DEPARTMENT_RESOURCE, action)
+  const schemas = deriveWireSchemas(departments.meta, departments.stampedColumns)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
@@ -263,15 +252,9 @@ export function iamDepartmentRoutes(deps: {
     .post(
       '/',
       guard('create'),
-      zValidator('json', departmentCreateSchema, validationHook),
+      zValidator('json', schemas.create, validationHook),
       async (c) => {
-        const body = c.req.valid('json')
-        const item = await departments.create(permitOf(c), {
-          code: body.code,
-          name: body.name,
-          companyId: body.companyId,
-          parentId: body.parentId,
-        })
+        const item = await departments.create(permitOf(c), c.req.valid('json') as Record<string, unknown>)
         return c.json(departmentDto(item), 201)
       },
     )
@@ -282,17 +265,13 @@ export function iamDepartmentRoutes(deps: {
       '/:id',
       guard('update'),
       zValidator('param', idParam, validationHook),
-      zValidator('json', departmentUpdateSchema, validationHook),
+      zValidator('json', schemas.update, validationHook),
       async (c) => {
-        const raw = (await c.req.json()) as Record<string, unknown>
-        const body = c.req.valid('json')
-        const item = await departments.update(permitOf(c), c.req.valid('param').id, {
-          code: body.code,
-          name: body.name,
-          enabled: body.enabled,
-          parentId: body.parentId,
-          parentIdPresent: Object.prototype.hasOwnProperty.call(raw, 'parentId'),
-        })
+        const item = await departments.update(
+          permitOf(c),
+          c.req.valid('param').id,
+          c.req.valid('json') as Record<string, unknown>,
+        )
         return c.json(departmentDto(item))
       },
     )

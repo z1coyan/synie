@@ -228,7 +228,7 @@ run('PG 集成（部门）', () => {
         companyId: companyA,
       })
 
-      await departments.update(inA('update'), b.id, { parentId: target.id, parentIdPresent: true })
+      await departments.update(inA('update'), b.id, { parentId: target.id })
 
       expect(await pathOf(b.id)).toBe(`/${target.id}/${b.id}/`)
       expect(await pathOf(c.id)).toBe(`/${target.id}/${b.id}/${c.id}/`)
@@ -243,11 +243,11 @@ run('PG 集成（部门）', () => {
         parentId: p.id,
       })
       const self = await departments
-        .update(inA('update'), p.id, { parentId: p.id, parentIdPresent: true })
+        .update(inA('update'), p.id, { parentId: p.id })
         .catch((e: unknown) => e)
       expect((self as ApiError).code).toBe('validation')
       const cycle = await departments
-        .update(inA('update'), p.id, { parentId: kid.id, parentIdPresent: true })
+        .update(inA('update'), p.id, { parentId: kid.id })
         .catch((e: unknown) => e)
       expect((cycle as ApiError).code).toBe('validation')
     })
@@ -259,10 +259,7 @@ run('PG 集成（部门）', () => {
         companyId: companyA,
         parentId: p.id,
       })
-      const moved = await departments.update(inA('update'), kid.id, {
-        parentId: null,
-        parentIdPresent: true,
-      })
+      const moved = await departments.update(inA('update'), kid.id, { parentId: null })
       expect(moved.parentId).toBeNull()
       expect(await pathOf(kid.id)).toBe(`/${kid.id}/`)
     })
@@ -297,6 +294,34 @@ run('PG 集成（部门）', () => {
         .catch((e: unknown) => e)
       expect((err as ApiError).code).toBe('validation')
       expect(JSON.stringify((err as ApiError).fields)).toContain('停用')
+    })
+
+    test('停用部门不得作为上级（建与移动两侧）', async () => {
+      const off = await newDept(inA('create'), {
+        name: '停用上级',
+        companyId: companyA,
+      })
+      await departments.update(inA('update'), off.id, { enabled: false })
+
+      const onCreate = await departments
+        .create(inA('create'), {
+          name: '挂停用父',
+          companyId: companyA,
+          parentId: off.id,
+        })
+        .catch((e: unknown) => e)
+      expect((onCreate as ApiError).code).toBe('validation')
+      expect(JSON.stringify((onCreate as ApiError).fields)).toContain('上级部门已停用')
+
+      const free = await newDept(inA('create'), {
+        name: '待移动部',
+        companyId: companyA,
+      })
+      const onMove = await departments
+        .update(inA('update'), free.id, { parentId: off.id })
+        .catch((e: unknown) => e)
+      expect((onMove as ApiError).code).toBe('validation')
+      expect(JSON.stringify((onMove as ApiError).fields)).toContain('上级部门已停用')
     })
 
     test('用户读取面带部门名（fk 列需要 department 关系,否则前端只能印 uuid）', async () => {

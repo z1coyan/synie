@@ -1,7 +1,7 @@
 /**
- * 销售/采购报价审核/作废 PG 集成：flipDocStatusInTx 状态翻转骨架的首个消费方。
- * 覆盖：草稿门、条目非空校验、梯度完整校验、审核人落章、作废回翻、审计留痕。
- * 门控 SYNIE_TEST_DATABASE_URL。
+ * 销售/采购报价审核/作废 PG 集成：标准动作内核 workflow 两转移（audit/void）。
+ * 覆盖：草稿门、条目非空校验、梯度完整校验、审核人落章、作废回翻、审计留痕，
+ * 以及内核承接的删除（可变状态门）。门控 SYNIE_TEST_DATABASE_URL。
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { sql } from 'kysely'
@@ -204,6 +204,29 @@ run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
       SELECT status FROM sal_quotation WHERE id=${created.id}::uuid
     `.execute(db)
     expect(head.rows[0]?.status).toBe('draft')
+  })
+
+  test('删除走内核可变状态门：草稿可删并留 destroy 审计，已审核落 409', async () => {
+    const draft = await quotations.createDraft(permit(), 'sales', {
+      ...input('sales'),
+      items: [],
+    })
+    await quotations.deleteHead(permit(), 'sales', draft.id)
+    const gone = await sql<{ c: string }>`
+      SELECT count(*)::text AS c FROM sal_quotation WHERE id=${draft.id}::uuid
+    `.execute(db)
+    expect(gone.rows[0]?.c).toBe('0')
+    const destroyed = await sql<{ action_name: string }>`
+      SELECT action_name FROM sys_audit_log
+      WHERE record_id=${draft.id}::uuid AND action_type='destroy'
+    `.execute(db)
+    expect(destroyed.rows.map((r) => r.action_name)).toEqual(['destroy'])
+
+    const audited = await quotations.createDraft(permit(), 'sales', input('sales'))
+    await quotations.auditHead(permit(), 'sales', audited.id)
+    await expect(
+      quotations.deleteHead(permit(), 'sales', audited.id),
+    ).rejects.toMatchObject({ code: 'conflict', message: '仅草稿报价单可修改或删除' })
   })
 
   test('数量梯度条目缺价格档不可审核', async () => {

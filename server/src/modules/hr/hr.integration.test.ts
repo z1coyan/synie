@@ -284,7 +284,7 @@ describePg('hr operations integration', () => {
     expect(day.status).toBe('OK')
 
     // 借款 + 工资 + 首发联动归还
-    const loan = await json<{ id: string; kind: string }>(
+    const loan = await json<{ id: string; kind: string; createdById: string | null }>(
       '/hr/employee-loans',
       {
         method: 'POST',
@@ -298,6 +298,8 @@ describePg('hr operations integration', () => {
       201,
     )
     expect(loan.kind).toBe('BORROW')
+    // 经办人由服务端盖章（wire 不可写）
+    expect(loan.createdById).toBe(userId)
 
     const payroll = await json<{
       id: string
@@ -330,7 +332,7 @@ describePg('hr operations integration', () => {
     expect(payroll.status).toBe('PENDING')
     expect(payroll.paidTotal).toBeNull()
 
-    const payment = await json<{ kind: string; month: string }>(
+    const payment = await json<{ id: string; kind: string; month: string }>(
       '/hr/payroll-payments',
       {
         method: 'POST',
@@ -347,7 +349,7 @@ describePg('hr operations integration', () => {
 
     const autoRepay = await json<{
       count: number
-      results: Array<{ kind: string; amount: string; payrollId: string | null }>
+      results: Array<{ id: string; kind: string; amount: string; payrollId: string | null }>
     }>('/hr/employee-loans/query', {
       method: 'POST',
       body: JSON.stringify({
@@ -377,6 +379,123 @@ describePg('hr operations integration', () => {
     })
     expect([404, 405]).toContain(internal.status)
 
-    void userId
+    // 联动生成的归还记录不可改删
+    const autoRepayId = autoRepay.results[0]!.id
+    await json(
+      `/hr/employee-loans/${autoRepayId}`,
+      { method: 'PATCH', body: JSON.stringify({ amount: '3' }) },
+      409,
+    )
+    await json(`/hr/employee-loans/${autoRepayId}`, { method: 'DELETE' }, 409)
+
+    // 手工借款可改（present-key：备注出现即写）
+    const loanPatched = await json<{ amount: string; remarks: string | null }>(
+      `/hr/employee-loans/${loan.id}`,
+      { method: 'PATCH', body: JSON.stringify({ amount: '120', remarks: '追加' }) },
+    )
+    expect(loanPatched.amount).toBe('120')
+    expect(loanPatched.remarks).toBe('追加')
+
+    // 待发放工资单：PATCH 重算应发 → 重取快照 → 删除
+    const draft = await json<{ id: string; baseAmount: string; payable: string }>(
+      '/hr/payrolls',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          employeeId: emp.id,
+          month: '2099-02',
+          workdays: '1',
+          attendanceDays: 1,
+          missingDays: 0,
+          overtimeHours: '0',
+          dailyWage: '100',
+          allowance: '0',
+          bonus: '0',
+          fine: '0',
+          loanDeduction: '0',
+        }),
+      },
+      201,
+    )
+    expect(draft.baseAmount).toBe('100')
+    expect(draft.payable).toBe('100')
+
+    const patched = await json<{
+      baseAmount: string
+      payable: string
+      remarks: string | null
+    }>(`/hr/payrolls/${draft.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ bonus: '20', fine: '5', remarks: '补差' }),
+    })
+    expect(patched.baseAmount).toBe('100')
+    expect(patched.payable).toBe('115')
+    expect(patched.remarks).toBe('补差')
+
+    // 2099-02 无考勤：工日归零、日薪/补贴回落到员工档案，奖金罚款保留
+    const refreshed = await json<{
+      workdays: string
+      dailyWage: string
+      allowance: string
+      payable: string
+    }>(`/hr/payrolls/${draft.id}/refresh`, { method: 'POST' })
+    expect(refreshed.workdays).toBe('0')
+    expect(refreshed.dailyWage).toBe('100.1')
+    expect(refreshed.allowance).toBe('10')
+    expect(refreshed.payable).toBe('25')
+
+    await json(`/hr/payrolls/${draft.id}`, { method: 'DELETE' }, 204)
+    await json(`/hr/payrolls/${draft.id}`, {}, 404)
+
+    // 删除发放：工资单回退待发放，联动归还一并撤销
+    await json(`/hr/payroll-payments/${payment.id}`, { method: 'DELETE' }, 204)
+    const reverted = await json<{ status: string; paidTotal: string | null }>(
+      `/hr/payrolls/${payroll.id}`,
+    )
+    expect(reverted.status).toBe('PENDING')
+    expect(reverted.paidTotal).toBeNull()
+    const afterRevert = await json<{ count: number }>('/hr/employee-loans/query', {
+      method: 'POST',
+      body: JSON.stringify({
+        limit: 20,
+        filter: { payrollId: { kind: 'fk', values: [payroll.id] } },
+      }),
+    })
+    expect(afterRevert.count).toBe(0)
+
+    // 按月生成：删掉手工单后按考勤月汇总建单，已存在的不覆盖
+    await json(`/hr/payrolls/${payroll.id}`, { method: 'DELETE' }, 204)
+    const generated = await json<{ created: number; skipped: number }>('/hr/payrolls/generate', {
+      method: 'POST',
+      body: JSON.stringify({ month: '2099-01' }),
+    })
+    expect(generated.created).toBe(1)
+    expect(generated.skipped).toBe(0)
+    const listed = await json<{
+      count: number
+      results: Array<{ workdays: string; baseAmount: string; payable: string; status: string }>
+    }>('/hr/payrolls/query', {
+      method: 'POST',
+      body: JSON.stringify({
+        limit: 20,
+        filter: {
+          employeeId: { kind: 'fk', values: [emp.id] },
+          month: { kind: 'text', op: 'eq', value: '2099-01' },
+        },
+      }),
+    })
+    expect(listed.count).toBe(1)
+    // 7.5/8 + 0.5 奖励工日 = 1.4375 工日 × 100.1 日薪 = 143.89 + 10 补贴
+    expect(listed.results[0]!.workdays).toBe('1.4375')
+    expect(listed.results[0]!.baseAmount).toBe('143.89')
+    expect(listed.results[0]!.payable).toBe('153.89')
+    expect(listed.results[0]!.status).toBe('PENDING')
+
+    const again = await json<{ created: number; skipped: number }>('/hr/payrolls/generate', {
+      method: 'POST',
+      body: JSON.stringify({ month: '2099-01' }),
+    })
+    expect(again.created).toBe(0)
+    expect(again.skipped).toBe(1)
   })
 })

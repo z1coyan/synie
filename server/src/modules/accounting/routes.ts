@@ -14,7 +14,7 @@ import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { decimalStringSchema, listQuerySchema, validationHook } from '~/platform/http/zod.ts'
 import { GL_ENTRY_RESOURCE_NAME, type EntryService } from './entry-service.ts'
 import {
   JOURNAL_LINE_RESOURCE_NAME,
@@ -56,8 +56,8 @@ const lineCreateSchema = z
     journalId: z.string().uuid(),
     idx: z.number().int(),
     accountId: z.string().uuid(),
-    debit: z.string(),
-    credit: z.string(),
+    debit: decimalStringSchema,
+    credit: decimalStringSchema,
     partyType: z.enum(['SUPPLIER', 'CUSTOMER', 'COMPANY', 'EMPLOYEE']).nullable().optional(),
     partyId: z.string().uuid().nullable().optional(),
     remarks: z.string().nullable().optional(),
@@ -68,17 +68,13 @@ const lineUpdateSchema = z
   .object({
     idx: z.number().int().optional(),
     accountId: z.string().uuid().optional(),
-    debit: z.string().optional(),
-    credit: z.string().optional(),
+    debit: decimalStringSchema.optional(),
+    credit: decimalStringSchema.optional(),
     partyType: z.enum(['SUPPLIER', 'CUSTOMER', 'COMPANY', 'EMPLOYEE']).nullable().optional(),
     partyId: z.string().uuid().nullable().optional(),
     remarks: z.string().nullable().optional(),
   })
   .strict()
-
-function present(raw: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(raw, key)
-}
 
 function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
   return {
@@ -184,14 +180,7 @@ export function accountingRoutes(deps: {
       journalGuard('create'),
       zValidator('json', journalCreateSchema, validationHook),
       async (c) => {
-        const body = c.req.valid('json')
-        const item = await journals.create(permitOf(c), {
-          voucherNo: body.voucherNo,
-          date: body.date,
-          postingDate: body.postingDate,
-          remarks: body.remarks,
-          companyId: body.companyId,
-        })
+        const item = await journals.create(permitOf(c), c.req.valid('json'))
         return c.json(journalDto(item), 201)
       },
     )
@@ -209,17 +198,13 @@ export function accountingRoutes(deps: {
       journalGuard('update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', journalUpdateSchema, validationHook),
+      // present-key 语义：键出现即写（null 清空），缺省不动——内核 normalizeInput 原生支持
       async (c) => {
-        const raw = c.req.valid('json') as Record<string, unknown>
-        const body = c.req.valid('json')
-        const item = await journals.update(permitOf(c), c.req.valid('param').id, {
-          voucherNo: body.voucherNo,
-          date: body.date,
-          postingDate: body.postingDate,
-          postingDatePresent: present(raw, 'postingDate'),
-          remarks: body.remarks,
-          remarksPresent: present(raw, 'remarks'),
-        })
+        const item = await journals.update(
+          permitOf(c),
+          c.req.valid('param').id,
+          c.req.valid('json'),
+        )
         return c.json(journalDto(item))
       },
     )
@@ -270,17 +255,7 @@ export function accountingRoutes(deps: {
       lineGuard('create'),
       zValidator('json', lineCreateSchema, validationHook),
       async (c) => {
-        const body = c.req.valid('json')
-        const item = await journals.createLine(permitOf(c), {
-          journalId: body.journalId,
-          idx: body.idx,
-          accountId: body.accountId,
-          debit: body.debit,
-          credit: body.credit,
-          partyType: body.partyType,
-          partyId: body.partyId,
-          remarks: body.remarks,
-        })
+        const item = await journals.createLine(permitOf(c), c.req.valid('json'))
         return c.json(lineDto(item), 201)
       },
     )
@@ -299,20 +274,11 @@ export function accountingRoutes(deps: {
       zValidator('param', idParam, validationHook),
       zValidator('json', lineUpdateSchema, validationHook),
       async (c) => {
-        const raw = c.req.valid('json') as Record<string, unknown>
-        const body = c.req.valid('json')
-        const item = await journals.updateLine(permitOf(c), c.req.valid('param').id, {
-          idx: body.idx,
-          accountId: body.accountId,
-          debit: body.debit,
-          credit: body.credit,
-          partyType: body.partyType,
-          partyTypePresent: present(raw, 'partyType'),
-          partyId: body.partyId,
-          partyIdPresent: present(raw, 'partyId'),
-          remarks: body.remarks,
-          remarksPresent: present(raw, 'remarks'),
-        })
+        const item = await journals.updateLine(
+          permitOf(c),
+          c.req.valid('param').id,
+          c.req.valid('json'),
+        )
         return c.json(lineDto(item))
       },
     )

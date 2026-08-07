@@ -4,6 +4,7 @@ import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import type { JournalService } from '~/modules/accounting/journal-service.ts'
 import type { AccountService } from '~/modules/base/account-service.ts'
 import type { BankingService } from '~/modules/finance/banking-service.ts'
+import type { BankAccountService } from '~/modules/finance/banking-accounts.ts'
 import type { ExpenseService } from '~/modules/finance/expense-service.ts'
 import type { VatInvoiceService } from '~/modules/finance/invoice-service.ts'
 import type { HrServices } from '~/modules/hr/index.ts'
@@ -43,6 +44,7 @@ export interface SampleDataDeps {
   stockCounts: StockCountService
   manufacturingMaster: MasterService
   banking: BankingService
+  bankAccounts: BankAccountService
   journals: JournalService
   expenses: ExpenseService
   invoices: VatInvoiceService

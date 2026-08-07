@@ -1,11 +1,17 @@
 /**
  * 承兑票据 / 交易 / 持有段重放。
- * 审核/作废走总账过账骨架；replayBill 经 after* 钩子，REALLOCATE 跳过 GL。
+ *
+ * 承兑交易（accBillTransactions）走标准动作内核：list/get/update/remove +
+ * workflow 转移（audit/void），转移 effect 调 GL 引擎，`after` 跑持有段重放
+ * （replayBill 必须看到翻转后的状态，故挂在翻转+审计之后）。
+ * 三处按动作/资源弹射，原因见迁移决策日志：
+ * - 交易 `create`：RECEIVE 可携 `billAttrs` 联动建票据主档（非本资源字段，
+ *   内核 normalizeInput 会丢弃），且取号 values 口径特殊；
+ * - 票据主档（accBills）：无公司列（global），可见性由「名下有可达交易」的
+ *   EXISTS 谓词派生，内核 list/load 无 extraWhere 接口，迁了会放宽授权；
+ * - 持有段（accBillHoldings）：只读投影，meta 无审计声明、无写动作词表。
  *
  * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
- * 票据主档（acc_bill）声明 global（无公司列），其「本公司可见」语义由交易表的
- * 派生可见性给出——用 `compileRowFilter` 把交易资源的行过滤编进 EXISTS 子查询，
- * 判定仍归平台，模块不写公司/主体分支。
  */
 import { decimal, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -26,9 +32,10 @@ import { compileRowFilter } from '~/db/authz-sql.ts'
 import { listAuthorized } from '~/db/list.ts'
 import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { auditGlDocInTx, voidGlDocInTx } from '~/platform/posting/skeleton.ts'
+import { mapRow, snapshot } from '~/platform/standard/fields.ts'
+import { auditStamp, createStandardService } from '~/platform/standard/service.ts'
 import {
-  actorUserId, asDateOnly, asDateOnlyOrNull, asIso, asIsoOrNull, conflict, lower,
+  actorUserId, asDateOnly, asDateOnlyOrNull, asIso, conflict, lower,
   notFound, parseDecimal, requireDate, upper,
   wireDec, wireDecRequired, wireEnum,
 } from './common.ts'
@@ -51,17 +58,19 @@ export interface Bill {
   insertedAt: string; updatedAt: string
 }
 
+/** wire 形承兑交易（内核口径：date 为 YYYY-MM-DD 字符串，datetime 为 Date） */
 export interface BillTransaction {
   id: string; docNo: string | null; transactionType: string; occurredOn: string
   subStart: number; subEnd: number; amount: string
   partyType: string | null; partyId: string | null
   discountOrg: string | null; discountRate: string | null
   interest: string | null; netAmount: string | null
-  postingDate: string | null; status: string; auditedAt: string | null
-  remarks: string | null; insertedAt: string; updatedAt: string
+  postingDate: string | null; status: string; auditedAt: Date | null
+  remarks: string | null; insertedAt: Date; updatedAt: Date
   companyId: string; bankAccountId: string; toBankAccountId: string | null
   billId: string; billAccountId: string | null; settleAccountId: string | null
   interestAccountId: string | null; createdById: string | null; auditedById: string | null
+  [key: string]: unknown
 }
 
 export interface BillHolding {
@@ -113,8 +122,10 @@ function normalizeBillAttrs(raw: Record<string, unknown> | BillAttrs): BillAttrs
   }
 }
 
-const BILL_AUDIT = auditFieldsOf(billResourceMeta())
-const TX_AUDIT = auditFieldsOf(billTransactionResourceMeta())
+const BILL_META = billResourceMeta()
+const TX_META = billTransactionResourceMeta()
+const BILL_AUDIT = auditFieldsOf(BILL_META)
+const TX_AUDIT = auditFieldsOf(TX_META)
 const WRITE_MAP = [
   { code: '23505', message: '票据号码或单据编号冲突' },
   { code: '23503', message: '票据业务引用不存在' },
@@ -156,33 +167,6 @@ function mapBill(row: Record<string, unknown>): Bill {
   }
 }
 
-function mapTx(row: Record<string, unknown>): BillTransaction {
-  return {
-    id: String(row.id),
-    docNo: row.doc_no == null ? null : String(row.doc_no),
-    transactionType: wireEnum(row.transaction_type),
-    occurredOn: asDateOnly(row.occurred_on),
-    subStart: Number(row.sub_start), subEnd: Number(row.sub_end),
-    amount: wireDecRequired(row.amount),
-    partyType: row.party_type == null ? null : wireEnum(row.party_type),
-    partyId: row.party_id == null ? null : String(row.party_id),
-    discountOrg: row.discount_org == null ? null : String(row.discount_org),
-    discountRate: wireDec(row.discount_rate), interest: wireDec(row.interest),
-    netAmount: wireDec(row.net_amount), postingDate: asDateOnlyOrNull(row.posting_date),
-    status: wireEnum(row.status), auditedAt: asIsoOrNull(row.audited_at),
-    remarks: row.remarks == null ? null : String(row.remarks),
-    insertedAt: asIso(row.inserted_at), updatedAt: asIso(row.updated_at),
-    companyId: String(row.company_id), bankAccountId: String(row.bank_account_id),
-    toBankAccountId: row.to_bank_account_id == null ? null : String(row.to_bank_account_id),
-    billId: String(row.bill_id),
-    billAccountId: row.bill_account_id == null ? null : String(row.bill_account_id),
-    settleAccountId: row.settle_account_id == null ? null : String(row.settle_account_id),
-    interestAccountId: row.interest_account_id == null ? null : String(row.interest_account_id),
-    createdById: row.created_by_id == null ? null : String(row.created_by_id),
-    auditedById: row.audited_by_id == null ? null : String(row.audited_by_id),
-  }
-}
-
 function mapHolding(row: Record<string, unknown>): BillHolding {
   return {
     id: String(row.id), billNo: String(row.bill_no),
@@ -199,23 +183,6 @@ function billSnap(b: Bill): Record<string, unknown> {
     bill_no: b.billNo, bill_kind: b.billKind, issue_date: b.issueDate,
     due_date: b.dueDate, face_amount: b.faceAmount, transferable: b.transferable, remarks: b.remarks,
   }
-}
-
-function txSnap(t: BillTransaction): Record<string, unknown> {
-  return {
-    doc_no: t.docNo, transaction_type: t.transactionType, occurred_on: t.occurredOn,
-    sub_start: t.subStart, sub_end: t.subEnd, amount: t.amount, party_type: t.partyType,
-    party_id: t.partyId, discount_org: t.discountOrg, discount_rate: t.discountRate,
-    interest: t.interest, net_amount: t.netAmount, posting_date: t.postingDate,
-    status: t.status, company_id: t.companyId, bank_account_id: t.bankAccountId,
-    to_bank_account_id: t.toBankAccountId, bill_id: t.billId,
-    bill_account_id: t.billAccountId, settle_account_id: t.settleAccountId,
-    interest_account_id: t.interestAccountId,
-  }
-}
-
-function txLabel(t: BillTransaction): string {
-  return t.docNo && t.docNo !== '' ? t.docNo : t.id
 }
 
 async function loadBill(db: DbHandle, id: string, lock: boolean): Promise<Bill> {
@@ -236,26 +203,6 @@ async function loadBill(db: DbHandle, id: string, lock: boolean): Promise<Bill> 
       `.execute(db)
   if (!rows.rows[0]) throw notFound('承兑票据')
   return mapBill(rows.rows[0])
-}
-
-async function loadTx(db: DbHandle, id: string, lock: boolean): Promise<BillTransaction> {
-  const rows = lock
-    ? await sql<Record<string, unknown>>`
-        SELECT id,doc_no,transaction_type,occurred_on,sub_start,sub_end,amount,party_type,party_id,
-          discount_org,discount_rate,interest,net_amount,posting_date,status,audited_at,remarks,
-          inserted_at,updated_at,company_id,bank_account_id,to_bank_account_id,bill_id,
-          bill_account_id,settle_account_id,interest_account_id,created_by_id,audited_by_id
-        FROM acc_bill_transaction WHERE id=${id}::uuid FOR UPDATE
-      `.execute(db)
-    : await sql<Record<string, unknown>>`
-        SELECT id,doc_no,transaction_type,occurred_on,sub_start,sub_end,amount,party_type,party_id,
-          discount_org,discount_rate,interest,net_amount,posting_date,status,audited_at,remarks,
-          inserted_at,updated_at,company_id,bank_account_id,to_bank_account_id,bill_id,
-          bill_account_id,settle_account_id,interest_account_id,created_by_id,audited_by_id
-        FROM acc_bill_transaction WHERE id=${id}::uuid
-      `.execute(db)
-  if (!rows.rows[0]) throw notFound('承兑交易')
-  return mapTx(rows.rows[0])
 }
 
 /** 薄 IO adapter：读已审核交易 → 纯核重放 → 整删整建 holding */
@@ -394,21 +341,10 @@ export function createBillService(
     return mapBill(bill)
   }
 
-  /** 按 Permit 取承兑交易（可锁）；不命中一律 not_found */
-  async function authorizedTx(
-    handle: DbHandle, permit: Permit, id: string, forUpdate: boolean,
-  ): Promise<BillTransaction> {
-    const row = await loadAuthorized({
-      db: handle, permit, target: billTxTarget, table: BILL_TX_TABLE, id, forUpdate,
-      notFoundMessage: '承兑交易不存在',
-    })
-    return mapTx(row)
-  }
-
   async function listBills(permit: Permit, query: Partial<ListQuery>) {
     return listAuthorized({
       db, permit, target: billTarget, alias: BILL_TABLE,
-      resource: billResourceMeta(),
+      resource: BILL_META,
       source: sql` FROM acc_bill`,
       select: sql`SELECT id,bill_no,bill_kind,issue_date,due_date,face_amount,drawer_name,drawer_account,
         drawer_bank_name,drawer_bank_no,payee_name,payee_account,payee_bank_name,payee_bank_no,
@@ -654,196 +590,6 @@ export function createBillService(
     }
   }
 
-  async function listTransactions(permit: Permit, query: Partial<ListQuery>) {
-    return listAuthorized({
-      db, permit, target: billTxTarget, alias: BILL_TX_TABLE,
-      resource: billTransactionResourceMeta(),
-      source: sql` FROM acc_bill_transaction`,
-      select: sql`SELECT id,doc_no,transaction_type,occurred_on,sub_start,sub_end,amount,party_type,party_id,
-        discount_org,discount_rate,interest,net_amount,posting_date,status,audited_at,remarks,
-        inserted_at,updated_at,company_id,bank_account_id,to_bank_account_id,bill_id,
-        bill_account_id,settle_account_id,interest_account_id,created_by_id,audited_by_id`,
-      defaultOrder: sql`"id"`, query, mapRow: mapTx,
-    })
-  }
-
-  async function getTransaction(permit: Permit, id: string) {
-    return authorizedTx(db, permit, id, false)
-  }
-
-  async function createTransaction(permit: Permit, input: {
-    docNo?: string | null; transactionType: string; occurredOn: string
-    subStart: number; subEnd: number; amount: string
-    partyType?: string | null; partyId?: string | null
-    discountOrg?: string | null; discountRate?: string | null
-    interest?: string | null; netAmount?: string | null
-    postingDate?: string | null; remarks?: string | null
-    companyId: string; bankAccountId: string; toBankAccountId?: string | null
-    billId?: string | null; billAttrs?: BillAttrs | null
-    billAccountId?: string | null; settleAccountId?: string | null
-    interestAccountId?: string | null
-  }) {
-    const actor = permit.actor
-    assertCompanyWritable(permit, input.companyId, '承兑交易不存在')
-    return withTx(db, async (trx) => {
-      const type = upper(input.transactionType)
-      let billId = input.billId ?? null
-      if (type === 'RECEIVE') {
-        if ((billId == null) === (input.billAttrs == null)) {
-          throw ApiError.validation('承兑交易参数不合法', {
-            bill: ['接收交易须且仅须传 billId 或 billAttrs'],
-          })
-        }
-        if (!billId && input.billAttrs) {
-          const bill = await registerBill(
-            trx,
-            normalizeBillAttrs(input.billAttrs as unknown as Record<string, unknown>),
-          )
-          billId = bill.id
-        }
-      } else if (!billId || input.billAttrs != null) {
-        throw ApiError.validation('承兑交易参数不合法', {
-          billId: ['非接收交易必须填写 billId'],
-        })
-      }
-      const bill = await loadBill(trx, billId!, true)
-      const values = await validateTransaction(trx, {
-        transactionType: type, companyId: input.companyId, bankAccountId: input.bankAccountId,
-        billId: billId!, subStart: input.subStart, subEnd: input.subEnd, amount: input.amount,
-        occurredOn: input.occurredOn, postingDate: input.postingDate,
-        partyType: input.partyType, partyId: input.partyId,
-        discountOrg: input.discountOrg, discountRate: input.discountRate,
-        interest: input.interest, netAmount: input.netAmount,
-        toBankAccountId: input.toBankAccountId,
-      }, bill, true)
-      const docNo = await numbering.assignedInTx(trx, {
-        resource: 'acc.bill_transaction',
-        field: 'docNo',
-        provided: input.docNo,
-        // 预置规则段引用 occurred_on（键名必须与 meta 字段一致，否则日期段渲染为空）
-        values: { company_id: input.companyId, occurred_on: values.occurredOn },
-      })
-      try {
-        const ins = await sql<{ id: string }>`
-          INSERT INTO acc_bill_transaction(
-            doc_no,transaction_type,occurred_on,sub_start,sub_end,amount,party_type,party_id,
-            discount_org,discount_rate,interest,net_amount,posting_date,remarks,company_id,
-            bank_account_id,to_bank_account_id,bill_id,bill_account_id,settle_account_id,
-            interest_account_id,created_by_id)
-          VALUES (
-            ${docNo},${lower(values.type)},${values.occurredOn}::date,${input.subStart},${input.subEnd},
-            ${values.amount},${values.partyType ? lower(values.partyType) : null},
-            ${input.partyId ?? null}::uuid,${input.discountOrg ?? null},${values.discountRate},
-            ${values.interest},${values.netAmount},${values.postingDate}::date,${input.remarks ?? null},
-            ${input.companyId}::uuid,${input.bankAccountId}::uuid,${input.toBankAccountId ?? null}::uuid,
-            ${billId}::uuid,${input.billAccountId ?? null}::uuid,${input.settleAccountId ?? null}::uuid,
-            ${input.interestAccountId ?? null}::uuid,${actorUserId(actor)}::uuid)
-          RETURNING id
-        `.execute(trx)
-        const result = await loadTx(trx, ins.rows[0]!.id, false)
-        await writeAudit(trx, actor, {
-          resource: 'acc_bill_transaction', recordId: result.id, recordLabel: docNo,
-          companyId: result.companyId, actionType: 'create', actionName: 'create',
-          changes: auditCreated(txSnap(result), TX_AUDIT),
-        })
-        return result
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '创建承兑交易失败', WRITE_MAP)
-      }
-    })
-  }
-
-  async function updateTransaction(permit: Permit, id: string, input: Record<string, unknown>) {
-    const actor = permit.actor
-    return withTx(db, async (trx) => {
-      const before = await authorizedTx(trx, permit, id, true)
-      if (before.status !== 'DRAFT') throw conflict('仅草稿承兑交易可修改或删除')
-      const has = (k: string) => Object.prototype.hasOwnProperty.call(input, k)
-      if (has('docNo') && String(input.docNo ?? '').trim() !== before.docNo) {
-        throw ApiError.validation('承兑交易参数不合法', { docNo: ['编号创建后不可修改'] })
-      }
-      const merged = {
-        docNo: before.docNo,
-        transactionType: before.transactionType,
-        occurredOn: (input.occurredOn as string | undefined) ?? before.occurredOn,
-        subStart: (input.subStart as number | undefined) ?? before.subStart,
-        subEnd: (input.subEnd as number | undefined) ?? before.subEnd,
-        amount: (input.amount as string | undefined) ?? before.amount,
-        partyType: has('partyType') ? (input.partyType as string | null) : before.partyType,
-        partyId: has('partyId') ? (input.partyId as string | null) : before.partyId,
-        discountOrg: has('discountOrg') ? (input.discountOrg as string | null) : before.discountOrg,
-        discountRate: has('discountRate') ? (input.discountRate as string | null) : before.discountRate,
-        interest: has('interest') ? (input.interest as string | null) : before.interest,
-        netAmount: has('netAmount') ? (input.netAmount as string | null) : before.netAmount,
-        postingDate: has('postingDate') ? (input.postingDate as string | null) : before.postingDate,
-        remarks: has('remarks') ? (input.remarks as string | null) : before.remarks,
-        companyId: before.companyId,
-        bankAccountId: (input.bankAccountId as string | undefined) ?? before.bankAccountId,
-        toBankAccountId: has('toBankAccountId')
-          ? (input.toBankAccountId as string | null) : before.toBankAccountId,
-        billId: (input.billId as string | undefined) ?? before.billId,
-        billAccountId: has('billAccountId')
-          ? (input.billAccountId as string | null) : before.billAccountId,
-        settleAccountId: has('settleAccountId')
-          ? (input.settleAccountId as string | null) : before.settleAccountId,
-        interestAccountId: has('interestAccountId')
-          ? (input.interestAccountId as string | null) : before.interestAccountId,
-      }
-      const bill = await loadBill(trx, merged.billId, true)
-      const requireActive =
-        merged.bankAccountId !== before.bankAccountId ||
-        (merged.toBankAccountId ?? null) !== (before.toBankAccountId ?? null)
-      const values = await validateTransaction(trx, {
-        ...merged, billId: merged.billId,
-      }, bill, requireActive)
-      try {
-        await sql`
-          UPDATE acc_bill_transaction SET doc_no=${merged.docNo},occurred_on=${values.occurredOn}::date,
-            sub_start=${merged.subStart},sub_end=${merged.subEnd},amount=${values.amount},
-            party_type=${values.partyType ? lower(values.partyType) : null},
-            party_id=${merged.partyId}::uuid,discount_org=${merged.discountOrg},
-            discount_rate=${values.discountRate},interest=${values.interest},
-            net_amount=${values.netAmount},posting_date=${values.postingDate}::date,
-            remarks=${merged.remarks},bank_account_id=${merged.bankAccountId}::uuid,
-            to_bank_account_id=${merged.toBankAccountId}::uuid,bill_id=${merged.billId}::uuid,
-            bill_account_id=${merged.billAccountId}::uuid,settle_account_id=${merged.settleAccountId}::uuid,
-            interest_account_id=${merged.interestAccountId}::uuid,
-            updated_at=(now() AT TIME ZONE 'utc') WHERE id=${id}::uuid
-        `.execute(trx)
-        const result = await loadTx(trx, id, false)
-        await writeAudit(trx, actor, {
-          resource: 'acc_bill_transaction', recordId: id, recordLabel: txLabel(result),
-          companyId: result.companyId, actionType: 'update', actionName: 'update',
-          changes: auditDiff(txSnap(before), txSnap(result), TX_AUDIT),
-        })
-        return result
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '更新承兑交易失败', WRITE_MAP)
-      }
-    })
-  }
-
-  async function deleteTransaction(permit: Permit, id: string) {
-    const actor = permit.actor
-    return withTx(db, async (trx) => {
-      const before = await authorizedTx(trx, permit, id, true)
-      if (before.status !== 'DRAFT') throw conflict('仅草稿承兑交易可修改或删除')
-      try {
-        await sql`DELETE FROM acc_bill_transaction WHERE id=${id}::uuid`.execute(trx)
-        await writeAudit(trx, actor, {
-          resource: 'acc_bill_transaction', recordId: id, recordLabel: txLabel(before),
-          companyId: before.companyId, actionType: 'delete', actionName: 'delete',
-          changes: auditDiff(txSnap(before), {}, TX_AUDIT),
-        })
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '删除承兑交易失败', WRITE_MAP)
-      }
-    })
-  }
-
   function billTxEntries(value: BillTransaction): GlEntry[] {
     const amount = decimal(value.amount)
     const partyType = value.partyType ? lower(value.partyType) : ''
@@ -905,92 +651,227 @@ export function createBillService(
     }
   }
 
-  async function auditTransaction(permit: Permit, id: string, postingDate?: string | null) {
+  /** 交易入参 → validateTransaction 的形状（create/update/审核三处共用） */
+  function txShape(value: Record<string, unknown>) {
+    return {
+      transactionType: String(value.transactionType ?? ''),
+      companyId: String(value.companyId ?? ''),
+      bankAccountId: String(value.bankAccountId ?? ''),
+      billId: String(value.billId ?? ''),
+      subStart: Number(value.subStart),
+      subEnd: Number(value.subEnd),
+      amount: String(value.amount ?? ''),
+      occurredOn: String(value.occurredOn ?? ''),
+      postingDate: (value.postingDate as string | null | undefined) ?? null,
+      partyType: (value.partyType as string | null | undefined) ?? null,
+      partyId: (value.partyId as string | null | undefined) ?? null,
+      discountOrg: (value.discountOrg as string | null | undefined) ?? null,
+      discountRate: (value.discountRate as string | null | undefined) ?? null,
+      interest: (value.interest as string | null | undefined) ?? null,
+      netAmount: (value.netAmount as string | null | undefined) ?? null,
+      toBankAccountId: (value.toBankAccountId as string | null | undefined) ?? null,
+    }
+  }
+
+  const transactions = createStandardService<BillTransaction>({
+    db,
+    registry: deps.registry,
+    resource: BILL_TRANSACTION_RESOURCE,
+    notFound: '承兑交易不存在',
+    defaultOrder: sql`"id"`,
+    writeErrors: [...WRITE_MAP],
+    hooks: {
+      validate: ({ action, draft, before }) => {
+        if (action === 'update' && before) {
+          // 类型与公司不可变（迁移前 merged 直接取 before，入参静默忽略）
+          draft.transactionType = before.transactionType
+          draft.companyId = before.companyId
+        }
+      },
+      beforeWrite: async (trx, { draft, before }) => {
+        const bill = await loadBill(trx, String(draft.billId), true)
+        const requireActive =
+          draft.bankAccountId !== before!.bankAccountId ||
+          (draft.toBankAccountId ?? null) !== (before!.toBankAccountId ?? null)
+        const values = await validateTransaction(trx, txShape(draft), bill, requireActive)
+        // 落库规范形（金额 toFixed / 日期切片 / 枚举大写；内核 toDbValue 再转小写）
+        draft.occurredOn = values.occurredOn
+        draft.amount = values.amount
+        draft.partyType = values.partyType
+        draft.discountRate = values.discountRate
+        draft.interest = values.interest
+        draft.netAmount = values.netAmount
+        draft.postingDate = values.postingDate
+      },
+    },
+    workflow: {
+      mutableMessage: '仅草稿承兑交易可修改或删除',
+      transitions: [
+        {
+          key: 'audit',
+          label: '审核',
+          from: ['DRAFT'],
+          to: 'AUDITED',
+          guardMessage: '仅草稿承兑交易可审核',
+          stamps: ({ permit }) => auditStamp(permit),
+          effect: async (trx, { before, input }) => {
+            const tx = before as BillTransaction
+            // 调拨无过账日；其余类型必填（校验序同迁移前 collect：先过账日再票据）
+            let posting: string | null = null
+            if (tx.transactionType !== 'REALLOCATE') {
+              const raw = (input.postingDate as string | null | undefined) ?? null
+              if (!raw?.trim()) {
+                throw ApiError.validation('承兑交易审核条件不完整', { postingDate: ['必填'] })
+              }
+              posting = requireDate(raw, 'postingDate')
+            }
+            const bill = await loadBill(trx, tx.billId, true)
+            await validateTransaction(trx, txShape(tx), bill, false)
+            if (tx.transactionType !== 'REALLOCATE') {
+              if (
+                !tx.billAccountId || !tx.settleAccountId ||
+                (tx.transactionType === 'DISCOUNT' && tx.interest != null &&
+                  decimal(tx.interest).gt(0) && !tx.interestAccountId)
+              ) {
+                throw ApiError.validation('承兑交易审核条件不完整', {
+                  posting: ['过账日期及所需科目必填'],
+                })
+              }
+            }
+            validateBillAuditDate(tx, bill)
+            // 调拨不生成总账分录（skipGl 的内核等价物：effect 直接不调引擎）
+            if (tx.transactionType !== 'REALLOCATE') {
+              await gl.post(
+                trx,
+                {
+                  type: VOUCHER,
+                  id: tx.id,
+                  no: txLabel(tx),
+                  companyId: tx.companyId,
+                  postingDate: posting!,
+                },
+                billTxEntries(tx),
+              )
+            }
+            // 过账日随状态翻转落库（调拨写 NULL，口径同迁移前）
+            return { posting_date: posting }
+          },
+          // 重放必须看到翻转后的状态：挂 after（翻转 + 审计之后，仍在同事务）
+          after: async (trx, { before }) => {
+            await replayBill(trx, String((before as BillTransaction).billId))
+          },
+        },
+        {
+          key: 'void',
+          label: '作废',
+          from: ['AUDITED'],
+          to: 'VOIDED',
+          guardMessage: '仅已审核承兑交易可作废',
+          effect: async (trx, { before }) => {
+            const tx = before as BillTransaction
+            await loadBill(trx, tx.billId, true)
+            if (tx.transactionType !== 'REALLOCATE') {
+              await gl.cancel(trx, { type: VOUCHER, id: tx.id })
+            }
+          },
+          after: async (trx, { before }) => {
+            await replayBill(trx, String((before as BillTransaction).billId))
+          },
+        },
+      ],
+    },
+  })
+
+  /**
+   * 建交易（手写）：RECEIVE 可携 billAttrs 联动建票据主档（非本资源字段，
+   * 内核 normalizeInput 会丢弃），取号 values 亦按发生日而非过账日。
+   */
+  async function createTransaction(permit: Permit, input: {
+    docNo?: string | null; transactionType: string; occurredOn: string
+    subStart: number; subEnd: number; amount: string
+    partyType?: string | null; partyId?: string | null
+    discountOrg?: string | null; discountRate?: string | null
+    interest?: string | null; netAmount?: string | null
+    postingDate?: string | null; remarks?: string | null
+    companyId: string; bankAccountId: string; toBankAccountId?: string | null
+    billId?: string | null; billAttrs?: BillAttrs | null
+    billAccountId?: string | null; settleAccountId?: string | null
+    interestAccountId?: string | null
+  }): Promise<BillTransaction> {
     const actor = permit.actor
+    assertCompanyWritable(permit, input.companyId, '承兑交易不存在')
     return withTx(db, async (trx) => {
-      let billId = ''
-      return auditGlDocInTx(trx, actor, gl, {
-        voucherType: VOUCHER,
-        headTable: 'acc_bill_transaction',
-        conflictMessage: '承兑交易已被并发处理',
-        // 领域校验顺序保持：授权 404 → 状态 409
-        lockDraft: async (t) => {
-          const before = await authorizedTx(t, permit, id, true)
-          if (before.status !== 'DRAFT') throw conflict('仅草稿承兑交易可审核')
-          return before
-        },
-        collect: async (t, before) => {
-          let posting: string | null = null
-          if (before.transactionType !== 'REALLOCATE') {
-            if (!postingDate?.trim()) {
-              throw ApiError.validation('承兑交易审核条件不完整', { postingDate: ['必填'] })
-            }
-            posting = requireDate(postingDate, 'postingDate')
-          }
-          const bill = await loadBill(t, before.billId, true)
+      const type = upper(input.transactionType)
+      let billId = input.billId ?? null
+      if (type === 'RECEIVE') {
+        if ((billId == null) === (input.billAttrs == null)) {
+          throw ApiError.validation('承兑交易参数不合法', {
+            bill: ['接收交易须且仅须传 billId 或 billAttrs'],
+          })
+        }
+        if (!billId && input.billAttrs) {
+          const bill = await registerBill(
+            trx,
+            normalizeBillAttrs(input.billAttrs as unknown as Record<string, unknown>),
+          )
           billId = bill.id
-          await validateTransaction(t, {
-            transactionType: before.transactionType, companyId: before.companyId,
-            bankAccountId: before.bankAccountId, billId: before.billId,
-            subStart: before.subStart, subEnd: before.subEnd, amount: before.amount,
-            occurredOn: before.occurredOn, postingDate: before.postingDate,
-            partyType: before.partyType, partyId: before.partyId,
-            discountOrg: before.discountOrg, discountRate: before.discountRate,
-            interest: before.interest, netAmount: before.netAmount,
-            toBankAccountId: before.toBankAccountId,
-          }, bill, false)
-          if (before.transactionType !== 'REALLOCATE') {
-            if (
-              !before.billAccountId || !before.settleAccountId ||
-              (before.transactionType === 'DISCOUNT' && before.interest != null &&
-                decimal(before.interest).gt(0) && !before.interestAccountId)
-            ) {
-              throw ApiError.validation('承兑交易审核条件不完整', {
-                posting: ['过账日期及所需科目必填'],
-              })
-            }
-          }
-          validateBillAuditDate(before, bill)
-          if (before.transactionType === 'REALLOCATE') {
-            return { entries: [], postingDate: posting, skipGl: true }
-          }
-          return { entries: billTxEntries(before), postingDate: posting }
-        },
-        afterAudit: async (t) => {
-          await replayBill(t, billId)
-        },
-        voucherOf: (h) => ({ id: h.id, no: txLabel(h), companyId: h.companyId }),
-        reload: (t, headId) => loadTx(t, headId, false),
-        snapshot: txSnap,
-        auditFields: TX_AUDIT,
+        }
+      } else if (!billId || input.billAttrs != null) {
+        throw ApiError.validation('承兑交易参数不合法', {
+          billId: ['非接收交易必须填写 billId'],
+        })
+      }
+      const bill = await loadBill(trx, billId!, true)
+      const values = await validateTransaction(trx, {
+        transactionType: type, companyId: input.companyId, bankAccountId: input.bankAccountId,
+        billId: billId!, subStart: input.subStart, subEnd: input.subEnd, amount: input.amount,
+        occurredOn: input.occurredOn, postingDate: input.postingDate,
+        partyType: input.partyType, partyId: input.partyId,
+        discountOrg: input.discountOrg, discountRate: input.discountRate,
+        interest: input.interest, netAmount: input.netAmount,
+        toBankAccountId: input.toBankAccountId,
+      }, bill, true)
+      const docNo = await numbering.assignedInTx(trx, {
+        resource: 'acc.bill_transaction',
+        field: 'docNo',
+        provided: input.docNo,
+        // 预置规则段引用 occurred_on（键名必须与 meta 字段一致，否则日期段渲染为空）
+        values: { company_id: input.companyId, occurred_on: values.occurredOn },
       })
+      try {
+        const ins = await sql<Record<string, unknown>>`
+          INSERT INTO acc_bill_transaction(
+            doc_no,transaction_type,occurred_on,sub_start,sub_end,amount,party_type,party_id,
+            discount_org,discount_rate,interest,net_amount,posting_date,remarks,company_id,
+            bank_account_id,to_bank_account_id,bill_id,bill_account_id,settle_account_id,
+            interest_account_id,created_by_id)
+          VALUES (
+            ${docNo},${lower(values.type)},${values.occurredOn}::date,${input.subStart},${input.subEnd},
+            ${values.amount},${values.partyType ? lower(values.partyType) : null},
+            ${input.partyId ?? null}::uuid,${input.discountOrg ?? null},${values.discountRate},
+            ${values.interest},${values.netAmount},${values.postingDate}::date,${input.remarks ?? null},
+            ${input.companyId}::uuid,${input.bankAccountId}::uuid,${input.toBankAccountId ?? null}::uuid,
+            ${billId}::uuid,${input.billAccountId ?? null}::uuid,${input.settleAccountId ?? null}::uuid,
+            ${input.interestAccountId ?? null}::uuid,${actorUserId(actor)}::uuid)
+          RETURNING *
+        `.execute(trx)
+        const result = mapRow(TX_META, ins.rows[0]!) as BillTransaction
+        await writeAudit(trx, actor, {
+          resource: BILL_TX_TABLE, recordId: result.id, recordLabel: docNo,
+          companyId: result.companyId, actionType: 'create', actionName: 'create',
+          changes: auditCreated(snapshot(TX_META, result, TX_AUDIT), TX_AUDIT),
+        })
+        return result
+      } catch (err) {
+        if (err instanceof ApiError) throw err
+        throw mapWriteError(err, '创建承兑交易失败', WRITE_MAP)
+      }
     })
   }
 
-  async function voidTransaction(permit: Permit, id: string) {
-    const actor = permit.actor
-    return withTx(db, async (trx) =>
-      voidGlDocInTx(trx, actor, gl, {
-        voucherType: VOUCHER,
-        headTable: 'acc_bill_transaction',
-        lockAudited: async (t) => {
-          const before = await authorizedTx(t, permit, id, true)
-          if (before.status !== 'AUDITED') throw conflict('仅已审核承兑交易可作废')
-          await loadBill(t, before.billId, true)
-          return before
-        },
-        resolveGlEnd: async (_t, before) => ({
-          mode: before.transactionType === 'REALLOCATE' ? 'skip' : 'cancel',
-        }),
-        afterVoid: async (t, before) => {
-          await replayBill(t, before.billId)
-        },
-        voucherOf: (h) => ({ id: h.id, no: txLabel(h), companyId: h.companyId }),
-        reload: (t, headId) => loadTx(t, headId, false),
-        snapshot: txSnap,
-        auditFields: TX_AUDIT,
-      }),
-    )
+  /** 审核：过账日期的必填/格式校验在 effect 内（状态门之后，与迁移前 collect 同序） */
+  async function auditTransaction(permit: Permit, id: string, postingDate?: string | null) {
+    return transactions.transition(permit, id, 'audit', { postingDate: postingDate ?? null })
   }
 
   async function listHoldings(permit: Permit, query: Partial<ListQuery>) {
@@ -1023,8 +904,18 @@ export function createBillService(
 
   return {
     listBills, getBill, updateBill, deleteBill,
-    listTransactions, getTransaction, createTransaction, updateTransaction, deleteTransaction,
-    auditTransaction, voidTransaction, listHoldings, getHolding, ocrBill,
+    listTransactions: (permit: Permit, query: Partial<ListQuery>) => transactions.list(permit, query),
+    getTransaction: (permit: Permit, id: string) => transactions.get(permit, id),
+    createTransaction,
+    updateTransaction: (permit: Permit, id: string, patch: Record<string, unknown>) =>
+      transactions.update(permit, id, patch),
+    deleteTransaction: (permit: Permit, id: string) => transactions.remove(permit, id),
+    auditTransaction,
+    voidTransaction: (permit: Permit, id: string) => transactions.transition(permit, id, 'void'),
+    listHoldings, getHolding, ocrBill,
   }
 }
 
+function txLabel(t: BillTransaction): string {
+  return t.docNo && t.docNo !== '' ? t.docNo : t.id
+}

@@ -24,6 +24,13 @@ const crudActions: ResourceMeta['actions'] = [
   { key: 'delete', label: '删除', scope: 'row', isDanger: true },
 ]
 
+/** 标准派生资源的动作词表：CRUD + 批量（批量端点由 platform/standard 派生） */
+const standardActions: ResourceMeta['actions'] = [
+  ...crudActions,
+  { key: 'batch_update', label: '批量编辑', scope: 'bulk' },
+  { key: 'batch_delete', label: '批量删除', scope: 'bulk', isDanger: true },
+]
+
 export const CURRENCY_RESOURCE_NAME = 'basCurrencies'
 export const COMPANY_RESOURCE_NAME = 'basCompanies'
 export const UNIT_RESOURCE_NAME = 'basUnits'
@@ -41,14 +48,24 @@ export function currencyResourceMeta(): ResourceMeta {
     authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('name', 'name', 'string', '货币名称', { required: true, filterable: true, sortable: true }),
+      field('name', 'name', 'string', '货币名称', {
+        required: true,
+        maxLength: 64,
+        filterable: true,
+        sortable: true,
+      }),
       field('iso_code', 'isoCode', 'string', 'ISO 编码', {
         required: true,
         createOnly: true,
         filterable: true,
         sortable: true,
       }),
-      field('symbol', 'symbol', 'string', '符号', { filterable: true, sortable: true }),
+      field('symbol', 'symbol', 'string', '符号', {
+        nullable: true,
+        maxLength: 8,
+        filterable: true,
+        sortable: true,
+      }),
       field('active', 'active', 'boolean', '启用', { filterable: true, sortable: true }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         readonly: true,
@@ -61,7 +78,7 @@ export function currencyResourceMeta(): ResourceMeta {
         sortable: true,
       }),
     ],
-    actions: crudActions,
+    actions: standardActions,
     form: {
       kind: 'basic',
       exclude: ['id', 'active', 'insertedAt', 'updatedAt'],
@@ -103,13 +120,20 @@ export function companyResourceMeta(): ResourceMeta {
         filterable: true,
         sortable: true,
       }),
-      field('name', 'name', 'string', '公司名称', { required: true, filterable: true, sortable: true }),
+      field('name', 'name', 'string', '公司名称', {
+        required: true,
+        maxLength: 128,
+        filterable: true,
+        sortable: true,
+      }),
       field('short_name', 'shortName', 'string', '公司简称', {
         required: true,
+        maxLength: 32,
         filterable: true,
         sortable: true,
       }),
       field('parent_id', 'parentId', 'fk', '上级公司', {
+        nullable: true,
         filterable: true,
         ref: { resource: companyResource, relation: companyRelation, labelField: nameField },
       }),
@@ -165,9 +189,15 @@ export function unitResourceMeta(): ResourceMeta {
         sortable: true,
       }),
       field('is_base', 'isBase', 'boolean', '基准单位', { filterable: true, sortable: true }),
-      field('name', 'name', 'string', '单位名称', { required: true, filterable: true, sortable: true }),
+      field('name', 'name', 'string', '单位名称', {
+        required: true,
+        maxLength: 32,
+        filterable: true,
+        sortable: true,
+      }),
       field('symbol', 'symbol', 'string', '单位符号', {
         required: true,
+        maxLength: 16,
         filterable: true,
         sortable: true,
       }),
@@ -187,7 +217,7 @@ export function unitResourceMeta(): ResourceMeta {
         sortable: true,
       }),
     ],
-    actions: crudActions,
+    actions: standardActions,
     form: {
       kind: 'basic',
       exclude: ['id', 'insertedAt', 'updatedAt'],
@@ -251,10 +281,16 @@ export function accountResourceMeta(): ResourceMeta {
       field('code', 'code', 'string', '科目编码', {
         required: true,
         createOnly: true,
+        maxLength: 32,
         filterable: true,
         sortable: true,
       }),
-      field('name', 'name', 'string', '科目名称', { required: true, filterable: true, sortable: true }),
+      field('name', 'name', 'string', '科目名称', {
+        required: true,
+        maxLength: 128,
+        filterable: true,
+        sortable: true,
+      }),
       field('direction', 'direction', 'enum', '余额方向', {
         required: true,
         enumOptions: directionOptions,
@@ -264,6 +300,7 @@ export function accountResourceMeta(): ResourceMeta {
       field('is_group', 'isGroup', 'boolean', '汇总科目', { filterable: true, sortable: true }),
       field('active', 'active', 'boolean', '启用', { filterable: true, sortable: true }),
       field('role', 'role', 'enum', '科目角色', {
+        nullable: true,
         enumOptions: roleOptions,
         filterable: true,
         sortable: true,
@@ -283,6 +320,7 @@ export function accountResourceMeta(): ResourceMeta {
         sortable: true,
       }),
       field('parent_id', 'parentId', 'fk', '上级科目', {
+        nullable: true,
         filterable: true,
         ref: { resource: accountResource, relation: accountRelation, labelField: nameField },
       }),
@@ -293,6 +331,7 @@ export function accountResourceMeta(): ResourceMeta {
         ref: { resource: companyResource, relation: companyRelation, labelField: nameField },
       }),
       field('currency_id', 'currencyId', 'fk', '币种', {
+        nullable: true,
         filterable: true,
         ref: { resource: currencyResource, relation: currencyRelation, labelField: nameField },
       }),

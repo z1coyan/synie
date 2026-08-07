@@ -12,7 +12,7 @@ import type { CompanyService } from './modules/base/company-service.ts'
 import type { CurrencyService } from './modules/base/currency-service.ts'
 import type { UnitService } from './modules/base/unit-service.ts'
 import {
-  marketInstrumentRoutes,
+  INSTRUMENT_RESOURCE_NAME,
   marketPricePointRoutes,
 } from './modules/base/market/index.ts'
 import type { MarketService } from './modules/base/market/index.ts'
@@ -30,10 +30,10 @@ import { iamDepartmentRoutes, iamRoleRoutes, iamUserRoutes } from './modules/iam
 import type { DepartmentService } from './modules/iam/index.ts'
 import type { IamService } from './modules/iam/service.ts'
 import {
-  customerRoutes,
-  employeeRoutes,
-  partyAddressRoutes,
-  supplierRoutes,
+  CUSTOMER_RESOURCE_NAME,
+  EMPLOYEE_RESOURCE_NAME,
+  PARTY_ADDRESS_RESOURCE_NAME,
+  SUPPLIER_RESOURCE_NAME,
 } from './modules/party/index.ts'
 import type { PartyAddressService } from './modules/party/address-service.ts'
 import type {
@@ -43,7 +43,12 @@ import type {
 } from './modules/party/party-service.ts'
 import { companyAccountDefaultRoutes } from './modules/sales/index.ts'
 import type { CompanyAccountDefaultService } from './modules/sales/company-account-default.ts'
-import { inventoryMasterRoutes, inventoryRoutes } from './modules/inventory/index.ts'
+import {
+  CATEGORY_RESOURCE,
+  inventoryMasterRoutes,
+  inventoryRoutes,
+  MATERIAL_RESOURCE,
+} from './modules/inventory/index.ts'
 import type {
   MaterialCategoryService,
   MaterialService,
@@ -67,8 +72,8 @@ import {
 } from './modules/manufacturing/index.ts'
 import {
   ACC_RESOURCE_NAME,
+  BANK_ACCOUNT_RESOURCE,
   vatInvoiceRoutes,
-  bankAccountRoutes,
   bankTransactionRoutes,
   bankImportTemplateRoutes,
   bankImportRoutes,
@@ -81,6 +86,7 @@ import {
   billHoldingRoutes,
   type VatInvoiceService,
   type BankingService,
+  type BankAccountService,
   type ExpenseService,
   type BillService,
 } from './modules/finance/index.ts'
@@ -92,6 +98,8 @@ import { notFound, onError } from './platform/http/errors.ts'
 import { logJson, serializeError } from './platform/http/log.ts'
 import { metaRoutes } from './platform/meta/routes.ts'
 import type { Registry } from './platform/meta/registry.ts'
+import { standardRoutes } from './platform/standard/routes.ts'
+import { CURRENCY_RESOURCE_NAME, UNIT_RESOURCE_NAME } from './modules/base/meta.ts'
 import { auditRoutes } from './platform/audit/routes.ts'
 import type { AuditService } from './platform/audit/service.ts'
 import { fileRoutes, storageRoutes } from './platform/files/routes.ts'
@@ -161,6 +169,7 @@ export interface AppDeps {
   invoices: VatInvoiceService
   // 工单 12 银行/票据/报销
   banking: BankingService
+  bankAccounts: BankAccountService
   expenses: ExpenseService
   bills: BillService
   todos: TodoService
@@ -254,18 +263,39 @@ export function buildApp(deps: AppDeps) {
       baseRoutes({
         auth: deps.auth,
         authz: deps.authz,
-        currencies: deps.currencies,
         companies: deps.companies,
-        units: deps.units,
         accounts: deps.accounts,
+      }),
+    )
+    // —— 标准派生路由（platform/standard）：URL 形状与手写路由逐字一致 ——
+    .route(
+      '/base/currencies',
+      standardRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        registry: deps.registry,
+        resource: CURRENCY_RESOURCE_NAME,
+        service: deps.currencies,
+      }),
+    )
+    .route(
+      '/base/units',
+      standardRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        registry: deps.registry,
+        resource: UNIT_RESOURCE_NAME,
+        service: deps.units,
       }),
     )
     .route(
       '/base/market-instruments',
-      marketInstrumentRoutes({
+      standardRoutes({
         auth: deps.auth,
         authz: deps.authz,
-        market: deps.market,
+        registry: deps.registry,
+        resource: INSTRUMENT_RESOURCE_NAME,
+        service: deps.market.instruments,
       }),
     )
     .route(
@@ -282,13 +312,46 @@ export function buildApp(deps: AppDeps) {
       iamDepartmentRoutes({ auth: deps.auth, authz: deps.authz, departments: deps.departments }),
     )
     .route('/system/roles', iamRoleRoutes({ auth: deps.auth, authz: deps.authz, iam: deps.iam }))
-    .route('/base/customers', customerRoutes({ auth: deps.auth, authz: deps.authz, customers: deps.customers }))
-    .route('/base/suppliers', supplierRoutes({ auth: deps.auth, authz: deps.authz, suppliers: deps.suppliers }))
+    .route(
+      '/base/customers',
+      standardRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        registry: deps.registry,
+        resource: CUSTOMER_RESOURCE_NAME,
+        service: deps.customers,
+      }),
+    )
+    .route(
+      '/base/suppliers',
+      standardRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        registry: deps.registry,
+        resource: SUPPLIER_RESOURCE_NAME,
+        service: deps.suppliers,
+      }),
+    )
     .route(
       '/base/party-addresses',
-      partyAddressRoutes({ auth: deps.auth, authz: deps.authz, addresses: deps.partyAddresses }),
+      standardRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        registry: deps.registry,
+        resource: PARTY_ADDRESS_RESOURCE_NAME,
+        service: deps.partyAddresses,
+      }),
     )
-    .route('/hr/employees', employeeRoutes({ auth: deps.auth, authz: deps.authz, employees: deps.employees }))
+    .route(
+      '/hr/employees',
+      standardRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        registry: deps.registry,
+        resource: EMPLOYEE_RESOURCE_NAME,
+        service: deps.employees,
+      }),
+    )
     .route(
       '/hr/attendance-punches',
       attendancePunchRoutes({ auth: deps.auth, authz: deps.authz, attendance: deps.hr.attendance }),
@@ -323,12 +386,30 @@ export function buildApp(deps: AppDeps) {
       }),
     )
     .route(
+      '/base/materials',
+      standardRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        registry: deps.registry,
+        resource: MATERIAL_RESOURCE,
+        service: deps.invMaterials,
+      }),
+    )
+    .route(
+      '/base/material-categories',
+      standardRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        registry: deps.registry,
+        resource: CATEGORY_RESOURCE,
+        service: deps.invCategories,
+      }),
+    )
+    .route(
       '/base',
       inventoryMasterRoutes({
         auth: deps.auth,
         authz: deps.authz,
-        categories: deps.invCategories,
-        materials: deps.invMaterials,
         materialUnits: deps.invMaterialUnits,
         warehouses: deps.invWarehouses,
       }),
@@ -359,7 +440,13 @@ export function buildApp(deps: AppDeps) {
     )
     .route(
       '/finance/bank-accounts',
-      bankAccountRoutes({ auth: deps.auth, authz: deps.authz, banking: deps.banking }),
+      standardRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        registry: deps.registry,
+        resource: BANK_ACCOUNT_RESOURCE,
+        service: deps.bankAccounts,
+      }),
     )
     .route(
       '/finance/bank-transactions',

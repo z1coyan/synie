@@ -1,37 +1,31 @@
 /**
- * 增值税发票：销项/进项/费用报销票生命周期。
- * 审核/作废/红冲走总账过账骨架；对账结单/重开经 after* 钩子（reconciliations 接缝）。
+ * 增值税发票：销项/进项/费用报销票生命周期，全量走标准动作内核。
  *
- * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
- * 列表 `listAuthorized`、写前取行 `loadAuthorized`（不命中一律 not_found）、
- * create 走 `assertCompanyWritable`。模块内零鉴权代码。
- * 状态前置条件（仅草稿可改等）是领域不变量，留在本文件抛 conflict。
+ * - CRUD 与三个转移（audit / void / reverse）都是内核派生：
+ *   转移 effect 直调 GL 引擎（过账/作废/红冲），`after` 挂对账结单与重开接缝。
+ * - 领域校验以钩子注入：`validate` 跑纯函数 normalizeInput（形状 + 组合规则 +
+ *   trim/空串归一），`beforeWrite` 跑要查库的引用校验。
+ * - 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
+ *   内核内部走 listAuthorized / loadAuthorized(forUpdate) / assertCompanyWritable。
+ *
+ * `items` 是 jsonb[]：postgres.js 双向直通（读回 JS 数组、写入按数组编码），
+ * 故 meta 声明为可写 json 字段即可，无需 ARRAY[...]::jsonb[] 手写字面量。
  */
-import { decimal, isDecimalString, toDecimalString, type ListQuery } from '@synie/shared'
+import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import { withTx, type DbHandle } from '~/db/tx.ts'
+import type { DbHandle, TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import type { GlEngine, GlEntry } from '~/engines/gl/index.ts'
-import {
-  auditCreated,
-  auditDestroyed,
-  auditDiff,
-  writeAudit,
-} from '~/platform/audit/write.ts'
-import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import type { Actor, Permit } from '~/platform/authz/core/index.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
 import type { FileService } from '~/platform/files/service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import type { ReconciliationService } from '~/modules/trading/reconciliation/service.ts'
 import type { TradingSide } from '~/modules/trading/common.ts'
-import { auditGlDocInTx, voidGlDocInTx } from '~/platform/posting/skeleton.ts'
-import { listAuthorized } from '~/db/list.ts'
-import { assertCompanyWritable, loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
-import { mapWriteError } from '~/db/dberr.ts'
-import { VAT_INVOICE_RESOURCE_NAME, vatInvoiceResourceMeta } from './meta.ts'
+import { auditStamp, createStandardService } from '~/platform/standard/service.ts'
+import { VAT_INVOICE_RESOURCE_NAME } from './meta.ts'
 import { recognizeVatInvoice, type OcrDeps, type OcrPrefill } from './ocr.ts'
 
 export { VAT_INVOICE_RESOURCE_NAME } from './meta.ts'
@@ -40,6 +34,7 @@ export type InvoiceStatus = 'DRAFT' | 'AUDITED' | 'VOIDED' | 'REVERSED'
 export type InvoiceDirection = 'INBOUND' | 'OUTBOUND'
 export type InvoicePartyType = 'SUPPLIER' | 'CUSTOMER' | 'COMPANY' | 'EMPLOYEE'
 
+/** wire 形单据（内核口径：date 为 YYYY-MM-DD 字符串，datetime 为 Date） */
 export interface VatInvoice {
   id: string
   docNo: string | null
@@ -69,9 +64,9 @@ export interface VatInvoice {
   remarks: string | null
   redInvoiceNo: string | null
   status: InvoiceStatus
-  auditedAt: string | null
-  insertedAt: string
-  updatedAt: string
+  auditedAt: Date | null
+  insertedAt: Date
+  updatedAt: Date
   companyId: string
   partyAccountId: string | null
   amountAccountId: string | null
@@ -81,6 +76,7 @@ export interface VatInvoice {
   auditedById: string | null
   salReconciliationId: string | null
   purReconciliationId: string | null
+  [key: string]: unknown
 }
 
 export interface VatInvoiceInput {
@@ -117,70 +113,7 @@ export interface VatInvoiceInput {
   purReconciliationId?: string | null
 }
 
-/** 更新：*Present 标记 JSON null 与缺省区分（对齐 optional 三态） */
-export interface VatInvoiceUpdateInput {
-  docNo?: string | null
-  docNoPresent?: boolean
-  direction?: string
-  invoiceDate?: string | null
-  invoiceDatePresent?: boolean
-  partyType?: string
-  partyId?: string
-  invoiceKind?: string
-  invoiceCode?: string | null
-  invoiceCodePresent?: boolean
-  invoiceNo?: string | null
-  invoiceNoPresent?: boolean
-  sellerName?: string | null
-  sellerNamePresent?: boolean
-  sellerTaxNo?: string | null
-  sellerTaxNoPresent?: boolean
-  sellerAddressPhone?: string | null
-  sellerAddressPhonePresent?: boolean
-  sellerBankAccount?: string | null
-  sellerBankAccountPresent?: boolean
-  buyerName?: string | null
-  buyerNamePresent?: boolean
-  buyerTaxNo?: string | null
-  buyerTaxNoPresent?: boolean
-  buyerAddressPhone?: string | null
-  buyerAddressPhonePresent?: boolean
-  buyerBankAccount?: string | null
-  buyerBankAccountPresent?: boolean
-  items?: Record<string, unknown>[] | null
-  itemsPresent?: boolean
-  netTotal?: string | null
-  netTotalPresent?: boolean
-  taxTotal?: string | null
-  taxTotalPresent?: boolean
-  grossTotal?: string | null
-  grossTotalPresent?: boolean
-  issuer?: string | null
-  issuerPresent?: boolean
-  reviewer?: string | null
-  reviewerPresent?: boolean
-  payee?: string | null
-  payeePresent?: boolean
-  remarks?: string | null
-  remarksPresent?: boolean
-  partyAccountId?: string | null
-  partyAccountIdPresent?: boolean
-  amountAccountId?: string | null
-  amountAccountIdPresent?: boolean
-  taxAccountId?: string | null
-  taxAccountIdPresent?: boolean
-  mirrorInvoiceId?: string | null
-  mirrorInvoiceIdPresent?: boolean
-  salReconciliationId?: string | null
-  salReconciliationIdPresent?: boolean
-  purReconciliationId?: string | null
-  purReconciliationIdPresent?: boolean
-}
-
 const VOUCHER_TYPE = 'acc.vat_invoice'
-const INVOICE_TABLE = 'acc_vat_invoice'
-/** 列表/单条共用同一份投影，别名只有一处可写错 */
-const INVOICE_ALIAS = 'acc_vat_invoice'
 
 const KINDS = new Set([
   'SPECIAL',
@@ -191,24 +124,10 @@ const KINDS = new Set([
   'DIGITAL_NORMAL',
 ])
 
-const INVOICE_AUDIT = auditFieldsOf(vatInvoiceResourceMeta())
-
 const WRITE_MAPPINGS = [
   { code: '23505', message: '同一公司内发票号码或内部编号冲突' },
   { code: '23503', message: '增值税发票引用不存在' },
 ] as const
-
-const INVOICE_SELECT = sql`
-SELECT id, doc_no, direction, invoice_date, posting_date, party_type, party_id,
-  invoice_kind, invoice_code, invoice_no, seller_name, seller_tax_no,
-  seller_address_phone, seller_bank_account, buyer_name, buyer_tax_no,
-  buyer_address_phone, buyer_bank_account, array_to_json(items)::text AS items_json,
-  net_total, tax_total, gross_total, issuer, reviewer, payee, remarks,
-  red_invoice_no, status, audited_at, inserted_at, updated_at, company_id,
-  party_account_id, amount_account_id, tax_account_id, mirror_invoice_id,
-  created_by_id, audited_by_id, sal_reconciliation_id, pur_reconciliation_id`
-
-const INVOICE_SOURCE = sql` FROM acc_vat_invoice`
 
 export type VatInvoiceService = ReturnType<typeof createVatInvoiceService>
 
@@ -232,255 +151,145 @@ export function createVatInvoiceService(
   const gl = deps.gl
   const reconciliations = deps.reconciliations
   const files = deps.files ?? null
-  const invoiceTarget = deps.registry.authzTarget(VAT_INVOICE_RESOURCE_NAME)
 
-  async function list(
-    permit: Permit,
-    query: Partial<ListQuery>,
-  ): Promise<{ count: number; results: VatInvoice[] }> {
-    return listAuthorized({
-      db,
-      permit,
-      target: invoiceTarget,
-      alias: INVOICE_ALIAS,
-      resource: vatInvoiceResourceMeta(),
-      source: INVOICE_SOURCE,
-      select: INVOICE_SELECT,
-      defaultOrder: sql`"inserted_at" DESC, "id" DESC`,
-      query,
-      mapRow: mapInvoiceRow,
-    })
-  }
+  const base = createStandardService<VatInvoice>({
+    db,
+    registry: deps.registry,
+    resource: VAT_INVOICE_RESOURCE_NAME,
+    defaultOrder: sql`"inserted_at" DESC, "id" DESC`,
+    writeErrors: [...WRITE_MAPPINGS],
+    // 编号一律系统生成，手填 400（ADR 2026-08-06-system-generated-numbering）；
+    // 内核按 draft 全量派生 values（含 invoice_date），键名与 meta 字段天然一致
+    numbering: { service: numbering, field: 'docNo' },
+    hooks: {
+      validate: ({ draft }) => {
+        // 纯函数：形状/组合校验 + trim/空串归一（update 跑在 before+patch 合并形上）
+        Object.assign(draft, normalizeInput(draft as unknown as VatInvoiceInput))
+      },
+      beforeWrite: async (trx, { action, draft, before }) => {
+        await validateReferences(
+          trx,
+          reconciliations,
+          draft as unknown as NormalizedInput,
+          action === 'update' ? String(before!.id) : null,
+          false,
+        )
+      },
+      insertColumns: ({ permit }) => ({ created_by_id: permit.actor.userId || null }),
+    },
+    workflow: {
+      mutableMessage: '仅草稿发票可修改或删除',
+      transitions: [
+        {
+          key: 'audit',
+          label: '审核',
+          from: ['DRAFT'],
+          to: 'AUDITED',
+          guardMessage: '仅草稿发票可审核',
+          stamps: ({ permit, input }) => ({
+            ...auditStamp(permit),
+            posting_date: input.postingDate,
+          }),
+          effect: async (trx, { before, input }) => {
+            const invoice = before as VatInvoice
+            await validateReferences(trx, reconciliations, toInput(invoice), invoice.id, true)
+            const entries = invoiceGLEntries(invoice)
+            const reconEntries = await reconciliationGLEntries(trx, reconciliations, invoice)
+            entries.push(...reconEntries)
+            await gl.post(
+              trx,
+              {
+                type: VOUCHER_TYPE,
+                id: invoice.id,
+                no: invoiceLabel(invoice),
+                companyId: invoice.companyId,
+                postingDate: String(input.postingDate),
+              },
+              entries,
+            )
+          },
+          after: async (trx, { permit, before }) => {
+            const target = reconTargetOf(before as VatInvoice)
+            if (target) {
+              await reconciliations.closeFromInvoice(trx, permit.actor, target.side, target.id)
+            }
+          },
+        },
+        {
+          key: 'void',
+          label: '作废',
+          from: ['AUDITED'],
+          to: 'VOIDED',
+          guardMessage: '仅已审核发票可作废或红冲',
+          effect: async (trx, { before }) => {
+            await assertNotClaimedByExpense(trx, String(before.id))
+            await gl.cancel(trx, { type: VOUCHER_TYPE, id: String(before.id) })
+            // 对账关联在收口时解除（重开由 after 钩子驱动）
+            return { sal_reconciliation_id: null, pur_reconciliation_id: null }
+          },
+          after: reopenReconciliations,
+        },
+        {
+          key: 'reverse',
+          label: '红冲',
+          from: ['AUDITED'],
+          to: 'REVERSED',
+          guardMessage: '仅已审核发票可作废或红冲',
+          effect: async (trx, { before, input }) => {
+            await assertNotClaimedByExpense(trx, String(before.id))
+            await gl.reverse(
+              trx,
+              { type: VOUCHER_TYPE, id: String(before.id) },
+              String(input.postingDate),
+            )
+            return {
+              red_invoice_no: (input.redInvoiceNo as string | null | undefined) ?? null,
+              sal_reconciliation_id: null,
+              pur_reconciliation_id: null,
+            }
+          },
+          after: reopenReconciliations,
+        },
+      ],
+    },
+  })
 
-  async function get(permit: Permit, id: string): Promise<VatInvoice> {
-    return loadAuthorizedFrom({
-      db,
-      permit,
-      target: invoiceTarget,
-      alias: INVOICE_ALIAS,
-      source: INVOICE_SOURCE,
-      select: INVOICE_SELECT,
-      id,
-      mapRow: mapInvoiceRow,
-      notFoundMessage: '增值税发票不存在',
-    })
-  }
-
-  /** 按 Permit 锁单（授权 + 行锁）后重读投影：子查询不能 FOR UPDATE，故两段 */
-  async function lockInvoice(handle: DbHandle, permit: Permit, id: string): Promise<VatInvoice> {
-    await loadAuthorized({
-      db: handle,
-      permit,
-      target: invoiceTarget,
-      table: INVOICE_TABLE,
-      id,
-      forUpdate: true,
-      notFoundMessage: '增值税发票不存在',
-    })
-    return loadInvoice(handle, id)
+  /** 作废/红冲后重开关联对账单（骨架 afterVoid 的原样搬迁） */
+  async function reopenReconciliations(
+    trx: TrxHandle,
+    ctx: { permit: Permit; before: Record<string, unknown> },
+  ): Promise<void> {
+    const before = ctx.before as VatInvoice
+    if (before.salReconciliationId) {
+      await reconciliations.reopenFromInvoice(trx, ctx.permit.actor, 'sales', before.salReconciliationId)
+    }
+    if (before.purReconciliationId) {
+      await reconciliations.reopenFromInvoice(trx, ctx.permit.actor, 'purchase', before.purReconciliationId)
+    }
   }
 
   async function create(permit: Permit, input: VatInvoiceInput): Promise<VatInvoice> {
-    const actor = permit.actor
-    // 入参校验（400）先于公司边界（404）
+    // 入参校验（400）先于公司边界（404）：内核 create 的 assertCompanyWritable 在钩子之前
     const normalized = normalizeInput(input)
-    assertCompanyWritable(permit, normalized.companyId, '增值税发票不存在')
-    return withTx(db, async (trx) => {
-      await validateReferences(trx, reconciliations, normalized, null, false)
-      const docNo = await numbering.assignedInTx(trx, {
-        resource: 'acc.vat_invoice',
-        field: 'docNo',
-        provided: normalized.docNo,
-        // 预置规则段引用 invoice_date（键名必须与 meta 字段一致，否则日期段渲染为空）
-        values: {
-          company_id: normalized.companyId,
-          invoice_date: normalized.invoiceDate,
-        },
-      })
-      try {
-        const ins = await sql<{ id: string }>`
-          INSERT INTO acc_vat_invoice(
-            doc_no, direction, invoice_date, party_type, party_id, invoice_kind,
-            invoice_code, invoice_no, seller_name, seller_tax_no, seller_address_phone,
-            seller_bank_account, buyer_name, buyer_tax_no, buyer_address_phone,
-            buyer_bank_account, items, net_total, tax_total, gross_total, issuer,
-            reviewer, payee, remarks, company_id, party_account_id, amount_account_id,
-            tax_account_id, mirror_invoice_id, created_by_id,
-            sal_reconciliation_id, pur_reconciliation_id
-          ) VALUES (
-            ${docNo}, ${lower(normalized.direction)}, ${normalized.invoiceDate}::date,
-            ${lower(normalized.partyType)}, ${normalized.partyId}::uuid,
-            ${lower(normalized.invoiceKind)}, ${normalized.invoiceCode},
-            ${normalized.invoiceNo}, ${normalized.sellerName}, ${normalized.sellerTaxNo},
-            ${normalized.sellerAddressPhone}, ${normalized.sellerBankAccount},
-            ${normalized.buyerName}, ${normalized.buyerTaxNo},
-            ${normalized.buyerAddressPhone}, ${normalized.buyerBankAccount},
-            ${itemsArraySql(normalized.items)},
-            ${normalized.netTotal}, ${normalized.taxTotal}, ${normalized.grossTotal},
-            ${normalized.issuer}, ${normalized.reviewer}, ${normalized.payee},
-            ${normalized.remarks}, ${normalized.companyId}::uuid,
-            ${normalized.partyAccountId}::uuid, ${normalized.amountAccountId}::uuid,
-            ${normalized.taxAccountId}::uuid, ${normalized.mirrorInvoiceId}::uuid,
-            ${actorUserId(actor)}::uuid,
-            ${normalized.salReconciliationId}::uuid,
-            ${normalized.purReconciliationId}::uuid
-          ) RETURNING id
-        `.execute(trx)
-        const id = ins.rows[0]!.id
-        const result = await loadInvoice(trx, id)
-        await writeAudit(trx, actor, {
-          resource: 'acc_vat_invoice',
-          recordId: id,
-          recordLabel: invoiceLabel(result),
-          companyId: result.companyId,
-          actionType: 'create',
-          actionName: 'create',
-          changes: auditCreated(invoiceSnap(result), INVOICE_AUDIT),
-        })
-        return result
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '创建增值税发票失败', WRITE_MAPPINGS)
-      }
-    })
+    return base.create(permit, normalized as unknown as Record<string, unknown>)
   }
 
+  /** present-key 语义：出现即写、null 清空、缺省不动（取代旧的 *Present 布尔） */
   async function update(
     permit: Permit,
     id: string,
-    input: VatInvoiceUpdateInput,
+    patch: Record<string, unknown>,
   ): Promise<VatInvoice> {
-    const actor = permit.actor
-    return withTx(db, async (trx) => {
-      const before = await lockInvoice(trx, permit, id)
-      if (before.status !== 'DRAFT') {
-        throw new ApiError('conflict', '仅草稿发票可修改或删除')
-      }
-      if (input.docNoPresent && (input.docNo ?? '').trim() !== (before.docNo ?? '')) {
-        throw ApiError.validation('增值税发票参数不合法', { docNo: ['编号创建后不可修改'] })
-      }
-      const merged = normalizeInput(overlay(before, input))
-      await validateReferences(trx, reconciliations, merged, id, false)
-      try {
-        await sql`
-          UPDATE acc_vat_invoice SET
-            doc_no=${merged.docNo}, direction=${lower(merged.direction)},
-            invoice_date=${merged.invoiceDate}::date,
-            party_type=${lower(merged.partyType)}, party_id=${merged.partyId}::uuid,
-            invoice_kind=${lower(merged.invoiceKind)}, invoice_code=${merged.invoiceCode},
-            invoice_no=${merged.invoiceNo}, seller_name=${merged.sellerName},
-            seller_tax_no=${merged.sellerTaxNo},
-            seller_address_phone=${merged.sellerAddressPhone},
-            seller_bank_account=${merged.sellerBankAccount},
-            buyer_name=${merged.buyerName}, buyer_tax_no=${merged.buyerTaxNo},
-            buyer_address_phone=${merged.buyerAddressPhone},
-            buyer_bank_account=${merged.buyerBankAccount},
-            items=${itemsArraySql(merged.items)},
-            net_total=${merged.netTotal}, tax_total=${merged.taxTotal},
-            gross_total=${merged.grossTotal}, issuer=${merged.issuer},
-            reviewer=${merged.reviewer}, payee=${merged.payee}, remarks=${merged.remarks},
-            party_account_id=${merged.partyAccountId}::uuid,
-            amount_account_id=${merged.amountAccountId}::uuid,
-            tax_account_id=${merged.taxAccountId}::uuid,
-            mirror_invoice_id=${merged.mirrorInvoiceId}::uuid,
-            sal_reconciliation_id=${merged.salReconciliationId}::uuid,
-            pur_reconciliation_id=${merged.purReconciliationId}::uuid,
-            updated_at=(now() AT TIME ZONE 'utc')
-          WHERE id=${id}::uuid
-        `.execute(trx)
-        const result = await loadInvoice(trx, id)
-        await writeAudit(trx, actor, {
-          resource: 'acc_vat_invoice',
-          recordId: id,
-          recordLabel: invoiceLabel(result),
-          companyId: result.companyId,
-          actionType: 'update',
-          actionName: 'update',
-          changes: auditDiff(invoiceSnap(before), invoiceSnap(result), INVOICE_AUDIT),
-        })
-        return result
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '更新增值税发票失败', WRITE_MAPPINGS)
-      }
-    })
+    return base.update(permit, id, patch)
   }
 
-  async function remove(permit: Permit, id: string): Promise<void> {
-    const actor = permit.actor
-    await withTx(db, async (trx) => {
-      const before = await lockInvoice(trx, permit, id)
-      if (before.status !== 'DRAFT') {
-        throw new ApiError('conflict', '仅草稿发票可修改或删除')
-      }
-      try {
-        await sql`DELETE FROM acc_vat_invoice WHERE id=${id}::uuid`.execute(trx)
-        await writeAudit(trx, actor, {
-          resource: 'acc_vat_invoice',
-          recordId: id,
-          recordLabel: invoiceLabel(before),
-          companyId: before.companyId,
-          actionType: 'delete',
-          actionName: 'delete',
-          changes: auditDestroyed(invoiceSnap(before), INVOICE_AUDIT),
-        })
-      } catch (err) {
-        if (err instanceof ApiError) throw err
-        throw mapWriteError(err, '删除增值税发票失败', WRITE_MAPPINGS)
-      }
-    })
-  }
-
-  async function audit(
-    permit: Permit,
-    id: string,
-    postingDate: string,
-  ): Promise<VatInvoice> {
-    const actor = permit.actor
+  async function audit(permit: Permit, id: string, postingDate: string): Promise<VatInvoice> {
     const posting = requireDate(postingDate, 'postingDate')
-    return withTx(db, async (trx) => {
-      let reconSide: TradingSide | null = null
-      let reconId: string | null = null
-      return auditGlDocInTx(trx, actor, gl, {
-        voucherType: VOUCHER_TYPE,
-        headTable: 'acc_vat_invoice',
-        conflictMessage: '发票已被并发处理',
-        lockDraft: async (t) => {
-          const before = await lockInvoice(t, permit, id)
-          if (before.status !== 'DRAFT') {
-            throw new ApiError('conflict', '仅草稿发票可审核')
-          }
-          return before
-        },
-        collect: async (t, before) => {
-          const input = toInput(before)
-          await validateReferences(t, reconciliations, input, id, true)
-          const entries = invoiceGLEntries(before)
-          const { reconEntries, side, reconciliationId } = await reconciliationGLEntries(
-            t,
-            reconciliations,
-            before,
-          )
-          entries.push(...reconEntries)
-          reconSide = side
-          reconId = reconciliationId
-          return { entries, postingDate: posting }
-        },
-        afterAudit: async (t) => {
-          if (reconId && reconSide) {
-            await reconciliations.closeFromInvoice(t, actor, reconSide, reconId)
-          }
-        },
-        voucherOf: (h) => ({ id: h.id, no: invoiceLabel(h), companyId: h.companyId }),
-        reload: (t, headId) => loadInvoice(t, headId),
-        snapshot: invoiceSnap,
-        auditFields: INVOICE_AUDIT,
-      })
-    })
+    return base.transition(permit, id, 'audit', { postingDate: posting })
   }
 
   async function voidInvoice(permit: Permit, id: string): Promise<VatInvoice> {
-    return endInvoice(permit, id, false, {})
+    return base.transition(permit, id, 'void')
   }
 
   async function reverse(
@@ -488,91 +297,11 @@ export function createVatInvoiceService(
     id: string,
     input: { postingDate: string; redInvoiceNo?: string | null },
   ): Promise<VatInvoice> {
-    return endInvoice(permit, id, true, input)
-  }
-
-  /**
-   * 作废/红冲共用重放骨架。动作码由 `reverseMode` 派生，但派生发生在**路由**
-   * （`endInvoiceAction`，两码都已在 meta 声明），本函数只留领域分支。
-   */
-  async function endInvoice(
-    permit: Permit,
-    id: string,
-    reverseMode: boolean,
-    input: { postingDate?: string; redInvoiceNo?: string | null },
-  ): Promise<VatInvoice> {
-    const actor = permit.actor
-    const action = reverseMode ? 'reverse' : 'void'
-    let posting = ''
-    if (reverseMode) {
-      posting = requireDate(input.postingDate ?? '', 'postingDate')
-    }
-    return withTx(db, async (trx) =>
-      voidGlDocInTx(trx, actor, gl, {
-        voucherType: VOUCHER_TYPE,
-        headTable: 'acc_vat_invoice',
-        actionName: action,
-        voidStatus: reverseMode ? 'reversed' : 'voided',
-        lockAudited: async (t) => {
-          const before = await lockInvoice(t, permit, id)
-          if (before.status !== 'AUDITED') {
-            throw new ApiError('conflict', '仅已审核发票可作废或红冲')
-          }
-          const referenced = await sql<{ e: boolean }>`
-            SELECT EXISTS(
-              SELECT 1 FROM acc_expense_report_item i
-              JOIN acc_expense_report r ON r.id=i.report_id
-              WHERE i.invoice_id=${id}::uuid AND r.status<>'voided'
-            ) AS e
-          `.execute(t)
-          if (referenced.rows[0]?.e) {
-            throw new ApiError(
-              'conflict',
-              '发票已被报销单引用,请先在报销单上移除该行或作废报销单',
-            )
-          }
-          return before
-        },
-        resolveGlEnd: async () =>
-          reverseMode
-            ? { mode: 'reverse' as const, reversePostingDate: posting }
-            : { mode: 'cancel' as const },
-        flipToEnded: async (t, before, nextStatus) => {
-          const redNo = reverseMode
-            ? (input.redInvoiceNo ?? null)
-            : before.redInvoiceNo
-          await sql`
-            UPDATE acc_vat_invoice SET status=${nextStatus},
-              red_invoice_no=${redNo},
-              sal_reconciliation_id=NULL, pur_reconciliation_id=NULL,
-              updated_at=(now() AT TIME ZONE 'utc')
-            WHERE id=${id}::uuid
-          `.execute(t)
-        },
-        afterVoid: async (t, before) => {
-          if (before.salReconciliationId) {
-            await reconciliations.reopenFromInvoice(
-              t,
-              actor,
-              'sales',
-              before.salReconciliationId,
-            )
-          }
-          if (before.purReconciliationId) {
-            await reconciliations.reopenFromInvoice(
-              t,
-              actor,
-              'purchase',
-              before.purReconciliationId,
-            )
-          }
-        },
-        voucherOf: (h) => ({ id: h.id, no: invoiceLabel(h), companyId: h.companyId }),
-        reload: (t, headId) => loadInvoice(t, headId),
-        snapshot: invoiceSnap,
-        auditFields: INVOICE_AUDIT,
-      }),
-    )
+    const posting = requireDate(input.postingDate ?? '', 'postingDate')
+    return base.transition(permit, id, 'reverse', {
+      postingDate: posting,
+      redInvoiceNo: input.redInvoiceNo ?? null,
+    })
   }
 
   async function ocr(permit: Permit, fileId: string): Promise<OcrPrefill> {
@@ -584,73 +313,16 @@ export function createVatInvoiceService(
     return recognizeVatInvoice(db, file, content, deps.ocr)
   }
 
-  return { list, get, create, update, remove, audit, void: voidInvoice, reverse, ocr }
-}
-
-// ---- load / map ----
-
-async function loadInvoice(db: DbHandle, id: string): Promise<VatInvoice> {
-  const rows = await sql<Record<string, unknown>>`
-    ${INVOICE_SELECT} FROM acc_vat_invoice WHERE id=${id}::uuid
-  `.execute(db)
-  if (rows.rows.length === 0) throw notFound()
-  return mapInvoiceRow(rows.rows[0]!)
-}
-
-function mapInvoiceRow(row: Record<string, unknown>): VatInvoice {
-  let items: Record<string, unknown>[] = []
-  const rawItems = row.items_json ?? row.items
-  if (typeof rawItems === 'string') {
-    try {
-      const parsed = JSON.parse(rawItems) as unknown
-      items = Array.isArray(parsed) ? (parsed as Record<string, unknown>[]) : []
-    } catch {
-      items = []
-    }
-  } else if (Array.isArray(rawItems)) {
-    items = rawItems as Record<string, unknown>[]
-  }
   return {
-    id: String(row.id),
-    docNo: optStr(row.doc_no),
-    direction: upper(String(row.direction)) as InvoiceDirection,
-    invoiceDate: dateOnly(row.invoice_date),
-    postingDate: dateOnly(row.posting_date),
-    partyType: upper(String(row.party_type)) as InvoicePartyType,
-    partyId: String(row.party_id),
-    invoiceKind: upper(String(row.invoice_kind)),
-    invoiceCode: row.invoice_code == null ? '' : String(row.invoice_code),
-    invoiceNo: optStr(row.invoice_no),
-    sellerName: optStr(row.seller_name),
-    sellerTaxNo: optStr(row.seller_tax_no),
-    sellerAddressPhone: optStr(row.seller_address_phone),
-    sellerBankAccount: optStr(row.seller_bank_account),
-    buyerName: optStr(row.buyer_name),
-    buyerTaxNo: optStr(row.buyer_tax_no),
-    buyerAddressPhone: optStr(row.buyer_address_phone),
-    buyerBankAccount: optStr(row.buyer_bank_account),
-    items,
-    netTotal: wireDec(row.net_total),
-    taxTotal: wireDec(row.tax_total),
-    grossTotal: wireDec(row.gross_total),
-    issuer: optStr(row.issuer),
-    reviewer: optStr(row.reviewer),
-    payee: optStr(row.payee),
-    remarks: optStr(row.remarks),
-    redInvoiceNo: optStr(row.red_invoice_no),
-    status: upper(String(row.status)) as InvoiceStatus,
-    auditedAt: datetimeIso(row.audited_at),
-    insertedAt: datetimeIso(row.inserted_at)!,
-    updatedAt: datetimeIso(row.updated_at)!,
-    companyId: String(row.company_id),
-    partyAccountId: optId(row.party_account_id),
-    amountAccountId: optId(row.amount_account_id),
-    taxAccountId: optId(row.tax_account_id),
-    mirrorInvoiceId: optId(row.mirror_invoice_id),
-    createdById: optId(row.created_by_id),
-    auditedById: optId(row.audited_by_id),
-    salReconciliationId: optId(row.sal_reconciliation_id),
-    purReconciliationId: optId(row.pur_reconciliation_id),
+    list: (permit: Permit, query: Partial<ListQuery>) => base.list(permit, query),
+    get: (permit: Permit, id: string) => base.get(permit, id),
+    create,
+    update,
+    remove: (permit: Permit, id: string) => base.remove(permit, id),
+    audit,
+    void: voidInvoice,
+    reverse,
+    ocr,
   }
 }
 
@@ -691,9 +363,9 @@ interface NormalizedInput {
 }
 
 function normalizeInput(input: VatInvoiceInput): NormalizedInput {
-  const direction = upper(input.direction) as InvoiceDirection
-  const partyType = upper(input.partyType) as InvoicePartyType
-  const invoiceKind = upper(input.invoiceKind)
+  const direction = upper(String(input.direction ?? '')) as InvoiceDirection
+  const partyType = upper(String(input.partyType ?? '')) as InvoicePartyType
+  const invoiceKind = upper(String(input.invoiceKind ?? ''))
   const fields: Record<string, string[]> = {}
   if (!input.companyId) fields.companyId = ['必填']
   if (direction !== 'INBOUND' && direction !== 'OUTBOUND') {
@@ -758,124 +430,9 @@ function normalizeInput(input: VatInvoiceInput): NormalizedInput {
   }
 }
 
-function overlay(before: VatInvoice, update: VatInvoiceUpdateInput): VatInvoiceInput {
-  const pick = <T>(
-    present: boolean | undefined,
-    value: T | null | undefined,
-    fallback: T | null,
-  ): T | null => (present ? (value ?? null) : fallback)
-
-  return {
-    companyId: before.companyId,
-    docNo: before.docNo,
-    direction: update.direction ?? before.direction,
-    invoiceDate: pick(update.invoiceDatePresent, update.invoiceDate, before.invoiceDate),
-    partyType: update.partyType ?? before.partyType,
-    partyId: update.partyId ?? before.partyId,
-    invoiceKind: update.invoiceKind ?? before.invoiceKind,
-    invoiceCode: update.invoiceCodePresent
-      ? (update.invoiceCode ?? '')
-      : before.invoiceCode,
-    invoiceNo: pick(update.invoiceNoPresent, update.invoiceNo, before.invoiceNo),
-    sellerName: pick(update.sellerNamePresent, update.sellerName, before.sellerName),
-    sellerTaxNo: pick(update.sellerTaxNoPresent, update.sellerTaxNo, before.sellerTaxNo),
-    sellerAddressPhone: pick(
-      update.sellerAddressPhonePresent,
-      update.sellerAddressPhone,
-      before.sellerAddressPhone,
-    ),
-    sellerBankAccount: pick(
-      update.sellerBankAccountPresent,
-      update.sellerBankAccount,
-      before.sellerBankAccount,
-    ),
-    buyerName: pick(update.buyerNamePresent, update.buyerName, before.buyerName),
-    buyerTaxNo: pick(update.buyerTaxNoPresent, update.buyerTaxNo, before.buyerTaxNo),
-    buyerAddressPhone: pick(
-      update.buyerAddressPhonePresent,
-      update.buyerAddressPhone,
-      before.buyerAddressPhone,
-    ),
-    buyerBankAccount: pick(
-      update.buyerBankAccountPresent,
-      update.buyerBankAccount,
-      before.buyerBankAccount,
-    ),
-    items: update.itemsPresent ? (update.items ?? []) : before.items,
-    netTotal: pick(update.netTotalPresent, update.netTotal, before.netTotal),
-    taxTotal: pick(update.taxTotalPresent, update.taxTotal, before.taxTotal),
-    grossTotal: pick(update.grossTotalPresent, update.grossTotal, before.grossTotal),
-    issuer: pick(update.issuerPresent, update.issuer, before.issuer),
-    reviewer: pick(update.reviewerPresent, update.reviewer, before.reviewer),
-    payee: pick(update.payeePresent, update.payee, before.payee),
-    remarks: pick(update.remarksPresent, update.remarks, before.remarks),
-    partyAccountId: pick(
-      update.partyAccountIdPresent,
-      update.partyAccountId,
-      before.partyAccountId,
-    ),
-    amountAccountId: pick(
-      update.amountAccountIdPresent,
-      update.amountAccountId,
-      before.amountAccountId,
-    ),
-    taxAccountId: pick(
-      update.taxAccountIdPresent,
-      update.taxAccountId,
-      before.taxAccountId,
-    ),
-    mirrorInvoiceId: pick(
-      update.mirrorInvoiceIdPresent,
-      update.mirrorInvoiceId,
-      before.mirrorInvoiceId,
-    ),
-    salReconciliationId: pick(
-      update.salReconciliationIdPresent,
-      update.salReconciliationId,
-      before.salReconciliationId,
-    ),
-    purReconciliationId: pick(
-      update.purReconciliationIdPresent,
-      update.purReconciliationId,
-      before.purReconciliationId,
-    ),
-  }
-}
-
+/** 已落库单据 → 审核校验入参（wire 形与 NormalizedInput 同键） */
 function toInput(value: VatInvoice): NormalizedInput {
-  return normalizeInput({
-    companyId: value.companyId,
-    docNo: value.docNo,
-    direction: value.direction,
-    invoiceDate: value.invoiceDate,
-    partyType: value.partyType,
-    partyId: value.partyId,
-    invoiceKind: value.invoiceKind,
-    invoiceCode: value.invoiceCode,
-    invoiceNo: value.invoiceNo,
-    sellerName: value.sellerName,
-    sellerTaxNo: value.sellerTaxNo,
-    sellerAddressPhone: value.sellerAddressPhone,
-    sellerBankAccount: value.sellerBankAccount,
-    buyerName: value.buyerName,
-    buyerTaxNo: value.buyerTaxNo,
-    buyerAddressPhone: value.buyerAddressPhone,
-    buyerBankAccount: value.buyerBankAccount,
-    items: value.items,
-    netTotal: value.netTotal,
-    taxTotal: value.taxTotal,
-    grossTotal: value.grossTotal,
-    issuer: value.issuer,
-    reviewer: value.reviewer,
-    payee: value.payee,
-    remarks: value.remarks,
-    partyAccountId: value.partyAccountId,
-    amountAccountId: value.amountAccountId,
-    taxAccountId: value.taxAccountId,
-    mirrorInvoiceId: value.mirrorInvoiceId,
-    salReconciliationId: value.salReconciliationId,
-    purReconciliationId: value.purReconciliationId,
-  })
+  return normalizeInput(value as unknown as VatInvoiceInput)
 }
 
 type ReconSeam = Pick<
@@ -977,6 +534,20 @@ async function validateReferences(
   }
 }
 
+/** 已被未作废报销单挂票的发票不能作废/红冲 */
+async function assertNotClaimedByExpense(db: DbHandle, id: string): Promise<void> {
+  const referenced = await sql<{ e: boolean }>`
+    SELECT EXISTS(
+      SELECT 1 FROM acc_expense_report_item i
+      JOIN acc_expense_report r ON r.id=i.report_id
+      WHERE i.invoice_id=${id}::uuid AND r.status<>'voided'
+    ) AS e
+  `.execute(db)
+  if (referenced.rows[0]?.e) {
+    throw new ApiError('conflict', '发票已被报销单引用,请先在报销单上移除该行或作废报销单')
+  }
+}
+
 function invoiceGLEntries(invoice: VatInvoice): GlEntry[] {
   const net = decimal(invoice.netTotal!)
   const tax = decimal(invoice.taxTotal!)
@@ -1029,24 +600,21 @@ function invoiceGLEntries(invoice: VatInvoice): GlEntry[] {
   return entries
 }
 
+/** 关联对账单（销售优先，其次采购）；未关联为 null */
+function reconTargetOf(invoice: VatInvoice): { side: TradingSide; id: string } | null {
+  if (invoice.salReconciliationId) return { side: 'sales', id: invoice.salReconciliationId }
+  if (invoice.purReconciliationId) return { side: 'purchase', id: invoice.purReconciliationId }
+  return null
+}
+
 async function reconciliationGLEntries(
   db: DbHandle,
   reconciliations: ReconSeam,
   invoice: VatInvoice,
-): Promise<{
-  reconEntries: GlEntry[]
-  side: TradingSide | null
-  reconciliationId: string | null
-}> {
-  let id = invoice.salReconciliationId
-  let side: TradingSide = 'sales'
-  if (!id) {
-    id = invoice.purReconciliationId
-    side = 'purchase'
-  }
-  if (!id) {
-    return { reconEntries: [], side: null, reconciliationId: null }
-  }
+): Promise<GlEntry[]> {
+  const target = reconTargetOf(invoice)
+  if (!target) return []
+  const { side, id } = target
   const h = await reconciliations.loadForInvoiceAudit(db, side, id)
   if (!h) {
     throw new ApiError('conflict', '关联对账单不存在')
@@ -1082,78 +650,35 @@ async function reconciliationGLEntries(
   const value = decimal(h.gross)
   const partyDB = lower(invoice.partyType)
   if (side === 'sales') {
-    return {
-      reconEntries: [
-        { accountId: h.debitAccountId, debit: value, credit: '0' },
-        {
-          accountId: h.creditAccountId,
-          debit: '0',
-          credit: value,
-          partyType: partyDB,
-          partyId: invoice.partyId,
-        },
-      ],
-      side,
-      reconciliationId: id,
-    }
-  }
-  return {
-    reconEntries: [
+    return [
+      { accountId: h.debitAccountId, debit: value, credit: '0' },
       {
-        accountId: h.debitAccountId,
-        debit: value,
-        credit: '0',
+        accountId: h.creditAccountId,
+        debit: '0',
+        credit: value,
         partyType: partyDB,
         partyId: invoice.partyId,
       },
-      { accountId: h.creditAccountId, debit: '0', credit: value },
-    ],
-    side,
-    reconciliationId: id,
+    ]
   }
+  return [
+    {
+      accountId: h.debitAccountId,
+      debit: value,
+      credit: '0',
+      partyType: partyDB,
+      partyId: invoice.partyId,
+    },
+    { accountId: h.creditAccountId, debit: '0', credit: value },
+  ]
 }
-
 
 // ---- helpers ----
-
-function notFound(): ApiError {
-  return new ApiError('not_found', '增值税发票不存在')
-}
-
-function actorUserId(actor: Actor): string | null {
-  return actor.userId && actor.userId !== '' ? actor.userId : null
-}
 
 function invoiceLabel(invoice: VatInvoice): string {
   if (invoice.docNo && invoice.docNo !== '') return invoice.docNo
   if (invoice.invoiceNo) return invoice.invoiceNo
   return invoice.id
-}
-
-function invoiceSnap(value: VatInvoice): Record<string, unknown> {
-  return {
-    doc_no: value.docNo,
-    direction: value.direction,
-    invoice_date: value.invoiceDate,
-    posting_date: value.postingDate,
-    party_type: value.partyType,
-    party_id: value.partyId,
-    invoice_kind: value.invoiceKind,
-    invoice_code: value.invoiceCode,
-    invoice_no: value.invoiceNo,
-    items: JSON.stringify(value.items),
-    net_total: value.netTotal,
-    tax_total: value.taxTotal,
-    gross_total: value.grossTotal,
-    remarks: value.remarks,
-    status: value.status,
-    company_id: value.companyId,
-    party_account_id: value.partyAccountId,
-    amount_account_id: value.amountAccountId,
-    tax_account_id: value.taxAccountId,
-    sal_reconciliation_id: value.salReconciliationId,
-    pur_reconciliation_id: value.purReconciliationId,
-  }
 }
 
 function requireDate(value: string, field: string): string {
@@ -1189,13 +714,6 @@ function parseOptionalDecimal(
   return d
 }
 
-/** jsonb[] 字面量：逐元素 `::jsonb`，避免 jsonb_array_elements 对 text 参数二次编码失败 */
-function itemsArraySql(items: Record<string, unknown>[]) {
-  if (items.length === 0) return sql`ARRAY[]::jsonb[]`
-  const elems = items.map((item) => sql`${JSON.stringify(item)}::jsonb`)
-  return sql`ARRAY[${sql.join(elems, sql`, `)}]::jsonb[]`
-}
-
 function lower(value: string): string {
   return value.trim().toLowerCase()
 }
@@ -1208,36 +726,4 @@ function emptyToNull(value: string | null | undefined): string | null {
   if (value == null) return null
   const t = value.trim()
   return t === '' ? null : t
-}
-
-function optStr(value: unknown): string | null {
-  if (value == null) return null
-  return String(value)
-}
-
-function optId(value: unknown): string | null {
-  if (value == null) return null
-  return String(value)
-}
-
-function wireDec(value: unknown): string | null {
-  if (value == null) return null
-  return toDecimalString(decimal(String(value)))
-}
-
-function dateOnly(value: unknown): string | null {
-  if (value == null) return null
-  if (value instanceof Date) {
-    const y = value.getUTCFullYear()
-    const m = String(value.getUTCMonth() + 1).padStart(2, '0')
-    const d = String(value.getUTCDate()).padStart(2, '0')
-    return `${y}-${m}-${d}`
-  }
-  return String(value).slice(0, 10)
-}
-
-function datetimeIso(value: unknown): string | null {
-  if (value == null) return null
-  if (value instanceof Date) return value.toISOString()
-  return new Date(String(value)).toISOString()
 }

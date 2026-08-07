@@ -395,6 +395,7 @@ run('PG 集成（setup 向导）', () => {
         stockCounts: inv.stockCounts,
         manufacturingMaster: manufacturing.master,
         banking: finance.banking,
+        bankAccounts: finance.bankAccounts,
         journals: accounting.journals,
         expenses: finance.expenses,
         invoices: finance.invoices,

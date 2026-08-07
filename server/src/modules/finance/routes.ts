@@ -19,7 +19,6 @@ import {
   VAT_INVOICE_RESOURCE_NAME,
   type VatInvoice,
   type VatInvoiceService,
-  type VatInvoiceUpdateInput,
 } from './invoice-service.ts'
 
 const idParam = z.object({ id: z.string().uuid() })
@@ -140,10 +139,6 @@ const ocrSchema = z
   })
   .strict()
 
-function present(raw: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(raw, key)
-}
-
 function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
   return {
     limit: body.limit,
@@ -184,9 +179,10 @@ function invoiceDto(item: VatInvoice) {
     remarks: item.remarks,
     redInvoiceNo: item.redInvoiceNo,
     status: item.status,
-    auditedAt: item.auditedAt,
-    insertedAt: item.insertedAt,
-    updatedAt: item.updatedAt,
+    // 内核 wire 的 datetime 是 Date，HTTP 面恒 ISO 字符串（与迁移前逐字一致）
+    auditedAt: item.auditedAt === null ? null : item.auditedAt.toISOString(),
+    insertedAt: item.insertedAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
     companyId: item.companyId,
     partyAccountId: item.partyAccountId,
     amountAccountId: item.amountAccountId,
@@ -196,70 +192,6 @@ function invoiceDto(item: VatInvoice) {
     purReconciliationId: item.purReconciliationId,
     createdById: item.createdById,
     auditedById: item.auditedById,
-  }
-}
-
-function toUpdateInput(
-  body: z.infer<typeof updateSchema>,
-  raw: Record<string, unknown>,
-): VatInvoiceUpdateInput {
-  return {
-    direction: body.direction,
-    partyType: body.partyType,
-    partyId: body.partyId,
-    invoiceKind: body.invoiceKind,
-    docNo: body.docNo,
-    docNoPresent: present(raw, 'docNo'),
-    invoiceDate: body.invoiceDate,
-    invoiceDatePresent: present(raw, 'invoiceDate'),
-    invoiceCode: body.invoiceCode,
-    invoiceCodePresent: present(raw, 'invoiceCode'),
-    invoiceNo: body.invoiceNo,
-    invoiceNoPresent: present(raw, 'invoiceNo'),
-    sellerName: body.sellerName,
-    sellerNamePresent: present(raw, 'sellerName'),
-    sellerTaxNo: body.sellerTaxNo,
-    sellerTaxNoPresent: present(raw, 'sellerTaxNo'),
-    sellerAddressPhone: body.sellerAddressPhone,
-    sellerAddressPhonePresent: present(raw, 'sellerAddressPhone'),
-    sellerBankAccount: body.sellerBankAccount,
-    sellerBankAccountPresent: present(raw, 'sellerBankAccount'),
-    buyerName: body.buyerName,
-    buyerNamePresent: present(raw, 'buyerName'),
-    buyerTaxNo: body.buyerTaxNo,
-    buyerTaxNoPresent: present(raw, 'buyerTaxNo'),
-    buyerAddressPhone: body.buyerAddressPhone,
-    buyerAddressPhonePresent: present(raw, 'buyerAddressPhone'),
-    buyerBankAccount: body.buyerBankAccount,
-    buyerBankAccountPresent: present(raw, 'buyerBankAccount'),
-    items: body.items ?? undefined,
-    itemsPresent: present(raw, 'items'),
-    netTotal: body.netTotal,
-    netTotalPresent: present(raw, 'netTotal'),
-    taxTotal: body.taxTotal,
-    taxTotalPresent: present(raw, 'taxTotal'),
-    grossTotal: body.grossTotal,
-    grossTotalPresent: present(raw, 'grossTotal'),
-    issuer: body.issuer,
-    issuerPresent: present(raw, 'issuer'),
-    reviewer: body.reviewer,
-    reviewerPresent: present(raw, 'reviewer'),
-    payee: body.payee,
-    payeePresent: present(raw, 'payee'),
-    remarks: body.remarks,
-    remarksPresent: present(raw, 'remarks'),
-    partyAccountId: body.partyAccountId,
-    partyAccountIdPresent: present(raw, 'partyAccountId'),
-    amountAccountId: body.amountAccountId,
-    amountAccountIdPresent: present(raw, 'amountAccountId'),
-    taxAccountId: body.taxAccountId,
-    taxAccountIdPresent: present(raw, 'taxAccountId'),
-    mirrorInvoiceId: body.mirrorInvoiceId,
-    mirrorInvoiceIdPresent: present(raw, 'mirrorInvoiceId'),
-    salReconciliationId: body.salReconciliationId,
-    salReconciliationIdPresent: present(raw, 'salReconciliationId'),
-    purReconciliationId: body.purReconciliationId,
-    purReconciliationIdPresent: present(raw, 'purReconciliationId'),
   }
 }
 
@@ -346,12 +278,11 @@ export function vatInvoiceRoutes(deps: {
       zValidator('param', idParam, validationHook),
       zValidator('json', updateSchema, validationHook),
       async (c) => {
-        const raw = (await c.req.json()) as Record<string, unknown>
-        const body = c.req.valid('json')
+        // 出现即写、缺省不动：内核 present-key 语义取代旧的 *Present 布尔
         const item = await invoices.update(
           permitOf(c),
           c.req.valid('param').id,
-          toUpdateInput(body, raw),
+          c.req.valid('json') as Record<string, unknown>,
         )
         return c.json(invoiceDto(item))
       },

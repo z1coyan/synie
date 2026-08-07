@@ -164,13 +164,8 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
           validationHook,
         ),
         async (c) => {
-          const body = c.req.valid('json')
-          const raw = (await c.req.json()) as Record<string, unknown>
-          const item = await stockDocs.update(permitOf(c), c.req.valid('param').id, {
-            ...body,
-            summaryPresent: Object.prototype.hasOwnProperty.call(raw, 'summary'),
-            remarksPresent: Object.prototype.hasOwnProperty.call(raw, 'remarks'),
-          })
+          // 出现即写、缺省不动：内核 present-key 语义取代旧的 *Present 布尔
+          const item = await stockDocs.update(permitOf(c), c.req.valid('param').id, c.req.valid('json'))
           return c.json(stockDocDto(item))
         },
       )
@@ -340,13 +335,8 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
           validationHook,
         ),
         async (c) => {
-          const body = c.req.valid('json')
-          const raw = (await c.req.json()) as Record<string, unknown>
-          const item = await stockTransfers.update(permitOf(c), c.req.valid('param').id, {
-            ...body,
-            summaryPresent: Object.prototype.hasOwnProperty.call(raw, 'summary'),
-            remarksPresent: Object.prototype.hasOwnProperty.call(raw, 'remarks'),
-          })
+          // 出现即写、缺省不动：内核 present-key 语义取代旧的 *Present 布尔
+          const item = await stockTransfers.update(permitOf(c), c.req.valid('param').id, c.req.valid('json'))
           return c.json(transferDto(item))
         },
       )
@@ -550,13 +540,8 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
           validationHook,
         ),
         async (c) => {
-          const body = c.req.valid('json')
-          const raw = (await c.req.json()) as Record<string, unknown>
-          const item = await stockCounts.update(permitOf(c), c.req.valid('param').id, {
-            ...body,
-            summaryPresent: Object.prototype.hasOwnProperty.call(raw, 'summary'),
-            remarksPresent: Object.prototype.hasOwnProperty.call(raw, 'remarks'),
-          })
+          // 出现即写、缺省不动：内核 present-key 语义取代旧的 *Present 布尔
+          const item = await stockCounts.update(permitOf(c), c.req.valid('param').id, c.req.valid('json'))
           return c.json(countDto(item))
         },
       )
