@@ -121,6 +121,8 @@ E2E_ADMIN_USERNAME="$ADMIN_USERNAME" \
 E2E_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
 SYNIE_API_URL="http://127.0.0.1:$SYNIE_API_PORT/api/v1" \
 GO_API_URL="http://127.0.0.1:$SYNIE_API_PORT/api/v1" \
+SYNIE_PG_DB="$PG_DB" \
+SYNIE_PG_CONTAINER="$PG_CONTAINER" \
   bunx playwright test --config=playwright.api.config.ts "$@"
 
 echo "[e2e] 冒烟通过 ✅"
