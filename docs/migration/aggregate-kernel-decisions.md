@@ -133,6 +133,9 @@ export interface ControlledProjectionSpec {
 | mfgBoms | 任意状态可改头/子行；仅草稿可删；启停同态幂等 no-op | 同；mutableStatuses 全态可改；beforeDelete 仅草稿；启停包装保留同态 no-op | 与旧行为对齐 |
 | mfgBomComponents / mfgBomByproducts | 改 bomId 抛「制造主数据锚点不可修改」 | createOnly 静默忽略改键 | 与全站 createOnly/合同收敛 |
 | mfgBoms / mfgProcessTemplates 子行 | 独立 CRUD 无聚合草稿端点 | 公开 CRUD 包装 + `_aggregateForContract` 进 CASES；路由 URL 不变 | wire 冻结；草稿三连未上线不扩面 |
+| mfgWorkOrders | 手写头 CRUD + void；编号 assignedInTx 可选手填；void 手搓 | 标准头 + InTx + workflow void；nextInTx 系统编号；present 状态小写 | W5；D12/D6/D7；**不加**聚合 CASES |
+| mfgWorkOrders | 快照三表内联 clear+copy 两处 | `copyBomSnapshotToWorkOrder`/`clear` 一处；createInlineBom 复用 | D12 快照助手收口 |
+| mfgWorkOrders | void 返回 confirmedDerivedDemandNos | 同；effect 经 voidCascadeBox 带回包装层 | wire 附加字段冻结 |
 
 ---
 
@@ -299,6 +302,20 @@ export interface ControlledProjectionSpec {
 **有意差异**（见行为变更表）：服务层枚举改 wire 大写；编号系统生成；meta 可写面收口。
 
 **验收**：`demand-service.ts` ≤600；手写草稿/子行 CRUD 删除；聚合 CASES 加 mfgDemands 一行；manufacturing 相关测绿。
+
+---
+
+## W5 · mfgWorkOrders 标准头 + workflow（D12 实现）
+
+**定案**：按 D12 **不做**完整聚合草稿。头 `createStandardService`（numbering `workOrderNo` + projection remaining + workflow void）；create 外层 `withTx` 编排（需求行校验 → `createInTx` → 安排占量 → 图纸 → 可选 BOM 快照）；delete 级联/已审入库闸进 `beforeDelete`；void 进 transition effect（安排释放 + 派生草稿级联，confirmed 名单经包装带回）。
+
+- **三子表**：仅 `copyBomSnapshotToWorkOrder` / `clearWorkOrderBomSnapshot`；**不**注册 child、**不**进 aggregate、**不加** CASES
+- **侧动作手写**：`applyBom` / `createInlineBom` / `getBomSnapshot` / 物料需求预览与生成（`work-order-side.ts`）
+- **服务 API 状态**：present 回落小写（`in_progress`/`voided`），wire 仍 `upper`；与 output/存量测对齐
+
+**有意差异**（见行为变更表）：编号系统生成（拒手填）；void/delete 门走 workflow/mutableStatuses。
+
+**验收**：`work-order-service.ts` ≤700；快照复制一处；void 级联进 effect；manufacturing 工单相关测绿。
 
 ---
 

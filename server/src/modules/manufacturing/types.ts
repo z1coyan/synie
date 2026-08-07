@@ -7,6 +7,7 @@ export type DemandItemStatus = 'PENDING' | 'SCHEDULED' | 'COMPLETED'
 export type DemandAssignType = 'PURCHASE' | 'MAKE' | 'STOCK' | 'CLOSE'
 /** @deprecated 行级履约方式已取消；存量只读兼容（wire 大写） */
 export type FulfillmentMethod = 'MAKE' | 'BUY' | 'OUTSOURCE' | 'STOCK'
+/** 工单服务层仍小写（present 自标准内核 wire 大写回落）；库内小写；wire upper */
 export type WorkOrderStatus = 'in_progress' | 'completed' | 'voided'
 /** 生产入库已迁标准动作内核：Output/OutputItem 是 wire 形（枚举大写，库内仍小写） */
 export type OutputStatus = 'DRAFT' | 'AUDITED' | 'VOIDED'
