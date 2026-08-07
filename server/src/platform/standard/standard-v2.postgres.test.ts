@@ -8,6 +8,7 @@
  *   有子节点删除保护
  * - projection：selectExtra/mapExtra 进 list 与 get（has_children 投影）
  * - child：母单授权锁 + 状态门 + 带入列；行审计三型
+ * - 孙级（D3）：parent.resource 可指 child；链深 ≤2 装配；孙级 CRUD 与越母单 not_found
  * - InTx（D1）：root/child 动作族 `*InTx(trx, permit, …)`；外层事务回滚则全链无痕
  *
  * 业务资源迁入后各自的行为由 standard-contract 描述符继承；本文件只锁内核语义。
@@ -23,7 +24,11 @@ import { ApiError } from '~/platform/http/errors.ts'
 import { testActor } from '~/platform/authz/testing.ts'
 import { createRegistry } from '~/platform/meta/registry.ts'
 import type { FieldMeta, ResourceMeta } from '~/platform/meta/types.ts'
-import { createStandardChildService } from './child.ts'
+import {
+  assertChildParentChainDepth,
+  createStandardChildService,
+  MAX_CHILD_PARENT_DEPTH,
+} from './child.ts'
 import { auditStamp, createStandardService } from './service.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
@@ -115,6 +120,29 @@ function itemMeta(): ResourceMeta {
   }
 }
 
+/** 孙级：parent=stdV2Items（via docs）→ 链深 2，D3 首消费者形态（价格档/装箱行） */
+function tierMeta(): ResourceMeta {
+  return {
+    name: 'stdV2Tiers',
+    classification: { presentation: 'none', interactive: false, note: '内核合同测试合成孙级' },
+    permissionPrefix: 'stdv2.tier',
+    permissionLabel: '测试价格档',
+    table: 'std_v2_tier',
+    authz: { kind: 'via', parent: 'stdV2Items', fk: 'item_id' },
+    fields: [
+      field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
+      field('item_id', 'itemId', 'uuid', '母行', { required: true, createOnly: true, filterable: true }),
+      field('min_qty', 'minQty', 'decimal', '起订量', { required: true }),
+      field('price', 'price', 'decimal', '档价', { required: true }),
+      field('company_id', 'companyId', 'uuid', '公司', { readonly: true }),
+      field('inserted_at', 'insertedAt', 'datetime', '创建时间', { readonly: true }),
+      field('updated_at', 'updatedAt', 'datetime', '更新时间', { readonly: true }),
+    ],
+    actions: crud.slice(0, 4),
+    audit: { enabled: true },
+  }
+}
+
 function nodeMeta(): ResourceMeta {
   return {
     name: 'stdV2Nodes',
@@ -135,11 +163,66 @@ function nodeMeta(): ResourceMeta {
   }
 }
 
+/** 装配期链深断言（不依赖 DB；D3 纯描述符校验） */
+describe('标准子行装配（孙级链深 D3）', () => {
+  test(`parent 指向 child 时链深 ${MAX_CHILD_PARENT_DEPTH} 可装配；链深 3 装配期抛错`, () => {
+    const registry = createRegistry()
+    registry.register(docMeta())
+    registry.register(itemMeta())
+    registry.register(tierMeta())
+    // 曾孙：故意超限
+    registry.register({
+      name: 'stdV2TooDeep',
+      classification: { presentation: 'none', interactive: false, note: '超限链深合成' },
+      permissionPrefix: 'stdv2.deep',
+      permissionLabel: '超限孙孙',
+      table: 'std_v2_too_deep',
+      authz: { kind: 'via', parent: 'stdV2Tiers', fk: 'tier_id' },
+      fields: [
+        field('id', 'id', 'uuid', 'id', { readonly: true }),
+        field('tier_id', 'tierId', 'uuid', '母档', { required: true, createOnly: true }),
+        field('inserted_at', 'insertedAt', 'datetime', '创建时间', { readonly: true }),
+        field('updated_at', 'updatedAt', 'datetime', '更新时间', { readonly: true }),
+      ],
+      actions: crud.slice(0, 4),
+      audit: { enabled: true },
+    })
+    registry.seal()
+
+    expect(() => assertChildParentChainDepth('stdV2Items', 'stdV2Docs', registry)).not.toThrow()
+    expect(() => assertChildParentChainDepth('stdV2Tiers', 'stdV2Items', registry)).not.toThrow()
+    expect(() => assertChildParentChainDepth('stdV2TooDeep', 'stdV2Tiers', registry)).toThrow(
+      /parent 链深 3 超过上限 2/,
+    )
+
+    // parent.resource 与 meta.authz.parent 不一致 → 装配失败
+    expect(() =>
+      createStandardChildService({
+        db: null as never,
+        registry,
+        resource: 'stdV2Tiers',
+        parent: { resource: 'stdV2Docs', fkField: 'itemId' },
+      }),
+    ).toThrow(/parent\.resource=stdV2Docs 与 meta\.authz\.parent=stdV2Items 不一致/)
+
+    // 链深 3：createStandardChildService 同步 fail-closed（不落到运行时）
+    expect(() =>
+      createStandardChildService({
+        db: null as never,
+        registry,
+        resource: 'stdV2TooDeep',
+        parent: { resource: 'stdV2Tiers', fkField: 'tierId' },
+      }),
+    ).toThrow(/parent 链深 3 超过上限 2/)
+  })
+})
+
 run('标准动作内核 v2（postgres）', () => {
   const db = createDb(url!)
   const registry = createRegistry()
   registry.register(docMeta())
   registry.register(itemMeta())
+  registry.register(tierMeta())
   registry.register(nodeMeta())
   registry.seal()
   const authz = createAuthzEnforcer(registry)
@@ -153,6 +236,7 @@ run('标准动作内核 v2（postgres）', () => {
   const p = (action: string, resource = 'stdV2Docs') => permitOf(admin, resource, action)
 
   const companyId = crypto.randomUUID()
+  const otherCompanyId = crypto.randomUUID()
   let numberingCalls = 0
   const fakeNumbering = {
     nextInTx: async (_handle: unknown, input: { resource: string }) => {
@@ -222,6 +306,22 @@ run('标准动作内核 v2（postgres）', () => {
     },
   })
 
+  /** 孙级：parent.resource 指向 child（stdV2Items），链深 2 */
+  const tiers = createStandardChildService({
+    db,
+    registry,
+    resource: 'stdV2Tiers',
+    parent: {
+      resource: 'stdV2Items',
+      fkField: 'itemId',
+      inheritFields: ['companyId'],
+      notFound: '测试单行不存在',
+    },
+    notFound: '测试价格档不存在',
+    // 孙级无 idx 列；避免默认 `"idx" ASC` 在 list 时炸列
+    defaultOrder: sql`"id" ASC`,
+  })
+
   const nodes = createStandardService({
     db,
     registry,
@@ -273,6 +373,17 @@ run('标准动作内核 v2（postgres）', () => {
       )
     `.execute(db)
     await sql`
+      CREATE TABLE IF NOT EXISTS std_v2_tier (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        item_id uuid NOT NULL REFERENCES std_v2_item(id) ON DELETE CASCADE,
+        min_qty numeric(18,6) NOT NULL,
+        price numeric(18,6) NOT NULL,
+        company_id uuid NOT NULL,
+        inserted_at timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'utc'),
+        updated_at timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
+      )
+    `.execute(db)
+    await sql`
       CREATE TABLE IF NOT EXISTS std_v2_node (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         name varchar(64) NOT NULL,
@@ -285,7 +396,8 @@ run('标准动作内核 v2（postgres）', () => {
   })
 
   afterAll(async () => {
-    await sql`DELETE FROM sys_audit_log WHERE resource IN ('std_v2_doc', 'std_v2_item', 'std_v2_node')`.execute(db)
+    await sql`DELETE FROM sys_audit_log WHERE resource IN ('std_v2_doc', 'std_v2_item', 'std_v2_tier', 'std_v2_node')`.execute(db)
+    await sql`DROP TABLE IF EXISTS std_v2_tier`.execute(db)
     await sql`DROP TABLE IF EXISTS std_v2_item`.execute(db)
     await sql`DROP TABLE IF EXISTS std_v2_doc`.execute(db)
     await sql`DROP TABLE IF EXISTS std_v2_node`.execute(db)
@@ -543,6 +655,147 @@ run('标准动作内核 v2（postgres）', () => {
       await expect(
         items.create(p('create', 'stdV2Items'), { docId: crypto.randomUUID(), idx: 1, qty: '1' }),
       ).rejects.toMatchObject({ code: 'not_found' })
+    })
+  })
+
+  describe('孙级（D3：parent 指 child；CRUD + 越母单 not_found）', () => {
+    test('孙级 CRUD：挂条目下建档；company_id 从母行带入；行审计三型', async () => {
+      const doc = await createDraft()
+      const item = await items.create(p('create', 'stdV2Items'), { docId: doc.id, idx: 1, qty: '10' })
+      const tier = await tiers.create(p('create', 'stdV2Tiers'), {
+        itemId: item.id,
+        minQty: '1',
+        price: '9.5',
+      })
+      expect(tier.itemId).toBe(item.id)
+      expect(tier.companyId).toBe(companyId)
+      expect(tier.minQty).toBe('1')
+      expect(tier.price).toBe('9.5')
+      expect(await auditRows('std_v2_tier', tier.id, 'create')).toBe(1)
+
+      const got = await tiers.get(p('read', 'stdV2Tiers'), tier.id)
+      expect(got.id).toBe(tier.id)
+      expect(got.itemId).toBe(item.id)
+
+      const listed = await tiers.list(p('read', 'stdV2Tiers'), {
+        filter: { itemId: { kind: 'fk', op: 'in', values: [item.id], labels: [] } },
+      })
+      expect(listed.results.map((r) => r.id)).toContain(tier.id)
+
+      const updated = await tiers.update(p('update', 'stdV2Tiers'), tier.id, { price: '8' })
+      expect(updated.price).toBe('8')
+      expect(await auditRows('std_v2_tier', tier.id, 'update')).toBe(1)
+
+      // 无差异补丁：不写审计
+      await tiers.update(p('update', 'stdV2Tiers'), tier.id, { price: '8' })
+      expect(await auditRows('std_v2_tier', tier.id, 'update')).toBe(1)
+
+      await tiers.remove(p('delete', 'stdV2Tiers'), tier.id)
+      expect(await auditRows('std_v2_tier', tier.id, 'destroy')).toBe(1)
+      await expect(tiers.get(p('read', 'stdV2Tiers'), tier.id)).rejects.toMatchObject({
+        code: 'not_found',
+        message: '测试价格档不存在',
+      })
+    })
+
+    test('越母单 not_found（与 invMaterialUnits 一致：母行不存在/不可达同为 not_found，不泄露）', async () => {
+      // 1) 幽灵母行 id → 母 not_found 文案（create 锁母）
+      await expect(
+        tiers.create(p('create', 'stdV2Tiers'), {
+          itemId: crypto.randomUUID(),
+          minQty: '1',
+          price: '1',
+        }),
+      ).rejects.toMatchObject({ code: 'not_found', message: '测试单行不存在' })
+
+      // 2) 母行在不可达公司：公司域 actor 写孙级 → 母 not_found（不暴露存在性）
+      const homeDoc = await docs.create(p('create'), {
+        name: `本司-${crypto.randomUUID().slice(0, 6)}`,
+        companyId,
+      })
+      const homeItem = await items.create(p('create', 'stdV2Items'), {
+        docId: homeDoc.id,
+        idx: 1,
+        qty: '1',
+      })
+      const foreignDoc = await docs.create(p('create'), {
+        name: `外司-${crypto.randomUUID().slice(0, 6)}`,
+        companyId: otherCompanyId,
+      })
+      const foreignItem = await items.create(p('create', 'stdV2Items'), {
+        docId: foreignDoc.id,
+        idx: 1,
+        qty: '1',
+      })
+      const foreignTier = await tiers.create(p('create', 'stdV2Tiers'), {
+        itemId: foreignItem.id,
+        minQty: '1',
+        price: '2',
+      })
+
+      // 公司域 actor：superAdmin 的 rowFilter 恒 bypass，测不出越母单；via 归宿码在 root 前缀
+      const scoped = testActor({
+        username: `std-v2-scoped-${crypto.randomUUID().slice(0, 8)}`,
+        superAdmin: false,
+        allCompanies: false,
+        companyIds: [companyId],
+        permissions: new Set([
+          'stdv2.doc:read',
+          'stdv2.doc:create',
+          'stdv2.doc:update',
+          'stdv2.doc:delete',
+        ]),
+      })
+      const scopedTierCreate = permitOf(scoped, 'stdV2Tiers', 'create')
+      const scopedTierRead = permitOf(scoped, 'stdV2Tiers', 'read')
+      const scopedTierUpdate = permitOf(scoped, 'stdV2Tiers', 'update')
+      const scopedTierDelete = permitOf(scoped, 'stdV2Tiers', 'delete')
+
+      // 本公司母行仍可建档
+      const ok = await tiers.create(scopedTierCreate, {
+        itemId: homeItem.id,
+        minQty: '5',
+        price: '3',
+      })
+      expect(ok.companyId).toBe(companyId)
+
+      // 跨公司母行 / 跨公司孙级：一律 not_found
+      await expect(
+        tiers.create(scopedTierCreate, { itemId: foreignItem.id, minQty: '1', price: '1' }),
+      ).rejects.toMatchObject({ code: 'not_found', message: '测试单行不存在' })
+      await expect(tiers.get(scopedTierRead, foreignTier.id)).rejects.toMatchObject({
+        code: 'not_found',
+        message: '测试价格档不存在',
+      })
+      await expect(
+        tiers.update(scopedTierUpdate, foreignTier.id, { price: '99' }),
+      ).rejects.toMatchObject({ code: 'not_found' })
+      await expect(tiers.remove(scopedTierDelete, foreignTier.id)).rejects.toMatchObject({
+        code: 'not_found',
+      })
+    })
+
+    test('孙级 InTx：外层回滚则档+审计无痕', async () => {
+      const doc = await createDraft()
+      const item = await items.create(p('create', 'stdV2Items'), { docId: doc.id, idx: 1, qty: '1' })
+      let tierId = ''
+      await expect(
+        withTx(db, async (trx) => {
+          const tier = await tiers.createInTx(trx, p('create', 'stdV2Tiers'), {
+            itemId: item.id,
+            minQty: '1',
+            price: '1',
+          })
+          tierId = tier.id
+          throw new Error('强制回滚孙级')
+        }),
+      ).rejects.toThrow('强制回滚孙级')
+      expect(tierId).not.toBe('')
+      const left = await sql<{ n: string }>`
+        SELECT count(*)::text AS n FROM std_v2_tier WHERE id = ${tierId}::uuid
+      `.execute(db)
+      expect(left.rows[0]!.n).toBe('0')
+      expect(await auditRows('std_v2_tier', tierId, 'create')).toBe(0)
     })
   })
 

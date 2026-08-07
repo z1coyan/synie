@@ -8,6 +8,11 @@
  * - 带入列（company_id 等）：inheritFields 声明，wire 不可写，创建时从母单带入
  * - 无批量/工作流/树形/编号（单据行不需要；需要即弹射回手写）
  *
+ * 孙级（D3）：`parent.resource` 允许指向另一 child 资源（价格档 → 条目 → 头；
+ * 装箱行 → 箱 → 发货单）。装配期断言 via 链深 ≤ {@link MAX_CHILD_PARENT_DEPTH}（=2），
+ * 不做任意深度递归。锁的「母单」始终是直接 parent（中间层），根单据状态门由模块
+ * gate/钩子或聚合层负责。
+ *
  * 投影（projection）与标准服务同口径：列表/单条/**写后返回值**共用一份 join 投影，
  * 审计 record_label 亦取投影后的记录（子行的名称在引用上，可用 recordLabel 覆盖）。
  *
@@ -56,8 +61,17 @@ export interface ChildHooks {
   ) => Promise<void> | void
 }
 
+/**
+ * 子行 parent 链深度上限（D3）：root→child 为 1，root→child→grandchild 为 2。
+ * 价格档 / 装箱行足够；超过则装配期失败，不做任意深度递归。
+ */
+export const MAX_CHILD_PARENT_DEPTH = 2
+
 export interface StandardChildParent {
-  /** 母单 Registry 资源名 */
+  /**
+   * 直接母资源 Registry 名。
+   * 允许指向另一 child（孙级，D3）；装配期按 via 链断言深度 ≤ {@link MAX_CHILD_PARENT_DEPTH}。
+   */
   resource: string
   /** 子行上指向母单的外键字段 apiName（meta 声明 createOnly） */
   fkField: string
@@ -114,6 +128,40 @@ function normalizeWire(field: FieldMeta, value: unknown): unknown {
   return fromDbValue(field, toDbValue(field, value))
 }
 
+/**
+ * 装配期：parent.resource 可指 child，但 via 链深（本资源相对根的层数）不得超过上限。
+ * 从直接 parent 沿 meta.authz.via 上行计数；成环或未知资源同步 fail-closed。
+ */
+export function assertChildParentChainDepth(
+  resource: string,
+  parentResource: string,
+  registry: Registry,
+): void {
+  let depth = 1
+  let currentName = parentResource
+  const seen = new Set<string>([resource])
+  for (;;) {
+    if (seen.has(currentName)) {
+      throw new Error(`标准子行派生：资源 ${resource} 的 parent 链成环（经 ${currentName}）`)
+    }
+    seen.add(currentName)
+    const current = registry.get(currentName)
+    if (!current) throw new Error(`标准子行派生：未知母单资源 ${currentName}`)
+    const authz = current.authz
+    if (!authz || authz.kind !== 'via') break
+    depth += 1
+    if (depth > MAX_CHILD_PARENT_DEPTH) {
+      throw new Error(
+        `标准子行派生：资源 ${resource} 的 parent 链深 ${depth} 超过上限 ${MAX_CHILD_PARENT_DEPTH}（仅支持到孙级，D3）`,
+      )
+    }
+    if (!authz.parent) {
+      throw new Error(`标准子行派生：资源 ${currentName} 的 via 声明缺少 parent`)
+    }
+    currentName = authz.parent
+  }
+}
+
 export function createStandardChildService<TItem extends StandardItem = StandardItem>(
   options: StandardChildServiceOptions,
 ): StandardChildService<TItem> {
@@ -127,6 +175,13 @@ export function createStandardChildService<TItem extends StandardItem = Standard
   const foundParentMeta = registry.get(parent.resource)
   if (!foundParentMeta) throw new Error(`标准子行派生：未知母单资源 ${parent.resource}`)
   const parentMeta: ResourceMeta = foundParentMeta
+  // D3：parent 可指 child；装配期断言链深 ≤ 2，并与 meta.authz.via 对齐（防描述符漂移）
+  if (meta.authz?.kind === 'via' && meta.authz.parent !== parent.resource) {
+    throw new Error(
+      `标准子行派生：资源 ${resource} 的 parent.resource=${parent.resource} 与 meta.authz.parent=${meta.authz.parent} 不一致`,
+    )
+  }
+  assertChildParentChainDepth(resource, parent.resource, registry)
   const target = registry.authzTarget(resource)
   const parentTarget = registry.authzTarget(parent.resource)
 
