@@ -39,6 +39,10 @@ import {
   createOrderService,
   type OrderService,
 } from '~/modules/trading/order/service.ts'
+import {
+  createReconciliationService,
+  type ReconciliationService,
+} from '~/modules/trading/reconciliation/service.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import { createInventoryEngine } from '~/engines/inventory/index.ts'
 import { createAggregateService, type AggregateService } from './aggregate.ts'
@@ -364,6 +368,8 @@ const CASES: AggregateContractCase[] = [
   salDeliveryContractCase(),
   // W3：销售/采购订单（SAMPLE/SPOT 免报价；委外子树不进合同）
   ...orderContractCases(),
+  // W3：销售/采购对账（双状态机；条目聚合；invoice 接缝不进 CASES）
+  ...reconciliationContractCases(),
 ]
 
 /** 报价业务资源合同夹具（beforeAll 播种；prepare 只装配服务） */
@@ -1072,6 +1078,145 @@ function orderContractCases(): AggregateContractCase[] {
   ]
 }
 
+
+/** 对账业务资源合同夹具 */
+const reconFixture = {
+  companyId: crypto.randomUUID(),
+  otherCompanyId: crypto.randomUUID(),
+  currencyId: crypto.randomUUID(),
+  customerId: crypto.randomUUID(),
+  supplierId: crypto.randomUUID(),
+  unitId: crypto.randomUUID(),
+  categoryId: crypto.randomUUID(),
+  materialId: crypto.randomUUID(),
+  material2Id: crypto.randomUUID(),
+  warehouseId: crypto.randomUUID(),
+  salesDebitId: crypto.randomUUID(),
+  salesCreditId: crypto.randomUUID(),
+  purchaseDebitId: crypto.randomUUID(),
+  purchaseCreditId: crypto.randomUUID(),
+  salesDeliveryItemId: crypto.randomUUID(),
+  salesDeliveryItem2Id: crypto.randomUUID(),
+  purchaseReceiptItemId: crypto.randomUUID(),
+  purchaseReceiptItem2Id: crypto.randomUUID(),
+  ready: false,
+  service: null as ReconciliationService | null,
+  registry: null as Registry | null,
+  ruleIds: [] as string[],
+}
+
+function reconciliationContractCases(): AggregateContractCase[] {
+  function wrap(
+    side: 'sales' | 'purchase',
+    headResource: string,
+    headTable: string,
+    itemTable: string,
+  ): AggregateContractCase {
+    const asAgg = (): AggregateService => reconFixture.service!._aggregateForContract(side)
+    const isSales = side === 'sales'
+    const sourceKey = isSales ? 'deliveryItemId' : 'receiptItemId'
+    const src1 = () =>
+      isSales ? reconFixture.salesDeliveryItemId : reconFixture.purchaseReceiptItemId
+    const src2 = () =>
+      isSales ? reconFixture.salesDeliveryItem2Id : reconFixture.purchaseReceiptItem2Id
+    const validDraft = () => ({
+      companyId: reconFixture.companyId,
+      reconciliationType: 'REGULAR',
+      partyType: isSales ? 'CUSTOMER' : 'SUPPLIER',
+      partyId: isSales ? reconFixture.customerId : reconFixture.supplierId,
+      debitAccountId: isSales ? reconFixture.salesDebitId : reconFixture.purchaseDebitId,
+      creditAccountId: isSales ? reconFixture.salesCreditId : reconFixture.purchaseCreditId,
+      remarks: `合同-recon-${side}`,
+      items: [
+        { idx: 1, qty: '2', [sourceKey]: src1() },
+        { idx: 2, qty: '3', [sourceKey]: src2() },
+      ],
+    })
+    const noopFrom = (created: Record<string, unknown>) => {
+      const items = asItems(created, 'items').map((item) => ({
+        id: item.id,
+        idx: item.idx,
+        qty: item.qty,
+        [sourceKey]: item[sourceKey],
+        remarks: item.remarks,
+      }))
+      return {
+        companyId: created.companyId,
+        reconciliationType: created.reconciliationType,
+        partyType: created.partyType,
+        partyId: created.partyId,
+        debitAccountId: created.debitAccountId,
+        creditAccountId: created.creditAccountId,
+        remarks: created.remarks,
+        items,
+      }
+    }
+    return {
+      title: isSales ? '销售对账单（salReconciliations）' : '采购对账单（purReconciliations）',
+      headResource,
+      authzResources: [
+        headResource,
+        isSales ? 'salReconciliationItems' : 'purReconciliationItems',
+      ],
+      headTable,
+      itemTable,
+      itemsKey: 'items',
+      prepare: () => ({
+        service: asAgg(),
+        registry: reconFixture.registry!,
+      }),
+      companyId: () => reconFixture.companyId,
+      otherCompanyId: () => reconFixture.otherCompanyId,
+      validDraft,
+      buildDiffReplace: (created) => {
+        const items = asItems(created, 'items')
+        const kept = items[0]!
+        const deleted = items[1]!
+        return {
+          keptItemId: String(kept.id),
+          deletedItemId: String(deleted.id),
+          input: {
+            ...noopFrom(created),
+            remarks: `合同改-recon-${side}`,
+            items: [
+              {
+                id: kept.id,
+                idx: 1,
+                qty: '4',
+                [sourceKey]: kept[sourceKey],
+                remarks: '保留',
+              },
+              {
+                idx: 3,
+                qty: '1',
+                [sourceKey]: src2(),
+                remarks: null,
+              },
+            ],
+          },
+        }
+      },
+      buildNoopReplace: noopFrom,
+      buildFailReplace: (created) => ({
+        ...noopFrom(created),
+        remarks: '不应落库',
+        items: [
+          ...asItems(noopFrom(created), 'items'),
+          { idx: 9, qty: '0', [sourceKey]: src1() },
+        ],
+      }),
+      buildEmptyReplace: (created) => ({
+        ...noopFrom(created),
+        items: [],
+      }),
+    }
+  }
+  return [
+    wrap('sales', 'salReconciliations', 'sal_reconciliation', 'sal_reconciliation_item'),
+    wrap('purchase', 'purReconciliations', 'pur_reconciliation', 'pur_reconciliation_item'),
+  ]
+}
+
 // ── 套件 ────────────────────────────────────────────────────────────────────
 
 run('聚合草稿合同（postgres）', () => {
@@ -1096,6 +1241,13 @@ run('聚合草稿合同（postgres）', () => {
     db,
     numbering,
     quotationFixture.service,
+    sealed,
+  )
+  reconFixture.registry = sealed
+  reconFixture.service = createReconciliationService(
+    db,
+    numbering,
+    createGlEngine(),
     sealed,
   )
 
@@ -1398,6 +1550,152 @@ run('聚合草稿合同（postgres）', () => {
       }
     }
     orderFixture.ready = true
+
+    // 对账夹具：独立公司 + 已审核发货/入库各两行（可对账量充足）
+    {
+      const rf = reconFixture
+      const tag = `RC${suffix}`
+      await sql`
+        INSERT INTO bas_currency(id,name,iso_code,symbol,active)
+        VALUES (${rf.currencyId}::uuid, ${tag + '币'}, ${'Q' + suffix.slice(0, 2)}, '¤', true)
+      `.execute(db)
+      await sql`
+        INSERT INTO bas_company(id,code,name,short_name,base_currency_id) VALUES
+          (${rf.companyId}::uuid, ${'RC' + suffix}, ${tag + '公司'}, 'RC', ${rf.currencyId}::uuid),
+          (${rf.otherCompanyId}::uuid, ${'RD' + suffix}, ${tag + '他司'}, 'RD', ${rf.currencyId}::uuid)
+      `.execute(db)
+      await sql`
+        INSERT INTO sal_customers(id,code,name,short_name)
+        VALUES (${rf.customerId}::uuid, ${'RC' + suffix}, ${tag + '客户'}, 'RC')
+      `.execute(db)
+      await sql`
+        INSERT INTO pur_supplier(id,code,name,short_name)
+        VALUES (${rf.supplierId}::uuid, ${'RS' + suffix}, ${tag + '供应商'}, 'RS')
+      `.execute(db)
+      await sql`
+        INSERT INTO bas_unit(id,unit_type,is_base,name,symbol,ratio)
+        VALUES (${rf.unitId}::uuid, ${'rc-' + suffix}, true, ${tag + '件'}, ${'ur' + suffix.slice(0, 4)}, 1)
+      `.execute(db)
+      await sql`
+        INSERT INTO inv_material_category(id,code,name,is_leaf,active)
+        VALUES (${rf.categoryId}::uuid, ${'RM' + suffix}, ${tag + '分类'}, true, true)
+      `.execute(db)
+      await sql`
+        INSERT INTO inv_material(id,code,name,category_id,default_unit_id,active) VALUES
+          (${rf.materialId}::uuid, ${'RM' + suffix}, ${tag + '物料'}, ${rf.categoryId}::uuid, ${rf.unitId}::uuid, true),
+          (${rf.material2Id}::uuid, ${'RN' + suffix}, ${tag + '物料二'}, ${rf.categoryId}::uuid, ${rf.unitId}::uuid, true)
+      `.execute(db)
+      await sql`
+        INSERT INTO inv_warehouse(id,name,code,company_id)
+        VALUES (${rf.warehouseId}::uuid, ${tag + '仓'}, ${'RW' + suffix}, ${rf.companyId}::uuid)
+      `.execute(db)
+      await sql`
+        INSERT INTO bas_account(id,code,name,direction,is_group,active,company_id,currency_id,role) VALUES
+          (${rf.salesDebitId}::uuid, ${'RSD' + suffix}, ${tag + '销借'}, 'debit', false, true, ${rf.companyId}::uuid, ${rf.currencyId}::uuid, NULL),
+          (${rf.salesCreditId}::uuid, ${'RSC' + suffix}, ${tag + '未开应收'}, 'credit', false, true, ${rf.companyId}::uuid, ${rf.currencyId}::uuid, 'unbilled_receivable'),
+          (${rf.purchaseDebitId}::uuid, ${'RPD' + suffix}, ${tag + '未开应付'}, 'debit', false, true, ${rf.companyId}::uuid, ${rf.currencyId}::uuid, 'unbilled_payable'),
+          (${rf.purchaseCreditId}::uuid, ${'RPC' + suffix}, ${tag + '采贷'}, 'credit', false, true, ${rf.companyId}::uuid, ${rf.currencyId}::uuid, NULL)
+      `.execute(db)
+      const soId = crypto.randomUUID()
+      const soi1 = crypto.randomUUID()
+      const soi2 = crypto.randomUUID()
+      const sdId = crypto.randomUUID()
+      await sql`
+        INSERT INTO sal_order(id,order_no,order_date,party_type,party_id,status,company_id,exchange_rate,currency_id,order_type)
+        VALUES (${soId}::uuid, ${'RSO' + suffix}, '2026-07-20', 'customer', ${rf.customerId}::uuid,
+          'audited', ${rf.companyId}::uuid, 1, ${rf.currencyId}::uuid, 'regular')
+      `.execute(db)
+      await sql`
+        INSERT INTO sal_order_item(id,idx,qty,price,amount,order_id,company_id,material_id,unit_id,
+          material_code,material_name,unit_name,base_qty) VALUES
+          (${soi1}::uuid,1,100,10,1000,${soId}::uuid,${rf.companyId}::uuid,${rf.materialId}::uuid,${rf.unitId}::uuid,
+            ${'RM' + suffix},${tag + '物料'},${tag + '件'},100),
+          (${soi2}::uuid,2,100,10,1000,${soId}::uuid,${rf.companyId}::uuid,${rf.material2Id}::uuid,${rf.unitId}::uuid,
+            ${'RN' + suffix},${tag + '物料二'},${tag + '件'},100)
+      `.execute(db)
+      await sql`
+        INSERT INTO sal_delivery(id,delivery_no,delivery_date,party_type,party_id,status,company_id,
+          warehouse_id,debit_account_id,credit_account_id)
+        VALUES (${sdId}::uuid,${'RSD' + suffix},'2026-07-25','customer',${rf.customerId}::uuid,
+          'audited',${rf.companyId}::uuid,${rf.warehouseId}::uuid,${rf.salesCreditId}::uuid,${rf.salesDebitId}::uuid)
+      `.execute(db)
+      await sql`
+        INSERT INTO sal_delivery_item(
+          id,idx,qty,base_qty,material_code,material_name,unit_name,order_no,
+          order_qty,order_base_qty,order_unit_name,order_price,order_amount,
+          order_base_price,order_base_amount,order_tax_rate,order_currency_code,
+          delivery_id,company_id,order_item_id,material_id,unit_id,warehouse_id,reconciled_qty
+        ) VALUES
+          (${rf.salesDeliveryItemId}::uuid,1,100,100,${'RM' + suffix},${tag + '物料'},${tag + '件'},${'RSO' + suffix},
+            100,100,${tag + '件'},10,1000,10,1000,0.13,${'Q' + suffix.slice(0, 2)},
+            ${sdId}::uuid,${rf.companyId}::uuid,${soi1}::uuid,${rf.materialId}::uuid,${rf.unitId}::uuid,${rf.warehouseId}::uuid,0),
+          (${rf.salesDeliveryItem2Id}::uuid,2,100,100,${'RN' + suffix},${tag + '物料二'},${tag + '件'},${'RSO' + suffix},
+            100,100,${tag + '件'},10,1000,10,1000,0.13,${'Q' + suffix.slice(0, 2)},
+            ${sdId}::uuid,${rf.companyId}::uuid,${soi2}::uuid,${rf.material2Id}::uuid,${rf.unitId}::uuid,${rf.warehouseId}::uuid,0)
+      `.execute(db)
+      const poId = crypto.randomUUID()
+      const poi1 = crypto.randomUUID()
+      const poi2 = crypto.randomUUID()
+      const prId = crypto.randomUUID()
+      await sql`
+        INSERT INTO pur_order(id,order_no,order_date,party_type,party_id,status,company_id,exchange_rate,currency_id,is_outsourced)
+        VALUES (${poId}::uuid,${'RPO' + suffix},'2026-07-20','supplier',${rf.supplierId}::uuid,
+          'audited',${rf.companyId}::uuid,1,${rf.currencyId}::uuid,false)
+      `.execute(db)
+      await sql`
+        INSERT INTO pur_order_item(id,idx,qty,base_qty,price,amount,order_id,company_id,material_id,unit_id,
+          material_code,material_name,unit_name) VALUES
+          (${poi1}::uuid,1,100,100,8,800,${poId}::uuid,${rf.companyId}::uuid,${rf.materialId}::uuid,${rf.unitId}::uuid,
+            ${'RM' + suffix},${tag + '物料'},${tag + '件'}),
+          (${poi2}::uuid,2,100,100,8,800,${poId}::uuid,${rf.companyId}::uuid,${rf.material2Id}::uuid,${rf.unitId}::uuid,
+            ${'RN' + suffix},${tag + '物料二'},${tag + '件'})
+      `.execute(db)
+      await sql`
+        INSERT INTO pur_receipt(id,receipt_no,receipt_date,party_type,party_id,status,company_id,
+          warehouse_id,debit_account_id,credit_account_id)
+        VALUES (${prId}::uuid,${'RPR' + suffix},'2026-07-25','supplier',${rf.supplierId}::uuid,
+          'audited',${rf.companyId}::uuid,${rf.warehouseId}::uuid,${rf.purchaseCreditId}::uuid,${rf.purchaseDebitId}::uuid)
+      `.execute(db)
+      await sql`
+        INSERT INTO pur_receipt_item(
+          id,idx,qty,base_qty,material_code,material_name,unit_name,order_no,
+          order_qty,order_base_qty,order_unit_name,order_price,order_amount,
+          order_base_price,order_base_amount,order_tax_rate,order_currency_code,
+          receipt_id,company_id,order_item_id,material_id,unit_id,warehouse_id,reconciled_qty
+        ) VALUES
+          (${rf.purchaseReceiptItemId}::uuid,1,100,100,${'RM' + suffix},${tag + '物料'},${tag + '件'},${'RPO' + suffix},
+            100,100,${tag + '件'},8,800,8,800,0.13,${'Q' + suffix.slice(0, 2)},
+            ${prId}::uuid,${rf.companyId}::uuid,${poi1}::uuid,${rf.materialId}::uuid,${rf.unitId}::uuid,${rf.warehouseId}::uuid,0),
+          (${rf.purchaseReceiptItem2Id}::uuid,2,100,100,${'RN' + suffix},${tag + '物料二'},${tag + '件'},${'RPO' + suffix},
+            100,100,${tag + '件'},8,800,8,800,0.13,${'Q' + suffix.slice(0, 2)},
+            ${prId}::uuid,${rf.companyId}::uuid,${poi2}::uuid,${rf.material2Id}::uuid,${rf.unitId}::uuid,${rf.warehouseId}::uuid,0)
+      `.execute(db)
+      for (const [resource, mark] of [
+        ['sales.reconciliation', 'SR'],
+        ['purchase.reconciliation', 'PR'],
+      ] as const) {
+        const existing = await db
+          .selectFrom('sys_numbering_rule')
+          .select('id')
+          .where('resource', '=', resource)
+          .where('enabled', '=', true)
+          .executeTakeFirst()
+        if (!existing) {
+          const rule = await numbering.create(permit('sysNumberingRules', 'create'), {
+            resource,
+            name: `RC${suffix}${mark}规则`,
+            segments: [
+              { type: 'text', value: `R${suffix}${mark}-` },
+              { type: 'seq', padding: 4 },
+            ],
+            perCompany: false,
+            enabled: true,
+          })
+          rf.ruleIds.push(rule.id)
+        }
+      }
+      rf.ready = true
+    }
   })
 
   afterAll(async () => {
@@ -1467,6 +1765,31 @@ run('聚合草稿合同（postgres）', () => {
     await sql`DELETE FROM sys_audit_log WHERE resource IN ('std_ac_doc', 'std_ac_item', 'std_ac_tier')`.execute(
       db,
     )
+    // 对账夹具清理
+    {
+      const rf = reconFixture
+      for (const id of rf.ruleIds) {
+        await db.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
+      }
+      await sql`DELETE FROM sys_todo WHERE company_id=${rf.companyId}::uuid`.execute(db)
+      await sql`DELETE FROM sys_audit_log WHERE company_id=${rf.companyId}::uuid`.execute(db)
+      await sql`DELETE FROM sal_reconciliation WHERE company_id=${rf.companyId}::uuid`.execute(db)
+      await sql`DELETE FROM pur_reconciliation WHERE company_id=${rf.companyId}::uuid`.execute(db)
+      await sql`DELETE FROM sal_delivery WHERE company_id=${rf.companyId}::uuid`.execute(db)
+      await sql`DELETE FROM pur_receipt WHERE company_id=${rf.companyId}::uuid`.execute(db)
+      await sql`DELETE FROM sal_order WHERE company_id=${rf.companyId}::uuid`.execute(db)
+      await sql`DELETE FROM pur_order WHERE company_id=${rf.companyId}::uuid`.execute(db)
+      await sql`DELETE FROM bas_account WHERE company_id=${rf.companyId}::uuid`.execute(db)
+      await sql`DELETE FROM inv_warehouse WHERE id=${rf.warehouseId}::uuid`.execute(db)
+      await sql`DELETE FROM inv_material WHERE id IN (${rf.materialId}::uuid, ${rf.material2Id}::uuid)`.execute(db)
+      await sql`DELETE FROM inv_material_category WHERE id=${rf.categoryId}::uuid`.execute(db)
+      await sql`DELETE FROM bas_unit WHERE id=${rf.unitId}::uuid`.execute(db)
+      await sql`DELETE FROM sal_customers WHERE id=${rf.customerId}::uuid`.execute(db)
+      await sql`DELETE FROM pur_supplier WHERE id=${rf.supplierId}::uuid`.execute(db)
+      await sql`DELETE FROM bas_company WHERE id IN (${rf.companyId}::uuid, ${rf.otherCompanyId}::uuid)`.execute(db)
+      await sql`DELETE FROM bas_currency WHERE id=${rf.currencyId}::uuid`.execute(db)
+    }
+
     await sql`DROP TABLE IF EXISTS std_ac_tier`.execute(db)
     await sql`DROP TABLE IF EXISTS std_ac_item`.execute(db)
     await sql`DROP TABLE IF EXISTS std_ac_doc`.execute(db)

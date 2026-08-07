@@ -117,6 +117,9 @@ export interface ControlledProjectionSpec {
 | salDeliveries | 手写草稿/条目/装箱；公司键 `header.companyId`；身份顶层「销售发货草稿子记录身份不合法」；装箱行身份按「属本发货单」 | 聚合内核（条目 + 箱→行平行子树）；公司键 `companyId`；身份「销售发货草稿参数不合法」；孙级行身份按「属该装箱箱」 | W3；D3 孙级第二消费者；与合同/报价收敛 |
 | 同上 | 条目独立改/删无审计 | 子行增/改/删三型审计 | 合同强化，同 purReceipts |
 | 同上 | pack meta 无独立 `label` | `label: 装箱箱/装箱行`（permissionLabel 仍共享发货单前缀） | 标准子行校验文案「装箱行参数不合法」字节保留 |
+| salReconciliations / purReconciliations | 手写头/子行/confirm·unconfirm·audit·void；改/删分文案 | 标准头/子行 + 聚合 + workflow 双状态机；mutableMessage「仅草稿…可修改或删除」 | W3；D7 |
+| 同上 | 条目 join 投影列为物理 + audit.exclude | 投影列 calculated；item audit 仅物理列 | 标准 child 分离 |
+| 同上 | 编号 assignedInTx 可选手填 | 内核 numbering nextInTx 系统生成 | D6 |
 
 ---
 
@@ -219,9 +222,28 @@ export interface ControlledProjectionSpec {
 
 ---
 
+## W3 · salReconciliations / purReconciliations 聚合迁入
+
+**定案**：对账头/条目 CRUD 与整单草稿三连改由 `platform/standard` 派生；常规 confirm/unconfirm 与赠样 audit/void 双状态机迁 workflow（D7）；发票↔对账互锁（`closeFromInvoice`/`reopenFromInvoice`/`invoiceState`）仍手写 Actor+外层 trx，语义逐字冻结。
+
+- 头：`createStandardService`（numbering `reconciliationNo` + workflow 四转移）
+- 条目：`createStandardChildService`（来源快照 `derivedFields` baseQty/amount/baseAmount）
+- 草稿三连：`createAggregateService`（`validationMessage: 对账草稿参数不合法`；路由暂无草稿端点，CASES/`_aggregateForContract` 暴露）
+- 常规 effect：confirm 占量+开待办；unconfirm 发票关联闸+释放占量+关待办
+- 赠样 effect：audit 占量+可选 GL + posting_date；void gl.cancel+释放占量
+- 发票接缝：`invoice-seams.ts` 独立 module，不经 workflow
+
+**路由/URL/DTO 冻结**（头/条目 CRUD + confirm/unconfirm/audit/void）。
+
+**有意差异**（见行为变更表）：改/删统一 mutableMessage；编号系统生成；条目投影列 calculated。
+
+**验收**：`reconciliation/service.ts` ≤700；聚合 CASES 加 sal/pur 两行；reconciliation.postgres + 合同套件绿。
+
+---
+
 ## 非目标（本日志边界）
 
-- 不做 W3 发货/对账及之后资源（本波仅 orders）。
 - 不动 `engines/gl` | `engines/inventory` interface。
 - 不做路由词表收口；wire URL/DTO/错误码字节冻结。
 - mfgOutputItems list 仍弹射（母单投影 join，非 extraWhere 能单独解锁）。
+- 本波不对账路由新增草稿三连 URL（前端仍逐条 CRUD；聚合服务已就绪供合同/后续）。

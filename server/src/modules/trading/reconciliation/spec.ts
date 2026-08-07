@@ -134,11 +134,13 @@ export function reconciliationHeadMeta(side: TradingSide): ResourceMeta {
       }),
       f('reconciliation_type', 'reconciliationType', 'enum', '对账类型(常规/赠送样品;保存后锁死)', {
         enumOptions: KINDS,
+        required: true,
         filterable: true,
         sortable: true,
       }),
       f('party_type', 'partyType', 'enum', sales ? '对手类型' : '对手类型(供应商/内部公司)', {
         enumOptions: PARTY,
+        required: true,
         filterable: true,
         sortable: true,
       }),
@@ -164,18 +166,23 @@ export function reconciliationHeadMeta(side: TradingSide): ResourceMeta {
       f('remarks', 'remarks', 'string', '备注', { filterable: true, sortable: true }),
       f('status', 'status', 'enum', '状态', {
         enumOptions: statusOptions,
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
       f('inserted_at', 'insertedAt', 'datetime', '创建时间', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
       f('updated_at', 'updatedAt', 'datetime', '更新时间', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
       f('company_id', 'companyId', 'fk', '公司', {
+        required: true,
+        createOnly: true,
         filterable: true,
         ref: { resource: 'basCompanies', relation: 'company', labelField: 'name' },
       }),
@@ -188,6 +195,7 @@ export function reconciliationHeadMeta(side: TradingSide): ResourceMeta {
         ref: { resource: 'basAccounts', relation: 'creditAccount', labelField: 'name' },
       }),
       f('created_by_id', 'createdById', 'fk', '录入人', {
+        readonly: true,
         filterable: true,
         ref: { resource: 'sysUsers', relation: 'createdBy', labelField: 'name' },
       }),
@@ -301,36 +309,43 @@ export function reconciliationItemMeta(side: TradingSide): ResourceMeta {
     authz: { kind: 'via', parent: spec.headResource, fk: 'reconciliation_id' },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      f('idx', 'idx', 'integer', '行号', { filterable: true, sortable: true }),
+      f('idx', 'idx', 'integer', '行号', { required: true, filterable: true, sortable: true }),
       f(
         'qty',
         'qty',
         'decimal',
         sales ? '对账数量(发货条目行单位)' : '对账数量(入库条目行单位)',
-        { filterable: true, sortable: true },
+        { required: true, filterable: true, sortable: true },
       ),
       f('base_qty', 'baseQty', 'decimal', '折算数量(物料默认单位,6 位;与已对账数量同口径)', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
       f('amount', 'amount', 'decimal', '原币含税金额(数量×快照原币含税单价,2 位)', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
       f('base_amount', 'baseAmount', 'decimal', '本币含税金额(原币金额×源订单汇率,2 位)', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
       f('remarks', 'remarks', 'string', '行备注', { filterable: true, sortable: true }),
       f('inserted_at', 'insertedAt', 'datetime', '创建时间', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
       f('updated_at', 'updatedAt', 'datetime', '更新时间', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
       f('reconciliation_id', 'reconciliationId', 'fk', sales ? '销售对账单' : '采购对账单', {
+        required: true,
+        createOnly: true,
         filterable: true,
         ref: {
           resource: spec.headResource,
@@ -339,54 +354,58 @@ export function reconciliationItemMeta(side: TradingSide): ResourceMeta {
         },
       }),
       f('company_id', 'companyId', 'fk', '公司', {
+        readonly: true,
         filterable: true,
         ref: { resource: 'basCompanies', relation: 'company', labelField: 'name' },
       }),
       ...sourceFields,
       f('reconciliation_no', 'reconciliationNo', 'string', '对账单号', {
         readonly: true,
+        calculated: true,
         filterable: true,
         sortable: true,
       }),
       f('reconciliation_status', 'reconciliationStatus', 'enum', '对账单状态', {
         enumOptions: statusOptions,
+        readonly: true,
+        calculated: true,
         filterable: true,
         sortable: true,
       }),
-      sourceNo,
-      sourceDate,
+      // sourceNo/sourceDate 下方会补 calculated
+      {
+        ...sourceNo,
+        readonly: true,
+        calculated: true,
+      },
+      {
+        ...sourceDate,
+        readonly: true,
+        calculated: true,
+      },
       f(
         'material_name',
         'materialName',
         'string',
         sales ? '物料名称(发货条目快照)' : '物料名称(入库条目快照)',
-        { filterable: true, sortable: true },
+        { readonly: true, calculated: true, filterable: true, sortable: true },
       ),
       f(
         'unit_name',
         'unitName',
         'string',
         sales ? '单位名称(发货条目快照)' : '单位名称(入库条目快照)',
-        { filterable: true, sortable: true },
+        { readonly: true, calculated: true, filterable: true, sortable: true },
       ),
       f('order_currency_code', 'orderCurrencyCode', 'string', '订单原币代码', {
+        readonly: true,
+        calculated: true,
         filterable: true,
         sortable: true,
       }),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
-    // exclude 保留历史审计面：头/来源单据快照列不进审计 diff
-    audit: {
-      enabled: true,
-      exclude: [
-        'reconciliation_no',
-        'reconciliation_status',
-        sales ? 'delivery_no' : 'receipt_no',
-        sales ? 'delivery_date' : 'receipt_date',
-        'material_name',
-        'unit_name',
-        'order_currency_code',
-      ],
-    },
+    // 头/来源单据快照列为 calculated，天然不进物理审计面
+    audit: { enabled: true },
   }
 }

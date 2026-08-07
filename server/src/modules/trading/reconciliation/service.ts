@@ -1,1455 +1,695 @@
 /**
  * 销售/采购对账单：对称服务。
- * 常规：草稿→确认(占量+待办)→发票结单；赠送/样品：草稿→结单(占量+GL)→可作废。
  *
- * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit——
- * 列表 `listAuthorized`、单条 `loadAuthorizedFrom`（与列表共用投影）、
- * 写前取行 `loadAuthorized(forUpdate)`、create 走 `assertCompanyWritable`。
- * `side` 只决定表/域差异，权限差异由路由选中的资源名（spec.headResource/itemResource）承载。
- * 状态前置条件（草稿才能改等）是领域不变量，留在本文件抛 conflict。
- * 发票联动接缝（closeFromInvoice/reopenFromInvoice/invoiceState）仍收 Actor：
- * 调用方是 finance 的内部事务，本就不做公司判定，只用 actor 写审计。
+ * W3 聚合迁移：头 createStandardService + 条目 createStandardChildService +
+ * createAggregateService；常规 confirm/unconfirm 与赠样 audit/void 双状态机迁 workflow（D7）。
+ * 发票联动接缝仍收 Actor + 外层 trx，语义逐字冻结（invoice-seams.ts）。
+ *
+ * 路由手写（URL/DTO 冻结）；本文件只装配描述符、领域钩子与公开 API。
  */
 import type { ListQuery } from '@synie/shared'
-import { decimal, roundAmount, roundBaseQty } from '@synie/shared'
+import { decimal } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import { withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
+import type { DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import type { GlEngine } from '~/engines/gl/index.ts'
-import {
-  auditCreated,
-  auditDestroyed,
-  auditDiff,
-  writeAudit,
-} from '~/platform/audit/write.ts'
-import { auditFieldsOf, mergeAuditFields } from '~/platform/audit/spec.ts'
+import { utcToday } from '~/db/dates.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
-import type { AuthzTarget } from '~/platform/meta/resource-authz.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
-import { listAuthorized } from '~/db/list.ts'
-import { assertCompanyWritable, loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
-import { mapWriteError } from '~/db/dberr.ts'
+import type { GlEngine } from '~/engines/gl/index.ts'
+import { createAggregateService, type AggregateService } from '~/platform/standard/aggregate.ts'
 import {
-  asDate,
-  asDateTime,
-  asOptionalString,
-  ident,
-  lowerParty,
-  partyExists,
-  runeLen,
-  toDateOnly,
-  type TradingSide,
-  upperStatus,
-  wireRequiredDecimal,
-} from '../common.ts'
-import { utcToday } from '~/db/dates.ts'
-import { adjustReconciledProjection } from '~/platform/posting/controlled-projection.ts'
+  createStandardChildService,
+  type StandardChildService,
+} from '~/platform/standard/child.ts'
+import { createStandardService, type StandardService } from '~/platform/standard/service.ts'
+import { lowerParty, toDateOnly, type TradingSide, wireRequiredDecimal } from '../common.ts'
 import {
-  reconciliationHeadMeta,
-  reconciliationItemMeta,
-  reconciliationSpec,
-  type ReconciliationKind,
-  type ReconciliationSideSpec,
-  type ReconciliationStatus,
-} from './spec.ts'
+  adjustProjection,
+  assertGiftAction,
+  assertRegularAction,
+  closeTodos,
+  fillDefaultAccounts,
+  loadSource,
+  openTodo,
+  parseKind,
+  postGiftGL,
+  RECON_WRITE_ERRORS,
+  requireItems,
+  snapshotAmounts,
+  validateHeadShape,
+  validateItemShape,
+  validateReferences,
+  validateSource,
+} from './domain.ts'
+import type { TrxHandle } from '~/db/tx.ts'
+import {
+  closeFromInvoice as closeFromInvoiceSeam,
+  existsForInvoice as existsForInvoiceSeam,
+  loadForInvoiceAudit as loadForInvoiceAuditSeam,
+  reopenFromInvoice as reopenFromInvoiceSeam,
+} from './invoice-seams.ts'
+import { reconciliationSpec, type ReconciliationSideSpec } from './spec.ts'
+import type { ReconciliationDraft } from './types.ts'
+import {
+  HEAD_ALIAS,
+  headExtras,
+  headSelectExtra,
+  headSource,
+  ITEM_ALIAS,
+  itemExtras,
+  itemSelectExtra,
+  itemSource,
+  presentHead,
+  presentItem,
+} from './views.ts'
 
-// 双侧共用引擎：白名单取两侧 meta 派生并集（保留历史共享清单行为）
-const HEAD_AUDIT = mergeAuditFields(
-  auditFieldsOf(reconciliationHeadMeta('sales')),
-  auditFieldsOf(reconciliationHeadMeta('purchase')),
-)
+export type { InvoiceReconHead } from './invoice-seams.ts'
 
-const ITEM_AUDIT = mergeAuditFields(
-  auditFieldsOf(reconciliationItemMeta('sales')),
-  auditFieldsOf(reconciliationItemMeta('purchase')),
-)
+interface SideCtx {
+  spec: ReconciliationSideSpec
+  heads: StandardService
+  items: StandardChildService
+  aggregate: AggregateService
+}
 
-/**
- * 投影子查询的别名：listAuthorized / loadAuthorizedFrom 必须与 source 的 `) 别名` 逐字一致，
- * 否则 via 链的 EXISTS 会静默算成空集。故此处单点定义，source 用 sql.raw 回填。
- */
-const HEAD_ALIAS = 'reconciliations'
-const ITEM_ALIAS = 'reconciliation_items'
-
-/** 列表与单条共用一份 select（别名只有一处可写错） */
-const HEAD_SELECT = sql`SELECT id,reconciliation_no,reconciliation_type,party_type,party_id,
-  posting_date,remarks,status,inserted_at,updated_at,company_id,
-  debit_account_id,credit_account_id,created_by_id,gross_total,base_gross_total`
-
-type Numberer = Pick<NumberingService, 'assignedInTx'>
-
-interface SourceItem {
-  id: string
+function headPayload(input: {
   companyId: string
+  no?: string | null
+  kind: string
   partyType: string
   partyId: string
-  status: string
-  no: string
-  sourceDate: string
-  materialName: string
-  unitName: string
-  currencyCode: string
-  qty: ReturnType<typeof decimal>
-  baseQty: ReturnType<typeof decimal>
-  reconciledQty: ReturnType<typeof decimal>
-  price: ReturnType<typeof decimal>
-  exchangeRate: ReturnType<typeof decimal>
-  orderType: string
-  orderId: string
-  outsourced: boolean
+  debitAccountId?: string | null
+  creditAccountId?: string | null
+  remarks?: string | null
+}): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    companyId: input.companyId,
+    reconciliationType: input.kind,
+    partyType: input.partyType,
+    partyId: input.partyId,
+    remarks: input.remarks ?? null,
+  }
+  if (input.debitAccountId) payload.debitAccountId = input.debitAccountId
+  if (input.creditAccountId) payload.creditAccountId = input.creditAccountId
+  if (input.no != null && String(input.no).trim() !== '') payload.reconciliationNo = input.no
+  return payload
 }
 
-export function createReconciliationService(
-  db: Kysely<Database>,
-  numberer: Numberer,
-  gl: Pick<GlEngine, 'post' | 'cancel'>,
-  registry: Registry,
-) {
-  // 判定归宿按 side 解析：双边资源不同，权限差异全在资源名上
-  const headTargets: Record<TradingSide, AuthzTarget> = {
-    sales: registry.authzTarget(reconciliationSpec('sales').headResource),
-    purchase: registry.authzTarget(reconciliationSpec('purchase').headResource),
-  }
-  const itemTargets: Record<TradingSide, AuthzTarget> = {
-    sales: registry.authzTarget(reconciliationSpec('sales').itemResource),
-    purchase: registry.authzTarget(reconciliationSpec('purchase').itemResource),
-  }
-
-  /** 锁单头：授权取行（FOR UPDATE，不命中一律 not_found）+ 取投影 */
-  async function lockHead(
-    handle: DbHandle,
-    permit: Permit,
-    spec: ReconciliationSideSpec,
-    id: string,
-  ): Promise<Record<string, unknown>> {
-    await loadAuthorized({
-      db: handle,
-      permit,
-      target: headTargets[spec.side],
-      table: spec.table,
-      id,
-      forUpdate: true,
-      notFoundMessage: `${spec.label}不存在`,
-    })
-    const row = await queryHead(handle, spec, id)
-    if (!row) throw new ApiError('not_found', `${spec.label}不存在`)
-    return row
-  }
-
-  /** 条目的可达性经 via 链递归到母单自身的行谓词；返回裸行（写路径用） */
-  async function loadItemRow(handle: DbHandle, permit: Permit, side: TradingSide, id: string) {
-    return loadAuthorized({
-      db: handle,
-      permit,
-      target: itemTargets[side],
-      table: reconciliationSpec(side).itemTable,
-      id,
-      notFoundMessage: '对账条目不存在',
-    })
-  }
-
-  async function listHeads(permit: Permit, side: TradingSide, query: Partial<ListQuery>) {
-    const spec = reconciliationSpec(side)
-    return listAuthorized({
-      db,
-      permit,
-      target: headTargets[side],
-      alias: HEAD_ALIAS,
-      resource: reconciliationHeadMeta(side),
-      source: headListSource(spec),
-      select: HEAD_SELECT,
-      defaultOrder: sql`"inserted_at" DESC, "id" DESC`,
-      query,
-      mapRow: (r) => mapHeadDto(r),
-    })
-  }
-
-  async function getHead(permit: Permit, side: TradingSide, id: string) {
-    const spec = reconciliationSpec(side)
-    return loadAuthorizedFrom({
-      db,
-      permit,
-      target: headTargets[side],
-      alias: HEAD_ALIAS,
-      source: headListSource(spec),
-      select: HEAD_SELECT,
-      id,
-      mapRow: (r) => mapHeadDto(r),
-      notFoundMessage: `${spec.label}不存在`,
-    })
-  }
-
-  async function createHead(
-    permit: Permit,
-    side: TradingSide,
-    input: {
-      companyId: string
-      no?: string | null
-      kind: string
-      partyType: string
-      partyId: string
-      debitAccountId?: string | null
-      creditAccountId?: string | null
-      remarks?: string | null
-    },
-  ) {
-    const spec = reconciliationSpec(side)
-    if (!input.companyId) {
-      throw ApiError.validation(`${spec.label}参数不合法`, { companyId: ['必填'] })
-    }
-    // 入参校验（400）先于公司边界（404）：错误语义唯一规则只管后者
-    assertCompanyWritable(permit, input.companyId, '公司不存在')
-    return withTx(db, async (trx) => {
-      let debitAccountId = input.debitAccountId ?? ''
-      let creditAccountId = input.creditAccountId ?? ''
-      const filled = await fillDefaultAccounts(trx, spec, input.companyId, debitAccountId, creditAccountId)
-      debitAccountId = filled.debitAccountId
-      creditAccountId = filled.creditAccountId
-      const kind = parseKind(input.kind)
-      const partyType = lowerParty(input.partyType)
-      validateHeadShape(spec, {
-        companyId: input.companyId,
-        no: input.no,
-        kind,
-        partyType,
-        partyId: input.partyId,
-        debitAccountId,
-        creditAccountId,
-        remarks: input.remarks,
-      })
-      await validateReferences(
-        trx,
-        spec,
-        input.companyId,
-        partyType,
-        input.partyId,
-        debitAccountId,
-        creditAccountId,
-      )
-      const no = await numberer.assignedInTx(trx, {
-        resource: spec.prefix,
-        field: 'reconciliationNo',
-        provided: input.no,
-        values: { company_id: input.companyId, posting_date: utcToday() },
-      })
-      try {
-        const ins = await sql<{ id: string }>`
-          INSERT INTO ${ident(spec.table)} (
-            reconciliation_no, reconciliation_type, party_type, party_id, remarks,
-            company_id, debit_account_id, credit_account_id, created_by_id
-          ) VALUES (
-            ${no}, ${kind}, ${partyType}, ${input.partyId}::uuid, ${input.remarks ?? null},
-            ${input.companyId}::uuid, ${debitAccountId}::uuid, ${creditAccountId}::uuid,
-            ${permit.actor.userId || null}::uuid
-          ) RETURNING id
-        `.execute(trx)
-        const id = ins.rows[0]!.id
-        const row = await queryHead(trx, spec, id)
-        const dto = mapHeadDto(row!)
-        await writeAudit(trx, permit.actor, {
-          resource: spec.table,
-          recordId: id,
-          recordLabel: no,
-          companyId: input.companyId,
-          actionType: 'create',
-          actionName: 'create',
-          changes: auditCreated(headSnap(row!), HEAD_AUDIT),
-        })
-        return dto
-      } catch (err) {
-        throw mapWriteError(err, `创建${spec.label}失败`, [
-          { code: '23505', message: '对账单号已存在' },
-        ])
-      }
-    })
-  }
-
-  async function updateHead(
-    permit: Permit,
-    side: TradingSide,
-    id: string,
-    input: {
-      no?: string
-      kind?: string
-      partyType?: string
-      partyId?: string
-      debitAccountId?: string
-      creditAccountId?: string
-      remarks?: string | null
-      remarksPresent?: boolean
-    },
-  ) {
-    const spec = reconciliationSpec(side)
-    return withTx(db, async (trx) => {
-      const before = await lockHead(trx, permit, spec, id)
-      if (String(before.status) !== 'draft') {
-        throw new ApiError('conflict', `仅草稿${spec.label}可修改`)
-      }
-      if (input.kind !== undefined && parseKind(input.kind) !== String(before.reconciliation_type)) {
-        throw new ApiError('conflict', '对账类型不可变更')
-      }
-      let partyType = String(before.party_type)
-      let partyId = String(before.party_id)
-      let partyChanged = false
-      if (input.partyType !== undefined) {
-        partyType = lowerParty(input.partyType)
-        partyChanged = partyType !== String(before.party_type)
-      }
-      if (input.partyId !== undefined) {
-        partyId = input.partyId
-        partyChanged = partyChanged || partyId !== String(before.party_id)
-      }
-      if (partyChanged) {
-        const has = await sql<{ e: boolean }>`
-          SELECT EXISTS(SELECT 1 FROM ${ident(spec.itemTable)} WHERE reconciliation_id=${id}::uuid) AS e
-        `.execute(trx)
-        if (has.rows[0]?.e) {
-          throw new ApiError('conflict', '请先删除对账条目')
-        }
-      }
-      if (input.no !== undefined && input.no.trim() !== String(before.reconciliation_no)) {
-        throw ApiError.validation(`${spec.label}参数不合法`, { reconciliationNo: ['编号创建后不可修改'] })
-      }
-      const no = String(before.reconciliation_no)
-      const debitAccountId =
-        input.debitAccountId !== undefined ? input.debitAccountId : String(before.debit_account_id)
-      const creditAccountId =
-        input.creditAccountId !== undefined
-          ? input.creditAccountId
-          : String(before.credit_account_id)
-      const remarks = input.remarksPresent
-        ? (input.remarks ?? null)
-        : asOptionalString(before.remarks)
-      validateHeadShape(spec, {
-        companyId: String(before.company_id),
-        no,
-        kind: String(before.reconciliation_type) as ReconciliationKind,
-        partyType,
-        partyId,
-        debitAccountId,
-        creditAccountId,
-        remarks,
-      })
-      await validateReferences(
-        trx,
-        spec,
-        String(before.company_id),
-        partyType,
-        partyId,
-        debitAccountId,
-        creditAccountId,
-      )
-      const afterRow = {
-        ...before,
-        reconciliation_no: no,
-        party_type: partyType,
-        party_id: partyId,
-        debit_account_id: debitAccountId,
-        credit_account_id: creditAccountId,
-        remarks,
-      }
-      const changes = auditDiff(headSnap(before), headSnap(afterRow), HEAD_AUDIT)
-      if (Object.keys(changes).length === 0) return mapHeadDto(before)
-      try {
-        await sql`
-          UPDATE ${ident(spec.table)} SET
-            reconciliation_no=${no},
-            party_type=${partyType},
-            party_id=${partyId}::uuid,
-            debit_account_id=${debitAccountId}::uuid,
-            credit_account_id=${creditAccountId}::uuid,
-            remarks=${remarks},
-            updated_at=(now() AT TIME ZONE 'utc')
-          WHERE id=${id}::uuid
-        `.execute(trx)
-        const row = await queryHead(trx, spec, id)
-        await writeAudit(trx, permit.actor, {
-          resource: spec.table,
-          recordId: id,
-          recordLabel: no,
-          companyId: String(before.company_id),
-          actionType: 'update',
-          actionName: 'update',
-          changes,
-        })
-        return mapHeadDto(row!)
-      } catch (err) {
-        throw mapWriteError(err, `更新${spec.label}失败`, [
-          { code: '23505', message: '对账单号已存在' },
-        ])
-      }
-    })
-  }
-
-  async function deleteHead(permit: Permit, side: TradingSide, id: string) {
-    const spec = reconciliationSpec(side)
-    await withTx(db, async (trx) => {
-      const before = await lockHead(trx, permit, spec, id)
-      if (String(before.status) !== 'draft') {
-        throw new ApiError('conflict', `仅草稿${spec.label}可删除`)
-      }
-      await writeAudit(trx, permit.actor, {
-        resource: spec.table,
-        recordId: id,
-        recordLabel: String(before.reconciliation_no),
-        companyId: String(before.company_id),
-        actionType: 'destroy',
-        actionName: 'destroy',
-        changes: auditDestroyed(headSnap(before), HEAD_AUDIT),
-      })
-      try {
-        await sql`DELETE FROM ${ident(spec.table)} WHERE id=${id}::uuid`.execute(trx)
-      } catch (err) {
-        throw mapWriteError(err, `删除${spec.label}失败`, [
-          { code: '23505', message: '对账单号已存在' },
-        ])
-      }
-    })
-  }
-
-  async function confirm(permit: Permit, side: TradingSide, id: string) {
-    const spec = reconciliationSpec(side)
-    return changeState(permit, spec, id, 'draft', 'confirmed', 'regular', 'confirm', async (trx, before) => {
-      await adjustProjection(trx, spec, id, 1)
-      await openTodo(trx, spec, before, permit.actor.userId || null)
-    })
-  }
-
-  async function unconfirm(permit: Permit, side: TradingSide, id: string) {
-    const spec = reconciliationSpec(side)
-    return changeState(permit, spec, id, 'confirmed', 'draft', 'regular', 'unconfirm', async (trx, before) => {
-      const column = side === 'sales' ? 'sal_reconciliation_id' : 'pur_reconciliation_id'
-      const linked = await sql<{ e: boolean }>`
-        SELECT EXISTS(SELECT 1 FROM acc_vat_invoice WHERE ${sql.raw(column)}=${before.id}::uuid) AS e
-      `.execute(trx)
-      if (linked.rows[0]?.e) {
-        throw new ApiError('conflict', '已关联发票，不可撤回确认')
-      }
-      await adjustProjection(trx, spec, id, -1)
-      await closeTodos(trx, spec, id, 'unconfirm')
-    })
-  }
-
-  async function audit(
-    permit: Permit,
-    side: TradingSide,
-    id: string,
-    input: { postingDate?: string | null },
-  ) {
-    const spec = reconciliationSpec(side)
-    return withTx(db, async (trx) => {
-      const before = await lockHead(trx, permit, spec, id)
-      if (String(before.reconciliation_type) !== 'gift_sample' || String(before.status) !== 'draft') {
-        throw new ApiError('conflict', '仅草稿赠送/样品对账单可结单审核')
-      }
-      await requireItems(trx, spec, id)
-      await adjustProjection(trx, spec, id, 1)
-      const posting = input.postingDate ? toDateOnly(input.postingDate) : utcToday()
-      const baseGross = decimal(String(before.base_gross_total ?? 0))
-      if (baseGross.gt(0)) {
-        await postGiftGL(trx, gl, spec, before, posting)
-      }
-      await sql`
-        UPDATE ${ident(spec.table)} SET status='closed', posting_date=${posting}::date,
-          updated_at=(now() AT TIME ZONE 'utc') WHERE id=${id}::uuid
-      `.execute(trx)
-      const row = await queryHead(trx, spec, id)
-      await writeAudit(trx, permit.actor, {
-        resource: spec.table,
-        recordId: id,
-        recordLabel: String(before.reconciliation_no),
-        companyId: String(before.company_id),
-        actionType: 'update',
-        actionName: 'audit',
-        changes: auditDiff(headSnap(before), headSnap(row!), HEAD_AUDIT),
-      })
-      return mapHeadDto(row!)
-    })
-  }
-
-  async function voidHead(permit: Permit, side: TradingSide, id: string) {
-    const spec = reconciliationSpec(side)
-    return changeState(permit, spec, id, 'closed', 'voided', 'gift_sample', 'void', async (trx, before) => {
-      await gl.cancel(trx, { type: spec.voucher, id: String(before.id) })
-      await adjustProjection(trx, spec, id, -1)
-    })
-  }
-
-  /** 发票审核结单内部接缝（调用方持 trx） */
-  async function closeFromInvoice(dbHandle: DbHandle, actor: Actor, side: TradingSide, id: string) {
-    return invoiceState(dbHandle, actor, side, id, 'confirmed', 'closed', 'close_from_invoice', async (spec, head) => {
-      await closeTodos(dbHandle, spec, id, 'invoice_audit')
-      void head
-    })
-  }
-
-  /** 发票作废/红冲重开内部接缝 */
-  async function reopenFromInvoice(dbHandle: DbHandle, actor: Actor, side: TradingSide, id: string) {
-    return invoiceState(dbHandle, actor, side, id, 'closed', 'confirmed', 'reopen_from_invoice', async (spec, head) => {
-      await openTodo(dbHandle, spec, head, null)
-    })
-  }
-
-  /** 发票引用校验：对账单是否存在（只读接缝） */
-  async function existsForInvoice(
-    dbHandle: DbHandle,
-    side: TradingSide,
-    id: string,
-  ): Promise<boolean> {
-    const spec = reconciliationSpec(side)
-    const rows = await sql<{ e: boolean }>`
-      SELECT EXISTS(SELECT 1 FROM ${ident(spec.table)} WHERE id=${id}::uuid) AS e
-    `.execute(dbHandle)
-    return Boolean(rows.rows[0]?.e)
-  }
-
-  /**
-   * 发票审核取对账单头+行合计（FOR UPDATE，只读接缝）。
-   * 供 finance 构建结转分录，读写同 seam。
-   */
-  async function loadForInvoiceAudit(
-    dbHandle: DbHandle,
-    side: TradingSide,
-    id: string,
-  ): Promise<InvoiceReconHead | null> {
-    const spec = reconciliationSpec(side)
-    const head = await sql<{
-      reconciliation_type: string
-      status: string
-      company_id: string
-      party_type: string
-      party_id: string
-      gross: string
-      debit_account_id: string
-      credit_account_id: string
-    }>`
-      SELECT h.reconciliation_type, h.status, h.company_id::text, h.party_type, h.party_id::text,
-        (SELECT COALESCE(sum(i.base_amount),0)::text FROM ${ident(spec.itemTable)} i
-          WHERE i.reconciliation_id=h.id) AS gross,
-        h.debit_account_id::text, h.credit_account_id::text
-      FROM ${ident(spec.table)} h WHERE h.id=${id}::uuid FOR UPDATE
-    `.execute(dbHandle)
-    if (head.rows.length === 0) return null
-    const h = head.rows[0]!
-    return {
-      reconciliationType: h.reconciliation_type,
-      status: h.status,
-      companyId: h.company_id,
-      partyType: h.party_type,
-      partyId: h.party_id,
-      gross: h.gross,
-      debitAccountId: h.debit_account_id,
-      creditAccountId: h.credit_account_id,
-    }
-  }
-
-  async function listItems(permit: Permit, side: TradingSide, query: Partial<ListQuery>) {
-    const spec = reconciliationSpec(side)
-    return listAuthorized({
-      db,
-      permit,
-      target: itemTargets[side],
-      alias: ITEM_ALIAS,
-      resource: reconciliationItemMeta(side),
-      source: itemListSource(spec),
-      select: itemSelect(spec),
-      defaultOrder: sql`"idx" ASC, "id" ASC`,
-      query,
-      mapRow: (r) => mapItemDto(side, r),
-    })
-  }
-
-  async function getItem(permit: Permit, side: TradingSide, id: string) {
-    const spec = reconciliationSpec(side)
-    return loadAuthorizedFrom({
-      db,
-      permit,
-      target: itemTargets[side],
-      alias: ITEM_ALIAS,
-      source: itemListSource(spec),
-      select: itemSelect(spec),
-      id,
-      mapRow: (r) => mapItemDto(side, r),
-      notFoundMessage: '对账条目不存在',
-    })
-  }
-
-  async function createItem(
-    permit: Permit,
-    side: TradingSide,
-    input: {
-      reconciliationId: string
-      idx: number
-      qty: string
-      deliveryItemId?: string | null
-      receiptItemId?: string | null
-      outsourcedReceiptItemId?: string | null
-      remarks?: string | null
-    },
-  ) {
-    const spec = reconciliationSpec(side)
-    validateItemShape(spec, input)
-    return withTx(db, async (trx) => {
-      // 母单先行：授权 + 行锁 + 草稿门，再写条目
-      const head = await lockHead(trx, permit, spec, input.reconciliationId)
-      if (String(head.status) !== 'draft') {
-        throw new ApiError('conflict', '仅草稿对账单可编辑条目')
-      }
-      const qty = decimal(input.qty)
-      const source = await loadSource(trx, side, input, true)
-      await validateSource(trx, spec, head, source, null, qty)
-      const { baseQty, amount, baseAmount } = snapshotAmounts(qty, source)
-      try {
-        let id: string
-        if (side === 'sales') {
-          const ins = await sql<{ id: string }>`
-            INSERT INTO sal_reconciliation_item (
-              idx, qty, base_qty, amount, base_amount, remarks,
-              reconciliation_id, company_id, delivery_item_id
-            ) VALUES (
-              ${input.idx}, ${wireRequiredDecimal(qty)}, ${baseQty}, ${amount}, ${baseAmount},
-              ${input.remarks ?? null}, ${head.id}::uuid, ${head.company_id}::uuid,
-              ${source.id}::uuid
-            ) RETURNING id
-          `.execute(trx)
-          id = ins.rows[0]!.id
-        } else {
-          const ins = await sql<{ id: string }>`
-            INSERT INTO pur_reconciliation_item (
-              idx, qty, base_qty, amount, base_amount, remarks,
-              reconciliation_id, company_id, receipt_item_id, outsourced_receipt_item_id
-            ) VALUES (
-              ${input.idx}, ${wireRequiredDecimal(qty)}, ${baseQty}, ${amount}, ${baseAmount},
-              ${input.remarks ?? null}, ${head.id}::uuid, ${head.company_id}::uuid,
-              ${input.receiptItemId ?? null}::uuid, ${input.outsourcedReceiptItemId ?? null}::uuid
-            ) RETURNING id
-          `.execute(trx)
-          id = ins.rows[0]!.id
-        }
-        const row = await queryItem(trx, spec, id)
-        await writeAudit(trx, permit.actor, {
-          resource: spec.itemTable,
-          recordId: id,
-          recordLabel: `${String(head.reconciliation_no)}-${Number(row!.idx)}`,
-          companyId: String(head.company_id),
-          actionType: 'create',
-          actionName: 'create',
-          changes: auditCreated(itemSnap(row!), ITEM_AUDIT),
-        })
-        return mapItemDto(side, row!)
-      } catch (err) {
-        throw mapWriteError(err, '创建对账条目失败', [])
-      }
-    })
-  }
-
-  async function updateItem(
-    permit: Permit,
-    side: TradingSide,
-    id: string,
-    input: {
-      idx?: number
-      qty?: string
-      deliveryItemId?: string | null
-      deliveryItemIdPresent?: boolean
-      receiptItemId?: string | null
-      receiptItemIdPresent?: boolean
-      outsourcedReceiptItemId?: string | null
-      outsourcedReceiptItemIdPresent?: boolean
-      remarks?: string | null
-      remarksPresent?: boolean
-    },
-  ) {
-    const spec = reconciliationSpec(side)
-    return withTx(db, async (trx) => {
-      // 条目经 via 链取（不可达即 not_found），再母单先行加锁
-      const before = await loadItemRow(trx, permit, side, id)
-      const head = await lockHead(trx, permit, spec, String(before.reconciliation_id))
-      if (String(head.status) !== 'draft') {
-        throw new ApiError('conflict', '仅草稿对账单可编辑条目')
-      }
-      const create = {
-        reconciliationId: String(head.id),
-        idx: input.idx ?? Number(before.idx),
-        qty: input.qty ?? String(before.qty),
-        deliveryItemId: input.deliveryItemIdPresent
-          ? (input.deliveryItemId ?? null)
-          : asOptionalString(before.delivery_item_id),
-        receiptItemId: input.receiptItemIdPresent
-          ? (input.receiptItemId ?? null)
-          : asOptionalString(before.receipt_item_id),
-        outsourcedReceiptItemId: input.outsourcedReceiptItemIdPresent
-          ? (input.outsourcedReceiptItemId ?? null)
-          : asOptionalString(before.outsourced_receipt_item_id),
-        remarks: input.remarksPresent ? (input.remarks ?? null) : asOptionalString(before.remarks),
-      }
-      validateItemShape(spec, create)
-      const qty = decimal(create.qty)
-      const source = await loadSource(trx, side, create, true)
-      await validateSource(trx, spec, head, source, id, qty)
-      const { baseQty, amount, baseAmount } = snapshotAmounts(qty, source)
-      try {
-        if (side === 'sales') {
-          await sql`
-            UPDATE sal_reconciliation_item SET
-              idx=${create.idx}, qty=${wireRequiredDecimal(qty)}, base_qty=${baseQty},
-              amount=${amount}, base_amount=${baseAmount}, remarks=${create.remarks},
-              delivery_item_id=${source.id}::uuid,
-              updated_at=(now() AT TIME ZONE 'utc')
-            WHERE id=${id}::uuid
-          `.execute(trx)
-        } else {
-          await sql`
-            UPDATE pur_reconciliation_item SET
-              idx=${create.idx}, qty=${wireRequiredDecimal(qty)}, base_qty=${baseQty},
-              amount=${amount}, base_amount=${baseAmount}, remarks=${create.remarks},
-              receipt_item_id=${create.receiptItemId}::uuid,
-              outsourced_receipt_item_id=${create.outsourcedReceiptItemId}::uuid,
-              updated_at=(now() AT TIME ZONE 'utc')
-            WHERE id=${id}::uuid
-          `.execute(trx)
-        }
-        const row = await queryItem(trx, spec, id)
-        const changes = auditDiff(itemSnap(before), itemSnap(row!), ITEM_AUDIT)
-        if (Object.keys(changes).length > 0) {
-          await writeAudit(trx, permit.actor, {
-            resource: spec.itemTable,
-            recordId: id,
-            recordLabel: `${String(head.reconciliation_no)}-${Number(row!.idx)}`,
-            companyId: String(head.company_id),
-            actionType: 'update',
-            actionName: 'update',
-            changes,
-          })
-        }
-        return mapItemDto(side, row!)
-      } catch (err) {
-        throw mapWriteError(err, '更新对账条目失败', [])
-      }
-    })
-  }
-
-  async function deleteItem(permit: Permit, side: TradingSide, id: string) {
-    const spec = reconciliationSpec(side)
-    await withTx(db, async (trx) => {
-      const before = await loadItemRow(trx, permit, side, id)
-      const head = await lockHead(trx, permit, spec, String(before.reconciliation_id))
-      if (String(head.status) !== 'draft') {
-        throw new ApiError('conflict', '仅草稿对账单可编辑条目')
-      }
-      await writeAudit(trx, permit.actor, {
-        resource: spec.itemTable,
-        recordId: id,
-        recordLabel: `${String(head.reconciliation_no)}-${Number(before.idx)}`,
-        companyId: String(head.company_id),
-        actionType: 'destroy',
-        actionName: 'destroy',
-        changes: auditDestroyed(itemSnap(before), ITEM_AUDIT),
-      })
-      await sql`DELETE FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid`.execute(trx)
-    })
-  }
-
-  async function changeState(
-    permit: Permit,
-    spec: ReconciliationSideSpec,
-    id: string,
-    from: ReconciliationStatus,
-    to: ReconciliationStatus,
-    kind: ReconciliationKind,
-    action: string,
-    effect: (trx: TrxHandle, before: Record<string, unknown>) => Promise<void>,
-  ) {
-    return withTx(db, async (trx) => {
-      const before = await lockHead(trx, permit, spec, id)
-      if (String(before.status) !== from || String(before.reconciliation_type) !== kind) {
-        throw new ApiError('conflict', '对账单当前状态不允许执行该动作')
-      }
-      if (to === 'confirmed' || (to === 'closed' && kind === 'gift_sample')) {
-        await requireItems(trx, spec, id)
-      }
-      await effect(trx, before)
-      const tag = await sql`
-        UPDATE ${ident(spec.table)} SET status=${to}, updated_at=(now() AT TIME ZONE 'utc')
-        WHERE id=${id}::uuid AND status=${from}
-      `.execute(trx)
-      if (Number(tag.numAffectedRows ?? 0) !== 1) {
-        throw new ApiError('conflict', '对账单已被并发处理')
-      }
-      const row = await queryHead(trx, spec, id)
-      await writeAudit(trx, permit.actor, {
-        resource: spec.table,
-        recordId: id,
-        recordLabel: String(before.reconciliation_no),
-        companyId: String(before.company_id),
-        actionType: 'update',
-        actionName: action,
-        changes: auditDiff(headSnap(before), headSnap(row!), HEAD_AUDIT),
-      })
-      return mapHeadDto(row!)
-    })
-  }
-
-  async function invoiceState(
-    dbHandle: DbHandle,
-    actor: Actor,
-    side: TradingSide,
-    id: string,
-    from: ReconciliationStatus,
-    to: ReconciliationStatus,
-    action: string,
-    effect: (spec: ReconciliationSideSpec, head: Record<string, unknown>) => Promise<void>,
-  ) {
-    const spec = reconciliationSpec(side)
-    const locked = await sql<{ status: string; reconciliation_type: string }>`
-      SELECT status, reconciliation_type FROM ${ident(spec.table)} WHERE id=${id}::uuid FOR UPDATE
-    `.execute(dbHandle)
-    if (!locked.rows[0]) throw new ApiError('not_found', `${spec.label}不存在`)
-    if (locked.rows[0].status !== from || locked.rows[0].reconciliation_type !== 'regular') {
-      throw new ApiError('conflict', '常规对账单状态不允许发票联动')
-    }
-    const before = await queryHead(dbHandle, spec, id)
-    if (!before) throw new ApiError('not_found', `${spec.label}不存在`)
-    await effect(spec, before)
-    await sql`
-      UPDATE ${ident(spec.table)} SET status=${to}, updated_at=(now() AT TIME ZONE 'utc')
-      WHERE id=${id}::uuid
-    `.execute(dbHandle)
-    const after = await queryHead(dbHandle, spec, id)
-    await writeAudit(dbHandle, actor, {
-      resource: spec.table,
-      recordId: id,
-      recordLabel: String(before.reconciliation_no),
-      companyId: String(before.company_id),
-      actionType: 'update',
-      actionName: action,
-      changes: auditDiff(headSnap(before), headSnap(after!), HEAD_AUDIT),
-    })
-    return mapHeadDto(after!)
-  }
-
-  return {
-    listHeads,
-    getHead,
-    createHead,
-    updateHead,
-    deleteHead,
-    confirm,
-    unconfirm,
-    audit,
-    void: voidHead,
-    closeFromInvoice,
-    reopenFromInvoice,
-    existsForInvoice,
-    loadForInvoiceAudit,
-    listItems,
-    getItem,
-    createItem,
-    updateItem,
-    deleteItem,
-  }
+function updateHeadPatch(input: {
+  no?: string
+  kind?: string
+  partyType?: string
+  partyId?: string
+  debitAccountId?: string
+  creditAccountId?: string
+  remarks?: string | null
+  remarksPresent?: boolean
+}): Record<string, unknown> {
+  const patch: Record<string, unknown> = {}
+  if (input.no !== undefined) patch.reconciliationNo = input.no
+  if (input.kind !== undefined) patch.reconciliationType = input.kind
+  if (input.partyType !== undefined) patch.partyType = input.partyType
+  if (input.partyId !== undefined) patch.partyId = input.partyId
+  if (input.debitAccountId !== undefined) patch.debitAccountId = input.debitAccountId
+  if (input.creditAccountId !== undefined) patch.creditAccountId = input.creditAccountId
+  if (input.remarksPresent) patch.remarks = input.remarks ?? null
+  return patch
 }
 
-/** 发票审核用对账单头（只读接缝出参） */
-export interface InvoiceReconHead {
-  reconciliationType: string
-  status: string
-  companyId: string
-  partyType: string
-  partyId: string
-  gross: string
-  debitAccountId: string
-  creditAccountId: string
-}
-
-export type ReconciliationService = ReturnType<typeof createReconciliationService>
-
-// ---- list sources ----
-
-function headListSource(spec: ReconciliationSideSpec) {
-  return sql` FROM (
-    SELECT h.id,h.reconciliation_no,h.reconciliation_type,h.party_type,h.party_id,
-      h.posting_date,h.remarks,h.status,h.inserted_at,h.updated_at,h.company_id,
-      h.debit_account_id,h.credit_account_id,h.created_by_id,
-      COALESCE(SUM(i.amount),0) AS gross_total,
-      COALESCE(SUM(i.base_amount),0) AS base_gross_total
-    FROM ${ident(spec.table)} h
-    LEFT JOIN ${ident(spec.itemTable)} i ON i.reconciliation_id=h.id
-    GROUP BY h.id
-  ) ${sql.raw(HEAD_ALIAS)}`
-}
-
-function itemSelect(spec: ReconciliationSideSpec) {
-  const sourceNo = spec.side === 'sales' ? 'delivery_no' : 'receipt_no'
-  const sourceDate = spec.side === 'sales' ? 'delivery_date' : 'receipt_date'
-  return sql`SELECT id,idx,qty,base_qty,amount,base_amount,remarks,inserted_at,
-    updated_at,reconciliation_id,company_id,delivery_item_id,receipt_item_id,
-    outsourced_receipt_item_id,reconciliation_no,reconciliation_status,
-    ${sql.raw(sourceNo)},${sql.raw(sourceDate)},material_name,unit_name,order_currency_code`
-}
-
-function itemListSource(spec: ReconciliationSideSpec) {
-  if (spec.side === 'sales') {
-    return sql` FROM (
-      SELECT ri.id,ri.idx,ri.qty,ri.base_qty,ri.amount,ri.base_amount,ri.remarks,
-        ri.inserted_at,ri.updated_at,ri.reconciliation_id,ri.company_id,
-        ri.delivery_item_id,NULL::uuid AS receipt_item_id,
-        NULL::uuid AS outsourced_receipt_item_id,r.reconciliation_no,
-        r.status AS reconciliation_status,h.delivery_no,h.delivery_date,
-        i.material_name,i.unit_name,i.order_currency_code
-      FROM sal_reconciliation_item ri
-      JOIN sal_reconciliation r ON r.id=ri.reconciliation_id
-      JOIN sal_delivery_item i ON i.id=ri.delivery_item_id
-      JOIN sal_delivery h ON h.id=i.delivery_id
-    ) ${sql.raw(ITEM_ALIAS)}`
-  }
-  return sql` FROM (
-    SELECT ri.id,ri.idx,ri.qty,ri.base_qty,ri.amount,ri.base_amount,ri.remarks,
-      ri.inserted_at,ri.updated_at,ri.reconciliation_id,ri.company_id,
-      NULL::uuid AS delivery_item_id,ri.receipt_item_id,ri.outsourced_receipt_item_id,
-      r.reconciliation_no,r.status AS reconciliation_status,
-      COALESCE(sh.receipt_no,oh.receipt_no) AS receipt_no,
-      COALESCE(sh.receipt_date,oh.receipt_date) AS receipt_date,
-      COALESCE(si.material_name,oi.material_name) AS material_name,
-      COALESCE(si.unit_name,oi.unit_name) AS unit_name,
-      COALESCE(si.order_currency_code,oi.order_currency_code) AS order_currency_code
-    FROM pur_reconciliation_item ri
-    JOIN pur_reconciliation r ON r.id=ri.reconciliation_id
-    LEFT JOIN pur_receipt_item si ON si.id=ri.receipt_item_id
-    LEFT JOIN pur_receipt sh ON sh.id=si.receipt_id
-    LEFT JOIN pur_outsourced_receipt_item oi ON oi.id=ri.outsourced_receipt_item_id
-    LEFT JOIN pur_outsourced_receipt oh ON oh.id=oi.receipt_id
-  ) ${sql.raw(ITEM_ALIAS)}`
-}
-
-// ---- query helpers ----
-
-async function queryHead(db: DbHandle, spec: ReconciliationSideSpec, id: string) {
-  const rows = await sql<Record<string, unknown>>`
-    ${HEAD_SELECT}${headListSource(spec)} WHERE id=${id}::uuid
-  `.execute(db)
-  return rows.rows[0] ?? null
-}
-
-async function queryItem(db: DbHandle, spec: ReconciliationSideSpec, id: string) {
-  const rows = await sql<Record<string, unknown>>`
-    ${itemSelect(spec)}${itemListSource(spec)} WHERE id=${id}::uuid
-  `.execute(db)
-  return rows.rows[0] ?? null
-}
-
-async function requireItems(db: DbHandle, spec: ReconciliationSideSpec, id: string) {
-  const r = await sql<{ e: boolean }>`
-    SELECT EXISTS(SELECT 1 FROM ${ident(spec.itemTable)} WHERE reconciliation_id=${id}::uuid) AS e
-  `.execute(db)
-  if (!r.rows[0]?.e) {
-    throw new ApiError('conflict', '生效前必须至少填写一行对账条目')
-  }
-}
-
-// ---- projection（platform/posting/controlled-projection · W0 T0.3）----
-
-async function adjustProjection(
-  db: DbHandle,
-  spec: ReconciliationSideSpec,
-  id: string,
-  direction: number,
-) {
-  await adjustReconciledProjection(db, spec.side, id, direction)
-}
-
-async function postGiftGL(
-  db: TrxHandle,
-  gl: Pick<GlEngine, 'post'>,
-  spec: ReconciliationSideSpec,
-  head: Record<string, unknown>,
-  posting: string,
-) {
-  const accounts = await sql<{ debit_currency: string | null; credit_currency: string | null }>`
-    SELECT
-      (SELECT currency_id::text FROM bas_account WHERE id=${String(head.debit_account_id)}::uuid) AS debit_currency,
-      (SELECT currency_id::text FROM bas_account WHERE id=${String(head.credit_account_id)}::uuid) AS credit_currency
-  `.execute(db)
-  const debitCurrency = accounts.rows[0]?.debit_currency ?? null
-  const creditCurrency = accounts.rows[0]?.credit_currency ?? null
-  const baseGross = wireRequiredDecimal(String(head.base_gross_total ?? 0))
-  const partyType = String(head.party_type)
-  const partyId = String(head.party_id)
-  const debitParty = spec.side === 'purchase' ? { partyType, partyId } : { partyType: null, partyId: null }
-  const creditParty = spec.side === 'sales' ? { partyType, partyId } : { partyType: null, partyId: null }
-  await gl.post(
-    db,
-    {
-      type: spec.voucher,
-      id: String(head.id),
-      no: String(head.reconciliation_no),
-      companyId: String(head.company_id),
-      postingDate: posting,
-    },
-    [
-      {
-        accountId: String(head.debit_account_id),
-        currencyId: debitCurrency,
-        debit: baseGross,
-        credit: '0',
-        partyType: debitParty.partyType,
-        partyId: debitParty.partyId,
-      },
-      {
-        accountId: String(head.credit_account_id),
-        currencyId: creditCurrency,
-        debit: '0',
-        credit: baseGross,
-        partyType: creditParty.partyType,
-        partyId: creditParty.partyId,
-      },
-    ],
-  )
-}
-
-async function openTodo(
-  db: DbHandle,
-  spec: ReconciliationSideSpec,
-  head: Record<string, unknown>,
-  userId: string | null,
-) {
-  await sql`
-    INSERT INTO sys_todo(
-      type, source_type, source_id, source_no, party_type, party_id, amount,
-      status, source_changed_at, company_id, created_by_id
-    ) VALUES (
-      ${spec.todoType}, ${spec.voucher}, ${String(head.id)}::uuid,
-      ${String(head.reconciliation_no)}, ${String(head.party_type)},
-      ${String(head.party_id)}::uuid, ${wireRequiredDecimal(String(head.base_gross_total ?? 0))},
-      'active', (now() AT TIME ZONE 'utc'), ${String(head.company_id)}::uuid,
-      ${userId}::uuid
-    )
-  `.execute(db)
-}
-
-async function closeTodos(
-  db: DbHandle,
-  spec: ReconciliationSideSpec,
-  id: string,
-  reason: string,
-) {
-  await sql`
-    UPDATE sys_todo SET status='closed', closed_reason=${reason},
-      closed_at=(now() AT TIME ZONE 'utc'), updated_at=(now() AT TIME ZONE 'utc')
-    WHERE source_type=${spec.voucher} AND source_id=${id}::uuid AND status='active'
-  `.execute(db)
-}
-
-// ---- validation ----
-
-function parseKind(value: string): ReconciliationKind {
-  const v = value.trim().toLowerCase()
-  if (v === 'regular' || v === 'gift_sample') return v
-  throw ApiError.validation('对账类型不合法', {
-    reconciliationType: ['只允许 REGULAR 或 GIFT_SAMPLE'],
-  })
-}
-
-function validateHeadShape(
-  spec: ReconciliationSideSpec,
-  input: {
-    companyId: string
-    no?: string | null
-    kind: string
-    partyType: string
-    partyId: string
-    debitAccountId: string
-    creditAccountId: string
-    remarks?: string | null
-  },
-) {
-  const fields: Record<string, string[]> = {}
-  if (!input.companyId) fields.companyId = ['必填']
-  if (input.kind !== 'regular' && input.kind !== 'gift_sample') {
-    fields.reconciliationType = ['只允许 REGULAR 或 GIFT_SAMPLE']
-  }
-  const partyType = lowerParty(input.partyType)
-  if (partyType !== spec.party && partyType !== 'company') {
-    fields.partyType = ['对手类型不合法']
-  }
-  if (!input.partyId) fields.partyId = ['必填']
-  if (partyType === 'company' && input.partyId === input.companyId) {
-    fields.partyId = ['对手不能是本公司']
-  }
-  if (!input.debitAccountId) fields.debitAccountId = ['必填']
-  if (!input.creditAccountId) fields.creditAccountId = ['必填']
-  if (input.no != null && runeLen(String(input.no).trim()) > 32) {
-    fields.reconciliationNo = ['最多 32 个字符']
-  }
-  if (input.remarks != null && runeLen(input.remarks) > 512) {
-    fields.remarks = ['最多 512 个字符']
-  }
-  if (Object.keys(fields).length > 0) {
-    throw ApiError.validation(`${spec.label}参数不合法`, fields)
-  }
-}
-
-async function fillDefaultAccounts(
-  db: DbHandle,
-  spec: ReconciliationSideSpec,
-  companyId: string,
-  debitAccountId: string,
-  creditAccountId: string,
-): Promise<{ debitAccountId: string; creditAccountId: string }> {
-  if (debitAccountId && creditAccountId) {
-    return { debitAccountId, creditAccountId }
-  }
-  const debitCol =
-    spec.side === 'sales' ? 'delivery_credit_account_id' : 'receipt_credit_account_id'
-  const creditCol =
-    spec.side === 'sales' ? 'delivery_debit_account_id' : 'receipt_debit_account_id'
-  const rows = await sql<Record<string, string | null>>`
-    SELECT ${sql.raw(debitCol)}::text AS debit, ${sql.raw(creditCol)}::text AS credit
-    FROM sal_company_account_default WHERE company_id=${companyId}::uuid
-  `.execute(db)
-  const row = rows.rows[0]
-  return {
-    debitAccountId: debitAccountId || row?.debit || '',
-    creditAccountId: creditAccountId || row?.credit || '',
-  }
-}
-
-async function validateReferences(
-  db: DbHandle,
-  spec: ReconciliationSideSpec,
-  companyId: string,
-  partyType: string,
-  partyId: string,
-  debitId: string,
-  creditId: string,
-) {
-  if (!(await partyExists(db, partyType, partyId))) {
-    throw ApiError.validation(`${spec.label}参数不合法`, { partyId: ['对手不存在'] })
-  }
-  const rows = await sql<{
-    id: string
-    company_id: string
-    is_group: boolean
-    active: boolean
-    role: string | null
-  }>`
-    SELECT id::text, company_id::text, is_group, active, role
-    FROM bas_account WHERE id = ANY(${[debitId, creditId]}::uuid[])
-  `.execute(db)
-  const found = new Map(rows.rows.map((r) => [r.id, r]))
-  for (const [field, accountId] of [
-    ['debitAccountId', debitId],
-    ['creditAccountId', creditId],
-  ] as const) {
-    const value = found.get(accountId)
-    if (!value || value.company_id !== companyId || value.is_group || !value.active) {
-      throw ApiError.validation(`${spec.label}参数不合法`, {
-        [field]: ['科目须属于本公司、启用且非汇总'],
-      })
-    }
-    const requiredRole =
-      (field === 'creditAccountId' && spec.side === 'sales') ||
-      (field === 'debitAccountId' && spec.side === 'purchase')
-    const wantRole = spec.side === 'sales' ? 'unbilled_receivable' : 'unbilled_payable'
-    if (
-      requiredRole &&
-      (!value.role || value.role.toLowerCase() !== wantRole)
-    ) {
-      throw ApiError.validation(`${spec.label}参数不合法`, {
-        [field]: ['科目角色不符合对账要求'],
-      })
-    }
-  }
-}
-
-function validateItemShape(
-  spec: ReconciliationSideSpec,
+function itemCreatePayload(
+  side: TradingSide,
   input: {
     reconciliationId: string
+    idx: number
     qty: string
     deliveryItemId?: string | null
     receiptItemId?: string | null
     outsourcedReceiptItemId?: string | null
     remarks?: string | null
   },
-) {
-  const fields: Record<string, string[]> = {}
-  if (!input.reconciliationId) fields.reconciliationId = ['必填']
-  const qty = decimal(input.qty || '0')
-  if (!qty.gt(0)) fields.qty = ['必须大于 0']
-  if (input.remarks != null && runeLen(input.remarks) > 512) {
-    fields.remarks = ['最多 512 个字符']
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    reconciliationId: input.reconciliationId,
+    idx: input.idx,
+    qty: input.qty,
+    remarks: input.remarks ?? null,
   }
-  if (spec.side === 'sales') {
-    if (!input.deliveryItemId) fields.deliveryItemId = ['必填']
-    if (input.receiptItemId || input.outsourcedReceiptItemId) {
-      fields.source = ['销售对账只允许发货条目来源']
-    }
-  } else {
-    let count = 0
-    if (input.receiptItemId) count++
-    if (input.outsourcedReceiptItemId) count++
-    if (count !== 1) {
-      fields.source = ['标准入库条目与委外入库条目必须恰选一个']
-    }
-    if (input.deliveryItemId) {
-      fields.deliveryItemId = ['采购对账不允许发货条目来源']
-    }
+  if (side === 'sales') payload.deliveryItemId = input.deliveryItemId ?? null
+  else {
+    payload.receiptItemId = input.receiptItemId ?? null
+    payload.outsourcedReceiptItemId = input.outsourcedReceiptItemId ?? null
   }
-  if (Object.keys(fields).length > 0) {
-    throw ApiError.validation('对账条目参数不合法', fields)
-  }
+  return payload
 }
 
-async function loadSource(
-  db: DbHandle,
+function itemUpdatePatch(
   side: TradingSide,
   input: {
+    idx?: number
+    qty?: string
     deliveryItemId?: string | null
+    deliveryItemIdPresent?: boolean
     receiptItemId?: string | null
+    receiptItemIdPresent?: boolean
     outsourcedReceiptItemId?: string | null
+    outsourcedReceiptItemIdPresent?: boolean
+    remarks?: string | null
+    remarksPresent?: boolean
   },
-  lock: boolean,
-): Promise<SourceItem> {
-  const lockSql = lock ? sql` FOR UPDATE OF i` : sql``
-  let rows: { rows: Record<string, unknown>[] }
-  if (side === 'sales') {
-    rows = await sql<Record<string, unknown>>`
-      SELECT i.id::text, h.company_id::text, h.party_type, h.party_id::text, h.status,
-        h.delivery_no AS no, h.delivery_date AS source_date, i.material_name, i.unit_name,
-        i.order_currency_code AS currency_code, i.qty::text, i.base_qty::text,
-        i.reconciled_qty::text, i.order_price::text, o.exchange_rate::text,
-        o.order_type, o.id::text AS order_id
-      FROM sal_delivery_item i
-      JOIN sal_delivery h ON h.id=i.delivery_id
-      JOIN sal_order_item oi ON oi.id=i.order_item_id
-      JOIN sal_order o ON o.id=oi.order_id
-      WHERE i.id=${input.deliveryItemId!}::uuid${lockSql}
-    `.execute(db)
-  } else if (input.receiptItemId) {
-    rows = await sql<Record<string, unknown>>`
-      SELECT i.id::text, h.company_id::text, h.party_type, h.party_id::text, h.status,
-        h.receipt_no AS no, h.receipt_date AS source_date, i.material_name, i.unit_name,
-        i.order_currency_code AS currency_code, i.qty::text, i.base_qty::text,
-        i.reconciled_qty::text, i.order_price::text, o.exchange_rate::text,
-        o.order_type, o.id::text AS order_id
-      FROM pur_receipt_item i
-      JOIN pur_receipt h ON h.id=i.receipt_id
-      JOIN pur_order_item oi ON oi.id=i.order_item_id
-      JOIN pur_order o ON o.id=oi.order_id
-      WHERE i.id=${input.receiptItemId}::uuid${lockSql}
-    `.execute(db)
-  } else {
-    rows = await sql<Record<string, unknown>>`
-      SELECT i.id::text, h.company_id::text, h.party_type, h.party_id::text, h.status,
-        h.receipt_no AS no, h.receipt_date AS source_date, i.material_name, i.unit_name,
-        i.order_currency_code AS currency_code, i.qty::text, i.base_qty::text,
-        i.reconciled_qty::text, i.order_price::text, o.exchange_rate::text,
-        o.order_type, o.id::text AS order_id
-      FROM pur_outsourced_receipt_item i
-      JOIN pur_outsourced_receipt h ON h.id=i.receipt_id
-      JOIN pur_order_item oi ON oi.id=i.order_item_id
-      JOIN pur_order o ON o.id=oi.order_id
-      WHERE i.id=${input.outsourcedReceiptItemId!}::uuid${lockSql}
-    `.execute(db)
+): Record<string, unknown> {
+  const patch: Record<string, unknown> = {}
+  if (input.idx !== undefined) patch.idx = input.idx
+  if (input.qty !== undefined) patch.qty = input.qty
+  if (side === 'sales' && input.deliveryItemIdPresent) {
+    patch.deliveryItemId = input.deliveryItemId ?? null
   }
-  const row = rows.rows[0]
-  if (!row) {
-    throw ApiError.validation('对账条目参数不合法', { source: ['来源条目不存在'] })
+  if (side === 'purchase') {
+    if (input.receiptItemIdPresent) patch.receiptItemId = input.receiptItemId ?? null
+    if (input.outsourcedReceiptItemIdPresent) {
+      patch.outsourcedReceiptItemId = input.outsourcedReceiptItemId ?? null
+    }
   }
-  return {
-    id: String(row.id),
-    companyId: String(row.company_id),
-    partyType: String(row.party_type),
-    partyId: String(row.party_id),
-    status: String(row.status),
-    no: String(row.no),
-    sourceDate: asDate(row.source_date),
-    materialName: String(row.material_name),
-    unitName: String(row.unit_name),
-    currencyCode: String(row.currency_code),
-    qty: decimal(String(row.qty)),
-    baseQty: decimal(String(row.base_qty)),
-    reconciledQty: decimal(String(row.reconciled_qty)),
-    price: decimal(String(row.order_price)),
-    exchangeRate: decimal(String(row.exchange_rate)),
-    orderType: String(row.order_type),
-    orderId: String(row.order_id),
-    outsourced: side === 'purchase' && Boolean(input.outsourcedReceiptItemId),
-  }
+  if (input.remarksPresent) patch.remarks = input.remarks ?? null
+  return patch
 }
 
-async function validateSource(
-  db: DbHandle,
-  spec: ReconciliationSideSpec,
-  head: Record<string, unknown>,
-  source: SourceItem,
-  selfId: string | null,
-  qty: ReturnType<typeof decimal>,
+function draftItemPayload(side: TradingSide, item: Record<string, unknown>): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    idx: item.idx,
+    qty: item.qty,
+    remarks: item.remarks ?? null,
+  }
+  if (item.id !== undefined) payload.id = item.id
+  if (side === 'sales') payload.deliveryItemId = item.deliveryItemId ?? null
+  else {
+    payload.receiptItemId = item.receiptItemId ?? null
+    payload.outsourcedReceiptItemId = item.outsourcedReceiptItemId ?? null
+  }
+  return payload
+}
+
+function draftHeadPayload(input: Record<string, unknown>): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    companyId: input.companyId,
+    reconciliationType: input.reconciliationType ?? input.kind,
+    partyType: input.partyType,
+    partyId: input.partyId,
+    remarks: input.remarks ?? null,
+  }
+  if (input.debitAccountId) payload.debitAccountId = input.debitAccountId
+  if (input.creditAccountId) payload.creditAccountId = input.creditAccountId
+  const no = input.reconciliationNo ?? input.no
+  if (no != null && String(no).trim() !== '') payload.reconciliationNo = no
+  return payload
+}
+
+function presentDraft(side: TradingSide, draft: Record<string, unknown>): ReconciliationDraft {
+  const items = Array.isArray(draft.items)
+    ? (draft.items as Array<Record<string, unknown>>).map((row) => presentItem(side, row))
+    : []
+  return { ...presentHead(draft), items }
+}
+
+async function sumBaseGross(trx: TrxHandle, itemTable: string, id: string): Promise<string> {
+  const sum = await sql<{ g: string }>`
+    SELECT COALESCE(SUM(base_amount),0)::text AS g
+    FROM ${sql.raw(itemTable)} WHERE reconciliation_id=${id}::uuid
+  `.execute(trx)
+  return wireRequiredDecimal(decimal(sum.rows[0]?.g ?? '0'))
+}
+
+export function createReconciliationService(
+  db: Kysely<Database>,
+  numberer: NumberingService,
+  gl: Pick<GlEngine, 'post' | 'cancel'>,
+  registry: Registry,
 ) {
-  if (source.status !== 'audited') {
-    throw new ApiError('conflict', '仅已审核且未作废的来源条目可对账')
+  const sides: Record<TradingSide, SideCtx> = {
+    sales: buildSide('sales'),
+    purchase: buildSide('purchase'),
   }
-  if (source.companyId !== String(head.company_id)) {
-    throw ApiError.validation('对账条目参数不合法', {
-      source: ['来源公司与对账单不一致'],
+
+  function buildSide(side: TradingSide): SideCtx {
+    const spec = reconciliationSpec(side)
+
+    const heads = createStandardService({
+      db,
+      registry,
+      resource: spec.headResource,
+      notFound: `${spec.label}不存在`,
+      defaultOrder: sql`"inserted_at" DESC, "id" DESC`,
+      writeErrors: RECON_WRITE_ERRORS,
+      numbering: { service: numberer, field: 'reconciliationNo' },
+      projection: {
+        source: headSource(spec),
+        alias: HEAD_ALIAS,
+        selectExtra: headSelectExtra(),
+        mapExtra: headExtras,
+      },
+      hooks: {
+        insertColumns: ({ permit }) => ({
+          status: 'draft',
+          created_by_id: permit.actor.userId || null,
+        }),
+        validate: ({ action, draft, before }) => {
+          if (action === 'create') {
+            const fields: Record<string, string[]> = {}
+            if (!draft.companyId) fields.companyId = ['必填']
+            try {
+              parseKind(String(draft.reconciliationType ?? ''))
+            } catch {
+              fields.reconciliationType = ['只允许 REGULAR 或 GIFT_SAMPLE']
+            }
+            const partyType = lowerParty(String(draft.partyType ?? ''))
+            if (partyType !== spec.party && partyType !== 'company') {
+              fields.partyType = ['对手类型不合法']
+            }
+            if (!draft.partyId) fields.partyId = ['必填']
+            if (partyType === 'company' && String(draft.partyId) === String(draft.companyId)) {
+              fields.partyId = ['对手不能是本公司']
+            }
+            if (Object.keys(fields).length > 0) {
+              throw ApiError.validation(`${spec.label}参数不合法`, fields)
+            }
+            return
+          }
+          if (
+            before &&
+            draft.reconciliationNo !== undefined &&
+            String(draft.reconciliationNo).trim() !== String(before.reconciliationNo)
+          ) {
+            throw ApiError.validation(`${spec.label}参数不合法`, {
+              reconciliationNo: ['编号创建后不可修改'],
+            })
+          }
+          if (
+            before &&
+            draft.reconciliationType !== undefined &&
+            parseKind(String(draft.reconciliationType)) !==
+              String(before.reconciliationType).toLowerCase()
+          ) {
+            throw new ApiError('conflict', '对账类型不可变更')
+          }
+          validateHeadShape(spec, {
+            companyId: String(draft.companyId ?? before?.companyId ?? ''),
+            no: String(draft.reconciliationNo ?? before?.reconciliationNo ?? ''),
+            kind: String(draft.reconciliationType ?? before?.reconciliationType ?? '').toLowerCase(),
+            partyType: lowerParty(String(draft.partyType ?? before?.partyType ?? '')),
+            partyId: String(draft.partyId ?? before?.partyId ?? ''),
+            debitAccountId: String(draft.debitAccountId ?? before?.debitAccountId ?? ''),
+            creditAccountId: String(draft.creditAccountId ?? before?.creditAccountId ?? ''),
+            remarks: draft.remarks == null ? null : String(draft.remarks),
+          })
+        },
+        beforeWrite: async (trx, { action, draft, before }) => {
+          if (action === 'create') {
+            draft.reconciliationType = parseKind(String(draft.reconciliationType ?? ''))
+            draft.partyType = lowerParty(String(draft.partyType ?? ''))
+            const filled = await fillDefaultAccounts(
+              trx,
+              spec,
+              String(draft.companyId),
+              String(draft.debitAccountId ?? ''),
+              String(draft.creditAccountId ?? ''),
+            )
+            draft.debitAccountId = filled.debitAccountId
+            draft.creditAccountId = filled.creditAccountId
+            validateHeadShape(spec, {
+              companyId: String(draft.companyId ?? ''),
+              no: null,
+              kind: String(draft.reconciliationType),
+              partyType: String(draft.partyType),
+              partyId: String(draft.partyId ?? ''),
+              debitAccountId: String(draft.debitAccountId),
+              creditAccountId: String(draft.creditAccountId),
+              remarks: draft.remarks == null ? null : String(draft.remarks),
+            })
+            await validateReferences(
+              trx,
+              spec,
+              String(draft.companyId),
+              String(draft.partyType),
+              String(draft.partyId),
+              String(draft.debitAccountId),
+              String(draft.creditAccountId),
+            )
+            return
+          }
+          if (draft.partyType != null) draft.partyType = lowerParty(String(draft.partyType))
+          if (draft.reconciliationType != null) {
+            draft.reconciliationType = parseKind(String(draft.reconciliationType))
+          }
+          await validateReferences(
+            trx,
+            spec,
+            String(draft.companyId ?? before?.companyId),
+            lowerParty(String(draft.partyType ?? before?.partyType)),
+            String(draft.partyId ?? before?.partyId),
+            String(draft.debitAccountId ?? before?.debitAccountId),
+            String(draft.creditAccountId ?? before?.creditAccountId),
+          )
+          if (before) {
+            const partyChanged =
+              lowerParty(String(draft.partyType ?? before.partyType)) !==
+                lowerParty(String(before.partyType)) ||
+              String(draft.partyId ?? before.partyId) !== String(before.partyId)
+            if (partyChanged) {
+              const has = await sql<{ e: boolean }>`
+                SELECT EXISTS(
+                  SELECT 1 FROM ${sql.raw(spec.itemTable)}
+                  WHERE reconciliation_id=${String(before.id)}::uuid
+                ) AS e
+              `.execute(trx)
+              if (has.rows[0]?.e) throw new ApiError('conflict', '请先删除对账条目')
+            }
+          }
+        },
+      },
+      workflow: {
+        mutableMessage: `仅草稿${spec.label}可修改或删除`,
+        transitions: [
+          {
+            key: 'confirm',
+            label: '确认',
+            from: ['DRAFT'],
+            to: 'CONFIRMED',
+            guardMessage: '对账单当前状态不允许执行该动作',
+            effect: async (trx, { before, permit }) => {
+              assertRegularAction(before)
+              await requireItems(trx, spec, String(before.id))
+              await adjustProjection(trx, spec, String(before.id), 1)
+              const g = await sumBaseGross(trx, spec.itemTable, String(before.id))
+              await openTodo(trx, spec, { ...before, baseGrossTotal: g }, permit.actor.userId || null)
+            },
+          },
+          {
+            key: 'unconfirm',
+            label: '撤回确认',
+            from: ['CONFIRMED'],
+            to: 'DRAFT',
+            guardMessage: '对账单当前状态不允许执行该动作',
+            effect: async (trx, { before }) => {
+              assertRegularAction(before)
+              const column = side === 'sales' ? 'sal_reconciliation_id' : 'pur_reconciliation_id'
+              const linked = await sql<{ e: boolean }>`
+                SELECT EXISTS(
+                  SELECT 1 FROM acc_vat_invoice
+                  WHERE ${sql.raw(column)}=${String(before.id)}::uuid
+                ) AS e
+              `.execute(trx)
+              if (linked.rows[0]?.e) {
+                throw new ApiError('conflict', '已关联发票，不可撤回确认')
+              }
+              await adjustProjection(trx, spec, String(before.id), -1)
+              await closeTodos(trx, spec, String(before.id), 'unconfirm')
+            },
+          },
+          {
+            key: 'audit',
+            label: '结单',
+            from: ['DRAFT'],
+            to: 'CLOSED',
+            guardMessage: '仅草稿赠送/样品对账单可结单审核',
+            effect: async (trx, { before, input }) => {
+              assertGiftAction(before, '仅草稿赠送/样品对账单可结单审核')
+              await requireItems(trx, spec, String(before.id))
+              await adjustProjection(trx, spec, String(before.id), 1)
+              const posting =
+                input.postingDate != null && input.postingDate !== ''
+                  ? toDateOnly(String(input.postingDate))
+                  : utcToday()
+              const g = await sumBaseGross(trx, spec.itemTable, String(before.id))
+              if (decimal(g).gt(0)) {
+                await postGiftGL(trx, gl, spec, { ...before, baseGrossTotal: g }, posting)
+              }
+              return { posting_date: posting }
+            },
+          },
+          {
+            key: 'void',
+            label: '作废',
+            from: ['CLOSED'],
+            to: 'VOIDED',
+            guardMessage: '对账单当前状态不允许执行该动作',
+            effect: async (trx, { before }) => {
+              assertGiftAction(before, '对账单当前状态不允许执行该动作')
+              await gl.cancel(trx, { type: spec.voucher, id: String(before.id) })
+              await adjustProjection(trx, spec, String(before.id), -1)
+            },
+          },
+        ],
+      },
     })
-  }
-  if (
-    source.partyType !== String(head.party_type) ||
-    source.partyId !== String(head.party_id)
-  ) {
-    throw ApiError.validation('对账条目参数不合法', {
-      source: ['来源对手与对账单不一致'],
+
+    const items = createStandardChildService({
+      db,
+      registry,
+      resource: spec.itemResource,
+      notFound: '对账条目不存在',
+      defaultOrder: sql`"idx" ASC, "id" ASC`,
+      writeErrors: RECON_WRITE_ERRORS,
+      recordLabel: (item) =>
+        item.reconciliationNo != null
+          ? `${String(item.reconciliationNo)}-${Number(item.idx)}`
+          : String(item.idx),
+      derivedFields: ['baseQty', 'amount', 'baseAmount'],
+      projection: {
+        source: itemSource(spec),
+        alias: ITEM_ALIAS,
+        selectExtra: itemSelectExtra(side),
+        mapExtra: (row) => itemExtras(side, row),
+      },
+      parent: {
+        resource: spec.headResource,
+        fkField: 'reconciliationId',
+        notFound: `${spec.label}不存在`,
+        inheritFields: ['companyId'],
+        gate: (parent) => {
+          if (String(parent.status) !== 'DRAFT') {
+            throw new ApiError('conflict', '仅草稿对账单可编辑条目')
+          }
+        },
+      },
+      hooks: {
+        validate: ({ draft }) => {
+          const qty = draft.qty
+          if (qty === undefined || qty === null || qty === '') {
+            throw ApiError.validation('对账条目参数不合法', { qty: ['必填'] })
+          }
+          validateItemShape(side, {
+            reconciliationId:
+              draft.reconciliationId == null ? undefined : String(draft.reconciliationId),
+            qty: String(qty),
+            deliveryItemId:
+              draft.deliveryItemId === undefined
+                ? undefined
+                : draft.deliveryItemId == null
+                  ? null
+                  : String(draft.deliveryItemId),
+            receiptItemId:
+              draft.receiptItemId === undefined
+                ? undefined
+                : draft.receiptItemId == null
+                  ? null
+                  : String(draft.receiptItemId),
+            outsourcedReceiptItemId:
+              draft.outsourcedReceiptItemId === undefined
+                ? undefined
+                : draft.outsourcedReceiptItemId == null
+                  ? null
+                  : String(draft.outsourcedReceiptItemId),
+            remarks: draft.remarks == null ? null : String(draft.remarks),
+          })
+        },
+        beforeWrite: async (trx, { action, draft, parent, before }) => {
+          const sourceInput = {
+            deliveryItemId: side === 'sales' ? String(draft.deliveryItemId ?? '') : null,
+            receiptItemId:
+              side === 'purchase'
+                ? draft.receiptItemId == null || draft.receiptItemId === ''
+                  ? null
+                  : String(draft.receiptItemId)
+                : null,
+            outsourcedReceiptItemId:
+              side === 'purchase'
+                ? draft.outsourcedReceiptItemId == null || draft.outsourcedReceiptItemId === ''
+                  ? null
+                  : String(draft.outsourcedReceiptItemId)
+                : null,
+          }
+          const qty = decimal(String(draft.qty))
+          const source = await loadSource(trx, side, sourceInput, true)
+          await validateSource(
+            trx,
+            spec,
+            parent,
+            source,
+            action === 'update' && before ? String(before.id) : null,
+            qty,
+          )
+          const amounts = snapshotAmounts(qty, source)
+          draft.qty = wireRequiredDecimal(qty)
+          draft.baseQty = amounts.baseQty
+          draft.amount = amounts.amount
+          draft.baseAmount = amounts.baseAmount
+          draft.remarks = draft.remarks == null ? null : String(draft.remarks)
+          if (side === 'sales') draft.deliveryItemId = source.id
+        },
+      },
     })
-  }
-  const sibling = await sql<{ currency: string | null }>`
-    SELECT CASE ${spec.side}::text
-      WHEN 'sales' THEN (
-        SELECT di.order_currency_code FROM sal_reconciliation_item ri
-        JOIN sal_delivery_item di ON di.id=ri.delivery_item_id
-        WHERE ri.reconciliation_id=${String(head.id)}::uuid
-          AND (${selfId}::uuid IS NULL OR ri.id<>${selfId}::uuid)
-        LIMIT 1
-      )
-      ELSE (
-        SELECT COALESCE(si.order_currency_code, oi.order_currency_code)
-        FROM pur_reconciliation_item ri
-        LEFT JOIN pur_receipt_item si ON si.id=ri.receipt_item_id
-        LEFT JOIN pur_outsourced_receipt_item oi ON oi.id=ri.outsourced_receipt_item_id
-        WHERE ri.reconciliation_id=${String(head.id)}::uuid
-          AND (${selfId}::uuid IS NULL OR ri.id<>${selfId}::uuid)
-        LIMIT 1
-      )
-    END AS currency
-  `.execute(db)
-  const siblingCurrency = sibling.rows[0]?.currency
-  if (siblingCurrency != null && siblingCurrency !== source.currencyCode) {
-    throw ApiError.validation('对账条目参数不合法', {
-      source: ['同一对账单内订单原币必须一致'],
-    })
-  }
-  if (String(head.reconciliation_type) === 'regular') {
-    if (!source.price.gt(0)) {
-      throw ApiError.validation('对账条目参数不合法', {
-        source: ['常规对账单不可勾选零金额条目'],
-      })
+
+    return {
+      spec,
+      heads,
+      items,
+      aggregate: createAggregateService({
+        db,
+        registry,
+        head: heads,
+        validationMessage: '对账草稿参数不合法',
+        children: [{ key: 'items', service: items }],
+      }),
     }
-    if (spec.side === 'sales' && source.orderType === 'sample') {
-      throw ApiError.validation('对账条目参数不合法', {
-        source: ['常规销售对账单不可勾选样品订单来源'],
-      })
-    }
   }
-  const snapped = snapshotAmounts(qty, source)
-  const remaining = source.baseQty.sub(source.reconciledQty)
-  if (decimal(snapped.baseQty).gt(remaining)) {
-    throw new ApiError('conflict', `超出剩余可对账量(剩余 ${remaining.toFixed()})`)
-  }
-}
 
-function snapshotAmounts(qty: ReturnType<typeof decimal>, source: SourceItem) {
-  let baseQty = qty
-  if (!source.qty.isZero()) {
-    baseQty = qty.mul(source.baseQty).div(source.qty)
-  }
-  const amount = qty.mul(source.price)
-  const baseAmount = decimal(roundAmount(amount)).mul(source.exchangeRate)
   return {
-    baseQty: roundBaseQty(baseQty),
-    amount: roundAmount(amount),
-    baseAmount: roundAmount(baseAmount),
+    listHeads: async (p: Permit, side: TradingSide, q: Partial<ListQuery>) => {
+      const r = await sides[side].heads.list(p, q)
+      return { count: r.count, results: r.results.map((row) => presentHead(row)) }
+    },
+    getHead: async (p: Permit, side: TradingSide, id: string) =>
+      presentHead(await sides[side].heads.get(p, id)),
+    createHead: async (
+      p: Permit,
+      side: TradingSide,
+      input: Parameters<typeof headPayload>[0],
+    ) => presentHead(await sides[side].heads.create(p, headPayload(input))),
+    updateHead: async (
+      p: Permit,
+      side: TradingSide,
+      id: string,
+      input: Parameters<typeof updateHeadPatch>[0],
+    ) => presentHead(await sides[side].heads.update(p, id, updateHeadPatch(input))),
+    deleteHead: (p: Permit, side: TradingSide, id: string) => sides[side].heads.remove(p, id),
+    confirm: async (p: Permit, side: TradingSide, id: string) =>
+      presentHead(await sides[side].heads.transition(p, id, 'confirm')),
+    unconfirm: async (p: Permit, side: TradingSide, id: string) =>
+      presentHead(await sides[side].heads.transition(p, id, 'unconfirm')),
+    audit: async (
+      p: Permit,
+      side: TradingSide,
+      id: string,
+      input: { postingDate?: string | null },
+    ) =>
+      presentHead(
+        await sides[side].heads.transition(p, id, 'audit', {
+          postingDate: input.postingDate ?? null,
+        }),
+      ),
+    void: async (p: Permit, side: TradingSide, id: string) =>
+      presentHead(await sides[side].heads.transition(p, id, 'void')),
+    closeFromInvoice: (h: DbHandle, actor: Actor, side: TradingSide, id: string) =>
+      closeFromInvoiceSeam(h, actor, registry, side, id),
+    reopenFromInvoice: (h: DbHandle, actor: Actor, side: TradingSide, id: string) =>
+      reopenFromInvoiceSeam(h, actor, registry, side, id),
+    existsForInvoice: existsForInvoiceSeam,
+    loadForInvoiceAudit: loadForInvoiceAuditSeam,
+    listItems: async (p: Permit, side: TradingSide, q: Partial<ListQuery>) => {
+      const r = await sides[side].items.list(p, q)
+      return { count: r.count, results: r.results.map((row) => presentItem(side, row)) }
+    },
+    getItem: async (p: Permit, side: TradingSide, id: string) =>
+      presentItem(side, await sides[side].items.get(p, id)),
+    createItem: async (
+      p: Permit,
+      side: TradingSide,
+      input: Parameters<typeof itemCreatePayload>[1],
+    ) => presentItem(side, await sides[side].items.create(p, itemCreatePayload(side, input))),
+    updateItem: async (
+      p: Permit,
+      side: TradingSide,
+      id: string,
+      input: Parameters<typeof itemUpdatePatch>[1],
+    ) => presentItem(side, await sides[side].items.update(p, id, itemUpdatePatch(side, input))),
+    deleteItem: (p: Permit, side: TradingSide, id: string) => sides[side].items.remove(p, id),
+    getDraft: async (p: Permit, side: TradingSide, id: string) =>
+      presentDraft(side, await sides[side].aggregate.loadDraft(p, id)),
+    createDraft: async (p: Permit, side: TradingSide, input: Record<string, unknown>) => {
+      const items = Array.isArray(input.items)
+        ? (input.items as Array<Record<string, unknown>>).map((item) =>
+            draftItemPayload(side, item),
+          )
+        : input.items
+      return presentDraft(
+        side,
+        await sides[side].aggregate.createDraft(p, { ...draftHeadPayload(input), items }),
+      )
+    },
+    replaceDraft: async (
+      p: Permit,
+      side: TradingSide,
+      id: string,
+      input: Record<string, unknown>,
+    ) => {
+      const items = Array.isArray(input.items)
+        ? (input.items as Array<Record<string, unknown>>).map((item) =>
+            draftItemPayload(side, item),
+          )
+        : input.items
+      return presentDraft(
+        side,
+        await sides[side].aggregate.replaceDraft(p, id, {
+          ...draftHeadPayload(input),
+          items,
+        }),
+      )
+    },
+    _aggregateForContract: (side: TradingSide): AggregateService => {
+      const asRec = (d: ReconciliationDraft) => d as unknown as Record<string, unknown>
+      return {
+        loadDraft: async (p, id) =>
+          asRec(presentDraft(side, await sides[side].aggregate.loadDraft(p, id))),
+        createDraft: async (p, input) => {
+          const items = Array.isArray(input.items)
+            ? (input.items as Array<Record<string, unknown>>).map((item) =>
+                draftItemPayload(side, item),
+              )
+            : input.items
+          return asRec(
+            presentDraft(
+              side,
+              await sides[side].aggregate.createDraft(p, {
+                ...draftHeadPayload(input),
+                items,
+              }),
+            ),
+          )
+        },
+        replaceDraft: async (p, id, input) => {
+          const items = Array.isArray(input.items)
+            ? (input.items as Array<Record<string, unknown>>).map((item) =>
+                draftItemPayload(side, item),
+              )
+            : input.items
+          return asRec(
+            presentDraft(
+              side,
+              await sides[side].aggregate.replaceDraft(p, id, {
+                ...draftHeadPayload(input),
+                items,
+              }),
+            ),
+          )
+        },
+        head: sides[side].heads,
+        children: sides[side].aggregate.children,
+      }
+    },
   }
 }
 
-// ---- DTO ----
-
-function mapHeadDto(row: Record<string, unknown>) {
-  return {
-    id: String(row.id),
-    reconciliationNo: String(row.reconciliation_no),
-    reconciliationType: upperStatus(String(row.reconciliation_type)),
-    partyType: upperStatus(String(row.party_type)),
-    partyId: String(row.party_id),
-    postingDate: row.posting_date != null ? asDate(row.posting_date) : null,
-    remarks: asOptionalString(row.remarks),
-    status: upperStatus(String(row.status)),
-    insertedAt: asDateTime(row.inserted_at),
-    updatedAt: asDateTime(row.updated_at),
-    companyId: String(row.company_id),
-    debitAccountId: String(row.debit_account_id),
-    creditAccountId: String(row.credit_account_id),
-    createdById: row.created_by_id != null ? String(row.created_by_id) : null,
-    grossTotal: wireRequiredDecimal(String(row.gross_total ?? 0)),
-    baseGrossTotal: wireRequiredDecimal(String(row.base_gross_total ?? 0)),
-  }
-}
-
-function mapItemDto(side: TradingSide, row: Record<string, unknown>) {
-  const numberKey = side === 'sales' ? 'deliveryNo' : 'receiptNo'
-  const dateKey = side === 'sales' ? 'deliveryDate' : 'receiptDate'
-  const sourceDate = side === 'sales' ? row.delivery_date : row.receipt_date
-  const sourceNo =
-    side === 'sales' ? String(row.delivery_no ?? '') : String(row.receipt_no ?? '')
-  return {
-    id: String(row.id),
-    idx: Number(row.idx),
-    qty: wireRequiredDecimal(String(row.qty)),
-    baseQty: wireRequiredDecimal(String(row.base_qty)),
-    amount: wireRequiredDecimal(String(row.amount)),
-    baseAmount: wireRequiredDecimal(String(row.base_amount)),
-    remarks: asOptionalString(row.remarks),
-    insertedAt: asDateTime(row.inserted_at),
-    updatedAt: asDateTime(row.updated_at),
-    reconciliationId: String(row.reconciliation_id),
-    companyId: String(row.company_id),
-    deliveryItemId: row.delivery_item_id != null ? String(row.delivery_item_id) : null,
-    receiptItemId: row.receipt_item_id != null ? String(row.receipt_item_id) : null,
-    outsourcedReceiptItemId:
-      row.outsourced_receipt_item_id != null ? String(row.outsourced_receipt_item_id) : null,
-    reconciliationNo: String(row.reconciliation_no),
-    reconciliationStatus: upperStatus(String(row.reconciliation_status)),
-    [numberKey]: sourceNo,
-    [dateKey]: asDate(sourceDate),
-    materialName: String(row.material_name),
-    unitName: String(row.unit_name),
-    orderCurrencyCode: String(row.order_currency_code),
-  }
-}
-
-function headSnap(row: Record<string, unknown>) {
-  return {
-    reconciliation_no: String(row.reconciliation_no),
-    reconciliation_type: String(row.reconciliation_type),
-    party_type: String(row.party_type),
-    party_id: String(row.party_id),
-    posting_date: row.posting_date != null ? asDate(row.posting_date) : null,
-    remarks: asOptionalString(row.remarks),
-    status: String(row.status),
-    company_id: String(row.company_id),
-    debit_account_id: String(row.debit_account_id),
-    credit_account_id: String(row.credit_account_id),
-    created_by_id: row.created_by_id != null ? String(row.created_by_id) : null,
-  }
-}
-
-function itemSnap(row: Record<string, unknown>) {
-  return {
-    idx: Number(row.idx),
-    qty: String(row.qty),
-    base_qty: String(row.base_qty),
-    amount: String(row.amount),
-    base_amount: String(row.base_amount),
-    remarks: asOptionalString(row.remarks),
-    reconciliation_id: String(row.reconciliation_id),
-    company_id: String(row.company_id),
-    delivery_item_id: row.delivery_item_id != null ? String(row.delivery_item_id) : null,
-    receipt_item_id: row.receipt_item_id != null ? String(row.receipt_item_id) : null,
-    outsourced_receipt_item_id:
-      row.outsourced_receipt_item_id != null ? String(row.outsourced_receipt_item_id) : null,
-  }
-}
+export type ReconciliationService = ReturnType<typeof createReconciliationService>
