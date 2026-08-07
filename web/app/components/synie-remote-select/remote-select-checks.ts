@@ -14,13 +14,15 @@ function eq(actual: unknown, expected: unknown, label: string) {
 const ref = { resource: 'basCompanies', relation: 'parent', labelField: 'name' }
 
 // resolveSource：ref 提供默认，config 覆盖；都无 resource 为 null。
+// 资源级默认自资源事实清单派生（ADR 2026-08-07-resource-manifest）：
+// basCompanies lookup 三字段搜索，fields 随之带出非 label 搜索列。
 eq(resolveSource({}, ref), {
   resource: 'basCompanies',
   client: { id: 'rest:basCompanies' },
   labelField: 'name',
   sortField: 'name',
-  searchFields: ['name'],
-  fields: [],
+  searchFields: ['code', 'name', 'shortName'],
+  fields: ['code', 'shortName'],
   pageSize: 20,
   itemSubtitleFields: [],
 }, 'ref 默认值')
@@ -35,7 +37,8 @@ eq(
   'sysUsers',
   'config 覆盖 ref'
 )
-eq(resolveSource({ searchFields: [] }, ref)!.searchFields, ['name'], '空 searchFields 回落 labelField')
+// 空数组=未设置（既有语义）；清单全资源都有 lookup.searchFields，故吃资源级默认
+eq(resolveSource({ searchFields: [] }, ref)!.searchFields, ['code', 'name', 'shortName'], '空 searchFields 视为未设置，吃清单资源级默认')
 eq(resolveSource({}), null, '无 resource 为 null')
 eq(resolveSource({ labelField: 'label' }, ref)!.sortField, 'label', 'sortField 默认回落 labelField')
 eq(resolveSource({ labelField: 'label', sortField: 'dueDate' }, ref)!.sortField, 'dueDate', 'sortField 显式覆盖')
