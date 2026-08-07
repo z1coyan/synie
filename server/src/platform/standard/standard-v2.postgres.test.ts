@@ -8,12 +8,14 @@
  *   有子节点删除保护
  * - projection：selectExtra/mapExtra 进 list 与 get（has_children 投影）
  * - child：母单授权锁 + 状态门 + 带入列；行审计三型
+ * - InTx（D1）：root/child 动作族 `*InTx(trx, permit, …)`；外层事务回滚则全链无痕
  *
  * 业务资源迁入后各自的行为由 standard-contract 描述符继承；本文件只锁内核语义。
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
+import { withTx } from '~/db/tx.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
@@ -414,6 +416,90 @@ run('标准动作内核 v2（postgres）', () => {
       const done = await docs.bulkTransition(p('audit'), [a.id, b.id], 'audit')
       expect(done).toHaveLength(2)
       expect(done.every((d) => d.status === 'AUDITED')).toBe(true)
+    })
+  })
+
+  describe('InTx（外层事务由调用方持有）', () => {
+    test('外层回滚则全链无痕：root create + child create + 审计', async () => {
+      let docId = ''
+      let itemId = ''
+      await expect(
+        withTx(db, async (trx) => {
+          const doc = await docs.createInTx(trx, p('create'), {
+            name: `回滚链-${crypto.randomUUID().slice(0, 6)}`,
+            companyId,
+          })
+          docId = doc.id
+          const item = await items.createInTx(trx, p('create', 'stdV2Items'), {
+            docId: doc.id,
+            idx: 1,
+            qty: '1',
+          })
+          itemId = item.id
+          // 事务内可见（证明确实写进了本事务）
+          const mid = await sql<{ n: string }>`
+            SELECT count(*)::text AS n FROM std_v2_doc WHERE id = ${docId}::uuid
+          `.execute(trx)
+          expect(mid.rows[0]!.n).toBe('1')
+          throw new Error('强制回滚')
+        }),
+      ).rejects.toThrow('强制回滚')
+
+      expect(docId).not.toBe('')
+      expect(itemId).not.toBe('')
+      const docsLeft = await sql<{ n: string }>`
+        SELECT count(*)::text AS n FROM std_v2_doc WHERE id = ${docId}::uuid
+      `.execute(db)
+      const itemsLeft = await sql<{ n: string }>`
+        SELECT count(*)::text AS n FROM std_v2_item WHERE id = ${itemId}::uuid
+      `.execute(db)
+      expect(docsLeft.rows[0]!.n).toBe('0')
+      expect(itemsLeft.rows[0]!.n).toBe('0')
+      expect(await auditRows('std_v2_doc', docId, 'create')).toBe(0)
+      expect(await auditRows('std_v2_item', itemId, 'create')).toBe(0)
+    })
+
+    test('外层提交则 root+child 与审计一并落库', async () => {
+      const { docId, itemId } = await withTx(db, async (trx) => {
+        const doc = await docs.createInTx(trx, p('create'), {
+          name: `提交链-${crypto.randomUUID().slice(0, 6)}`,
+          companyId,
+        })
+        const item = await items.createInTx(trx, p('create', 'stdV2Items'), {
+          docId: doc.id,
+          idx: 1,
+          qty: '2',
+        })
+        return { docId: doc.id, itemId: item.id }
+      })
+      const got = await docs.get(p('read'), docId)
+      expect(got.id).toBe(docId)
+      const item = await items.get(p('read', 'stdV2Items'), itemId)
+      expect(item.docId).toBe(docId)
+      expect(await auditRows('std_v2_doc', docId, 'create')).toBe(1)
+      expect(await auditRows('std_v2_item', itemId, 'create')).toBe(1)
+    })
+
+    test('updateInTx/removeInTx/transitionInTx 共享外层事务：中途失败无半截状态', async () => {
+      const doc = await createDraft()
+      const item = await items.create(p('create', 'stdV2Items'), { docId: doc.id, idx: 1, qty: '1' })
+      await expect(
+        withTx(db, async (trx) => {
+          await items.updateInTx(trx, p('update', 'stdV2Items'), item.id, { qty: '9' })
+          await docs.transitionInTx(trx, p('audit'), doc.id, 'audit')
+          // 审核后删行应被状态门拦住；整段回滚
+          await items.removeInTx(trx, p('delete', 'stdV2Items'), item.id)
+        }),
+      ).rejects.toMatchObject({ code: 'conflict' })
+
+      const still = await docs.get(p('read'), doc.id)
+      expect(still.status).toBe('DRAFT')
+      expect(still.name).not.toBe('效果改名')
+      const stillItem = await items.get(p('read', 'stdV2Items'), item.id)
+      expect(stillItem.qty).toBe('1')
+      expect(await auditRows('std_v2_doc', doc.id, 'audit')).toBe(0)
+      expect(await auditRows('std_v2_item', item.id, 'update')).toBe(0)
+      expect(await auditRows('std_v2_item', item.id, 'destroy')).toBe(0)
     })
   })
 

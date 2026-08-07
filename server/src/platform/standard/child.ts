@@ -12,6 +12,9 @@
  * 审计 record_label 亦取投影后的记录（子行的名称在引用上，可用 recordLabel 覆盖）。
  *
  * 钩子纪律同标准服务；行内充实（物料快照投影等）放 beforeWrite。
+ *
+ * 在途事务变体 createInTx / updateInTx / removeInTx（D1）：与 root 同形态，
+ * 供聚合层在外层事务内编排多资源写路径；公开 create/update/remove 仍自开事务。
  */
 import type { ListQuery } from '@synie/shared'
 import { sql, type RawBuilder } from 'kysely'
@@ -93,8 +96,15 @@ export interface StandardChildService<TItem extends StandardItem = StandardItem>
   get(permit: Permit, id: string): Promise<TItem>
   list(permit: Permit, query: Partial<ListQuery>): Promise<{ count: number; results: TItem[] }>
   create(permit: Permit, input: Record<string, unknown>): Promise<TItem>
+  /**
+   * 在途事务变体（D1）：外层事务由调用方持有；Permit 仍是唯一入场券。
+   * 签名对齐 root `*InTx(trx, permit, …)`——trx 在前，不采用可选 trx 重载。
+   */
+  createInTx(trx: TrxHandle, permit: Permit, input: Record<string, unknown>): Promise<TItem>
   update(permit: Permit, id: string, patch: Record<string, unknown>): Promise<TItem>
+  updateInTx(trx: TrxHandle, permit: Permit, id: string, patch: Record<string, unknown>): Promise<TItem>
   remove(permit: Permit, id: string): Promise<void>
+  removeInTx(trx: TrxHandle, permit: Permit, id: string): Promise<void>
   readonly meta: ResourceMeta
   /** 派生 wire schema 时排除的列（带入列 + 平台管理列同语义） */
   readonly stampedColumns: ReadonlySet<string>
@@ -287,101 +297,123 @@ export function createStandardChildService<TItem extends StandardItem = Standard
     return mapRow(meta, result.rows[0] as Record<string, unknown>) as TItem
   }
 
-  async function create(permit: Permit, input: Record<string, unknown>): Promise<TItem> {
+  async function createInTx(trx: TrxHandle, permit: Permit, input: Record<string, unknown>): Promise<TItem> {
     const draft = normalizeInput(input)
     const parentId = draft[fkField!.apiName]
     if (typeof parentId !== 'string' || !parentId) {
       throw ApiError.validation(`${label}参数不合法`, { [fkField!.apiName]: ['不能为空'] })
     }
-    return withTx(db, async (trx) => {
-      const parentWire = await lockParent(trx, permit, parentId)
-      for (const field of inheritFields) {
-        draft[field.apiName] = parentWire[field.apiName]
-      }
-      hooks.validate?.({ action: 'create', permit, draft, parent: parentWire })
-      await hooks.beforeWrite?.(trx, { action: 'create', permit, draft, parent: parentWire })
-      let item: TItem
-      try {
-        item = await insertRow(trx, draft)
-      } catch (err) {
-        throw mapWriteError(err, `保存${label}失败`, writeErrors)
-      }
-      const projected = await reload(trx, permit, item)
-      await writeAudit(trx, permit.actor, {
-        resource: TABLE,
-        recordId: item.id,
-        recordLabel: recordLabel(projected),
-        actionType: 'create',
-        actionName: 'create',
-        companyId: auditCompanyId(item),
-        changes: auditCreated(snapshot(meta, item, AUDIT), AUDIT),
-        sensitiveFields: meta.audit?.sensitiveFields,
-      })
-      await hooks.afterWrite?.(trx, { action: 'create', permit, item, parent: parentWire })
-      return projected
+    const parentWire = await lockParent(trx, permit, parentId)
+    for (const field of inheritFields) {
+      draft[field.apiName] = parentWire[field.apiName]
+    }
+    hooks.validate?.({ action: 'create', permit, draft, parent: parentWire })
+    await hooks.beforeWrite?.(trx, { action: 'create', permit, draft, parent: parentWire })
+    let item: TItem
+    try {
+      item = await insertRow(trx, draft)
+    } catch (err) {
+      throw mapWriteError(err, `保存${label}失败`, writeErrors)
+    }
+    const projected = await reload(trx, permit, item)
+    await writeAudit(trx, permit.actor, {
+      resource: TABLE,
+      recordId: item.id,
+      recordLabel: recordLabel(projected),
+      actionType: 'create',
+      actionName: 'create',
+      companyId: auditCompanyId(item),
+      changes: auditCreated(snapshot(meta, item, AUDIT), AUDIT),
+      sensitiveFields: meta.audit?.sensitiveFields,
     })
+    await hooks.afterWrite?.(trx, { action: 'create', permit, item, parent: parentWire })
+    return projected
+  }
+
+  async function create(permit: Permit, input: Record<string, unknown>): Promise<TItem> {
+    return withTx(db, (trx) => createInTx(trx, permit, input))
+  }
+
+  async function updateInTx(
+    trx: TrxHandle,
+    permit: Permit,
+    id: string,
+    patch: Record<string, unknown>,
+  ): Promise<TItem> {
+    const parentWire = await parentOf(trx, permit, id)
+    const before = await lockRow(trx, id)
+    const draft: Record<string, unknown> = { ...before, ...normalizeInput(patch) }
+    hooks.validate?.({ action: 'update', permit, draft, parent: parentWire, before })
+    await hooks.beforeWrite?.(trx, { action: 'update', permit, draft, parent: parentWire, before })
+    const changes = auditDiff(snapshot(meta, before, AUDIT), snapshot(meta, draft, AUDIT), AUDIT)
+    if (Object.keys(changes).length === 0) return reload(trx, permit, before)
+    const sets = [...writable, ...derivedFields].map(
+      (f) => sql`${sql.id(f.dbColumn)} = ${toDbValue(f, draft[f.apiName])}`,
+    )
+    sets.push(sql`updated_at = (now() AT TIME ZONE 'utc')`)
+    let item: TItem
+    try {
+      const result = await sql`UPDATE ${sql.id(TABLE)} SET ${sql.join(sets)} WHERE id = ${id}::uuid RETURNING *`.execute(trx)
+      item = mapRow(meta, result.rows[0] as Record<string, unknown>) as TItem
+    } catch (err) {
+      throw mapWriteError(err, `保存${label}失败`, writeErrors)
+    }
+    const projected = await reload(trx, permit, item)
+    await writeAudit(trx, permit.actor, {
+      resource: TABLE,
+      recordId: id,
+      recordLabel: recordLabel(projected),
+      actionType: 'update',
+      actionName: 'update',
+      companyId: auditCompanyId(item),
+      changes,
+      sensitiveFields: meta.audit?.sensitiveFields,
+    })
+    await hooks.afterWrite?.(trx, { action: 'update', permit, item, parent: parentWire, before })
+    return projected
   }
 
   async function update(permit: Permit, id: string, patch: Record<string, unknown>): Promise<TItem> {
-    return withTx(db, async (trx) => {
-      const parentWire = await parentOf(trx, permit, id)
-      const before = await lockRow(trx, id)
-      const draft: Record<string, unknown> = { ...before, ...normalizeInput(patch) }
-      hooks.validate?.({ action: 'update', permit, draft, parent: parentWire, before })
-      await hooks.beforeWrite?.(trx, { action: 'update', permit, draft, parent: parentWire, before })
-      const changes = auditDiff(snapshot(meta, before, AUDIT), snapshot(meta, draft, AUDIT), AUDIT)
-      if (Object.keys(changes).length === 0) return reload(trx, permit, before)
-      const sets = [...writable, ...derivedFields].map(
-        (f) => sql`${sql.id(f.dbColumn)} = ${toDbValue(f, draft[f.apiName])}`,
-      )
-      sets.push(sql`updated_at = (now() AT TIME ZONE 'utc')`)
-      let item: TItem
-      try {
-        const result = await sql`UPDATE ${sql.id(TABLE)} SET ${sql.join(sets)} WHERE id = ${id}::uuid RETURNING *`.execute(trx)
-        item = mapRow(meta, result.rows[0] as Record<string, unknown>) as TItem
-      } catch (err) {
-        throw mapWriteError(err, `保存${label}失败`, writeErrors)
-      }
-      const projected = await reload(trx, permit, item)
-      await writeAudit(trx, permit.actor, {
-        resource: TABLE,
-        recordId: id,
-        recordLabel: recordLabel(projected),
-        actionType: 'update',
-        actionName: 'update',
-        companyId: auditCompanyId(item),
-        changes,
-        sensitiveFields: meta.audit?.sensitiveFields,
-      })
-      await hooks.afterWrite?.(trx, { action: 'update', permit, item, parent: parentWire, before })
-      return projected
+    return withTx(db, (trx) => updateInTx(trx, permit, id, patch))
+  }
+
+  async function removeInTx(trx: TrxHandle, permit: Permit, id: string): Promise<void> {
+    const parentWire = await parentOf(trx, permit, id)
+    const item = await lockRow(trx, id)
+    // 标签取自投影（引用名在 join 上），须在 DELETE 前取
+    const projected = await reload(trx, permit, item)
+    await hooks.beforeDelete?.(trx, { permit, item, parent: parentWire })
+    try {
+      await sql`DELETE FROM ${sql.id(TABLE)} WHERE id = ${id}::uuid`.execute(trx)
+    } catch (err) {
+      throw mapWriteError(err, `删除${label}失败`, writeErrors)
+    }
+    await writeAudit(trx, permit.actor, {
+      resource: TABLE,
+      recordId: id,
+      recordLabel: recordLabel(projected),
+      actionType: 'destroy',
+      actionName: 'destroy',
+      companyId: auditCompanyId(item),
+      changes: auditDestroyed(snapshot(meta, item, AUDIT), AUDIT),
+      sensitiveFields: meta.audit?.sensitiveFields,
     })
   }
 
   async function remove(permit: Permit, id: string): Promise<void> {
-    await withTx(db, async (trx) => {
-      const parentWire = await parentOf(trx, permit, id)
-      const item = await lockRow(trx, id)
-      // 标签取自投影（引用名在 join 上），须在 DELETE 前取
-      const projected = await reload(trx, permit, item)
-      await hooks.beforeDelete?.(trx, { permit, item, parent: parentWire })
-      try {
-        await sql`DELETE FROM ${sql.id(TABLE)} WHERE id = ${id}::uuid`.execute(trx)
-      } catch (err) {
-        throw mapWriteError(err, `删除${label}失败`, writeErrors)
-      }
-      await writeAudit(trx, permit.actor, {
-        resource: TABLE,
-        recordId: id,
-        recordLabel: recordLabel(projected),
-        actionType: 'destroy',
-        actionName: 'destroy',
-        companyId: auditCompanyId(item),
-        changes: auditDestroyed(snapshot(meta, item, AUDIT), AUDIT),
-        sensitiveFields: meta.audit?.sensitiveFields,
-      })
-    })
+    await withTx(db, (trx) => removeInTx(trx, permit, id))
   }
 
-  return { get, list, create, update, remove, meta, stampedColumns }
+  return {
+    get,
+    list,
+    create,
+    createInTx,
+    update,
+    updateInTx,
+    remove,
+    removeInTx,
+    meta,
+    stampedColumns,
+  }
 }
