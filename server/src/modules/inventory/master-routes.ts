@@ -19,21 +19,10 @@ import type { AuthService } from '~/platform/auth/service.ts'
 import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
-import { decimalStringSchema, listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { decimalStringSchema, listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
+import { idParam } from '~/platform/standard/routes.ts'
 import { MATERIAL_UNIT_RESOURCE, type MaterialUnitService } from './material-unit-service.ts'
 import { WAREHOUSE_RESOURCE, type WarehouseService } from './warehouse-service.ts'
-
-const idParam = z.object({ id: z.string().uuid() })
-
-function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
-  return {
-    limit: body.limit,
-    offset: body.offset,
-    search: body.search,
-    sort: body.sort,
-    filter: body.filter as ListQuery['filter'],
-  }
-}
 
 export interface InventoryMasterRouteDeps {
   auth: AuthService
@@ -65,7 +54,7 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
         materialUnitGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await materialUnits.list(permitOf(c), toList(c.req.valid('json')))
+          const result = await materialUnits.list(permitOf(c), toListQuery(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(materialUnitDto) })
         },
       )
@@ -136,7 +125,7 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
         warehouseGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await warehouses.list(permitOf(c), toList(c.req.valid('json')))
+          const result = await warehouses.list(permitOf(c), toListQuery(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(warehouseDto) })
         },
       )
@@ -170,7 +159,7 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
             permitOf(c),
             body.partyType,
             body.partyId,
-            toList(body),
+            toListQuery(body),
           )
           return c.json({ count: result.count, results: result.results.map(warehouseDto) })
         },

@@ -19,6 +19,7 @@ import type { Permit } from '../authz/core/index.ts'
 import { ApiError } from '../http/errors.ts'
 import type { Registry } from '../meta/registry.ts'
 import type { NumberingCatalog } from './catalog.ts'
+import { asDate } from '~/db/dates.ts'
 import {
   COUNTER_RESOURCE_NAME,
   RULE_RESOURCE_NAME,
@@ -686,6 +687,3 @@ function counterSnap(counter: Counter): Record<string, unknown> {
   return { value: counter.value }
 }
 
-function asDate(value: Date | string): Date {
-  return value instanceof Date ? value : new Date(value)
-}

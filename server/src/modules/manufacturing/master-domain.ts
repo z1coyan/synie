@@ -5,7 +5,8 @@
 import { decimal, isDecimalString, toDecimalString } from '@synie/shared'
 import type { DbHandle } from '~/db/tx.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { ensureMaterial, ensureUnitAllowed, runeCount, trimOptional } from './helpers.ts'
+import { runeLen } from '~/platform/posting/text.ts'
+import { ensureMaterial, ensureUnitAllowed, trimOptional } from './helpers.ts'
 import type {
   Bom,
   BomByproduct,
@@ -117,12 +118,12 @@ export function validateHeadNote(
   const fields: Record<string, string[]> = {}
   if (action === 'create' || draft.name !== undefined) {
     const n = String(draft.name ?? '').trim()
-    if (!n || runeCount(n) > 64) fields.name = ['不能为空且最多 64 个字符']
+    if (!n || runeLen(n) > 64) fields.name = ['不能为空且最多 64 个字符']
     draft.name = n
   }
   if (draft.note !== undefined) {
     const nt = trimOptional(draft.note as string | null)
-    if (nt && runeCount(nt) > 255) fields.note = ['最多 255 个字符']
+    if (nt && runeLen(nt) > 255) fields.note = ['最多 255 个字符']
     draft.note = nt
   } else if (action === 'create') {
     draft.note = null
@@ -137,14 +138,14 @@ export function validateBomHead(draft: Record<string, unknown>, action: 'create'
   if (action === 'create' && !draft.materialId) fields.materialId = ['必填']
   if (draft.planName !== undefined) {
     const p = trimOptional(draft.planName as string | null)
-    if (p && runeCount(p) > 64) fields.planName = ['最多 64 个字符']
+    if (p && runeLen(p) > 64) fields.planName = ['最多 64 个字符']
     draft.planName = p
   } else if (action === 'create') {
     draft.planName = null
   }
   if (draft.note !== undefined) {
     const n = trimOptional(draft.note as string | null)
-    if (n && runeCount(n) > 255) fields.note = ['最多 255 个字符']
+    if (n && runeLen(n) > 255) fields.note = ['最多 255 个字符']
     draft.note = n
   } else if (action === 'create') {
     draft.note = null
@@ -200,7 +201,7 @@ export function normalizeRouteDraft(
   }
   if (draft.requirement !== undefined) {
     const requirement = trimOptional(draft.requirement as string | null)
-    if (requirement && runeCount(requirement) > 512) fields.requirement = ['最多 512 个字符']
+    if (requirement && runeLen(requirement) > 512) fields.requirement = ['最多 512 个字符']
     draft.requirement = requirement
   } else if (action === 'create') {
     draft.requirement = null

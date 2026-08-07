@@ -7,7 +7,7 @@ import type { AuthService } from '../auth/service.ts'
 import { permitOf, type AuthzEnforcer } from '../authz/enforce.ts'
 import type { AppEnv } from '../http/context.ts'
 import { ApiError } from '../http/errors.ts'
-import { listQuerySchema, validationHook } from '../http/zod.ts'
+import { listQuerySchema, toListQuery, validationHook } from '../http/zod.ts'
 import { attachmentDto, storageDto, storedFileDto } from './dto.ts'
 import { ATTACHMENT_RESOURCE_NAME, FILE_RESOURCE_NAME, STORAGE_RESOURCE_NAME } from './meta.ts'
 import type { FileService } from './service.ts'
@@ -270,16 +270,6 @@ export function storageRoutes(deps: StorageRoutesDeps) {
       await storages.setDefault(permitOf(c), c.req.valid('param').id)
       return c.body(null, 204)
     })
-}
-
-function toListQuery(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
-  return {
-    limit: body.limit,
-    offset: body.offset,
-    search: body.search,
-    sort: body.sort,
-    filter: body.filter as ListQuery['filter'],
-  }
 }
 
 function formString(body: Record<string, string | File>, ...names: string[]): string {

@@ -7,6 +7,7 @@ import { sql } from 'kysely'
 import type { DbHandle, TrxHandle } from '~/db/tx.ts'
 import type { GlEngine } from '~/engines/gl/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import { accountCurrencies } from '~/platform/posting/account-currency.ts'
 import { adjustReconciledProjection } from '~/platform/posting/controlled-projection.ts'
 import {
   asDate,
@@ -397,13 +398,11 @@ export async function postGiftGL(
 ) {
   const debitAccountId = String(head.debitAccountId ?? head.debit_account_id)
   const creditAccountId = String(head.creditAccountId ?? head.credit_account_id)
-  const accounts = await sql<{ debit_currency: string | null; credit_currency: string | null }>`
-    SELECT
-      (SELECT currency_id::text FROM bas_account WHERE id=${debitAccountId}::uuid) AS debit_currency,
-      (SELECT currency_id::text FROM bas_account WHERE id=${creditAccountId}::uuid) AS credit_currency
-  `.execute(db)
-  const debitCurrency = accounts.rows[0]?.debit_currency ?? null
-  const creditCurrency = accounts.rows[0]?.credit_currency ?? null
+  const { debit: debitCurrency, credit: creditCurrency } = await accountCurrencies(
+    db,
+    debitAccountId,
+    creditAccountId,
+  )
   const baseGross = wireRequiredDecimal(
     String(head.baseGrossTotal ?? head.base_gross_total ?? 0),
   )

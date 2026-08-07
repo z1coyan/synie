@@ -18,13 +18,12 @@ import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { decimalStringSchema, listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { decimalStringSchema, draftValidationHook, listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
+import { idParam } from '~/platform/standard/routes.ts'
 import type { TradingSide } from '../common.ts'
 import { presentKey } from '../common.ts'
 import type { ReconciliationService } from './service.ts'
 import { reconciliationSpec } from './spec.ts'
-
-const idParam = z.object({ id: z.string().uuid() })
 
 const reconciliationDraftItemSchema = z
   .object({
@@ -65,35 +64,6 @@ const reconciliationDraftReplaceSchema = z
   })
   .strict()
 
-function reconciliationDraftValidationHook(result: {
-  success: boolean
-  error?: z.ZodError
-}): void {
-  if (result.success || !result.error) return
-  const fields: Record<string, string[]> = {}
-  for (const issue of result.error.issues) {
-    let key = ''
-    for (const part of issue.path) {
-      if (typeof part === 'number') key += `[${part}]`
-      else key += key ? `.${String(part)}` : String(part)
-    }
-    if (!key) key = '_'
-    else if (!key.startsWith('items')) key = `header.${key}`
-    ;(fields[key] ??= []).push(issue.message)
-  }
-  throw ApiError.validation('请求参数错误', fields)
-}
-
-function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
-  return {
-    limit: body.limit,
-    offset: body.offset,
-    search: body.search,
-    sort: body.sort,
-    filter: body.filter as ListQuery['filter'],
-  }
-}
-
 export function reconciliationHeadRoutes(deps: {
   auth: AuthService
   authz: AuthzEnforcer
@@ -118,14 +88,14 @@ export function reconciliationHeadRoutes(deps: {
       headGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await reconciliations.listHeads(permitOf(c), side, toList(c.req.valid('json')))
+        const r = await reconciliations.listHeads(permitOf(c), side, toListQuery(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )
     .post(
       '/',
       headGuard('create'),
-      zValidator('json', reconciliationDraftCreateSchema, reconciliationDraftValidationHook),
+      zValidator('json', reconciliationDraftCreateSchema, draftValidationHook()),
       async (c) =>
         c.json(await reconciliations.createDraft(permitOf(c), side, c.req.valid('json')), 201),
     )
@@ -147,7 +117,7 @@ export function reconciliationHeadRoutes(deps: {
       '/:id',
       replaceGuard,
       zValidator('param', idParam, validationHook),
-      zValidator('json', reconciliationDraftReplaceSchema, reconciliationDraftValidationHook),
+      zValidator('json', reconciliationDraftReplaceSchema, draftValidationHook()),
       async (c) =>
         c.json(
           await reconciliations.replaceDraft(
@@ -264,7 +234,7 @@ export function reconciliationItemRoutes(deps: {
       itemGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await reconciliations.listItems(permitOf(c), side, toList(c.req.valid('json')))
+        const r = await reconciliations.listItems(permitOf(c), side, toListQuery(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )

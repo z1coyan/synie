@@ -18,3 +18,8 @@ export function toDateOnly(value: Date | string): string {
 export function utcToday(): string {
   return toDateOnly(new Date())
 }
+
+/** DB 日期/时间戳值 → Date（pg 驱动按驱动版本返回 Date 或字符串，统一在此收敛） */
+export function asDate(value: Date | string): Date {
+  return value instanceof Date ? value : new Date(value)
+}

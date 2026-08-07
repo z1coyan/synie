@@ -9,6 +9,7 @@ import { ApiError } from '~/platform/http/errors.ts'
 import { createSingleRowSetting } from '~/platform/settings/single-row.ts'
 import { auditSpecOf } from '~/platform/audit/spec.ts'
 import { sql } from 'kysely'
+import { asDate } from '~/db/dates.ts'
 
 export const ACC_RESOURCE_NAME = 'accSettings'
 
@@ -168,6 +169,3 @@ function mapAcc(row: Record<string, unknown>): AccountingSetting {
   }
 }
 
-function asDate(value: Date | string): Date {
-  return value instanceof Date ? value : new Date(value)
-}

@@ -32,10 +32,6 @@ export interface FulfillmentSideSpec {
   dateApi: string
   parentApi: string
   statusApi: string
-  destroyHead: string
-  destroyItem: string
-  auditMutation: string
-  voidMutation: string
 }
 
 export function fulfillmentSpec(side: TradingSide): FulfillmentSideSpec {
@@ -67,10 +63,6 @@ export function fulfillmentSpec(side: TradingSide): FulfillmentSideSpec {
       dateApi: 'deliveryDate',
       parentApi: 'deliveryId',
       statusApi: 'deliveryStatus',
-      destroyHead: 'destroySalDelivery',
-      destroyItem: 'destroySalDeliveryItem',
-      auditMutation: 'auditSalDelivery',
-      voidMutation: 'voidSalDelivery',
     }
   }
   return {
@@ -100,10 +92,6 @@ export function fulfillmentSpec(side: TradingSide): FulfillmentSideSpec {
     dateApi: 'receiptDate',
     parentApi: 'receiptId',
     statusApi: 'receiptStatus',
-    destroyHead: 'destroyPurReceipt',
-    destroyItem: 'destroyPurReceiptItem',
-    auditMutation: 'auditPurReceipt',
-    voidMutation: 'voidPurReceipt',
   }
 }
 

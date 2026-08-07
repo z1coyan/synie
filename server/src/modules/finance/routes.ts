@@ -14,14 +14,13 @@ import type { AuthService } from '~/platform/auth/service.ts'
 import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
-import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
+import { idParam } from '~/platform/standard/routes.ts'
 import {
   VAT_INVOICE_RESOURCE_NAME,
   type VatInvoice,
   type VatInvoiceService,
 } from './invoice-service.ts'
-
-const idParam = z.object({ id: z.string().uuid() })
 
 const directionEnum = z.enum(['INBOUND', 'OUTBOUND', 'inbound', 'outbound'])
 const partyTypeEnum = z.enum([
@@ -139,16 +138,6 @@ const ocrSchema = z
   })
   .strict()
 
-function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
-  return {
-    limit: body.limit,
-    offset: body.offset,
-    search: body.search,
-    sort: body.sort,
-    filter: body.filter as ListQuery['filter'],
-  }
-}
-
 function invoiceDto(item: VatInvoice) {
   return {
     id: item.id,
@@ -214,7 +203,7 @@ export function vatInvoiceRoutes(deps: {
       guard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await invoices.list(permitOf(c), toList(c.req.valid('json')))
+        const result = await invoices.list(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({
           count: result.count,
           results: result.results.map(invoiceDto),

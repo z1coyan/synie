@@ -14,7 +14,8 @@ import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { decimalStringSchema, listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { decimalStringSchema, listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
+import { idParam } from '~/platform/standard/routes.ts'
 import { GL_ENTRY_RESOURCE_NAME, type EntryService } from './entry-service.ts'
 import {
   JOURNAL_LINE_RESOURCE_NAME,
@@ -23,8 +24,6 @@ import {
   type JournalLine,
   type JournalService,
 } from './journal-service.ts'
-
-const idParam = z.object({ id: z.string().uuid() })
 
 const journalCreateSchema = z
   .object({
@@ -75,16 +74,6 @@ const lineUpdateSchema = z
     remarks: z.string().nullable().optional(),
   })
   .strict()
-
-function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
-  return {
-    limit: body.limit,
-    offset: body.offset,
-    search: body.search,
-    sort: body.sort,
-    filter: body.filter as ListQuery['filter'],
-  }
-}
 
 function journalDto(item: Journal) {
   return {
@@ -171,7 +160,7 @@ export function accountingRoutes(deps: {
       journalGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await journals.list(permitOf(c), toList(c.req.valid('json')))
+        const result = await journals.list(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(journalDto) })
       },
     )
@@ -246,7 +235,7 @@ export function accountingRoutes(deps: {
       lineGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await journals.listLines(permitOf(c), toList(c.req.valid('json')))
+        const result = await journals.listLines(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(lineDto) })
       },
     )
@@ -297,7 +286,7 @@ export function accountingRoutes(deps: {
       entryGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await entries.list(permitOf(c), toList(c.req.valid('json')))
+        const result = await entries.list(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(entryDto) })
       },
     )

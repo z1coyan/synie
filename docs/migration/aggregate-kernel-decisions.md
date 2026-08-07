@@ -462,3 +462,19 @@ ADR「另议」项落地：`salReconciliations` / `purReconciliations` / `purOut
 | 对账抽屉编辑保存 | 条目按 compareKeys diff（改 qty 发 PATCH） | 全量快照 replace，后端按差异增/改/删逐行授权与审计 | 已有整单 replaceDraft 的资源勿回退逐行 diff（项目守则） |
 
 **验收**：`aggregate-draft-routes.test.ts` 扩四资源 wire 病例（PUT 显式集合、decimal 拒绝、POST 空表头缺省）；server 全量 910 绿（含 aggregate-contract 与 reconciliation/outsourced PG 集成）；web 全量 322 绿。
+---
+
+## W9 · 架构评审收口：路由机械三件套与重复事实源（2026-08-08）
+
+架构评审（/improve-codebase-architecture）后落地的**零行为变更**清理波，对应 ADR D8「独立决策」的机械前置步——只收逐字复刻，不动词表与 wire 形状：
+
+- **路由三件套单源化**：`toListQuery`（12 份 `toList` + 4 份 `toListQuery` 逐字副本）落 `platform/http/zod.ts`；`idParam`（15 份 modules + 3 份 platform 副本）统一引 `platform/standard/routes.ts` 导出；草稿 `draftValidationHook` 工厂（4 份逐字 + fulfillment 的 `packBoxes` 变体）落 `platform/http/zod.ts`——hook 漂移面（fulfillment 版已分歧）归零。
+- **spec 死 interface 面删除**：`OrderSideSpec` / `QuotationSideSpec` / `FulfillmentSideSpec` / `ReconciliationSideSpec` 的 `*Destroy/*Mutation/*Audit` 等 23 个字段全仓无读取点（Go 迁移遗留），删除。
+- **GL 币种查询去重**：`reconciliation/domain.ts` 的双子查询变体改用 `platform/posting/account-currency.ts` 的 `accountCurrencies`。
+- **日期/文本基元**：六份逐字 `asDate(): Date` 收进 `db/dates.ts`（唯一事实源）；manufacturing 的 `runeCount` 删除改用 `posting/text` 的 `runeLen`；`SampleSummary` wire 形状三份声明单源化（权威在 `platform/setup/service.ts`，modules 反向引用）。
+- **前端草稿字段基元**：`nullableString`/`requiredString`（+`requiredIndex`）六份逐字副本收进 `web/app/lib/resources/draft-fields.ts`；`buildDeliveryDraft` 与服务端错误路径映射（`headerFieldErrors`/`rowErrors`/`normalizedErrorPath`）从 1796 行发货抽屉迁出至 `lib/resources/sales-delivery-draft.ts`，与 wire 校验同侧并补直测（装箱分组、错误路径两族此前无测试）。
+- **stock-doc 弹射注释修正**：create/单据行两条例由已被内核 `insertColumns` 与子行 `derivedFields` 覆盖，注释更正为「回收留作独立评估」（回收本身未做，需逐字段对拍审计快照与文案）。
+
+**未动**（留 grilling/独立决策）：科目区家族收口（F1）、对账双抽屉合并（F2）、onSubmit 管道（F4）、委外入库侧行原子性（F5，触 ADR）、订单外挂子树 port（S1）、postTwoAccountVoucher 基元（S2 后半）、路由词表收口本体（S4）、posting schema 知识倒挂（S5）、库存四模块回收（S6 本体）。
+
+**验收**：server 全量 917 绿（含 PG 集成与 aggregate-contract）；web 全量 326 绿 + run-checks ok；两侧 tsc 零错。

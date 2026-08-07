@@ -48,8 +48,8 @@ import {
   upperWire,
   type ParsedPunch,
 } from './rules.ts'
+import { asDate } from '~/db/dates.ts'
 import {
-  asDate,
   asDateOnly,
   numStr,
   parseDate,
@@ -707,7 +707,6 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
       })
     })
   }
-
 
   return {
     listPunches,

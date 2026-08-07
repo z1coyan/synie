@@ -17,6 +17,7 @@ import type { Permit } from '../authz/core/index.ts'
 import { systemPermit } from '../authz/core/index.ts'
 import { ApiError } from '../http/errors.ts'
 import { createSingleRowSetting } from './single-row.ts'
+import { asDate } from '~/db/dates.ts'
 
 export interface SalesSetting {
   id: string
@@ -242,6 +243,3 @@ function sysRunSnap(v: SystemSetting): Record<string, unknown> {
   }
 }
 
-function asDate(value: Date | string): Date {
-  return value instanceof Date ? value : new Date(value)
-}

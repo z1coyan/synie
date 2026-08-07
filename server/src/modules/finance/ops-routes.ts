@@ -18,7 +18,8 @@ import type { AuthService } from '~/platform/auth/service.ts'
 import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
-import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
+import { idParam } from '~/platform/standard/routes.ts'
 import { FILE_RESOURCE_NAME } from '~/platform/files/meta.ts'
 import { JOURNAL_RESOURCE_NAME } from '~/modules/accounting/meta.ts'
 import {
@@ -45,18 +46,6 @@ import {
   type BillTransaction,
 } from './bill-service.ts'
 import { present } from './common.ts'
-
-const idParam = z.object({ id: z.string().uuid() })
-
-function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
-  return {
-    limit: body.limit,
-    offset: body.offset,
-    search: body.search,
-    sort: body.sort,
-    filter: body.filter as ListQuery['filter'],
-  }
-}
 
 const dec = z.string().nullable().optional()
 
@@ -143,7 +132,7 @@ export function bankTransactionRoutes(deps: {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      return c.json(await banking.listTransactions(permitOf(c), toList(c.req.valid('json'))))
+      return c.json(await banking.listTransactions(permitOf(c), toListQuery(c.req.valid('json'))))
     })
     .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
       return c.json(await banking.getTransaction(permitOf(c), c.req.valid('param').id))
@@ -195,7 +184,7 @@ export function bankImportTemplateRoutes(deps: {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      return c.json(await banking.listTemplates(permitOf(c), toList(c.req.valid('json'))))
+      return c.json(await banking.listTemplates(permitOf(c), toListQuery(c.req.valid('json'))))
     })
     .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
       return c.json(await banking.getTemplate(permitOf(c), c.req.valid('param').id))
@@ -242,7 +231,7 @@ export function bankImportRoutes(deps: {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', readGuard(), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      return c.json(await banking.listImports(permitOf(c), toList(c.req.valid('json'))))
+      return c.json(await banking.listImports(permitOf(c), toListQuery(c.req.valid('json'))))
     })
     .get('/:id', readGuard(), zValidator('param', idParam, validationHook), async (c) => {
       return c.json(await banking.getImport(permitOf(c), c.req.valid('param').id))
@@ -279,7 +268,7 @@ export function bankImportItemRoutes(deps: {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', readGuard(), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      return c.json(await banking.listItems(permitOf(c), toList(c.req.valid('json'))))
+      return c.json(await banking.listItems(permitOf(c), toListQuery(c.req.valid('json'))))
     })
     .get('/:id', readGuard(), zValidator('param', idParam, validationHook), async (c) => {
       return c.json(await banking.getItem(permitOf(c), c.req.valid('param').id))
@@ -323,7 +312,7 @@ export function bankReconciliationRoutes(deps: {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', reconGuard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      return c.json(await banking.listReconciliations(permitOf(c), toList(c.req.valid('json'))))
+      return c.json(await banking.listReconciliations(permitOf(c), toListQuery(c.req.valid('json'))))
     })
     // 跨资源读：既读流水又读凭证 → allOf（迁移前是服务里两道码级闸）
     .get('/remaining', authz.guard(BANK_RECONCILIATION_RESOURCE, 'read', {
@@ -364,7 +353,7 @@ export function expenseReportRoutes(deps: {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const result = await expenses.listReports(permitOf(c), toList(c.req.valid('json')))
+      const result = await expenses.listReports(permitOf(c), toListQuery(c.req.valid('json')))
       return c.json({ count: result.count, results: result.results.map(expenseReportDto) })
     })
     .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
@@ -414,7 +403,7 @@ export function expenseReportItemRoutes(deps: {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const result = await expenses.listItems(permitOf(c), toList(c.req.valid('json')))
+      const result = await expenses.listItems(permitOf(c), toListQuery(c.req.valid('json')))
       return c.json({ count: result.count, results: result.results.map(expenseReportItemDto) })
     })
     .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
@@ -455,7 +444,7 @@ export function billRoutes(deps: {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      return c.json(await bills.listBills(permitOf(c), toList(c.req.valid('json'))))
+      return c.json(await bills.listBills(permitOf(c), toListQuery(c.req.valid('json'))))
     })
     .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
       return c.json(await bills.getBill(permitOf(c), c.req.valid('param').id))
@@ -478,7 +467,7 @@ export function billTransactionRoutes(deps: {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const result = await bills.listTransactions(permitOf(c), toList(c.req.valid('json')))
+      const result = await bills.listTransactions(permitOf(c), toListQuery(c.req.valid('json')))
       return c.json({ count: result.count, results: result.results.map(billTransactionDto) })
     })
     .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
@@ -542,7 +531,7 @@ export function billHoldingRoutes(deps: {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      return c.json(await bills.listHoldings(permitOf(c), toList(c.req.valid('json'))))
+      return c.json(await bills.listHoldings(permitOf(c), toListQuery(c.req.valid('json'))))
     })
     .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
       return c.json(await bills.getHolding(permitOf(c), c.req.valid('param').id))

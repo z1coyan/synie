@@ -2,11 +2,15 @@
  * 手工出入库单：单头走标准动作内核（get/list/update/remove + workflow 转移），
  * 审核/作废两个转移的 effect 调库存引擎（取代 posting/skeleton 的编排 spec）。
  *
- * 两处按动作弹射（内核缺「服务端派生列」原语，见迁移决策日志）：
+ * 两处按动作弹射（迁移时的内核缺口，见迁移决策日志）：
  * - `create`：`created_by_id` 是 readonly 列且本资源不声明 owner 绑定
- *   （矩阵不得授出行级范围，见 resource-authz.test），内核 insert 写不进该列；
- * - 单据行 CRUD：物料快照列（material_code/base_qty…）readonly，
- *   子行内核的 update 只写 writable 列，行充实落不了库。
+ *   （矩阵不得授出行级范围，见 resource-authz.test）；
+ * - 单据行 CRUD：物料快照列（material_code/base_qty…）readonly。
+ *
+ * 注意：弹射理由已随内核演进失效——`insertColumns`（头，finance/invoice 等在用于
+ * 盖 created_by_id）与子行 `derivedFields`（进 WRITE_COLS）已分别覆盖上述两类缺口。
+ * 回收手写 create/审计/取号 = 删除 ~150 行并继承合同套件，留作后续独立评估；
+ * 回收前需逐字段对拍审计快照与错误文案（字节冻结约束）。
  *
  * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
  */

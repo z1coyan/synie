@@ -27,7 +27,8 @@ import { listAuthorized } from '~/db/list.ts'
 import { loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
 import { MATERIAL_RESOURCE } from '~/modules/inventory/material-service.ts'
 import { materialResourceMeta } from '~/modules/inventory/meta.ts'
-import { mfgWriteError, runeCount, trimOptional } from './helpers.ts'
+import { runeLen } from '~/platform/posting/text.ts'
+import { mfgWriteError, trimOptional } from './helpers.ts'
 import { moldDesignResourceMeta } from './meta.ts'
 import type { ListQueryInput } from './types.ts'
 
@@ -147,7 +148,7 @@ export function createMoldDesignService(
           },
         })
       ).trim()
-      if (!code || runeCount(code) > 64) {
+      if (!code || runeLen(code) > 64) {
         throw ApiError.validation('模具参数不合法', {
           code: ['自动编号不能为空且最多 64 个字符'],
         })
@@ -463,8 +464,8 @@ function normalize(input: {
     unitId: input.unitId,
   }
   const fields: Record<string, string[]> = {}
-  if (!result.name || runeCount(result.name) > 128) fields.name = ['不能为空且最多 128 个字符']
-  if (result.spec && runeCount(result.spec) > 128) fields.spec = ['最多 128 个字符']
+  if (!result.name || runeLen(result.name) > 128) fields.name = ['不能为空且最多 128 个字符']
+  if (result.spec && runeLen(result.spec) > 128) fields.spec = ['最多 128 个字符']
   if (!(MOLD_TYPES as readonly string[]).includes(result.moldType)) {
     fields.moldType = ['只能为 STAMPING(冲压)/FORMING(变形)/POSITIONING(定位)/OTHER(其他)']
   }

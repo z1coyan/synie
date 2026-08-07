@@ -14,7 +14,8 @@ import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { dateOnlySchema, decimalStringSchema, listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { dateOnlySchema, decimalStringSchema, draftValidationHook, listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
+import { idParam } from '~/platform/standard/routes.ts'
 import type { TradingSide } from '../common.ts'
 import { presentKey } from '../common.ts'
 import {
@@ -24,8 +25,6 @@ import {
 } from './outsourced-config.ts'
 import type { OrderService } from './service.ts'
 import { orderSpec } from './spec.ts'
-
-const idParam = z.object({ id: z.string().uuid() })
 
 const orderDraftLineSchema = z
   .object({
@@ -98,35 +97,6 @@ const orderDraftReplaceSchema = z
   })
   .strict()
 
-function orderDraftValidationHook(result: {
-  success: boolean
-  error?: z.ZodError
-}): void {
-  if (result.success || !result.error) return
-  const fields: Record<string, string[]> = {}
-  for (const issue of result.error.issues) {
-    let key = ''
-    for (const part of issue.path) {
-      if (typeof part === 'number') key += `[${part}]`
-      else key += key ? `.${String(part)}` : String(part)
-    }
-    if (!key) key = '_'
-    else if (!key.startsWith('items')) key = `header.${key}`
-    ;(fields[key] ??= []).push(issue.message)
-  }
-  throw ApiError.validation('请求参数错误', fields)
-}
-
-function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
-  return {
-    limit: body.limit,
-    offset: body.offset,
-    search: body.search,
-    sort: body.sort,
-    filter: body.filter as ListQuery['filter'],
-  }
-}
-
 export function orderHeadRoutes(deps: {
   auth: AuthService
   authz: AuthzEnforcer
@@ -143,13 +113,13 @@ export function orderHeadRoutes(deps: {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const r = await orders.listHeads(permitOf(c), side, toList(c.req.valid('json')))
+      const r = await orders.listHeads(permitOf(c), side, toListQuery(c.req.valid('json')))
       return c.json({ count: r.count, results: r.results })
     })
     .post(
       '/',
       guard('create'),
-      zValidator('json', orderDraftCreateSchema, orderDraftValidationHook),
+      zValidator('json', orderDraftCreateSchema, draftValidationHook()),
       async (c) => c.json(await orders.createDraft(permitOf(c), side, c.req.valid('json')), 201),
     )
     .get('/:id/draft', guard('read'), zValidator('param', idParam, validationHook), async (c) =>
@@ -162,7 +132,7 @@ export function orderHeadRoutes(deps: {
       '/:id',
       aggregateReplaceGuard(),
       zValidator('param', idParam, validationHook),
-      zValidator('json', orderDraftReplaceSchema, orderDraftValidationHook),
+      zValidator('json', orderDraftReplaceSchema, draftValidationHook()),
       async (c) =>
         c.json(
           await orders.replaceDraft(
@@ -237,7 +207,7 @@ export function orderItemRoutes(deps: {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const r = await orders.listItems(permitOf(c), side, toList(c.req.valid('json')))
+      const r = await orders.listItems(permitOf(c), side, toListQuery(c.req.valid('json')))
       return c.json({ count: r.count, results: r.results })
     })
     .post(
@@ -326,7 +296,7 @@ export function purchaseOrderExtraRoutes(deps: {
   const material = new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', materialGuard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const r = await cfg.listMaterials(permitOf(c), toList(c.req.valid('json')))
+      const r = await cfg.listMaterials(permitOf(c), toListQuery(c.req.valid('json')))
       return c.json({ count: r.count, results: r.results })
     })
     .post(
@@ -384,7 +354,7 @@ export function purchaseOrderExtraRoutes(deps: {
   const byproduct = new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', byproductGuard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const r = await cfg.listByproducts(permitOf(c), toList(c.req.valid('json')))
+      const r = await cfg.listByproducts(permitOf(c), toListQuery(c.req.valid('json')))
       return c.json({ count: r.count, results: r.results })
     })
     .post(

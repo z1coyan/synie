@@ -8,12 +8,10 @@ import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
+import { idParam } from '~/platform/standard/routes.ts'
 import { PRICE_POINT_RESOURCE_NAME } from './meta.ts'
 import type { MarketPricePoint, MarketService, PriceSeries } from './service.ts'
-
-
-const idParam = z.object({ id: z.string().uuid() })
 
 const pricePointCreateSchema = z
   .object({
@@ -39,16 +37,6 @@ const refreshSchema = z
     instrumentId: z.string().uuid().nullable().optional(),
   })
   .strict()
-
-function toListQuery(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
-  return {
-    limit: body.limit,
-    offset: body.offset,
-    search: body.search,
-    sort: body.sort,
-    filter: body.filter as ListQuery['filter'],
-  }
-}
 
 /** 对齐 Go time.RFC3339：整秒无毫秒后缀 */
 function rfc3339(d: Date): string {

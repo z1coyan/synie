@@ -51,35 +51,8 @@ export interface SampleDataDeps {
   hr: HrServices
 }
 
-export interface SampleSummary {
-  customers: number
-  suppliers: number
-  materials: number
-  employees: number
-  salesQuotations: number
-  purchaseQuotations: number
-  salesOrders: number
-  purchaseOrders: number
-  salesDeliveries: number
-  purchaseReceipts: number
-  salesReconciliations: number
-  purchaseReconciliations: number
-  stockDocs: number
-  stockTransfers: number
-  stockCounts: number
-  operations: number
-  processTemplates: number
-  boms: number
-  bankAccounts: number
-  bankTransactions: number
-  glJournals: number
-  expenseReports: number
-  payrolls: number
-  vatInvoices: number
-  outsourcedOrders: number
-  outsourcedIssues: number
-  outsourcedReceipts: number
-}
+/** 示例数据摘要 wire 形状：唯一事实源在 platform/setup/service.ts（modules→platform 方向合法） */
+export type { SampleSummary } from '~/platform/setup/service.ts'
 
 export interface PurchaseResult {
   quotations: string[]

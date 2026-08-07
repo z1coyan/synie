@@ -14,7 +14,8 @@ import type { AuthService } from '~/platform/auth/service.ts'
 import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
-import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
+import { idParam } from '~/platform/standard/routes.ts'
 import { dateIso, datetimeIso } from './helpers.ts'
 import { DOC_ITEM_RESOURCE, DOC_RESOURCE, type StockDocService } from './stock-doc-service.ts'
 import {
@@ -28,18 +29,6 @@ import {
   type StockCountService,
 } from './stock-count-service.ts'
 import { ENTRY_RESOURCE, type StockEntryService } from './stock-entry-service.ts'
-
-const idParam = z.object({ id: z.string().uuid() })
-
-function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
-  return {
-    limit: body.limit,
-    offset: body.offset,
-    search: body.search,
-    sort: body.sort,
-    filter: body.filter as ListQuery['filter'],
-  }
-}
 
 export interface InventoryRouteDeps {
   auth: AuthService
@@ -69,7 +58,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
         entryGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await stockEntries.list(permitOf(c), toList(c.req.valid('json')))
+          const result = await stockEntries.list(permitOf(c), toListQuery(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(entryDto) })
         },
       )
@@ -109,7 +98,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
         docGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await stockDocs.list(permitOf(c), toList(c.req.valid('json')))
+          const result = await stockDocs.list(permitOf(c), toListQuery(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(stockDocDto) })
         },
       )
@@ -201,7 +190,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
         docItemGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await stockDocs.queryItems(permitOf(c), toList(c.req.valid('json')))
+          const result = await stockDocs.queryItems(permitOf(c), toListQuery(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(stockDocItemDto) })
         },
       )
@@ -278,7 +267,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
         transferGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await stockTransfers.list(permitOf(c), toList(c.req.valid('json')))
+          const result = await stockTransfers.list(permitOf(c), toListQuery(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(transferDto) })
         },
       )
@@ -396,7 +385,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
         async (c) => {
           const result = await stockTransfers.queryItems(
             permitOf(c),
-            toList(c.req.valid('json')),
+            toListQuery(c.req.valid('json')),
           )
           return c.json({ count: result.count, results: result.results.map(transferItemDto) })
         },
@@ -474,7 +463,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
         countGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await stockCounts.list(permitOf(c), toList(c.req.valid('json')))
+          const result = await stockCounts.list(permitOf(c), toListQuery(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(countDto) })
         },
       )
@@ -586,7 +575,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
         countItemGuard('read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await stockCounts.queryItems(permitOf(c), toList(c.req.valid('json')))
+          const result = await stockCounts.queryItems(permitOf(c), toListQuery(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(countItemDto) })
         },
       )

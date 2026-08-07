@@ -7,13 +7,12 @@ import type { AuthService } from '~/platform/auth/service.ts'
 import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
-import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
+import { idParam } from '~/platform/standard/routes.ts'
 import { deriveWireSchemas } from '~/platform/standard/wire.ts'
 import type { AccountService } from './account-service.ts'
 import type { CompanyService } from './company-service.ts'
 import { ACCOUNT_RESOURCE_NAME, COMPANY_RESOURCE_NAME } from './meta.ts'
-
-const idParam = z.object({ id: z.string().uuid() })
 
 const accountTemplateSchema = z
   .object({
@@ -159,16 +158,6 @@ export function baseRoutes(deps: BaseRouteDeps) {
       await accounts.remove(permitOf(c), c.req.valid('param').id)
       return c.body(null, 204)
     })
-}
-
-function toListQuery(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
-  return {
-    limit: body.limit,
-    offset: body.offset,
-    search: body.search,
-    sort: body.sort,
-    filter: body.filter as ListQuery['filter'],
-  }
 }
 
 /** DTO 保持手写显式形状：hc 类型链需要精确键型（标准 toDto 的 Record 会宽化 ApiType） */

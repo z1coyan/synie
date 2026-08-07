@@ -11,14 +11,6 @@ export interface QuotationSideSpec {
   headResource: string
   itemResource: string
   tierResource: string
-  headAudit: string
-  itemAudit: string
-  tierAudit: string
-  headDestroy: string
-  itemDestroy: string
-  tierDestroy: string
-  auditMutation: string
-  voidMutation: string
   partyLabel: string
   termsLabel: string
   allowedParty: ReadonlySet<string>
@@ -37,14 +29,6 @@ const SPECS: Record<TradingSide, QuotationSideSpec> = {
     headResource: 'salQuotations',
     itemResource: 'salQuotationItems',
     tierResource: 'salQuotationTiers',
-    headAudit: 'sal_quotation',
-    itemAudit: 'sal_quotation_item',
-    tierAudit: 'sal_quotation_tier',
-    headDestroy: 'destroySalQuotation',
-    itemDestroy: 'destroySalQuotationItem',
-    tierDestroy: 'destroySalQuotationTier',
-    auditMutation: 'auditSalQuotation',
-    voidMutation: 'voidSalQuotation',
     partyLabel: '对手类型(客户/内部公司)',
     termsLabel: '报价条款(对客户,自由文本)',
     allowedParty: new Set(['customer', 'company']),
@@ -64,14 +48,6 @@ const SPECS: Record<TradingSide, QuotationSideSpec> = {
     headResource: 'purQuotations',
     itemResource: 'purQuotationItems',
     tierResource: 'purQuotationTiers',
-    headAudit: 'pur_quotation',
-    itemAudit: 'pur_quotation_item',
-    tierAudit: 'pur_quotation_tier',
-    headDestroy: 'destroyPurQuotation',
-    itemDestroy: 'destroyPurQuotationItem',
-    tierDestroy: 'destroyPurQuotationTier',
-    auditMutation: 'auditPurQuotation',
-    voidMutation: 'voidPurQuotation',
     partyLabel: '对手类型(供应商/内部公司)',
     termsLabel: '报价条款(对供应商,自由文本)',
     allowedParty: new Set(['supplier', 'company']),

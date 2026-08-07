@@ -14,6 +14,7 @@ import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { validationHook } from '~/platform/http/zod.ts'
+import { idParam } from '../standard/routes.ts'
 import { todoPermit, type Todo, type TodoService } from './service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 
@@ -30,8 +31,6 @@ const listQuerySchema = z
     filter: z.record(z.string(), z.unknown()).optional(),
   })
   .strict()
-
-const idParam = z.object({ id: z.string().uuid() })
 
 function todoDto(item: Todo) {
   return {

@@ -7,13 +7,12 @@ import type { AuthService } from '~/platform/auth/service.ts'
 import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
-import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
+import { idParam } from '~/platform/standard/routes.ts'
 import { deriveWireSchemas } from '~/platform/standard/wire.ts'
 import type { DepartmentService } from './department-service.ts'
 import { DEPARTMENT_RESOURCE, ROLE_MENU_RESOURCE, ROLE_RESOURCE, USER_RESOURCE } from './meta.ts'
 import type { IamService } from './service.ts'
-
-const idParam = z.object({ id: z.string().uuid() })
 
 const emailField = z.string().email('请输入有效的邮箱地址').max(254).nullable().optional()
 
@@ -79,7 +78,7 @@ export function iamUserRoutes(deps: { auth: AuthService; authz: AuthzEnforcer; i
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const result = await iam.listUsers(permitOf(c), toList(c.req.valid('json')))
+      const result = await iam.listUsers(permitOf(c), toListQuery(c.req.valid('json')))
       return c.json({ count: result.count, results: result.results.map(userDto) })
     })
     .post('/', guard('create'), zValidator('json', userCreateSchema, validationHook), async (c) => {
@@ -151,7 +150,7 @@ export function iamRoleRoutes(deps: { auth: AuthService; authz: AuthzEnforcer; i
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const result = await iam.listRoles(permitOf(c), toList(c.req.valid('json')))
+      const result = await iam.listRoles(permitOf(c), toListQuery(c.req.valid('json')))
       return c.json({ count: result.count, results: result.results.map(roleDto) })
     })
     .post('/', guard('create'), zValidator('json', roleCreateSchema, validationHook), async (c) => {
@@ -245,7 +244,7 @@ export function iamDepartmentRoutes(deps: {
       guard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await departments.list(permitOf(c), toList(c.req.valid('json')))
+        const result = await departments.list(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(departmentDto) })
       },
     )
@@ -279,16 +278,6 @@ export function iamDepartmentRoutes(deps: {
       await departments.remove(permitOf(c), c.req.valid('param').id)
       return c.body(null, 204)
     })
-}
-
-function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
-  return {
-    limit: body.limit,
-    offset: body.offset,
-    search: body.search,
-    sort: body.sort,
-    filter: body.filter as ListQuery['filter'],
-  }
 }
 
 function userDto(u: Awaited<ReturnType<IamService['getUser']>>) {

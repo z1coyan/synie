@@ -15,13 +15,12 @@ import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { dateOnlySchema, decimalStringSchema, listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { dateOnlySchema, decimalStringSchema, draftValidationHook, listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
+import { idParam } from '~/platform/standard/routes.ts'
 import type { TradingSide } from '../common.ts'
 import { presentKey } from '../common.ts'
 import { quotationSpec } from './spec.ts'
 import type { QuotationService } from './service.ts'
-
-const idParam = z.object({ id: z.string().uuid() })
 
 const quotationDraftTierSchema = z
   .object({
@@ -84,35 +83,6 @@ const quotationDraftReplaceSchema = z
   })
   .strict()
 
-function quotationDraftValidationHook(result: {
-  success: boolean
-  error?: z.ZodError
-}): void {
-  if (result.success || !result.error) return
-  const fields: Record<string, string[]> = {}
-  for (const issue of result.error.issues) {
-    let key = ''
-    for (const part of issue.path) {
-      if (typeof part === 'number') key += `[${part}]`
-      else key += key ? `.${String(part)}` : String(part)
-    }
-    if (!key) key = '_'
-    else if (!key.startsWith('items')) key = `header.${key}`
-    ;(fields[key] ??= []).push(issue.message)
-  }
-  throw ApiError.validation('请求参数错误', fields)
-}
-
-function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
-  return {
-    limit: body.limit,
-    offset: body.offset,
-    search: body.search,
-    sort: body.sort,
-    filter: body.filter as ListQuery['filter'],
-  }
-}
-
 export function quotationHeadRoutes(deps: {
   auth: AuthService
   authz: AuthzEnforcer
@@ -137,14 +107,14 @@ export function quotationHeadRoutes(deps: {
       headGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await quotations.listHeads(permitOf(c), side, toList(c.req.valid('json')))
+        const result = await quotations.listHeads(permitOf(c), side, toListQuery(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results })
       },
     )
     .post(
       '/',
       headGuard('create'),
-      zValidator('json', quotationDraftCreateSchema, quotationDraftValidationHook),
+      zValidator('json', quotationDraftCreateSchema, draftValidationHook()),
       async (c) => {
         const item = await quotations.createDraft(permitOf(c), side, c.req.valid('json'))
         return c.json(item, 201)
@@ -169,7 +139,7 @@ export function quotationHeadRoutes(deps: {
       '/:id',
       replaceGuard,
       zValidator('param', idParam, validationHook),
-      zValidator('json', quotationDraftReplaceSchema, quotationDraftValidationHook),
+      zValidator('json', quotationDraftReplaceSchema, draftValidationHook()),
       async (c) =>
         c.json(
           await quotations.replaceDraft(
@@ -249,7 +219,7 @@ export function quotationItemRoutes(deps: {
       itemGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await quotations.listItems(permitOf(c), side, toList(c.req.valid('json')))
+        const result = await quotations.listItems(permitOf(c), side, toListQuery(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results })
       },
     )
@@ -339,7 +309,7 @@ export function quotationTierRoutes(deps: {
       tierGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await quotations.listTiers(permitOf(c), side, toList(c.req.valid('json')))
+        const result = await quotations.listTiers(permitOf(c), side, toListQuery(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results })
       },
     )

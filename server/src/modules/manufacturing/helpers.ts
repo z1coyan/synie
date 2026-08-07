@@ -10,6 +10,7 @@ import { sql } from 'kysely'
 import { toDateOnly } from '~/db/dates.ts'
 import type { DbHandle } from '~/db/tx.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import { runeLen } from '~/platform/posting/text.ts'
 import { mapWriteError, type PgWriteMapping } from '~/db/dberr.ts'
 import type { ListQueryInput } from './types.ts'
 
@@ -38,18 +39,14 @@ export function trimOptional(value: string | null | undefined): string | null {
   return t === '' ? null : t
 }
 
-export function runeCount(s: string): number {
-  return [...s].length
-}
-
 export function validateNo(no: string, field: string): void {
-  if (!no.trim() || runeCount(no) > 32) {
+  if (!no.trim() || runeLen(no) > 32) {
     throw ApiError.validation('单号参数不合法', { [field]: ['不能为空且最多 32 个字符'] })
   }
 }
 
 export function validateRemarks(remarks: string | null | undefined, max = 512): void {
-  if (remarks != null && runeCount(remarks) > max) {
+  if (remarks != null && runeLen(remarks) > max) {
     throw ApiError.validation('备注参数不合法', { remarks: [`最多 ${max} 个字符`] })
   }
 }

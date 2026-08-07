@@ -18,12 +18,6 @@ export interface ReconciliationSideSpec {
   voucher: string
   headResource: string
   itemResource: string
-  destroyHead: string
-  destroyItem: string
-  confirmMutation: string
-  unconfirmMutation: string
-  auditMutation: string
-  voidMutation: string
 }
 
 export function reconciliationSpec(side: TradingSide): ReconciliationSideSpec {
@@ -39,12 +33,6 @@ export function reconciliationSpec(side: TradingSide): ReconciliationSideSpec {
       voucher: 'sales.reconciliation',
       headResource: 'salReconciliations',
       itemResource: 'salReconciliationItems',
-      destroyHead: 'destroySalReconciliation',
-      destroyItem: 'destroySalReconciliationItem',
-      confirmMutation: 'confirmSalReconciliation',
-      unconfirmMutation: 'unconfirmSalReconciliation',
-      auditMutation: 'auditSalReconciliation',
-      voidMutation: 'voidSalReconciliation',
     }
   }
   return {
@@ -58,12 +46,6 @@ export function reconciliationSpec(side: TradingSide): ReconciliationSideSpec {
     voucher: 'purchase.reconciliation',
     headResource: 'purReconciliations',
     itemResource: 'purReconciliationItems',
-    destroyHead: 'destroyPurReconciliation',
-    destroyItem: 'destroyPurReconciliationItem',
-    confirmMutation: 'confirmPurReconciliation',
-    unconfirmMutation: 'unconfirmPurReconciliation',
-    auditMutation: 'auditPurReconciliation',
-    voidMutation: 'voidPurReconciliation',
   }
 }
 

@@ -1,3 +1,4 @@
+import { nullableString, requiredString } from './draft-fields'
 import { api } from '../api/client'
 import type { Row } from '~/components/synie-data-grid/types'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
@@ -32,16 +33,6 @@ export interface ReconciliationDraft {
 /** 后端返回的权威聚合快照：表头与全部对账条目。 */
 export type ReconciliationSavedDraft = Row & {
   items: Row[]
-}
-
-function nullableString(value: unknown): string | null {
-  return value == null || value === '' ? null : String(value)
-}
-
-function requiredString(value: unknown, label: string): string {
-  const result = nullableString(value)
-  if (result == null) throw new Error(`${label}不能为空`)
-  return result
 }
 
 /**

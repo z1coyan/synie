@@ -1,4 +1,5 @@
 import { isDecimalString } from '@synie/shared'
+import type { ListQuery } from '@synie/shared'
 import { z } from 'zod'
 import { ApiError } from './errors.ts'
 
@@ -50,4 +51,37 @@ export function validationHook(result: { success: boolean; error?: z.ZodError })
     ;(fields[key] ??= []).push(issue.message)
   }
   throw ApiError.validation('请求参数错误', fields)
+}
+
+/** listQuerySchema → ListQuery 的唯一换算点（各路由不再各自抄一份）。 */
+export function toListQuery(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
+  return {
+    limit: body.limit,
+    offset: body.offset,
+    search: body.search,
+    sort: body.sort,
+    filter: body.filter as ListQuery['filter'],
+  }
+}
+
+/**
+ * 聚合草稿 wire 的失败钩子：头字段平铺在草案顶层，错误路径回填 `header.` 前缀；
+ * 子集合键（默认 items，发货单另有 packBoxes）保持原路径，索引用 [i] 记法。
+ */
+export function draftValidationHook(childKeys: readonly string[] = ['items']) {
+  return (result: { success: boolean; error?: z.ZodError }): void => {
+    if (result.success || !result.error) return
+    const fields: Record<string, string[]> = {}
+    for (const issue of result.error.issues) {
+      let key = ''
+      for (const part of issue.path) {
+        if (typeof part === 'number') key += `[${part}]`
+        else key += key ? `.${String(part)}` : String(part)
+      }
+      if (!key) key = '_'
+      else if (!childKeys.some((k) => key.startsWith(k))) key = `header.${key}`
+      ;(fields[key] ??= []).push(issue.message)
+    }
+    throw ApiError.validation('请求参数错误', fields)
+  }
 }

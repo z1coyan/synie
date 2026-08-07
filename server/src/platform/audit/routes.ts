@@ -8,12 +8,11 @@ import type { AuthzEnforcer } from '../authz/enforce.ts'
 import { permitOf } from '../authz/enforce.ts'
 import type { AppEnv } from '../http/context.ts'
 import { listQuerySchema, validationHook } from '../http/zod.ts'
+import { idParam } from '../standard/routes.ts'
 import { AUDIT_LOG_RESOURCE_NAME } from './meta.ts'
 import type { AuditService } from './service.ts'
 
 /** 审计查询 REST：逐端点挂 guard（requireAuth 之后），handler 用 permitOf(c) 取凭证 */
-
-const idParam = z.object({ id: z.string().uuid() })
 
 export function auditRoutes(deps: {
   auth: AuthService

@@ -7,7 +7,8 @@ import type { AuthService } from '../auth/service.ts'
 import type { AuthzEnforcer } from '../authz/enforce.ts'
 import { permitOf } from '../authz/enforce.ts'
 import type { AppEnv } from '../http/context.ts'
-import { listQuerySchema, validationHook } from '../http/zod.ts'
+import { listQuerySchema, toListQuery, validationHook } from '../http/zod.ts'
+import { idParam } from '../standard/routes.ts'
 import { RULE_RESOURCE_NAME } from './meta.ts'
 import type { NumberingService, Segment } from './service.ts'
 
@@ -48,7 +49,6 @@ const updateSchema = z
   .strict()
 
 const counterUpdateSchema = z.object({ value: z.number().int() }).strict()
-const idParam = z.object({ id: z.string().uuid() })
 
 export function numberingRoutes(deps: {
   auth: AuthService
@@ -131,16 +131,6 @@ export function numberingRoutes(deps: {
         return c.json(counterDto(counter))
       },
     )
-}
-
-function toListQuery(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
-  return {
-    limit: body.limit,
-    offset: body.offset,
-    search: body.search,
-    sort: body.sort,
-    filter: body.filter as ListQuery['filter'],
-  }
 }
 
 function ruleDto(rule: {

@@ -16,7 +16,8 @@ import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { draftValidationHook, listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
+import { idParam } from '~/platform/standard/routes.ts'
 import { presentKey } from '../common.ts'
 import {
   ISSUE_ITEM_RESOURCE,
@@ -34,7 +35,6 @@ export interface OutsourcedRouteDeps {
   outsourced: OutsourcedService
 }
 
-const idParam = z.object({ id: z.string().uuid() })
 const decimalString = z.union([z.string(), z.number()]).transform((v) => String(v))
 
 const issueDraftItemSchema = z
@@ -118,25 +118,6 @@ const receiptDraftReplaceSchema = z
   })
   .strict()
 
-function outsourcedDraftValidationHook(result: {
-  success: boolean
-  error?: z.ZodError
-}): void {
-  if (result.success || !result.error) return
-  const fields: Record<string, string[]> = {}
-  for (const issue of result.error.issues) {
-    let key = ''
-    for (const part of issue.path) {
-      if (typeof part === 'number') key += `[${part}]`
-      else key += key ? `.${String(part)}` : String(part)
-    }
-    if (!key) key = '_'
-    else if (!key.startsWith('items')) key = `header.${key}`
-    ;(fields[key] ??= []).push(issue.message)
-  }
-  throw ApiError.validation('请求参数错误', fields)
-}
-
 /**
  * 聚合草稿整单替换的码级门控：一次 PUT 可同时新增/修改/删除子树，
  * 故要求 `update` ∧ `create` ∧ `delete`（附加码由 prefix 拼，不写字面量）。
@@ -146,16 +127,6 @@ function aggregateReplaceGuard(authz: AuthzEnforcer, headResource: string) {
   return authz.guard(headResource, 'update', {
     allOf: [`${prefix}:create`, `${prefix}:delete`],
   })
-}
-
-function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
-  return {
-    limit: body.limit,
-    offset: body.offset,
-    search: body.search,
-    sort: body.sort,
-    filter: body.filter as ListQuery['filter'],
-  }
 }
 
 export function outsourcedIssueRoutes(deps: OutsourcedRouteDeps) {
@@ -168,14 +139,14 @@ export function outsourcedIssueRoutes(deps: OutsourcedRouteDeps) {
       issueGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await outsourced.listIssues(permitOf(c), toList(c.req.valid('json')))
+        const r = await outsourced.listIssues(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )
     .post(
       '/',
       issueGuard('create'),
-      zValidator('json', issueDraftCreateSchema, outsourcedDraftValidationHook),
+      zValidator('json', issueDraftCreateSchema, draftValidationHook()),
       async (c) => c.json(await outsourced.createIssueDraft(permitOf(c), c.req.valid('json')), 201),
     )
     // 完整聚合草稿读取（无分页截断）；须在 /:id 之前注册更具体路径
@@ -195,7 +166,7 @@ export function outsourcedIssueRoutes(deps: OutsourcedRouteDeps) {
       '/:id',
       aggregateReplaceGuard(authz, ISSUE_RESOURCE),
       zValidator('param', idParam, validationHook),
-      zValidator('json', issueDraftReplaceSchema, outsourcedDraftValidationHook),
+      zValidator('json', issueDraftReplaceSchema, draftValidationHook()),
       async (c) =>
         c.json(
           await outsourced.replaceIssueDraft(
@@ -270,7 +241,7 @@ export function outsourcedIssueItemRoutes(deps: OutsourcedRouteDeps) {
       itemGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await outsourced.listIssueItems(permitOf(c), toList(c.req.valid('json')))
+        const r = await outsourced.listIssueItems(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )
@@ -351,14 +322,14 @@ export function outsourcedReceiptRoutes(deps: OutsourcedRouteDeps) {
       receiptGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await outsourced.listReceipts(permitOf(c), toList(c.req.valid('json')))
+        const r = await outsourced.listReceipts(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )
     .post(
       '/',
       receiptGuard('create'),
-      zValidator('json', receiptDraftCreateSchema, outsourcedDraftValidationHook),
+      zValidator('json', receiptDraftCreateSchema, draftValidationHook()),
       async (c) =>
         c.json(await outsourced.createReceiptDraft(permitOf(c), c.req.valid('json')), 201),
     )
@@ -379,7 +350,7 @@ export function outsourcedReceiptRoutes(deps: OutsourcedRouteDeps) {
       '/:id',
       aggregateReplaceGuard(authz, RECEIPT_RESOURCE),
       zValidator('param', idParam, validationHook),
-      zValidator('json', receiptDraftReplaceSchema, outsourcedDraftValidationHook),
+      zValidator('json', receiptDraftReplaceSchema, draftValidationHook()),
       async (c) =>
         c.json(
           await outsourced.replaceReceiptDraft(
@@ -476,7 +447,7 @@ export function outsourcedReceiptItemRoutes(deps: OutsourcedRouteDeps) {
       itemGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await outsourced.listReceiptItems(permitOf(c), toList(c.req.valid('json')))
+        const r = await outsourced.listReceiptItems(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )
@@ -559,7 +530,7 @@ export function outsourcedReceiptMaterialRoutes(deps: OutsourcedRouteDeps) {
       materialGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await outsourced.listReceiptMaterials(permitOf(c), toList(c.req.valid('json')))
+        const r = await outsourced.listReceiptMaterials(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )
@@ -639,7 +610,7 @@ export function outsourcedReceiptByproductRoutes(deps: OutsourcedRouteDeps) {
       byproductGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await outsourced.listReceiptByproducts(permitOf(c), toList(c.req.valid('json')))
+        const r = await outsourced.listReceiptByproducts(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )

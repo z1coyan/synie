@@ -25,10 +25,6 @@ export function nullableNumStr(value: unknown): string | null {
   return decimal(String(value)).toFixed()
 }
 
-export function asDate(value: Date | string): Date {
-  return value instanceof Date ? value : new Date(value)
-}
-
 export function asDateOnly(value: Date | string): string {
   if (typeof value === 'string') {
     return value.slice(0, 10)

@@ -33,6 +33,7 @@ import {
   resolveOwner,
   type ReachabilityDeps,
 } from './reachability.ts'
+import { asDate } from '~/db/dates.ts'
 import type {
   AttachInput,
   Attachment,
@@ -634,10 +635,6 @@ function nullableString(value: string): string | null {
 
 function contentTypeOf(value: string | null): string {
   return value && value.trim() !== '' ? value : 'application/octet-stream'
-}
-
-function asDate(value: Date | string): Date {
-  return value instanceof Date ? value : new Date(value)
 }
 
 function utcDatePath(): string {

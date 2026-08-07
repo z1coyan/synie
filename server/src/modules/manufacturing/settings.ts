@@ -9,6 +9,7 @@ import type { ResourceMeta } from '~/platform/meta/types.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { createSingleRowSetting } from '~/platform/settings/single-row.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
+import { asDate } from '~/db/dates.ts'
 
 export const MFG_RESOURCE_NAME = 'mfgSettings'
 
@@ -161,6 +162,3 @@ function mapMfg(row: Record<string, unknown>): ManufacturingSetting {
   }
 }
 
-function asDate(value: Date | string): Date {
-  return value instanceof Date ? value : new Date(value)
-}

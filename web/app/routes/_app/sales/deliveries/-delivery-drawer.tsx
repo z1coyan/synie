@@ -8,6 +8,13 @@ import {
 } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Input, Label, ListBox, Modal, NumberField, Select, TextField, toast } from '@heroui/react'
+import {
+  buildDeliveryDraft,
+  headerFieldErrors,
+  normalizedErrorPath,
+  rowErrors,
+  type DeliveryDraftIndex,
+} from '~/lib/resources/sales-delivery-draft'
 import { companyClient } from '~/lib/resources/companies'
 import { APIError } from '~/lib/api/client'
 import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
@@ -15,12 +22,7 @@ import {
   aggregateDraftFor,
   resourceBindingFor,
 } from '~/lib/resources/registry'
-import type {
-  SalesDeliveryDraftInput,
-  SalesDeliveryDraftItemInput,
-  SalesDeliveryDraftPackLineInput,
-  SalesDeliverySavedDraft,
-} from '~/lib/resources/fulfillment'
+import type { SalesDeliverySavedDraft } from '~/lib/resources/fulfillment'
 import { salesOrderItemClient } from '~/lib/resources/orders'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
@@ -98,124 +100,6 @@ const {
   Provider: DeliveryDrawerOpenProvider,
 } = createDocumentDrawerOpenBridge<OpenDeliveryDrawer>()
 export { useDeliveryDrawer }
-
-
-/** 提交 mutation:物料/单位由订单条目锁定带出,后端再快照与折算 */
-function itemInput(row: Row): SalesDeliveryDraftItemInput {
-  return {
-    ...(!isLocalRow(row) ? { id: String(row.id) } : {}),
-    idx: requiredIndex(row.idx, '发货条目序号'),
-    orderItemId: requiredString(row.orderItemId, '订单条目'),
-    unitId: nullableString(row.unitId),
-    qty: requiredString(row.qty, '发货数量'),
-    // 行仓可空:虚拟/资产行不入仓;库存类行缺仓由后端保存校验兜底(「库存类物料必须填写行仓」)
-    warehouseId: nullableString(row.warehouseId),
-    remarks: nullableString(row.remarks),
-  }
-}
-
-/** 提交 mutation:快照字段由后端保存时重拍；所属箱由嵌套层级表达。 */
-function packLineInput(row: Row): SalesDeliveryDraftPackLineInput {
-  return {
-    ...(!isLocalRow(row) ? { id: String(row.id) } : {}),
-    idx: requiredIndex(row.idx, '装箱条目序号'),
-    materialId: requiredString(row.materialId, '装箱物料'),
-    unitId: nullableString(row.unitId),
-    qty: requiredString(row.qty, '装箱数量'),
-    remarks: nullableString(row.remarks),
-  }
-}
-
-function nullableString(value: unknown): string | null {
-  return value == null || value === '' ? null : String(value)
-}
-
-function requiredString(value: unknown, label: string): string {
-  const result = nullableString(value)
-  if (result == null) throw new Error(`${label}不能为空`)
-  return result
-}
-
-function requiredIndex(value: unknown, label: string): number {
-  const result = Number(value)
-  if (!Number.isInteger(result)) throw new Error(`${label}必须是整数`)
-  return result
-}
-
-interface DeliveryDraftIndex {
-  itemRowIds: string[]
-  boxRowIds: string[]
-  lineRowIds: string[][]
-}
-
-function buildDeliveryDraft(
-  values: Record<string, unknown>,
-  items: Row[],
-  packBoxes: Row[],
-  packLines: Row[],
-): { draft: SalesDeliveryDraftInput; index: DeliveryDraftIndex } {
-  const linesByBox = packBoxes.map((box) =>
-    packLines.filter((line) => String(line.packBoxId) === String(box.id)),
-  )
-  return {
-    draft: {
-      companyId: requiredString(values.companyId, '公司'),
-      deliveryNo: nullableString(values.deliveryNo),
-      deliveryDate: nullableString(values.deliveryDate),
-      postingDate: nullableString(values.postingDate),
-      partyType: requiredString(values.partyType, '对手类型'),
-      partyId: requiredString(values.partyId, '对手'),
-      remarks: nullableString(values.remarks),
-      warehouseId: nullableString(values.warehouseId),
-      debitAccountId: requiredString(values.debitAccountId, '借方科目'),
-      creditAccountId: requiredString(values.creditAccountId, '贷方科目'),
-      items: items.map(itemInput),
-      packBoxes: packBoxes.map((box, boxIndex) => ({
-        ...(!isLocalRow(box) ? { id: String(box.id) } : {}),
-        lines: linesByBox[boxIndex].map(packLineInput),
-      })),
-    },
-    index: {
-      itemRowIds: items.map((row) => String(row.id)),
-      boxRowIds: packBoxes.map((row) => String(row.id)),
-      lineRowIds: linesByBox.map((lines) => lines.map((row) => String(row.id))),
-    },
-  }
-}
-
-function normalizedErrorPath(path: string): string {
-  return path.replace(/\.(\d+)(?=\.|$)/g, '[$1]')
-}
-
-function headerFieldErrors(fields: Record<string, string[]>): Record<string, string[]> {
-  const result: Record<string, string[]> = {}
-  for (const [rawPath, messages] of Object.entries(fields)) {
-    const path = normalizedErrorPath(rawPath)
-    if (path.startsWith('items') || path.startsWith('packBoxes')) continue
-    const field = path.startsWith('header.') ? path.slice('header.'.length) : path
-    result[field] = [...(result[field] ?? []), ...messages]
-  }
-  return result
-}
-
-function rowErrors(
-  fields: Record<string, string[]>,
-  pattern: RegExp,
-  resolve: (...indexes: number[]) => Row | undefined,
-): Record<string, string[]> {
-  const result: Record<string, string[]> = {}
-  for (const [rawPath, messages] of Object.entries(fields)) {
-    const matched = pattern.exec(normalizedErrorPath(rawPath))
-    if (!matched) continue
-    const indexes = matched.slice(1, -1).map(Number)
-    const row = resolve(...indexes)
-    if (!row) continue
-    const field = matched.at(-1)
-    const rendered = messages.map((message) => (field ? `${field}: ${message}` : message))
-    result[String(row.id)] = [...(result[String(row.id)] ?? []), ...rendered]
-  }
-  return result
-}
 
 /**
  * 科目候选使用结构化 REST FilterState。

@@ -11,11 +11,6 @@ export interface OrderSideSpec {
   itemResource: string
   itemOwnerType: string
   numberResource: string
-  headDestroy: string
-  itemDestroy: string
-  auditMutation: string
-  closeMutation: string
-  voidMutation: string
   nonRegularType: string
   nonRegularSetting: string
   allowedParty: ReadonlySet<string>
@@ -33,11 +28,6 @@ const SPECS: Record<TradingSide, OrderSideSpec> = {
     itemResource: 'salOrderItems',
     itemOwnerType: 'sal_order_item',
     numberResource: 'sales.order',
-    headDestroy: 'destroySalOrder',
-    itemDestroy: 'destroySalOrderItem',
-    auditMutation: 'auditSalOrder',
-    closeMutation: 'closeSalOrder',
-    voidMutation: 'voidSalOrder',
     nonRegularType: 'SAMPLE',
     nonRegularSetting: 'sample_item_max_qty',
     allowedParty: new Set(['customer', 'company']),
@@ -53,11 +43,6 @@ const SPECS: Record<TradingSide, OrderSideSpec> = {
     itemResource: 'purOrderItems',
     itemOwnerType: 'pur_order_item',
     numberResource: 'purchase.order',
-    headDestroy: 'destroyPurOrder',
-    itemDestroy: 'destroyPurOrderItem',
-    auditMutation: 'auditPurOrder',
-    closeMutation: 'closePurOrder',
-    voidMutation: 'voidPurOrder',
     nonRegularType: 'SPOT',
     nonRegularSetting: 'spot_item_max_qty',
     allowedParty: new Set(['supplier', 'company']),

@@ -22,17 +22,8 @@ import {
   insertDerivedDemand,
   resolveAssignedDept,
 } from './demand-service.ts'
-import {
-  deriveItemProjection,
-  ensureMaterial,
-  ensureUnitAllowed,
-  mfgWriteError,
-  numStr,
-  parsePositiveQty,
-  runeCount,
-  trimOptional,
-  type ItemProjection,
-} from './helpers.ts'
+import { runeLen } from '~/platform/posting/text.ts'
+import { deriveItemProjection, ensureMaterial, ensureUnitAllowed, mfgWriteError, numStr, parsePositiveQty, trimOptional, type ItemProjection } from './helpers.ts'
 import {
   copyBomSnapshotToWorkOrder,
   grossRequirement,
@@ -136,10 +127,10 @@ export function createWorkOrderSideActions(
       await ensureMaterial(trx, wo.materialId)
       const planName = trimOptional(input.planName)
       const note = trimOptional(input.note)
-      if (planName && runeCount(planName) > 64) {
+      if (planName && runeLen(planName) > 64) {
         throw ApiError.validation('BOM参数不合法', { planName: ['最多 64 个字符'] })
       }
-      if (note && runeCount(note) > 255) {
+      if (note && runeLen(note) > 255) {
         throw ApiError.validation('BOM参数不合法', { note: ['最多 255 个字符'] })
       }
       const code = await numbering.assignedInTx(trx, {

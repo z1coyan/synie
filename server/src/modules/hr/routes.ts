@@ -15,12 +15,8 @@ import type { AuthService } from '~/platform/auth/service.ts'
 import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
-import {
-  dateOnlySchema,
-  decimalStringSchema,
-  listQuerySchema,
-  validationHook,
-} from '~/platform/http/zod.ts'
+import { dateOnlySchema, decimalStringSchema, listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
+import { idParam } from '~/platform/standard/routes.ts'
 import { FILE_RESOURCE_NAME } from '~/platform/files/meta.ts'
 import {
   ATTENDANCE_CORRECTION_RESOURCE,
@@ -36,23 +32,11 @@ import {
   type PayrollService,
 } from './payroll-service.ts'
 
-const idParam = z.object({ id: z.string().uuid() })
 const monthQuery = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) })
-
-function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
-  return {
-    limit: body.limit,
-    offset: body.offset,
-    search: body.search,
-    sort: body.sort,
-    filter: body.filter as ListQuery['filter'],
-  }
-}
 
 function present(raw: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(raw, key)
 }
-
 
 function iso(d: Date | null | undefined): string | null {
   if (d == null) return null
@@ -193,7 +177,7 @@ export function attendancePunchRoutes(deps: {
       guard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await hr.listPunches(permitOf(c), toList(c.req.valid('json')))
+        const result = await hr.listPunches(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(punchDto) })
       },
     )
@@ -222,7 +206,7 @@ export function attendanceImportRoutes(deps: {
       readGuard(),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await hr.listImports(permitOf(c), toList(c.req.valid('json')))
+        const result = await hr.listImports(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(importDto) })
       },
     )
@@ -288,7 +272,7 @@ export function attendanceDayRoutes(deps: {
       guard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await hr.listDays(permitOf(c), toList(c.req.valid('json')))
+        const result = await hr.listDays(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(dayDto) })
       },
     )
@@ -352,7 +336,7 @@ export function attendanceCorrectionRoutes(deps: {
       guard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await hr.listCorrections(permitOf(c), toList(c.req.valid('json')))
+        const result = await hr.listCorrections(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(correctionDto) })
       },
     )
@@ -431,7 +415,7 @@ export function payrollRoutes(deps: {
       guard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await hr.listPayrolls(permitOf(c), toList(c.req.valid('json')))
+        const result = await hr.listPayrolls(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(payrollDto) })
       },
     )
@@ -555,7 +539,7 @@ export function payrollPaymentRoutes(deps: {
       guard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await hr.listPayments(permitOf(c), toList(c.req.valid('json')))
+        const result = await hr.listPayments(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(paymentDto) })
       },
     )
@@ -628,7 +612,7 @@ export function employeeLoanRoutes(deps: {
       guard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await hr.listLoans(permitOf(c), toList(c.req.valid('json')))
+        const result = await hr.listLoans(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(loanDto) })
       },
     )

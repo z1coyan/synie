@@ -8,7 +8,8 @@ import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { dateOnlySchema, decimalStringSchema, listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import { dateOnlySchema, decimalStringSchema, draftValidationHook, listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
+import { idParam } from '~/platform/standard/routes.ts'
 import { presentKey } from '../common.ts'
 import type { FulfillmentService } from './service.ts'
 import { fulfillmentSpec, PACK_BOX_RESOURCE, PACK_LINE_RESOURCE } from './spec.ts'
@@ -29,8 +30,6 @@ function aggregateReplaceGuard(authz: AuthzEnforcer, headResource: string) {
     allOf: [`${prefix}:create`, `${prefix}:delete`],
   })
 }
-
-const idParam = z.object({ id: z.string().uuid() })
 
 const salesDraftItemSchema = z
   .object({
@@ -119,25 +118,6 @@ const purchaseReceiptDraftReplaceSchema = z
   })
   .strict()
 
-function draftValidationHook(result: {
-  success: boolean
-  error?: z.ZodError
-}): void {
-  if (result.success || !result.error) return
-  const fields: Record<string, string[]> = {}
-  for (const issue of result.error.issues) {
-    let key = ''
-    for (const part of issue.path) {
-      if (typeof part === 'number') key += `[${part}]`
-      else key += key ? `.${String(part)}` : String(part)
-    }
-    if (!key) key = '_'
-    else if (!key.startsWith('items') && !key.startsWith('packBoxes')) key = `header.${key}`
-    ;(fields[key] ??= []).push(issue.message)
-  }
-  throw ApiError.validation('请求参数错误', fields)
-}
-
 function toSalesDraftInput(
   body: z.infer<typeof salesDraftCreateSchema> | z.infer<typeof salesDraftReplaceSchema>,
 ) {
@@ -177,16 +157,6 @@ function toPurchaseReceiptDraftInput(
   }
 }
 
-function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
-  return {
-    limit: body.limit,
-    offset: body.offset,
-    search: body.search,
-    sort: body.sort,
-    filter: body.filter as ListQuery['filter'],
-  }
-}
-
 export function salesFulfillmentHeadRoutes(deps: FulfillmentRouteDeps) {
   const { auth, authz, fulfillment } = deps
   const RESOURCE = fulfillmentSpec('sales').headResource
@@ -198,14 +168,14 @@ export function salesFulfillmentHeadRoutes(deps: FulfillmentRouteDeps) {
       headGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await fulfillment.listHeads(permitOf(c), 'sales', toList(c.req.valid('json')))
+        const r = await fulfillment.listHeads(permitOf(c), 'sales', toListQuery(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )
     .post(
       '/',
       headGuard('create'),
-      zValidator('json', salesDraftCreateSchema, draftValidationHook),
+      zValidator('json', salesDraftCreateSchema, draftValidationHook(['items', 'packBoxes'])),
       async (c) =>
         c.json(
           await fulfillment.createSalesDraft(
@@ -232,7 +202,7 @@ export function salesFulfillmentHeadRoutes(deps: FulfillmentRouteDeps) {
       '/:id',
       aggregateReplaceGuard(authz, RESOURCE),
       zValidator('param', idParam, validationHook),
-      zValidator('json', salesDraftReplaceSchema, draftValidationHook),
+      zValidator('json', salesDraftReplaceSchema, draftValidationHook(['items', 'packBoxes'])),
       async (c) =>
         c.json(
           await fulfillment.replaceSalesDraft(
@@ -279,14 +249,14 @@ export function purchaseFulfillmentHeadRoutes(deps: FulfillmentRouteDeps) {
       headGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await fulfillment.listHeads(permitOf(c), side, toList(c.req.valid('json')))
+        const r = await fulfillment.listHeads(permitOf(c), side, toListQuery(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )
     .post(
       '/',
       headGuard('create'),
-      zValidator('json', purchaseReceiptDraftCreateSchema, draftValidationHook),
+      zValidator('json', purchaseReceiptDraftCreateSchema, draftValidationHook(['items', 'packBoxes'])),
       async (c) =>
         c.json(
           await fulfillment.createPurchaseReceiptDraft(
@@ -314,7 +284,7 @@ export function purchaseFulfillmentHeadRoutes(deps: FulfillmentRouteDeps) {
       '/:id',
       aggregateReplaceGuard(authz, RESOURCE),
       zValidator('param', idParam, validationHook),
-      zValidator('json', purchaseReceiptDraftReplaceSchema, draftValidationHook),
+      zValidator('json', purchaseReceiptDraftReplaceSchema, draftValidationHook(['items', 'packBoxes'])),
       async (c) =>
         c.json(
           await fulfillment.replacePurchaseReceiptDraft(
@@ -400,7 +370,7 @@ export function purchaseFulfillmentItemRoutes(deps: FulfillmentRouteDeps) {
       itemGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await fulfillment.listItems(permitOf(c), 'purchase', toList(c.req.valid('json')))
+        const r = await fulfillment.listItems(permitOf(c), 'purchase', toListQuery(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )
@@ -497,7 +467,7 @@ export function salesFulfillmentItemRoutes(deps: FulfillmentRouteDeps) {
       itemGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await fulfillment.listItems(permitOf(c), 'sales', toList(c.req.valid('json')))
+        const r = await fulfillment.listItems(permitOf(c), 'sales', toListQuery(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )
@@ -519,7 +489,7 @@ export function packBoxRoutes(deps: FulfillmentRouteDeps) {
       boxGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await fulfillment.listPackBoxes(permitOf(c), toList(c.req.valid('json')))
+        const r = await fulfillment.listPackBoxes(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )
@@ -541,7 +511,7 @@ export function packLineRoutes(deps: FulfillmentRouteDeps) {
       lineGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await fulfillment.listPackLines(permitOf(c), toList(c.req.valid('json')))
+        const r = await fulfillment.listPackLines(permitOf(c), toListQuery(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )

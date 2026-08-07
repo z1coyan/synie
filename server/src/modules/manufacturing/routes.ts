@@ -8,6 +8,7 @@ import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { validationHook } from '~/platform/http/zod.ts'
+import { idParam } from '~/platform/standard/routes.ts'
 import { MATERIAL_RESOURCE } from '~/modules/inventory/material-service.ts'
 import { DEMAND_ITEM_RESOURCE, DEMAND_RESOURCE, type DemandService } from './demand-service.ts'
 import {
@@ -57,8 +58,6 @@ const listQuerySchema = z
     companyId: z.string().uuid().optional(),
   })
   .strict()
-
-const idParam = z.object({ id: z.string().uuid() })
 
 const headCreate = z
   .object({
