@@ -26,10 +26,14 @@
  * `loadDraft` 用 `withReadSnapshot`（repeatable read）在同一提交代际内读头 + 子树，
  * 避免把不同代际拼成可再保存草稿。
  *
+ * **投影口径**：返回值走 head `getOn` + child `listByParentOn`（与 list/get/写后
+ * reload 同一 SELECT/SOURCE/mapExtra），禁止裸 `SELECT *` 绕开 projection——否则
+ * W2 报价等草稿三连会丢 join 投影键。写前行锁仍用裸表 `loadAuthorized`+`FOR UPDATE`
+ * （子查询不能加行锁；与 root 写路径一致）。
+ *
  * 钩子纪律：聚合草稿只管持久化；跨资源效果走 transition effect / 手写编排。
  * platform 禁止 import `~/modules/*`。
  */
-import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { loadAuthorized } from '~/db/load.ts'
 import { withReadSnapshot, withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
@@ -91,14 +95,12 @@ export interface AggregateService {
 interface ChildRuntime {
   spec: AggregateChildSpec
   meta: ResourceMeta
-  table: string
   label: string
   /** 指向母单/母行的 FK 字段（apiName + dbColumn） */
   fk: FieldMeta
   /** 直接母资源名（装配期与 via.parent 对齐） */
   parentResource: string
   children: ChildRuntime[]
-  orderSql: ReturnType<typeof sql>
 }
 
 function headLabel(meta: ResourceMeta): string {
@@ -134,17 +136,13 @@ function buildRuntime(
       )
     }
     const fk = viaFkField(meta, `${path}.${spec.key}`)
-    const hasIdx = meta.fields.some((f) => f.dbColumn === 'idx')
-    const orderSql = hasIdx ? sql`"idx" ASC, "id" ASC` : sql`"id" ASC`
     return {
       spec,
       meta,
-      table: meta.table,
       label: headLabel(meta),
       fk,
       parentResource: expectedParent,
       children: buildRuntime(spec.children ?? [], meta.name, `${path}.${spec.key}`),
-      orderSql,
     }
   })
 }
@@ -266,11 +264,11 @@ export function createAggregateService(options: AggregateServiceOptions): Aggreg
 
   const companyField = physicalFields(headMeta).find((f) => f.dbColumn === 'company_id')
 
-  async function loadHead(
+  /** 写前裸表锁：FOR UPDATE 不能走投影子查询 */
+  async function lockHead(
     handle: DbHandle,
     permit: Permit,
     id: string,
-    forUpdate: boolean,
   ): Promise<StandardItem> {
     const row = await loadAuthorized({
       db: handle,
@@ -278,23 +276,19 @@ export function createAggregateService(options: AggregateServiceOptions): Aggreg
       target: headTarget,
       table: headMeta.table,
       id,
-      forUpdate,
+      forUpdate: true,
       notFoundMessage: notFound,
     })
     return mapRow(headMeta, row as Record<string, unknown>) as StandardItem
   }
 
+  /** 母下子行（投影口径；无分页）——索引/删行/装载共用 */
   async function listChildren(
     handle: DbHandle,
     node: ChildRuntime,
     parentId: string,
   ): Promise<StandardItem[]> {
-    const result = await sql<Record<string, unknown>>`
-      SELECT * FROM ${sql.id(node.table)}
-      WHERE ${sql.id(node.fk.dbColumn)} = ${parentId}::uuid
-      ORDER BY ${node.orderSql}
-    `.execute(handle)
-    return result.rows.map((row) => mapRow(node.meta, row) as StandardItem)
+    return node.spec.service.listByParentOn(handle, parentId)
   }
 
   async function loadTree(
@@ -302,7 +296,8 @@ export function createAggregateService(options: AggregateServiceOptions): Aggreg
     permit: Permit,
     id: string,
   ): Promise<Record<string, unknown>> {
-    const headRow = await loadHead(handle, permit, id, false)
+    // 头走 getOn：与 get/写后 reload 同投影（mapExtra 键不丢）
+    const headRow = await head.getOn(handle, permit, id)
     return attachChildren(handle, headRow, runtimes)
   }
 
@@ -484,7 +479,7 @@ export function createAggregateService(options: AggregateServiceOptions): Aggreg
     }
 
     return withTx(db, async (trx) => {
-      const before = await loadHead(trx, permit, id, true)
+      const before = await lockHead(trx, permit, id)
       if (companyField) {
         const nextCompany = draft[companyField.apiName]
         if (

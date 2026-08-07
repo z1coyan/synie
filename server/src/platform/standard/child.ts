@@ -25,6 +25,7 @@ import type { ListQuery } from '@synie/shared'
 import { sql, type RawBuilder } from 'kysely'
 import type { Kysely } from 'kysely'
 import { mapWriteError, type PgWriteMapping } from '~/db/dberr.ts'
+import { ident } from '~/db/ident.ts'
 import { listAuthorized } from '~/db/list.ts'
 import { loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
 import { withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
@@ -113,7 +114,16 @@ export interface StandardChildServiceOptions {
 
 export interface StandardChildService<TItem extends StandardItem = StandardItem> {
   get(permit: Permit, id: string): Promise<TItem>
+  /**
+   * 在途读：与 {@link get} 同语义（含 projection / extraWhere），在调用方 handle 上执行。
+   */
+  getOn(handle: DbHandle, permit: Permit, id: string): Promise<TItem>
   list(permit: Permit, query: Partial<ListQuery>): Promise<{ count: number; results: TItem[] }>
+  /**
+   * 母下全部子行（无分页截断）：投影与 list/get 同口径。
+   * 供聚合 loadTree 装载集合；授权已在头/母行路径完成，此处只按 FK 过滤。
+   */
+  listByParentOn(handle: DbHandle, parentId: string): Promise<TItem[]>
   create(permit: Permit, input: Record<string, unknown>): Promise<TItem>
   /**
    * 在途事务变体（D1）：外层事务由调用方持有；Permit 仍是唯一入场券。
@@ -330,12 +340,16 @@ export function createStandardChildService<TItem extends StandardItem = Standard
   }
 
   async function get(permit: Permit, id: string): Promise<TItem> {
+    return getOn(db, permit, id)
+  }
+
+  async function getOn(handle: DbHandle, permit: Permit, id: string): Promise<TItem> {
     if (projection) {
-      return loadProjected(db, permit, id)
+      return loadProjected(handle, permit, id)
     }
     const { where: extraWhere } = resolveExtraWhere(permit, TABLE)
     const row = await loadAuthorized({
-      db,
+      db: handle,
       permit,
       target,
       table: TABLE,
@@ -344,6 +358,19 @@ export function createStandardChildService<TItem extends StandardItem = Standard
       extraWhere,
     })
     return mapRow(meta, row as Record<string, unknown>) as TItem
+  }
+
+  /**
+   * 聚合装载：母下全量子行（无 LIMIT）。
+   * 投影与 get/list 共用 SELECT/SOURCE/mapRowFull；不走 listAuthorized 分页。
+   */
+  async function listByParentOn(handle: DbHandle, parentId: string): Promise<TItem[]> {
+    const result = await sql<Record<string, unknown>>`
+      ${SELECT}${SOURCE}
+      WHERE ${ident(ALIAS)}.${ident(fkField!.dbColumn)} = ${parentId}::uuid
+      ORDER BY ${defaultOrder}
+    `.execute(handle)
+    return result.rows.map((row) => mapRowFull(row))
   }
 
   async function list(permit: Permit, query: Partial<ListQuery>) {
@@ -435,9 +462,15 @@ export function createStandardChildService<TItem extends StandardItem = Standard
     const before = await lockRow(trx, id)
     const draft: Record<string, unknown> = { ...before, ...normalizeInput(patch) }
     hooks.validate?.({ action: 'update', permit, draft, parent: parentWire, before })
+    // beforeWrite 先充实派生列，再按 WRITE_COLS 判落库——审计 exclude 不得短路丢写
     await hooks.beforeWrite?.(trx, { action: 'update', permit, draft, parent: parentWire, before })
+    const writeChanges = auditDiff(
+      snapshot(meta, before, WRITE_COLS),
+      snapshot(meta, draft, WRITE_COLS),
+      WRITE_COLS,
+    )
+    if (Object.keys(writeChanges).length === 0) return reload(trx, permit, before)
     const changes = auditDiff(snapshot(meta, before, AUDIT), snapshot(meta, draft, AUDIT), AUDIT)
-    if (Object.keys(changes).length === 0) return reload(trx, permit, before)
     const sets = [...writable, ...derivedFields].map(
       (f) => sql`${sql.id(f.dbColumn)} = ${toDbValue(f, draft[f.apiName])}`,
     )
@@ -450,16 +483,18 @@ export function createStandardChildService<TItem extends StandardItem = Standard
       throw mapWriteError(err, `保存${label}失败`, writeErrors)
     }
     const projected = await reload(trx, permit, item)
-    await writeAudit(trx, permit.actor, {
-      resource: TABLE,
-      recordId: id,
-      recordLabel: recordLabel(projected),
-      actionType: 'update',
-      actionName: 'update',
-      companyId: auditCompanyId(item),
-      changes,
-      sensitiveFields: meta.audit?.sensitiveFields,
-    })
+    if (Object.keys(changes).length > 0) {
+      await writeAudit(trx, permit.actor, {
+        resource: TABLE,
+        recordId: id,
+        recordLabel: recordLabel(projected),
+        actionType: 'update',
+        actionName: 'update',
+        companyId: auditCompanyId(item),
+        changes,
+        sensitiveFields: meta.audit?.sensitiveFields,
+      })
+    }
     await hooks.afterWrite?.(trx, { action: 'update', permit, item, parent: parentWire, before })
     return projected
   }
@@ -497,7 +532,9 @@ export function createStandardChildService<TItem extends StandardItem = Standard
 
   return {
     get,
+    getOn,
     list,
+    listByParentOn,
     create,
     createInTx,
     update,

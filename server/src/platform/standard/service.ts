@@ -209,6 +209,11 @@ export interface StandardServiceOptions {
 
 export interface StandardService<TItem extends StandardItem = StandardItem> {
   get(permit: Permit, id: string): Promise<TItem>
+  /**
+   * 在途读：与 {@link get} 同语义（含 projection / extraWhere），但在调用方持有的
+   * handle 上执行——供聚合 `loadDraft` 在 snapshot/trx 内装载头，避免绕开投影。
+   */
+  getOn(handle: DbHandle, permit: Permit, id: string): Promise<TItem>
   list(permit: Permit, query: Partial<ListQuery>): Promise<{ count: number; results: TItem[] }>
   create(permit: Permit, input: Record<string, unknown>): Promise<TItem>
   /**
@@ -409,8 +414,12 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
   }
 
   async function get(permit: Permit, id: string): Promise<TItem> {
-    if (projection) return loadProjected(db, permit, id)
-    return loadBare(db, permit, id, false)
+    return getOn(db, permit, id)
+  }
+
+  async function getOn(handle: DbHandle, permit: Permit, id: string): Promise<TItem> {
+    if (projection) return loadProjected(handle, permit, id)
+    return loadBare(handle, permit, id, false)
   }
 
   async function list(permit: Permit, query: Partial<ListQuery>) {
@@ -841,6 +850,7 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
 
   return {
     get,
+    getOn,
     list,
     create,
     createInTx,

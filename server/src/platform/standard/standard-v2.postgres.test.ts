@@ -7,11 +7,13 @@
  * - tree：树锁下的父子校验（自身/不存在/后代成环）、物化路径与子树重写、
  *   有子节点删除保护
  * - projection：selectExtra/mapExtra 进 list 与 get（has_children 投影）
- * - child：母单授权锁 + 状态门 + 带入列；行审计三型
+ * - child：母单授权锁 + 状态门 + 带入列；行审计三型；
+ *   无差异按 WRITE_COLS（audit.exclude 可写列不得丢写，与 root 同构）
  * - 孙级（D3）：parent.resource 可指 child；链深 ≤2 装配；孙级 CRUD 与越母单 not_found
  * - InTx（D1）：root/child 动作族 `*InTx(trx, permit, …)`；外层事务回滚则全链无痕
  * - aggregate（D2/D4/D6）：loadDraft/createDraft/replaceDraft；缺失即删；
- *   删行先于头更新；numbering 走 head options；逐行审计三型；孙级子树
+ *   删行先于头更新；numbering 走 head options；逐行审计三型；孙级子树；
+ *   loadTree 经 head/child 投影（mapExtra 键不丢）
  * - extraWhere（T1.5）：list/load 领域行筛选；query 改写（伪 filter 剥离）；
  *   谓词不命中 get → not_found（可见性语义与 list 一致）
  *
@@ -116,12 +118,14 @@ function itemMeta(): ResourceMeta {
       field('idx', 'idx', 'integer', '行号', { required: true, sortable: true }),
       field('qty', 'qty', 'decimal', '数量', { required: true }),
       field('qty_x2', 'qtyX2', 'decimal', '双倍数量', { readonly: true }),
+      // note 可写但排除审计：钉 child 无差异按 WRITE_COLS，不得丢写
+      field('note', 'note', 'string', '行备注', { nullable: true, maxLength: 64 }),
       field('company_id', 'companyId', 'uuid', '公司', { readonly: true }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', { readonly: true }),
       field('updated_at', 'updatedAt', 'datetime', '更新时间', { readonly: true }),
     ],
     actions: crud.slice(0, 4),
-    audit: { enabled: true },
+    audit: { enabled: true, exclude: ['note'] },
   }
 }
 
@@ -327,6 +331,74 @@ run('标准动作内核 v2（postgres）', () => {
     defaultOrder: sql`"id" ASC`,
   })
 
+  /** 带投影的头/行（聚合 loadTree 合同：mapExtra 键不得丢） */
+  const projectedDocs = createStandardService({
+    db,
+    registry,
+    resource: 'stdV2Docs',
+    numbering: { service: fakeNumbering, field: 'docNo' },
+    hooks: {
+      insertColumns: () => ({ stamped_note: 'G1' }),
+    },
+    workflow: {
+      mutableStatuses: ['DRAFT'],
+      mutableMessage: '仅草稿测试单可修改或删除',
+      transitions: [
+        {
+          key: 'audit',
+          label: '审核',
+          from: ['DRAFT'],
+          to: 'AUDITED',
+          guardMessage: '仅草稿测试单可审核',
+          stamps: ({ permit }) => auditStamp(permit),
+        },
+      ],
+    },
+    projection: {
+      source: sql`
+        FROM (
+          SELECT d.*, upper(d.name) AS name_upper
+          FROM std_v2_doc d
+        ) std_v2_doc
+      `,
+      alias: 'std_v2_doc',
+      selectExtra: sql`name_upper`,
+      mapExtra: (row) => ({ nameUpper: String(row.name_upper ?? '') }),
+    },
+  })
+
+  const projectedItems = createStandardChildService({
+    db,
+    registry,
+    resource: 'stdV2Items',
+    parent: {
+      resource: 'stdV2Docs',
+      fkField: 'docId',
+      inheritFields: ['companyId'],
+      gate: (parent) => {
+        if (parent.status !== 'DRAFT') throw new ApiError('conflict', '仅草稿测试单可编辑单据行')
+      },
+    },
+    derivedFields: ['qtyX2'],
+    hooks: {
+      beforeWrite: (_trx, { draft }) => {
+        draft.qtyX2 = String(Number(draft.qty) * 2)
+      },
+    },
+    projection: {
+      source: sql`
+        FROM (
+          SELECT i.*, d.name AS doc_name
+          FROM std_v2_item i
+          JOIN std_v2_doc d ON d.id = i.doc_id
+        ) std_v2_item
+      `,
+      alias: 'std_v2_item',
+      selectExtra: sql`doc_name`,
+      mapExtra: (row) => ({ docName: String(row.doc_name ?? '') }),
+    },
+  })
+
   /** 聚合草稿：头 + 条目 + 价格档（D2/D4/D6 合成合同） */
   const aggregate = createAggregateService({
     db,
@@ -339,6 +411,14 @@ run('标准动作内核 v2（postgres）', () => {
         children: [{ key: 'tiers', service: tiers }],
       },
     ],
+  })
+
+  /** 带投影的聚合：钉 loadTree 不绕开 mapExtra */
+  const projectedAggregate = createAggregateService({
+    db,
+    registry,
+    head: projectedDocs,
+    children: [{ key: 'items', service: projectedItems }],
   })
 
   const nodes = createStandardService({
@@ -386,6 +466,7 @@ run('标准动作内核 v2（postgres）', () => {
         idx integer NOT NULL,
         qty numeric(18,6) NOT NULL,
         qty_x2 numeric(18,6),
+        note varchar(64),
         company_id uuid NOT NULL,
         inserted_at timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'utc'),
         updated_at timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
@@ -654,6 +735,32 @@ run('标准动作内核 v2（postgres）', () => {
 
       await items.remove(p('delete', 'stdV2Items'), item.id)
       expect(await auditRows('std_v2_item', item.id, 'destroy')).toBe(1)
+    })
+
+    test('只改 audit.exclude 可写列：落库、不写审计（WRITE_COLS 与 root 同构）', async () => {
+      const doc = await createDraft()
+      const item = await items.create(p('create', 'stdV2Items'), {
+        docId: doc.id,
+        idx: 1,
+        qty: '1',
+        note: null,
+      })
+      const updated = await items.update(p('update', 'stdV2Items'), item.id, { note: '行便签' })
+      expect(updated.note).toBe('行便签')
+      const raw = await sql<{ note: string | null }>`
+        SELECT note FROM std_v2_item WHERE id = ${item.id}::uuid
+      `.execute(db)
+      expect(raw.rows[0]!.note).toBe('行便签')
+      // create 已写 1 条；exclude 列更新不得再写 update 审计
+      expect(await auditRows('std_v2_item', item.id, 'update')).toBe(0)
+
+      // 审计面内列变化 → 落库且写审计
+      await items.update(p('update', 'stdV2Items'), item.id, { qty: '2' })
+      expect(await auditRows('std_v2_item', item.id, 'update')).toBe(1)
+
+      // 同值补丁（含 exclude 列）仍是无差异
+      await items.update(p('update', 'stdV2Items'), item.id, { note: '行便签', qty: '2' })
+      expect(await auditRows('std_v2_item', item.id, 'update')).toBe(1)
     })
 
     test('非草稿母单：加行/改行/删行一律 conflict', async () => {
@@ -1058,6 +1165,41 @@ run('标准动作内核 v2（postgres）', () => {
       expect(again.name).toBe('无差单')
       expect(await auditRows('std_v2_doc', String(created.id), 'update')).toBe(0)
       expect(await auditRows('std_v2_item', String(item0.id), 'update')).toBe(0)
+    })
+
+    test('loadTree 经 head/child 投影：createDraft/loadDraft/replaceDraft 含 mapExtra', async () => {
+      const created = await projectedAggregate.createDraft(p('create'), {
+        name: '投影单',
+        companyId,
+        items: [{ idx: 1, qty: '4', note: 'n1' }],
+      })
+      expect(created.nameUpper).toBe('投影单')
+      const createdItems = created.items as Array<Record<string, unknown>>
+      expect(createdItems).toHaveLength(1)
+      expect(createdItems[0]!.docName).toBe('投影单')
+      expect(createdItems[0]!.qtyX2).toBe('8')
+
+      const loaded = await projectedAggregate.loadDraft(p('read'), String(created.id))
+      expect(loaded.nameUpper).toBe('投影单')
+      expect((loaded.items as Array<Record<string, unknown>>)[0]!.docName).toBe('投影单')
+
+      const replaced = await projectedAggregate.replaceDraft(p('update'), String(created.id), {
+        name: '投影改',
+        companyId,
+        items: [
+          {
+            id: createdItems[0]!.id,
+            idx: 1,
+            qty: '5',
+            note: 'n2',
+          },
+        ],
+      })
+      expect(replaced.nameUpper).toBe('投影改')
+      const replacedItems = replaced.items as Array<Record<string, unknown>>
+      expect(replacedItems[0]!.docName).toBe('投影改')
+      expect(replacedItems[0]!.qty).toBe('5')
+      expect(replacedItems[0]!.note).toBe('n2')
     })
   })
 
