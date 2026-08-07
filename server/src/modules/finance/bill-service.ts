@@ -4,12 +4,13 @@
  * 承兑交易（accBillTransactions）走标准动作内核：list/get/update/remove +
  * workflow 转移（audit/void），转移 effect 调 GL 引擎，`after` 跑持有段重放
  * （replayBill 必须看到翻转后的状态，故挂在翻转+审计之后）。
- * 三处按动作/资源弹射，原因见迁移决策日志：
+ * 两处按动作/资源弹射，原因见迁移决策日志：
  * - 交易 `create`：RECEIVE 可携 `billAttrs` 联动建票据主档（非本资源字段，
  *   内核 normalizeInput 会丢弃），且取号 values 口径特殊；
- * - 票据主档（accBills）：无公司列（global），可见性由「名下有可达交易」的
- *   EXISTS 谓词派生，内核 list/load 无 extraWhere 接口，迁了会放宽授权；
  * - 持有段（accBillHoldings）：只读投影，meta 无审计声明、无写动作词表。
+ *
+ * 票据主档 list/get 走内核 `extraWhere`（T1.5）：global 资源 + 「名下有可达交易」
+ * EXISTS 派生可见性；update/delete 仍手写（交易联动约束），写前锁复用同一谓词。
  *
  * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
  */
@@ -325,39 +326,50 @@ export function createBillService(
     )`
   }
 
-  /** 按 Permit 取票据主档（可锁）：票据码级判定 ∧ 名下有可达交易 */
+  /**
+   * 票据主档 list/get 走内核（T1.5 extraWhere）；update/delete 仍手写。
+   * mapRow 返回 datetime 为 Date（HTTP JSON 与 asIso 同为 ISO 字符串）。
+   */
+  const billsBase = createStandardService({
+    db,
+    registry: deps.registry,
+    resource: BILL_RESOURCE,
+    notFound: '承兑票据不存在',
+    defaultOrder: sql`"id"`,
+    writeErrors: [...WRITE_MAP],
+    extraWhere: ({ permit, alias }) => ({
+      where: billVisibleWhere(permit, alias),
+    }),
+  })
+
+  /** 内核 wire 行 → 历史 Bill 形（datetime ISO 字符串，与 mapBill 字节一致） */
+  function asBill(item: Record<string, unknown>): Bill {
+    return {
+      ...item,
+      insertedAt: asIso(item.insertedAt),
+      updatedAt: asIso(item.updatedAt),
+    } as Bill
+  }
+
+  /** 按 Permit 取票据主档（可锁）：与内核 get 同谓词，供写路径 forUpdate */
   async function authorizedBill(
     handle: DbHandle, permit: Permit, id: string, forUpdate: boolean,
   ): Promise<Bill> {
-    // 票据自身 global：loadAuthorized 只做码级 + 全局放行，可见性由交易派生
-    const bill = await loadAuthorized({
+    const row = await loadAuthorized({
       db: handle, permit, target: billTarget, table: BILL_TABLE, id, forUpdate,
       notFoundMessage: '承兑票据不存在',
+      extraWhere: billVisibleWhere(permit, BILL_TABLE),
     })
-    const ok = await sql<{ e: boolean }>`
-      SELECT ${billVisibleWhere(permit, 'acc_bill')} AS e FROM acc_bill WHERE id=${id}::uuid
-    `.execute(handle)
-    if (!ok.rows[0]?.e) throw notFound('承兑票据')
-    return mapBill(bill)
+    return mapBill(row)
   }
 
   async function listBills(permit: Permit, query: Partial<ListQuery>) {
-    return listAuthorized({
-      db, permit, target: billTarget, alias: BILL_TABLE,
-      resource: BILL_META,
-      source: sql` FROM acc_bill`,
-      select: sql`SELECT id,bill_no,bill_kind,issue_date,due_date,face_amount,drawer_name,drawer_account,
-        drawer_bank_name,drawer_bank_no,payee_name,payee_account,payee_bank_name,payee_bank_no,
-        acceptor_name,acceptor_account,acceptor_bank_name,acceptor_bank_no,transferable,
-        acceptance_date,remarks,inserted_at,updated_at`,
-      defaultOrder: sql`"id"`, query,
-      extraWhere: billVisibleWhere(permit, BILL_TABLE),
-      mapRow: mapBill,
-    })
+    const page = await billsBase.list(permit, query)
+    return { count: page.count, results: page.results.map(asBill) }
   }
 
   async function getBill(permit: Permit, id: string) {
-    return authorizedBill(db, permit, id, false)
+    return asBill(await billsBase.get(permit, id))
   }
 
   async function updateBill(permit: Permit, id: string, input: Record<string, unknown>) {

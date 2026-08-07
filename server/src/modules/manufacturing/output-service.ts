@@ -5,10 +5,11 @@
  * 「收集校验 → 库存引擎 → 工单/需求投影回写」，状态翻转 / 盖章 / 审计交内核 transition。
  * 引擎复用 engines/inventory，禁止直写分录表。
  *
- * 两处按动作弹射（内核缺 extraWhere/母单投影原语，见迁移决策日志）：
- * - `listOutputs`：单头列表带 companyId 领域过滤；
+ * 一处按动作弹射（母单投影原语仍缺，见迁移决策日志）：
  * - `listOutputItems`：行列表 join 母单暴露 output_no/date/status 投影列，
  *   而 create/update/get 逐字冻结为「不带母单投影」（三列出 null）。
+ *
+ * 单头 `listOutputs` 的 companyId 领域过滤走内核 `extraWhere`（T1.5）。
  *
  * 授权全由平台承担（工单 07）：服务只收 Permit，行谓词由 loadAuthorized/listAuthorized 编译。
  * 入库行引用生产工单，故行的写路由额外要求 `mfg.work_order:read`（guard allOf）——
@@ -24,8 +25,8 @@ import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
-import { mapRow } from '~/platform/standard/fields.ts'
 import { createStandardChildService } from '~/platform/standard/child.ts'
+import { mapRow } from '~/platform/standard/fields.ts'
 import { auditStamp, createStandardService, type StandardService } from '~/platform/standard/service.ts'
 import { listAuthorized } from '~/db/list.ts'
 import { utcToday } from '~/db/dates.ts'
@@ -45,7 +46,7 @@ import {
   validateRemarks,
   validateWarehouse,
 } from './helpers.ts'
-import { outputItemResourceMeta, outputResourceMeta } from './meta.ts'
+import { outputItemResourceMeta } from './meta.ts'
 import {
   WORK_ORDER_RESOURCE,
   loadWorkOrderAuthorized,
@@ -63,8 +64,6 @@ import type {
 export const OUTPUT_RESOURCE = 'mfgOutputs'
 export const OUTPUT_ITEM_RESOURCE = 'mfgOutputItems'
 
-const OUTPUT_TABLE = 'mfg_output'
-const OUT_META = outputResourceMeta()
 const ITEM_META = outputItemResourceMeta()
 
 const LABEL = '生产入库单'
@@ -77,7 +76,6 @@ export function createOutputService(
   inventory: InventoryEngine,
   registry: Registry,
 ) {
-  const target = registry.authzTarget(OUTPUT_RESOURCE)
   const itemTarget = registry.authzTarget(OUTPUT_ITEM_RESOURCE)
   const workOrderTarget = registry.authzTarget(WORK_ORDER_RESOURCE)
 
@@ -89,6 +87,11 @@ export function createOutputService(
     defaultOrder: sql`"inserted_at" DESC, "id" DESC`,
     writeErrors: MFG_WRITE_MAPPINGS,
     numbering: { service: numbering, field: 'outputNo' },
+    // companyId 领域过滤（list 扩展键，非 filter DSL；T1.5）
+    extraWhere: ({ query }) => {
+      const companyId = typeof query.companyId === 'string' ? query.companyId : null
+      return { where: companyId ? sql`company_id = ${companyId}` : null }
+    },
     hooks: {
       validate: ({ action, draft }) => {
         if (typeof draft.outputNo === 'string') draft.outputNo = draft.outputNo.trim()
@@ -266,24 +269,6 @@ export function createOutputService(
     return base.update(permit, id, patch)
   }
 
-  /** 单头列表（弹射）：companyId 领域过滤内核无 extraWhere 原语 */
-  async function listOutputs(permit: Permit, query: ListQueryInput) {
-    const q = normalizeList(query)
-    return listAuthorized<Output>({
-      db,
-      permit,
-      target,
-      alias: OUTPUT_TABLE,
-      resource: OUT_META,
-      source: sql` FROM mfg_output`,
-      select: sql`SELECT *`,
-      defaultOrder: sql`"inserted_at" DESC, "id" DESC`,
-      query: q,
-      extraWhere: q.companyId ? sql`company_id = ${q.companyId}` : null,
-      mapRow: (r) => mapRow(OUT_META, r) as Output,
-    })
-  }
-
   async function createOutputItem(
     permit: Permit,
     input: {
@@ -355,7 +340,7 @@ export function createOutputService(
   return {
     createOutput,
     getOutput: (permit: Permit, id: string) => base.get(permit, id),
-    listOutputs,
+    listOutputs: (permit: Permit, query: ListQueryInput) => base.list(permit, query),
     updateOutput,
     deleteOutput: (permit: Permit, id: string) => base.remove(permit, id),
     createOutputItem,

@@ -36,7 +36,7 @@ import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { FieldMeta, ResourceMeta } from '~/platform/meta/types.ts'
 import { fromDbValue, mapRow, physicalFields, snapshot, toDbValue, writableFields } from './fields.ts'
-import type { StandardItem, StandardProjection } from './service.ts'
+import type { ExtraWhere, StandardItem, StandardProjection } from './service.ts'
 
 export interface ChildHookContext {
   action: 'create' | 'update'
@@ -104,6 +104,11 @@ export interface StandardChildServiceOptions {
    * meta 派生取不到时由模块给出（item 为投影后的 wire 形）。
    */
   recordLabel?: (item: Record<string, unknown>) => string | null
+  /**
+   * list/get 领域行筛选（与 root extraWhere 同语义，T1.5）。
+   * 写路径仍先锁母单再锁行；本谓词加在行 list/get 的授权查询上。
+   */
+  extraWhere?: ExtraWhere
 }
 
 export interface StandardChildService<TItem extends StandardItem = StandardItem> {
@@ -287,8 +292,23 @@ export function createStandardChildService<TItem extends StandardItem = Standard
     return mapRow(meta, result.rows[0]!) as TItem
   }
 
+  function resolveExtraWhere(
+    permit: Permit,
+    alias: string,
+    query: Partial<ListQuery> & Record<string, unknown> = {},
+  ): { where: RawBuilder<unknown> | null; query: Partial<ListQuery> } {
+    if (!options.extraWhere) return { where: null, query }
+    const result = options.extraWhere({ permit, query, alias })
+    if (!result) return { where: null, query }
+    return {
+      where: result.where ?? null,
+      query: result.query ?? query,
+    }
+  }
+
   /** 投影单条（get 与写后重载共用） */
   async function loadProjected(handle: DbHandle, permit: Permit, id: string): Promise<TItem> {
+    const { where: extraWhere } = resolveExtraWhere(permit, ALIAS)
     return loadAuthorizedFrom({
       db: handle,
       permit,
@@ -299,6 +319,7 @@ export function createStandardChildService<TItem extends StandardItem = Standard
       id,
       mapRow: mapRowFull,
       notFoundMessage: notFound,
+      extraWhere,
     })
   }
 
@@ -312,11 +333,25 @@ export function createStandardChildService<TItem extends StandardItem = Standard
     if (projection) {
       return loadProjected(db, permit, id)
     }
-    const row = await loadAuthorized({ db, permit, target, table: TABLE, id, notFoundMessage: notFound })
+    const { where: extraWhere } = resolveExtraWhere(permit, TABLE)
+    const row = await loadAuthorized({
+      db,
+      permit,
+      target,
+      table: TABLE,
+      id,
+      notFoundMessage: notFound,
+      extraWhere,
+    })
     return mapRow(meta, row as Record<string, unknown>) as TItem
   }
 
   async function list(permit: Permit, query: Partial<ListQuery>) {
+    const resolved = resolveExtraWhere(
+      permit,
+      ALIAS,
+      query as Partial<ListQuery> & Record<string, unknown>,
+    )
     return listAuthorized<TItem>({
       db,
       permit,
@@ -326,7 +361,8 @@ export function createStandardChildService<TItem extends StandardItem = Standard
       source: SOURCE,
       select: SELECT,
       defaultOrder,
-      query,
+      query: resolved.query,
+      extraWhere: resolved.where,
       mapRow: mapRowFull,
     })
   }

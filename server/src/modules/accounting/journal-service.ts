@@ -6,11 +6,12 @@
  * 状态翻转/盖章/审计交内核。行走子行内核：母单草稿门 + company_id 带入 +
  * currency_id 科目派生列。禁止直写 acc_gl_entry。
  *
- * 两处按动作弹射：
- * - `list`：`lines` 行内筛选要 EXISTS 子查询（listAuthorized 的 extraWhere），
- *   内核 list 无此形参；
+ * 一处按动作弹射：
  * - `createAndAuditJournal`：调用方 trx 内的无闸 seam（内核动作自开事务且只收
  *   Permit），故保留手写在途实现，与内核路径共用校验/取分录/审计快照helpers。
+ *
+ * `list` 的 `lines` 行内 EXISTS 筛选走内核 `extraWhere`（T1.5）：剥离 filter 伪字段
+ * 后交给 filterbuild，EXISTS 谓词 AND 授权。
  *
  * 授权全由平台承担：路由挂 `guard(资源, 动作)`（工作流 audit/cancel 逐动作挂码），
  * 本服务只收 Permit。凭证行是 via(凭证头)，判定递归母单。
@@ -32,7 +33,6 @@ import { createStandardChildService } from '~/platform/standard/child.ts'
 import { mapRow, snapshot } from '~/platform/standard/fields.ts'
 import { createStandardService, type StandardService } from '~/platform/standard/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { listAuthorized } from '~/db/list.ts'
 import {
   JOURNAL_LINE_RESOURCE_NAME,
   JOURNAL_RESOURCE_NAME,
@@ -241,7 +241,6 @@ export function createJournalService(
   deps: JournalServiceDeps = {},
 ) {
   const isJournalLinkedToBankRecon = deps.isJournalLinkedToBankRecon
-  const journalTarget = registry.authzTarget(JOURNAL_RESOURCE_NAME)
 
   /** 审核用：复核持久化行并折成 GL 分录（内核 effect 与内部 seam 共用） */
   async function collectEntries(
@@ -297,6 +296,21 @@ export function createJournalService(
       mapExtra: journalExtras,
     },
     numbering: { service: numbering, field: 'voucherNo' },
+    // lines 伪筛选 → EXISTS；剥离后的 ordinaryFilter 交给 filterbuild（T1.5）
+    extraWhere: ({ query, alias }) => {
+      const { ordinaryFilter, lineFilter } = splitJournalLineFilter(query.filter as ListQuery['filter'])
+      return {
+        query: { ...query, filter: ordinaryFilter },
+        where: lineFilter
+          ? sql`EXISTS (
+            SELECT 1 FROM acc_gl_journal_line lf
+            WHERE lf.journal_id = ${sql.raw(alias)}.id
+              AND lf.account_id = ${lineFilter.accountId}::uuid
+              AND lf.${sql.raw(lineFilter.side)} > ${lineFilter.amount}
+          )`
+          : null,
+      }
+    },
     hooks: {
       validate: ({ action, draft }) => validateJournalDraft(action, draft),
       // 服务端派生插入列：本资源无 owner 绑定，created_by_id 是 readonly 系统列
@@ -354,39 +368,6 @@ export function createJournalService(
       ],
     },
   })
-
-  /**
-   * 列表（弹射）：`lines` 行内筛选要 EXISTS 子查询，内核 list 不收 extraWhere。
-   * 投影/白名单/缺省排序与内核共用同一份声明。
-   */
-  async function list(
-    permit: Permit,
-    query: Partial<ListQuery>,
-  ): Promise<{ count: number; results: Journal[] }> {
-    const { ordinaryFilter, lineFilter } = splitJournalLineFilter(query.filter)
-    const extraWhere = lineFilter
-      ? sql`EXISTS (
-        SELECT 1 FROM acc_gl_journal_line lf
-        WHERE lf.journal_id = journals.id
-          AND lf.account_id = ${lineFilter.accountId}::uuid
-          AND lf.${sql.raw(lineFilter.side)} > ${lineFilter.amount}
-      )`
-      : null
-
-    return listAuthorized<Journal>({
-      db,
-      permit,
-      target: journalTarget,
-      alias: JOURNAL_ALIAS,
-      resource: JOURNAL_META,
-      source: JOURNAL_SOURCE,
-      select: JOURNAL_SELECT,
-      defaultOrder: JOURNAL_ORDER,
-      query: { ...query, filter: ordinaryFilter },
-      extraWhere,
-      mapRow: mapJournalRow,
-    })
-  }
 
   const lines = createStandardChildService<JournalLine>({
     db,
@@ -651,7 +632,6 @@ export function createJournalService(
 
   return {
     ...base,
-    list,
     audit: (permit: Permit, id: string, postingDate?: string | null) =>
       base.transition(permit, id, 'audit', { postingDate: postingDate ?? null }),
     cancel: (permit: Permit, id: string) => base.transition(permit, id, 'cancel'),

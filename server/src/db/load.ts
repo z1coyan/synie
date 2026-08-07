@@ -23,6 +23,12 @@ export interface LoadAuthorizedOptions {
   forUpdate?: boolean
   /** not_found 文案（默认「记录不存在」，不区分不存在与无权限） */
   notFoundMessage?: string
+  /**
+   * 领域附加行筛选（与 listAuthorized.extraWhere 同语义）：
+   * 授权谓词 AND 本谓词；不命中一律 not_found（不泄露存在性）。
+   * 列引用须与 table 名一致（裸表无别名时即表名）。
+   */
+  extraWhere?: RawBuilder<unknown> | null
 }
 
 /**
@@ -45,10 +51,11 @@ export async function findAuthorized(
 ): Promise<Record<string, unknown> | null> {
   const table = ident(options.table)
   const where = compileRowFilter(options.permit, options.target, options.table)
+  const extra = options.extraWhere ? sql` AND ${options.extraWhere}` : sql``
   const lock = options.forUpdate ? sql` FOR UPDATE` : sql``
   const result = await sql<Record<string, unknown>>`
     SELECT ${table}.* FROM ${table}
-    WHERE ${table}.id = ${options.id}::uuid AND ${where}${lock}
+    WHERE ${table}.id = ${options.id}::uuid AND ${where}${extra}${lock}
   `.execute(options.db)
   return result.rows[0] ?? null
 }
@@ -65,6 +72,11 @@ export interface LoadProjectedOptions<T> {
   id: string
   mapRow: (row: Record<string, unknown>) => T
   notFoundMessage?: string
+  /**
+   * 领域附加行筛选（与 listAuthorized.extraWhere 同语义）：
+   * 列引用须与 alias 一致。
+   */
+  extraWhere?: RawBuilder<unknown> | null
 }
 
 /**
@@ -85,9 +97,10 @@ async function findAuthorizedFrom<T>(
   options: LoadProjectedOptions<T>,
 ): Promise<T | null> {
   const where = compileRowFilter(options.permit, options.target, options.alias)
+  const extra = options.extraWhere ? sql` AND ${options.extraWhere}` : sql``
   const result = await sql<Record<string, unknown>>`
     ${options.select}${options.source}
-    WHERE ${ident(options.alias)}.id = ${options.id}::uuid AND ${where}
+    WHERE ${ident(options.alias)}.id = ${options.id}::uuid AND ${where}${extra}
   `.execute(options.db)
   const row = result.rows[0]
   return row ? options.mapRow(row) : null

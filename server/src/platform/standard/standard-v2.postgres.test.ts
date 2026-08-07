@@ -12,6 +12,8 @@
  * - InTx（D1）：root/child 动作族 `*InTx(trx, permit, …)`；外层事务回滚则全链无痕
  * - aggregate（D2/D4/D6）：loadDraft/createDraft/replaceDraft；缺失即删；
  *   删行先于头更新；numbering 走 head options；逐行审计三型；孙级子树
+ * - extraWhere（T1.5）：list/load 领域行筛选；query 改写（伪 filter 剥离）；
+ *   谓词不命中 get → not_found（可见性语义与 list 一致）
  *
  * 业务资源迁入后各自的行为由 standard-contract 描述符继承；本文件只锁内核语义。
  */
@@ -851,10 +853,14 @@ run('标准动作内核 v2（postgres）', () => {
 
       const tiersArr = itemsArr[0]!.tiers as Array<Record<string, unknown>>
       expect(tiersArr).toHaveLength(2)
-      expect(tiersArr[0]!.minQty).toBe('1')
-      expect(tiersArr[1]!.price).toBe('9')
-      expect(await auditRows('std_v2_tier', String(tiersArr[0]!.id), 'create')).toBe(1)
-      expect(await auditRows('std_v2_tier', String(tiersArr[1]!.id), 'create')).toBe(1)
+      // defaultOrder 按 id ASC（UUID 非创建序）；按 minQty 对齐断言
+      const byMin = [...tiersArr].sort((a, b) => String(a.minQty).localeCompare(String(b.minQty)))
+      expect(byMin[0]!.minQty).toBe('1')
+      expect(byMin[0]!.price).toBe('10')
+      expect(byMin[1]!.minQty).toBe('10')
+      expect(byMin[1]!.price).toBe('9')
+      expect(await auditRows('std_v2_tier', String(byMin[0]!.id), 'create')).toBe(1)
+      expect(await auditRows('std_v2_tier', String(byMin[1]!.id), 'create')).toBe(1)
     })
 
     test('loadDraft：repeatable-read 一致快照返回全树', async () => {
@@ -1100,6 +1106,118 @@ run('标准动作内核 v2（postgres）', () => {
         code: 'conflict',
         message: '存在下级测试节点,不能删除',
       })
+    })
+  })
+
+  describe('extraWhere（list/load 行筛选谓词 · T1.5）', () => {
+    /**
+     * 同表第二套服务：name 以 VIS- 为可见前缀（模拟 accBills EXISTS 派生可见性）；
+     * 另支持 query.tag 扩展键过滤 scratch（模拟 mfgOutputs companyId）；
+     * 支持 filter.lines 伪字段剥离（模拟 accGlJournals 行内筛选）。
+     */
+    const scopedDocs = createStandardService({
+      db,
+      registry,
+      resource: 'stdV2Docs',
+      numbering: { service: fakeNumbering, field: 'docNo' },
+      hooks: {
+        insertColumns: () => ({ stamped_note: 'G1' }),
+      },
+      extraWhere: ({ query }) => {
+        const filter = (query.filter ?? {}) as Record<string, unknown>
+        const hasLines = Object.prototype.hasOwnProperty.call(filter, 'lines')
+        const ordinary: Record<string, unknown> = {}
+        for (const [k, v] of Object.entries(filter)) {
+          if (k !== 'lines') ordinary[k] = v
+        }
+        const parts: ReturnType<typeof sql>[] = [sql`name LIKE 'VIS-%'`]
+        const tag = typeof query.tag === 'string' ? query.tag : null
+        if (tag) parts.push(sql`scratch = ${tag}`)
+        // lines 伪筛选：约定 value 为 name 精确匹配（合成资源无子行表）
+        if (hasLines && typeof filter.lines === 'string') {
+          parts.push(sql`name = ${filter.lines}`)
+        }
+        return {
+          query: {
+            ...query,
+            filter: Object.keys(ordinary).length > 0 ? (ordinary as never) : undefined,
+          },
+          where: sql`${sql.join(parts, sql` AND `)}`,
+        }
+      },
+    })
+
+    test('list：前缀可见性 + 扩展键过滤；不命中行不出现', async () => {
+      const visible = await docs.create(p('create'), {
+        name: `VIS-${crypto.randomUUID().slice(0, 6)}`,
+        companyId,
+        scratch: 'tag-a',
+      })
+      const visibleOther = await docs.create(p('create'), {
+        name: `VIS-${crypto.randomUUID().slice(0, 6)}`,
+        companyId,
+        scratch: 'tag-b',
+      })
+      const hidden = await docs.create(p('create'), {
+        name: `HID-${crypto.randomUUID().slice(0, 6)}`,
+        companyId,
+        scratch: 'tag-a',
+      })
+
+      const allVisible = await scopedDocs.list(p('read'), { limit: 200, offset: 0 })
+      const ids = allVisible.results.map((r) => r.id)
+      expect(ids).toContain(visible.id)
+      expect(ids).toContain(visibleOther.id)
+      expect(ids).not.toContain(hidden.id)
+
+      // 扩展键 tag（非 filter DSL，同 mfgOutputs.companyId）
+      const tagged = await scopedDocs.list(p('read'), {
+        limit: 200,
+        offset: 0,
+        tag: 'tag-a',
+      } as never)
+      const taggedIds = tagged.results.map((r) => r.id)
+      expect(taggedIds).toContain(visible.id)
+      expect(taggedIds).not.toContain(visibleOther.id)
+      expect(taggedIds).not.toContain(hidden.id)
+    })
+
+    test('load：谓词不命中 → not_found（与 list 可见性一致，不泄露）', async () => {
+      const visible = await docs.create(p('create'), {
+        name: `VIS-${crypto.randomUUID().slice(0, 6)}`,
+        companyId,
+      })
+      const hidden = await docs.create(p('create'), {
+        name: `HID-${crypto.randomUUID().slice(0, 6)}`,
+        companyId,
+      })
+
+      const got = await scopedDocs.get(p('read'), visible.id)
+      expect(got.id).toBe(visible.id)
+
+      await expect(scopedDocs.get(p('read'), hidden.id)).rejects.toMatchObject({
+        code: 'not_found',
+        message: '测试单不存在',
+      })
+      // 无 extraWhere 的同表服务仍可读（证明 404 来自领域谓词，非行不存在）
+      expect((await docs.get(p('read'), hidden.id)).id).toBe(hidden.id)
+    })
+
+    test('query 改写：伪 filter.lines 不进 filterbuild，落入 where', async () => {
+      const targetName = `VIS-line-${crypto.randomUUID().slice(0, 6)}`
+      const hit = await docs.create(p('create'), { name: targetName, companyId })
+      await docs.create(p('create'), {
+        name: `VIS-other-${crypto.randomUUID().slice(0, 6)}`,
+        companyId,
+      })
+
+      // 若 lines 未剥离，filterbuild 会对未知字段抛 validation
+      const listed = await scopedDocs.list(p('read'), {
+        limit: 200,
+        offset: 0,
+        filter: { lines: targetName } as never,
+      })
+      expect(listed.results.map((r) => r.id)).toEqual([hit.id])
     })
   })
 

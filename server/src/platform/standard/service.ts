@@ -24,6 +24,8 @@
  *   事务内 effect（过账/占量等调既有引擎）与 after（翻转后副作用）
  * - tree：树锁（advisory，按公司/全局）、父子校验（存在/自身/后代/跨公司）、
  *   物化路径维护与子树重写、有子节点删除保护
+ * - extraWhere：list/load 领域行筛选谓词（EXISTS 派生可见性、companyId 过滤、
+ *   行内伪筛选等）；可改写 list query（剥离 filter 伪字段交给 filterbuild）
  *
  * 钩子纪律（写进 AGENTS.md）：钩子只做领域不变量与行内充实（可原地改 draft）；
  * 跨资源流程编排不进钩子，留在手写服务与引擎。
@@ -157,6 +159,30 @@ export interface StandardNumbering {
   field: string
 }
 
+/**
+ * list/load 领域行筛选上下文。
+ * - `query`：list 为调用方入参（可含 companyId 等扩展键）；load/写前锁行为空对象
+ * - `alias`：list/投影 load 为 source 别名；裸表 load 为 meta.table
+ */
+export interface ExtraWhereContext {
+  permit: Permit
+  query: Partial<ListQuery> & Record<string, unknown>
+  alias: string
+}
+
+/**
+ * 领域附加行筛选结果：
+ * - `where`：AND 进 listAuthorized / loadAuthorized（null/缺省 = 不加）
+ * - `query`：覆盖传入 filterbuild 的 list query（如剥离 `lines` 伪筛选）
+ */
+export interface ExtraWhereResult {
+  where?: RawBuilder<unknown> | null
+  query?: Partial<ListQuery> & Record<string, unknown>
+}
+
+/** list/load 共用的行筛选谓词；返回 null/undefined 等同无附加条件 */
+export type ExtraWhere = (ctx: ExtraWhereContext) => ExtraWhereResult | null | undefined
+
 export interface StandardServiceOptions {
   db: Kysely<Database>
   registry: Registry
@@ -173,6 +199,12 @@ export interface StandardServiceOptions {
   numbering?: StandardNumbering
   workflow?: StandardWorkflow
   tree?: StandardTree
+  /**
+   * list/get/写前锁 共用的领域行筛选（T1.5）。
+   * 授权谓词由平台编译；本回调只表达领域谓词（可见性 EXISTS、companyId 等）。
+   * load 路径以空 query 调用——依赖 query 的筛选在 get 上 naturally 失效（与既有弹射一致）。
+   */
+  extraWhere?: ExtraWhere
 }
 
 export interface StandardService<TItem extends StandardItem = StandardItem> {
@@ -319,8 +351,27 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
     return out
   }
 
+  /**
+   * 解析领域行筛选：list 传入调用方 query；load/写前锁传空 query。
+   * 返回 where 片段与（可能被改写的）list query。
+   */
+  function resolveExtraWhere(
+    permit: Permit,
+    alias: string,
+    query: Partial<ListQuery> & Record<string, unknown> = {},
+  ): { where: RawBuilder<unknown> | null; query: Partial<ListQuery> } {
+    if (!options.extraWhere) return { where: null, query }
+    const result = options.extraWhere({ permit, query, alias })
+    if (!result) return { where: null, query }
+    return {
+      where: result.where ?? null,
+      query: result.query ?? query,
+    }
+  }
+
   /** 裸表行加载（锁路径）；返回物理字段 wire 形（无投影列） */
   async function loadBare(handle: DbHandle, permit: Permit, id: string, forUpdate: boolean) {
+    const { where: extraWhere } = resolveExtraWhere(permit, TABLE)
     const row = await loadAuthorized({
       db: handle,
       permit,
@@ -329,12 +380,14 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
       id,
       forUpdate,
       notFoundMessage: notFound,
+      extraWhere,
     })
     return mapRow(meta, row as Record<string, unknown>) as TItem
   }
 
   /** 投影单条（get 与写后重载共用） */
   async function loadProjected(handle: DbHandle, permit: Permit, id: string): Promise<TItem> {
+    const { where: extraWhere } = resolveExtraWhere(permit, ALIAS)
     return loadAuthorizedFrom({
       db: handle,
       permit,
@@ -345,6 +398,7 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
       id,
       mapRow: mapRowFull,
       notFoundMessage: notFound,
+      extraWhere,
     })
   }
 
@@ -360,6 +414,7 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
   }
 
   async function list(permit: Permit, query: Partial<ListQuery>) {
+    const resolved = resolveExtraWhere(permit, ALIAS, query as Partial<ListQuery> & Record<string, unknown>)
     return listAuthorized<TItem>({
       db,
       permit,
@@ -369,7 +424,8 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
       source: SOURCE,
       select: SELECT,
       defaultOrder,
-      query,
+      query: resolved.query,
+      extraWhere: resolved.where,
       mapRow: mapRowFull,
     })
   }

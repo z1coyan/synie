@@ -109,11 +109,34 @@ export interface ControlledProjectionSpec {
 | 资源 | 旧行为 | 新行为 | 理由 |
 |------|--------|--------|------|
 | — | — | — | W0 定名阶段无行为变更；实现波次若红测暴露差异，先记本表再改 |
+| 内核 standard | list/load 无 extraWhere；accGlJournals/mfgOutputs/accBills list 弹射 | `StandardServiceOptions.extraWhere`（list/get/写前锁共用）；三资源 list（及 bills get）改描述符 | T1.5；可见性/行筛选语义字节冻结，见 v2 extraWhere 合同 |
+
+---
+
+## T1.5 · extraWhere（list/load 行筛选谓词）
+
+**定案**：`platform/standard` 描述符增加可选 `extraWhere?: (ctx) => { where?, query? }`。
+
+- **list**：解析后 `where` AND 进 `listAuthorized`；`query` 可改写（剥离 filter 伪字段，如 journal `lines`）。
+- **load**（get / 写前 `loadBare` / 投影重载）：以空 query 调用；`where` AND 进 `loadAuthorized` / `loadAuthorizedFrom`。依赖 query 的筛选在 get 上自然失效（与既有弹射一致）。
+- **child** 同语义可选挂载。
+- **不**扩宽 `listAuthorized` 调用方契约以外的授权模型——领域谓词仍由模块描述符声明。
+
+### 三资源收口
+
+| 资源 | 旧弹射 | 新描述符 |
+|------|--------|----------|
+| accGlJournals | 手写 list + EXISTS 行筛选 | `extraWhere` 剥离 `filter.lines` + EXISTS |
+| mfgOutputs | 手写 listOutputs + companyId | `extraWhere` 读 query.companyId |
+| accBills | 手写 list/get + EXISTS 可达交易 | 内核 list/get + `extraWhere` 可见性；update/delete 写前锁同谓词 |
+
+**行为**：wire URL/DTO/错误码/可见性语义不变。bills 内部 wire 时间戳仍出 ISO 字符串（`asBill` 适配层）。
 
 ---
 
 ## 非目标（本日志边界）
 
-- 不做 W1+（内核 `*InTx`、`aggregate.ts`、资源迁移）。
+- 不做 W2+ 资源聚合迁移（报价/入库等）。
 - 不动 `engines/gl` | `engines/inventory` interface。
 - 不做路由词表收口；wire URL/DTO/错误码字节冻结。
+- mfgOutputItems list 仍弹射（母单投影 join，非 extraWhere 能单独解锁）。
