@@ -55,6 +55,11 @@ export interface Bom {
   planName: string | null
   note: string | null
   materialId: string
+  /** 物料投影(join inv_material):统一物料单元格数据口径 */
+  materialCode: string
+  materialName: string
+  materialSpec: string | null
+  customerPartNo: string | null
   status: BomStatus
   insertedAt: Date
   updatedAt: Date
@@ -83,6 +88,11 @@ export interface BomComponent {
   note: string | null
   bomId: string
   materialId: string
+  /** 物料投影(join inv_material):统一物料单元格数据口径 */
+  materialCode: string
+  materialName: string
+  materialSpec: string | null
+  customerPartNo: string | null
   unitId: string
   insertedAt: Date
   updatedAt: Date
@@ -109,6 +119,11 @@ export interface BomByproduct {
   note: string | null
   bomId: string
   materialId: string
+  /** 物料投影(join inv_material):统一物料单元格数据口径 */
+  materialCode: string
+  materialName: string
+  materialSpec: string | null
+  customerPartNo: string | null
   unitId: string
   insertedAt: Date
   updatedAt: Date

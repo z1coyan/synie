@@ -951,7 +951,11 @@ export const RESOURCE_MANIFEST: ResourceManifest = {
     "lookup": {
       "labelField": "note",
       "searchFields": [
-        "note"
+        "note",
+        "materialCode",
+        "materialName",
+        "materialSpec",
+        "customerPartNo"
       ]
     },
     "wire": {
@@ -970,7 +974,11 @@ export const RESOURCE_MANIFEST: ResourceManifest = {
     "lookup": {
       "labelField": "note",
       "searchFields": [
-        "note"
+        "note",
+        "materialCode",
+        "materialName",
+        "materialSpec",
+        "customerPartNo"
       ]
     },
     "wire": {
@@ -1009,7 +1017,11 @@ export const RESOURCE_MANIFEST: ResourceManifest = {
       "searchFields": [
         "code",
         "planName",
-        "note"
+        "note",
+        "materialCode",
+        "materialName",
+        "materialSpec",
+        "customerPartNo"
       ]
     },
     "wire": {

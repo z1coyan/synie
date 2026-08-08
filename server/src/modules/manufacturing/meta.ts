@@ -26,6 +26,36 @@ function fk(
   })
 }
 
+/** 物料投影列(join inv_material):统一物料单元格数据口径,服务侧 projection 暴露同名别名(模具设计同例) */
+function materialProjectionFields(): ResourceMeta['fields'] {
+  return [
+    field('material_code', 'materialCode', 'string', '物料编号', {
+      readonly: true,
+      calculated: true,
+      filterable: true,
+      sortable: true,
+    }),
+    field('material_name', 'materialName', 'string', '物料名称', {
+      readonly: true,
+      calculated: true,
+      filterable: true,
+      sortable: true,
+    }),
+    field('material_spec', 'materialSpec', 'string', '物料规格', {
+      readonly: true,
+      calculated: true,
+      filterable: true,
+      sortable: true,
+    }),
+    field('customer_part_no', 'customerPartNo', 'string', '客户方编码', {
+      readonly: true,
+      calculated: true,
+      filterable: true,
+      sortable: true,
+    }),
+  ]
+}
+
 const demandStatusOptions = [
   { value: 'DRAFT', label: '草稿' },
   { value: 'CONFIRMED', label: '已确认' },
@@ -273,6 +303,7 @@ export function bomResourceMeta(): ResourceMeta {
         required: true,
         createOnly: true,
       }),
+      ...materialProjectionFields(),
     ],
     actions: [
       ...headCrud,
@@ -334,6 +365,7 @@ export function bomComponentResourceMeta(): ResourceMeta {
         required: true,
       }),
       fk('unit_id', 'unitId', '单位', 'basUnits', 'unit', 'name', { required: true }),
+      ...materialProjectionFields(),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     form: {
@@ -412,6 +444,7 @@ export function bomByproductResourceMeta(): ResourceMeta {
         required: true,
       }),
       fk('unit_id', 'unitId', '单位', 'basUnits', 'unit', 'name', { required: true }),
+      ...materialProjectionFields(),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     form: {

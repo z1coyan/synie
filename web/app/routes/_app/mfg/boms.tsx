@@ -1,49 +1,25 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Link } from '@heroui/react'
 import {
   SynieDataGrid,
   type ColumnOverride,
 } from '~/components/synie-data-grid/SynieDataGrid'
-import { useFkPreview } from '~/components/synie-record-drawer/fk-preview'
-import type { Row } from '~/components/synie-data-grid/types'
+import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { BomDrawerProvider, useBomDrawer } from './boms/-bom-drawer'
 
 export const Route = createFileRoute('/_app/mfg/boms')({
   component: BomsPage,
 })
 
-const GRID_COLUMNS = ['code', 'materialId', 'planName', 'status', 'note']
-
-function MaterialCell({ row }: { row: Row }) {
-  const openPreview = useFkPreview()
-  const id =
-    row.materialId == null || row.materialId === ''
-      ? null
-      : String(row.materialId)
-  const material = (row.material as Row | null | undefined) ?? null
-  if (!id) return <span className="text-muted">—</span>
-  if (!material) return <>{id.slice(0, 8)}</>
-  const text = [material.code, material.name]
-    .filter((s) => s != null && s !== '')
-    .join('-')
-  return (
-    <Link
-      onPress={() => openPreview('invMaterials', String(material.id ?? id))}
-      className="inline-block max-w-80 cursor-pointer truncate align-bottom text-inherit underline-offset-2 hover:underline"
-    >
-      {text}
-      {material.spec != null && material.spec !== '' && (
-        <span className="text-muted">({String(material.spec)})</span>
-      )}
-    </Link>
-  )
-}
+// 物料按全站约定合并为单个富单元格(materialCode 列承载,名称/规格/客编为服务端 join 投影);
+// BOM 头无图纸挂接,不传 drawingOwnerType,缩略图回退物料当前图纸
+const GRID_COLUMNS = ['code', 'materialCode', 'planName', 'status', 'note']
 
 const GRID_OVERRIDES: Record<string, ColumnOverride> = {
-  materialId: {
+  materialCode: {
     label: '物料',
     mobileRole: 'title',
-    render: (_value, row) => <MaterialCell row={row} />,
+    filterField: 'materialId',
+    render: materialCellRender(),
   },
   code: { mobileRole: 'subtitle' },
   planName: { mobileRole: 'summary' },
@@ -72,7 +48,6 @@ function BomsPageInner() {
         <SynieDataGrid
           resource="mfgBoms"
           columns={GRID_COLUMNS}
-          joinFields={{ material: ['code', 'spec'] }}
           overrides={GRID_OVERRIDES}
           onView={(row) => openDrawer('view', row)}
           onCreate={() => openDrawer('create', null)}

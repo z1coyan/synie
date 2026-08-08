@@ -23,6 +23,7 @@ import {
 } from '~/platform/standard/child.ts'
 import {
   createStandardService,
+  type StandardProjection,
   type StandardService,
 } from '~/platform/standard/service.ts'
 import { ensureMaterial, normalizeList } from './helpers.ts'
@@ -73,6 +74,24 @@ export {
   TEMPLATE_ITEM_RESOURCE,
   TEMPLATE_RESOURCE,
 } from './master-domain.ts'
+
+/**
+ * 物料投影(join inv_material):列表/单条/写后重载共用,供前端统一物料单元格取数。
+ * 子查询别名须与 meta.table 逐字一致(标准服务投影的缺省 alias),见模具设计同例。
+ */
+function materialProjection(table: string): StandardProjection {
+  return {
+    // 前导空格不可省:标准服务按 `${SELECT}${SOURCE}` 直拼,不补空白
+    source: sql` FROM (SELECT t.*, m.code AS material_code, m.name AS material_name, m.spec AS material_spec, m.customer_part_no AS customer_part_no FROM ${sql.id(table)} t JOIN inv_material m ON m.id = t.material_id) ${sql.id(table)}`,
+    selectExtra: sql`material_code, material_name, material_spec, customer_part_no`,
+    mapExtra: (row) => ({
+      materialCode: String(row.material_code),
+      materialName: String(row.material_name),
+      materialSpec: row.material_spec == null ? null : String(row.material_spec),
+      customerPartNo: row.customer_part_no == null ? null : String(row.customer_part_no),
+    }),
+  }
+}
 
 export function createMasterService(
   db: Kysely<Database>,
@@ -157,6 +176,7 @@ export function createMasterService(
     registry,
     resource: BOM_RESOURCE,
     notFound: 'BOM不存在',
+    projection: materialProjection('mfg_bom'),
     defaultOrder: sql`"code" ASC, "id" ASC`,
     writeErrors: [
       { code: '23505', message: 'BOM 编号已存在' },
@@ -203,6 +223,7 @@ export function createMasterService(
     registry,
     resource: BOM_COMPONENT_RESOURCE,
     notFound: 'BOM配料行不存在',
+    projection: materialProjection('mfg_bom_component'),
     defaultOrder: sql`"inserted_at" ASC, "id" ASC`,
     writeErrors: [{ code: '23503', message: 'BOM、物料或单位不存在' }, MFG_DUP, MFG_REF],
     recordLabel: (item) => String(item.id),
@@ -241,6 +262,7 @@ export function createMasterService(
     registry,
     resource: BOM_BYPRODUCT_RESOURCE,
     notFound: 'BOM副产品行不存在',
+    projection: materialProjection('mfg_bom_byproduct'),
     defaultOrder: sql`"inserted_at" ASC, "id" ASC`,
     writeErrors: [{ code: '23503', message: 'BOM、物料或单位不存在' }, MFG_DUP, MFG_REF],
     recordLabel: (item) => String(item.id),

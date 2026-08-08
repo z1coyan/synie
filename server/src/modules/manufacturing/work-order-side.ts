@@ -157,12 +157,22 @@ export function createWorkOrderSideActions(
           { code: '23505', message: 'BOM 编号已存在' },
         ])
       }
+      // 物料投影四字段与标准服务 projection 同口径(统一物料单元格取数)
+      const material = await trx
+        .selectFrom('inv_material')
+        .select(['code', 'name', 'spec', 'customer_part_no'])
+        .where('id', '=', wo.materialId)
+        .executeTakeFirstOrThrow()
       const bom: Bom = {
         id: bomRow.id,
         code: bomRow.code,
         planName: bomRow.plan_name,
         note: bomRow.note,
         materialId: bomRow.material_id,
+        materialCode: material.code,
+        materialName: material.name,
+        materialSpec: material.spec,
+        customerPartNo: material.customer_part_no,
         status: 'active',
         insertedAt: new Date(bomRow.inserted_at),
         updatedAt: new Date(bomRow.updated_at),

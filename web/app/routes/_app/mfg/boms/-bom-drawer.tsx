@@ -10,7 +10,10 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
+import { MaterialCell } from '~/components/synie-material-cell/MaterialCell'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
+import { resolveSource } from '~/components/synie-remote-select/remote-query'
+import { useRemoteRecords } from '~/components/synie-remote-select/use-remote'
 import {
   applyRouteTemplate as applyBomRouteTemplate,
   bomByproductClient,
@@ -27,6 +30,59 @@ import {
   createDocumentDrawerOpenBridge,
   useDocumentDrawer,
 } from '~/lib/use-document-drawer'
+
+/**
+ * 配料/副产品物料列:全站统一富单元格(图纸缩略图+编号/名称/规格/客编)。
+ * 已持久化行经服务端 join 投影自带四字段;本地新录行(或改物料后投影键被
+ * transformItem 清掉)按 materialId 反查物料主数据(FkText 同路径,id 级缓存去重)。
+ */
+function BomLineMaterialCell({ row }: { row: Row }) {
+  const materialId =
+    row.materialId == null || row.materialId === '' ? null : String(row.materialId)
+  const missing = materialId != null && row.materialCode == null
+  const resolved = useRemoteRecords(
+    missing ? resolveSource({ resource: 'invMaterials' }) : null,
+    missing ? [materialId] : [],
+  )
+  const live = missing
+    ? (resolved.data ?? []).find((r) => String(r.id) === materialId)
+    : null
+  const merged: Row = missing
+    ? {
+        ...row,
+        materialCode: live?.code ?? null,
+        materialName: live?.name ?? null,
+        materialSpec: live?.spec ?? null,
+        customerPartNo: live?.customerPartNo ?? null,
+      }
+    : row
+  return <MaterialCell row={merged} />
+}
+
+const bomLineMaterialOverrides = {
+  materialId: {
+    label: '物料',
+    className: 'min-w-[12rem] max-w-[18rem]',
+    render: (_value: unknown, row: Row) => <BomLineMaterialCell row={row} />,
+  },
+}
+
+/** 改物料后清掉行上旧投影键,单元格改按新 materialId 反查,避免残留改前物料文案 */
+function clearMaterialProjectionOnChange(
+  values: Record<string, unknown>,
+  editing: Row | null,
+): Record<string, unknown> {
+  if (editing && String(editing.materialId ?? '') !== String(values.materialId ?? '')) {
+    return {
+      ...values,
+      materialCode: undefined,
+      materialName: undefined,
+      materialSpec: undefined,
+      customerPartNo: undefined,
+    }
+  }
+  return values
+}
 
 // mutation input 只收行自身字段,行上挂的 material/unit/operation join 对象不进 payload
 function componentInput(row: Row) {
@@ -316,6 +372,8 @@ export function BomDrawerProvider({
               readOnly={m === 'view' || (m !== 'create' && !drawer.detailLoaded)}
               exclude={['bomId']}
               columns={['materialId', 'unitId', 'quantity', 'lossRate', 'note']}
+              overrides={bomLineMaterialOverrides}
+              transformItem={clearMaterialProjectionOnChange}
               fields={{
                 materialId: {
                   order: 0,
@@ -424,6 +482,8 @@ export function BomDrawerProvider({
               readOnly={m === 'view' || (m !== 'create' && !drawer.detailLoaded)}
               exclude={['bomId']}
               columns={['materialId', 'unitId', 'quantity', 'note']}
+              overrides={bomLineMaterialOverrides}
+              transformItem={clearMaterialProjectionOnChange}
               fields={{
                 materialId: {
                   order: 0,
