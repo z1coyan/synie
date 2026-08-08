@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, ListBox, NumberField, Select, TextArea, TextField, toast } from '@heroui/react'
 import { isForbidden } from '~/lib/errors'
@@ -7,6 +7,7 @@ import { resourceLabel } from '~/lib/resources/catalog'
 import {
   salesOrderItemClient,
 } from '~/lib/resources/orders'
+import { salesQuotationItemClient } from '~/lib/resources/quotations'
 import { buildOrderDraft, type OrderSavedDraft } from '~/lib/resources/order-draft'
 import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
 import {
@@ -19,7 +20,9 @@ import { MaterialUnitSelect } from '~/components/synie-material-unit-select/Mate
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
+import { localRowId } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
+import { SourceLinesPicker } from '~/components/synie-source-picker/SourceLinesPicker'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
@@ -158,6 +161,132 @@ function CompanyCurrencySync({
  * 任一变化即清空条目草稿(已落库行由提交时的快照 diff 走删除,与手动逐行删除同路径)。
  */
 const ITEMS_RESET_FIELDS = ['orderType', 'companyId', 'partyType', 'partyId', 'orderDate', 'currencyId'] as const
+
+/**
+ * 「从报价批量选择」:常规订单条目的批量录入入口(synie-source-picker 的首个消费者)。
+ * 候选池 = 有效报价条目(过滤口径与行表单报价选择器完全一致,由调用方传入);
+ * 已在单上的报价条目经池剔除防重复;报价条目本身无数量字段,勾选后数量必填;
+ * 固定价条目带出单价,数量梯度条目无价(保存时后端按数量套档派生,同单选路径)。
+ */
+function QuoteLinesPicker(props: {
+  filter: FilterState | null
+  excludeItemIds: string[]
+  nextIdx: number
+  /** rows = 新条目行(带 local: id);sources = 对应报价条目完整行(调用方缓存供行表单梯度判定) */
+  onConfirm: (rows: Row[], sources: Row[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const pool = useQuery({
+    queryKey: ['salQuotationItemPool', JSON.stringify(props.filter)],
+    enabled: open && props.filter != null,
+    staleTime: 30_000,
+    queryFn: () =>
+      salesQuotationItemClient
+        .query({
+          limit: 200,
+          offset: 0,
+          sort: { column: 'quotationDate', direction: 'descending' },
+          filter: props.filter ?? undefined,
+        })
+        .then((result) => result.results),
+  })
+  // 池剔除:已在本单上的报价条目不再出现(想加量去编辑已有行)
+  const candidates = useMemo(() => {
+    const excluded = new Set(props.excludeItemIds)
+    return (pool.data ?? []).filter((r) => !excluded.has(r.id))
+  }, [pool.data, props.excludeItemIds])
+
+  return (
+    <SourceLinesPicker
+      buttonLabel="从报价批量选择"
+      confirmLabel="纳入订单"
+      isDisabled={props.filter == null}
+      open={open}
+      onOpenChange={setOpen}
+      pool={candidates}
+      isPending={pool.isPending}
+      error={(pool.error as Error | null) ?? null}
+      onRetry={() => void pool.refetch()}
+      emptyTitle="无可选报价条目"
+      emptyDescription="候选池 = 报价单已审核、公司/对手/币种与订单一致、订单日期在报价有效期内,且未被本单选用"
+      columns={[
+        {
+          key: 'quotation',
+          label: '报价单',
+          render: (r) => String((r.quotation as Row | null)?.quotationNo ?? '—'),
+        },
+        {
+          key: 'materialName',
+          label: '物料',
+          render: (r) => (
+            <div className="flex min-w-0 flex-col gap-0.5 py-0.5 text-sm leading-snug">
+              <span className="truncate font-medium">
+                {String(r.materialCode ?? '')} {String(r.materialName ?? '')}
+              </span>
+              {r.materialSpec != null && r.materialSpec !== '' && (
+                <span className="truncate text-xs text-muted">
+                  规格 {String(r.materialSpec)}
+                </span>
+              )}
+            </div>
+          ),
+        },
+        { key: 'unitName', label: '单位' },
+        {
+          key: 'price',
+          label: '含税单价',
+          align: 'end',
+          render: (r) =>
+            r.pricingMode === 'QTY_TIERED' ? '按数量套档' : formatPrice(r.price),
+        },
+        {
+          key: 'taxRate',
+          label: '税率',
+          align: 'end',
+          render: (r) => formatPercent(r.taxRate),
+        },
+        { key: 'validUntil', label: '报价截止' },
+      ]}
+      buildRows={(lines) =>
+        lines.map(({ source, qty }, i) => {
+          const tiered = source.pricingMode === 'QTY_TIERED'
+          const price =
+            tiered || source.price == null ? null : Number(source.price)
+          return {
+            id: localRowId(),
+            idx: props.nextIdx + i,
+            quotationItemId: source.id,
+            materialId: source.materialId ?? null,
+            unitId: source.unitId ?? null,
+            qty,
+            price,
+            taxRate: source.taxRate == null ? null : Number(source.taxRate),
+            // 金额本地即时显示;梯度条目无价可算留空(表格显「按数量套档」),保存时后端权威重算
+            amount:
+              price == null
+                ? null
+                : Math.round((qty * price + Number.EPSILON) * 100) / 100,
+            // 定价模式与快照名随行走:表格列渲染与行表单梯度判定都读行上字段
+            pricingMode: source.pricingMode ?? null,
+            materialCode: source.materialCode ?? null,
+            materialName: source.materialName ?? null,
+            materialSpec: source.materialSpec ?? null,
+            customerPartNo: source.customerPartNo ?? null,
+            unitName: source.unitName ?? null,
+            remarks: null,
+          } as Row
+        })
+      }
+      onConfirm={(rows) => {
+        const byId = new Map(candidates.map((r) => [r.id, r]))
+        const sources = rows
+          .map((r) => byId.get(String(r.quotationItemId)))
+          .filter((r): r is Row => r != null)
+        props.onConfirm(rows, sources)
+      }}
+    />
+  )
+}
 
 /**
  * 销售订单创建/编辑抽屉(头+条目+条款)。
@@ -596,6 +725,8 @@ export function OrderDrawerProvider({
                 }
               : { visible: () => false },
           }
+          // 条目表只读口径:查看态、非草稿单、编辑态详情未载完;批量选择入口同口径显隐
+          const itemsReadOnly = mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !drawer.detailLoaded)
           return (
           <>
             <CompanyCurrencySync
@@ -611,13 +742,34 @@ export function OrderDrawerProvider({
             label="订单条目"
             items={items}
             onChange={setItems}
-            readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !drawer.detailLoaded)}
+            readOnly={itemsReadOnly}
             // 头四要素(类型/公司/对手/日期)未选齐禁止新增;币种由公司带出,选择器内部另有兜底
             canCreate={headerReady}
             toolbar={
-              mode !== 'view' && !headerReady ? (
-                <span className="text-xs text-muted">先选齐订单类型、公司、对手与订单日期</span>
-              ) : undefined
+              itemsReadOnly ? undefined : (
+                <>
+                  {!headerReady && (
+                    <span className="text-xs text-muted">先选齐订单类型、公司、对手与订单日期</span>
+                  )}
+                  {/* 批量入口与逐条新增并存:批量圈定常规行,单条补录/编辑仍走行表单;
+                      样品单条目自由录入,不出报价入口 */}
+                  {!isSample && (
+                    <QuoteLinesPicker
+                      filter={quotationFilter}
+                      excludeItemIds={items
+                        .map((item) => String(item.quotationItemId ?? ''))
+                        .filter(Boolean)}
+                      nextIdx={items.reduce((max, r) => Math.max(max, Number(r.idx) || 0), 0) + 1}
+                      onConfirm={(rows, sources) => {
+                        // 缓存报价条目完整行:行表单梯度判定(tieredSelected)与快照带出读它
+                        for (const s of sources) quotationItemsRef.current.set(String(s.id), s)
+                        setItems([...items, ...rows])
+                        toast.success(`已纳入 ${rows.length} 行报价条目`)
+                      }}
+                    />
+                  )}
+                </>
+              )
             }
             // 行表单物料/数量/单价双列排布,默认 420px 局促,加宽一档
             drawerClassName="w-full lg:w-[560px]"
