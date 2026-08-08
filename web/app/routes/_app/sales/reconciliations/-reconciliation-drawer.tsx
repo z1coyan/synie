@@ -5,7 +5,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   Input,
   Label,
@@ -16,7 +16,6 @@ import {
 } from '@heroui/react'
 import { formatAmount, formatQty } from '~/lib/amount'
 import { resourceLabel } from '~/lib/resources/catalog'
-import { companyClient } from '~/lib/resources/companies'
 import { salesDeliveryItemClient } from '~/lib/resources/fulfillment'
 import { salesReconciliationItemClient } from '~/lib/resources/reconciliations'
 import {
@@ -42,6 +41,7 @@ import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { auditMaterialCell, type AuditDocConfig } from '../../scm/-audit-doc'
 import { CompanyDefaultSync, defaultCompanyId } from '../../scm/-stock-doc'
+import { useAuthorizedCompanies } from '~/lib/form-defaults'
 import { fetchCompanyAccountDefaults } from '~/components/company-account-defaults'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { toastError } from '~/lib/toast'
@@ -417,17 +417,7 @@ export function ReconciliationDrawerProvider({
   const queryClient = useQueryClient()
   const draftHeadRef = useRef<Row | null>(null)
 
-  const companies = useQuery({
-    queryKey: ['salReconciliations', 'companies'],
-    queryFn: () =>
-      companyClient
-        .query({
-          limit: 50,
-          offset: 0,
-          sort: { column: 'code', direction: 'ascending' },
-        })
-        .then((result) => result.results),
-  })
+  const companies = useAuthorizedCompanies()
 
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
 

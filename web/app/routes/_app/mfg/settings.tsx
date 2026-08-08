@@ -102,8 +102,6 @@ function MfgSettingsPage() {
                   isLeaf: { kind: 'bool', eq: true },
                   active: { kind: 'bool', eq: true },
                 }}
-                searchFields={['name', 'code']}
-                itemSubtitleFields={['code']}
               />
               <p className="mt-1 text-xs text-muted">
                 建模具时自动建的资产物料归入该分类。

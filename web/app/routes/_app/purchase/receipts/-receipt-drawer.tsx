@@ -5,9 +5,8 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Input, Label, NumberField, TextField, toast } from '@heroui/react'
-import { companyClient } from '~/lib/resources/companies'
 import { resourceLabel } from '~/lib/resources/catalog'
 import {
   purchaseReceiptItemClient,
@@ -38,7 +37,7 @@ import {
 } from '../../scm/-stock-doc'
 import { fetchCompanyAccountDefaults } from '~/components/company-account-defaults'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
-import { todayLocal } from '~/lib/form-defaults'
+import { todayLocal, useAuthorizedCompanies } from '~/lib/form-defaults'
 import {
   createDocumentDrawerOpenBridge,
   useDocumentDrawer,
@@ -264,17 +263,7 @@ export function ReceiptDrawerProvider({
   const queryClient = useQueryClient()
   const draftHeadRef = useRef<Row | null>(null)
 
-  const companies = useQuery({
-    queryKey: ['purReceipts', 'companies'],
-    queryFn: () =>
-      companyClient
-        .query({
-          limit: 50,
-          offset: 0,
-          sort: { column: 'code', direction: 'ascending' },
-        })
-        .then((result) => result.results),
-  })
+  const companies = useAuthorizedCompanies()
 
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
 

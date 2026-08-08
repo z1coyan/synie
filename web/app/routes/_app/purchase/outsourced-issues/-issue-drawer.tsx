@@ -8,7 +8,6 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, ListBox, NumberField, Select, TextField, toast } from '@heroui/react'
 import { resourceLabel } from '~/lib/resources/catalog'
-import { companyClient } from '~/lib/resources/companies'
 import { purchaseOutsourcedIssueItemClient } from '~/lib/resources/fulfillment'
 import {
   buildOutsourcedIssueDraft,
@@ -30,7 +29,7 @@ import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { auditMaterialCell, type AuditDocConfig } from '../../scm/-audit-doc'
 import { CompanyDefaultSync, WarehouseRemoteSelect, defaultCompanyId } from '../../scm/-stock-doc'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
-import { todayLocal } from '~/lib/form-defaults'
+import { todayLocal, useAuthorizedCompanies } from '~/lib/form-defaults'
 import {
   createDocumentDrawerOpenBridge,
   useDocumentDrawer,
@@ -212,17 +211,7 @@ export function IssueDrawerProvider({
   const queryClient = useQueryClient()
   const draftHeadRef = useRef<Row | null>(null)
 
-  const companies = useQuery({
-    queryKey: ['purOutsourcedIssues', 'companies'],
-    queryFn: () =>
-      companyClient
-        .query({
-          limit: 50,
-          offset: 0,
-          sort: { column: 'code', direction: 'ascending' },
-        })
-        .then((result) => result.results),
-  })
+  const companies = useAuthorizedCompanies()
 
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
 

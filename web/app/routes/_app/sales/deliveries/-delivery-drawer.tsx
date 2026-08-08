@@ -15,7 +15,6 @@ import {
   rowErrors,
   type DeliveryDraftIndex,
 } from '~/lib/resources/sales-delivery-draft'
-import { companyClient } from '~/lib/resources/companies'
 import { APIError } from '~/lib/api/client'
 import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
 import {
@@ -51,7 +50,7 @@ import {
 } from '../../scm/-stock-doc'
 import { fetchCompanyAccountDefaults } from '~/components/company-account-defaults'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
-import { todayLocal } from '~/lib/form-defaults'
+import { todayLocal, useAuthorizedCompanies } from '~/lib/form-defaults'
 import { toastError } from '~/lib/toast'
 import {
   createDocumentDrawerOpenBridge,
@@ -1053,17 +1052,7 @@ export function DeliveryDrawerProvider({
   // 编辑入口:权威草稿优先(保存后立即有 status),其次 URL 自查行 / 本地 open 入参
   const deliveryStatus = drawer.draft?.status ?? drawer.row?.status
 
-  const companies = useQuery({
-    queryKey: ['salDeliveries', 'companies'],
-    queryFn: () =>
-      companyClient
-        .query({
-          limit: 50,
-          offset: 0,
-          sort: { column: 'code', direction: 'ascending' },
-        })
-        .then((result) => result.results),
-  })
+  const companies = useAuthorizedCompanies()
 
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
 

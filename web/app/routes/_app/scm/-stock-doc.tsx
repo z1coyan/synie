@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Label, NumberField, toast } from '@heroui/react'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
@@ -14,8 +14,8 @@ import {
   CompanyDefaultSync,
   defaultCompanyId,
   todayLocal,
+  useAuthorizedCompanies,
 } from '~/lib/form-defaults'
-import { companyClient } from '~/lib/resources/companies'
 import type { ResourceClient } from '~/lib/resources/types'
 import { persistChildRows } from '~/lib/resources/persist-child-rows'
 import { resourceBindingFor } from '~/lib/resources/registry'
@@ -180,15 +180,7 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
     setItemsSnapshot(rows)
   }, [drawer.draft, drawer.generation])
 
-  const companies = useQuery({
-    queryKey: [cfg.resource, 'companies'],
-    queryFn: () =>
-      companyClient.query({
-        limit: 50,
-        offset: 0,
-        sort: { column: 'code', direction: 'ascending' },
-      }).then((result) => result.results),
-  })
+  const companies = useAuthorizedCompanies()
 
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
 
