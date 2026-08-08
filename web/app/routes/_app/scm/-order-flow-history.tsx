@@ -9,6 +9,12 @@ const FLOW_LABELS: Record<string, string> = {
   'sales.delivery': '销售发货',
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  DRAFT: '草稿',
+  AUDITED: '已审核',
+  VOIDED: '已作废',
+}
+
 /** 订单「收发货历史」只读表；历史由订单专用 REST 端点聚合，不再查询 GraphQL 视图。 */
 export function OrderFlowHistory({
   orderId,
@@ -74,7 +80,7 @@ export function OrderFlowHistory({
                             : 'default'
                       }
                     >
-                      {row.status}
+                      {STATUS_LABELS[row.status] ?? row.status}
                     </Chip>
                   </Table.Cell>
                   <Table.Cell>
