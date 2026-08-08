@@ -32,6 +32,13 @@ import { SyniePreview, type SyniePreviewItem } from '../synie-preview/SyniePrevi
 import { useDraft } from './use-debounced'
 import { useGridActions } from './use-grid-actions'
 import { resolveUrlStateEnabled, useUrlGridState } from './use-url-grid-state'
+import {
+  ATTACHMENT_IMAGES_COLUMN,
+  buildDefaultOrder,
+  resolveColumnSettingsEnabled,
+} from './column-prefs'
+import { ColumnSettingsButton } from './column-settings'
+import { useColumnPrefs } from './use-column-prefs'
 
 // 单元格渲染与列 override 类型已迁入 cells.tsx(表格/卡片/编辑表三处共用);
 // 此处 re-export 保持既有 import 路径(页面与 SynieEditableTable)不破
@@ -125,6 +132,16 @@ export interface SynieDataGridProps {
    * 读写 search 只补丁 q/page/ps/sort/f，与 record/mode 等同页共存。
    */
   urlState?: boolean
+  /**
+   * 是否显示列设置（齿轮：显隐 + 顺序）。
+   * 缺省与 urlState 同口径：页面网格开、pick/内嵌关。可强开/强关。
+   */
+  columnSettings?: boolean
+  /**
+   * 列偏好 localStorage 键后缀（`synie.grid.columnPrefs.${key}`）。
+   * 同 resource 多视图须显式区分；缺省 = resource。
+   */
+  columnPrefsKey?: string
   /** 本页汇总行:表格下方、分页上方渲染(如金额本页合计);rows 为当前页数据 */
   pageSummary?: (rows: Row[]) => ReactNode
   /** 附件图片列:行记录的图片附件(sys_attachment 多态挂接)以缩略图列呈现,
@@ -220,12 +237,68 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters])
 
+  // meta 候选列(去掉 id / exclude);页面 columns 只作默认可见,用户可用齿轮打开其余 meta 列
+  const baseColumns = useMemo(
+    () => (meta.data?.columns ?? []).filter((c) => c.name !== 'id' && !exclude.includes(c.name)),
+    [meta.data, exclude],
+  )
+  const hasAttachmentImages = props.attachmentImages != null
+  const candidateNames = useMemo(() => {
+    const names = baseColumns.map((c) => c.name)
+    if (hasAttachmentImages) names.push(ATTACHMENT_IMAGES_COLUMN)
+    return names
+  }, [baseColumns, hasAttachmentImages])
+  const defaultColumnOrder = useMemo(
+    () =>
+      buildDefaultOrder(
+        props.columns,
+        candidateNames,
+        hasAttachmentImages ? [ATTACHMENT_IMAGES_COLUMN] : [],
+      ),
+    [props.columns, candidateNames, hasAttachmentImages],
+  )
+  const columnSettingsEnabled = resolveColumnSettingsEnabled(
+    props.columnSettings,
+    props.urlState,
+    props.pick,
+  )
+  const columnPrefsKey = props.columnPrefsKey ?? resource
+  const {
+    order: columnOrder,
+    isCustomized: columnPrefsCustomized,
+    setOrder: setColumnOrder,
+    reset: resetColumnPrefs,
+  } = useColumnPrefs({
+    prefsKey: columnPrefsKey,
+    enabled: columnSettingsEnabled,
+    defaultOrder: defaultColumnOrder,
+    candidates: candidateNames,
+  })
   const columns = useMemo(() => {
-    const base = (meta.data?.columns ?? []).filter((c) => c.name !== 'id' && !exclude.includes(c.name))
-    if (!props.columns) return base
-    const byName = new Map(base.map((c) => [c.name, c]))
-    return props.columns.flatMap((n) => byName.get(n) ?? [])
-  }, [meta.data, exclude, props.columns])
+    const byName = new Map(baseColumns.map((c) => [c.name, c]))
+    return columnOrder
+      .filter((n) => n !== ATTACHMENT_IMAGES_COLUMN)
+      .flatMap((n) => byName.get(n) ?? [])
+  }, [baseColumns, columnOrder])
+  const showAttachmentImages =
+    hasAttachmentImages && columnOrder.includes(ATTACHMENT_IMAGES_COLUMN)
+  const columnSettingsItems = useMemo(
+    () => [
+      ...baseColumns.map((c) => ({
+        name: c.name,
+        label: overrides[c.name]?.label ?? c.label,
+      })),
+      ...(hasAttachmentImages
+        ? [
+            {
+              name: ATTACHMENT_IMAGES_COLUMN,
+              label: props.attachmentImages?.label ?? '图片',
+            },
+          ]
+        : []),
+    ],
+    [baseColumns, overrides, hasAttachmentImages, props.attachmentImages?.label],
+  )
 
   // 卡片字段角色映射:override.mobileRole 汇成 roles 表交纯函数推导(卡片模式才消费)
   const cardRoles = useMemo(
@@ -381,9 +454,34 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     return target?.filterable ? { ...target, label: overrides[col.name]?.label ?? col.label } : null
   }
   const gridColumns: DataGridColumn<Row>[] = useMemo(() => {
-    const mapped: DataGridColumn<Row>[] = columns.map((col, i) => {
+    const byName = new Map(columns.map((c) => [c.name, c]))
+    // 按 columnOrder 建列(含合成附件列位置);选择/操作列稍后另挂,不进偏好
+    let dataColIndex = 0
+    const mapped: DataGridColumn<Row>[] = []
+    for (const name of columnOrder) {
+      if (name === ATTACHMENT_IMAGES_COLUMN) {
+        if (!showAttachmentImages || !attachmentImages) continue
+        mapped.push({
+          id: ATTACHMENT_IMAGES_COLUMN,
+          header: () => <>{attachmentImages.label ?? '图片'}</>,
+          allowsSorting: false,
+          cell: (row: Row) =>
+            isLoadingRow(row) ? null : (
+              <AttachmentImagesCell
+                ownerType={attachmentImages.ownerType}
+                ownerId={row.id}
+                category={attachmentImages.category}
+                onPreview={(items) => setAttachmentPreview({ items, open: true })}
+              />
+            ),
+        })
+        continue
+      }
+      const col = byName.get(name)
+      if (!col) continue
+      const i = dataColIndex++
       const filterCol = filterTargetOf(col)
-      return {
+      mapped.push({
         id: col.name,
         align: overrides[col.name]?.align ?? (col.type === 'integer' || col.type === 'decimal' ? 'end' : undefined),
         // 筛选按钮绝对定位吸右,右侧留出内边距防止列名/排序箭头滑到按钮下面(右对齐列尤甚)
@@ -432,27 +530,21 @@ export function SynieDataGrid(props: SynieDataGridProps) {
           }
           return thumb
         },
-      }
-    })
-    // 附件图片列:不来自 GridMeta 的虚拟列,不参与查询/排序/筛选/导出
-    if (attachmentImages) {
-      mapped.push({
-        id: '__attachmentImages',
-        header: () => <>{attachmentImages.label ?? '图片'}</>,
-        allowsSorting: false,
-        cell: (row: Row) =>
-          isLoadingRow(row) ? null : (
-            <AttachmentImagesCell
-              ownerType={attachmentImages.ownerType}
-              ownerId={row.id}
-              category={attachmentImages.category}
-              onPreview={(items) => setAttachmentPreview({ items, open: true })}
-            />
-          ),
       })
     }
+    // 若首列是合成列,把 isRowHeader 挪到第一个数据列(或首列本身若无数据列)
+    if (mapped.length > 0 && mapped[0]!.id === ATTACHMENT_IMAGES_COLUMN) {
+      const firstData = mapped.find((c) => c.id !== ATTACHMENT_IMAGES_COLUMN)
+      if (firstData) {
+        mapped[0] = { ...mapped[0]!, isRowHeader: false }
+        const idx = mapped.indexOf(firstData)
+        mapped[idx] = { ...firstData, isRowHeader: true }
+      } else {
+        mapped[0] = { ...mapped[0]!, isRowHeader: true }
+      }
+    }
     return mapped
-  }, [columns, overrides, filters, treeMode, attachmentImages])
+  }, [columnOrder, columns, overrides, filters, treeMode, attachmentImages, showAttachmentImages])
 
   // 取消排序必须传 null 而非 undefined:undefined 会让 DataGrid 退回非受控内部状态,残留首次点击存下的旧描述符
   const sortDescriptor = (sort ? { column: sort.column, direction: sort.direction } : null) as unknown as
@@ -649,11 +741,12 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* 工具栏:搜索 + 动作按钮;hideSearch 且无动作按钮时整行不渲染。
-          卡片模式:动作按钮换为「筛选(带生效计数)/排序」入口,重操作回桌面 */}
+      {/* 工具栏:搜索 + 动作按钮 + 列设置;hideSearch 且无动作/列设置时整行不渲染。
+          卡片模式:动作按钮换为「筛选(带生效计数)/排序」入口,列设置齿轮保留 */}
       {(!props.hideSearch ||
         (!cardMode && actions.toolbarActions.length > 0) ||
-        (cardMode && (hasFilterable || hasSortable))) && (
+        (cardMode && (hasFilterable || hasSortable || cardToolbarActions.length > 0)) ||
+        columnSettingsEnabled) && (
       <div className="flex flex-wrap items-center gap-3">
         {!props.hideSearch && (
           <GridSearch
@@ -697,9 +790,22 @@ export function SynieDataGrid(props: SynieDataGridProps) {
               toolbarButton(a)
             )
           )}
+          {columnSettingsEnabled && (
+            <ColumnSettingsButton
+              items={columnSettingsItems}
+              order={columnOrder}
+              onOrderChange={setColumnOrder}
+              onReset={resetColumnPrefs}
+              isCustomized={columnPrefsCustomized}
+            />
+          )}
         </div>
         )}
-        {cardMode && (cardToolbarActions.length > 0 || hasFilterable || (hasSortable && !treeMode)) && (
+        {cardMode &&
+          (cardToolbarActions.length > 0 ||
+            hasFilterable ||
+            (hasSortable && !treeMode) ||
+            columnSettingsEnabled) && (
           <div className="ml-auto flex items-center gap-2">
             {cardToolbarActions.map(toolbarButton)}
             {hasFilterable && (
@@ -711,6 +817,15 @@ export function SynieDataGrid(props: SynieDataGridProps) {
               <Button size="sm" variant="secondary" onPress={() => setSortSheetOpen(true)}>
                 排序
               </Button>
+            )}
+            {columnSettingsEnabled && (
+              <ColumnSettingsButton
+                items={columnSettingsItems}
+                order={columnOrder}
+                onOrderChange={setColumnOrder}
+                onReset={resetColumnPrefs}
+                isCustomized={columnPrefsCustomized}
+              />
             )}
           </div>
         )}
@@ -760,7 +875,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
             if (fileId) setImagePreview({ col, fileId, open: true })
           }}
           renderLeading={
-            attachmentImages
+            showAttachmentImages && attachmentImages
               ? (row) => (
                   <AttachmentImagesCell
                     ownerType={attachmentImages.ownerType}
