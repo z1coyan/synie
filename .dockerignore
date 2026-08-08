@@ -1,10 +1,41 @@
-**/node_modules
+# Docker 构建上下文排除清单（上下文为仓库根，server/web Dockerfile 共用）。
+# 构建必需的路径：package.json、bun.lock、packages/shared、server（src/db 等）、
+# web（app/vite.config.ts/tsconfig.json/app.css/serve.ts 等）——不要误排。
+
+# 版本控制与本地产物
 **/.git
+**/.DS_Store
+**/*.log
+**/.turbo
+.turbo
+
+# 依赖与构建产物（镜像内重新安装/构建）
+**/node_modules
 **/dist
+web/test-results
+
+# 环境/机密文件（运行时由 Dokploy 注入，绝不进构建上下文）
+**/.env
+**/.env.*
+
+# 运行时数据（server/uploads 含真实业务上传文件，经 volume 持久化，不入镜像）
+uploads
+server/uploads
+server/.baseline
+
+# 与镜像构建无关的目录
+docs
+contracts
+scripts
+web/e2e
+.playwright-mcp
+.scratch
+.grok
+.github
+.vscode
+.claude
+.agents
+
+# 历史栈（已移出工作树，防御性保留）
 backend
 server-go
-docs
-uploads
-**/*.log
-**/.env
-web/test-results

@@ -45,6 +45,7 @@
   },
   "include": [
     "app",
-    "vite.config.ts"
+    "vite.config.ts",
+    "serve.ts"
   ]
 }

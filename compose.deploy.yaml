@@ -1,0 +1,81 @@
+# Synie 生产部署（Dokploy / Docker Compose）。
+# 数据库（PostgreSQL）与对象存储是独立阿里云服务，不在本文件内；
+# 连接信息经环境变量注入（在 Dokploy 应用设置的 Environment 中配置）。
+#
+# 拓扑（重要，与代码假设一致）：
+#   server 无 CORS 配置，浏览器侧 API 恒走同源相对路径 /api/v1
+#  （httpOnly cookie 会话依赖同源；见 web/app/lib/api/client.ts）。
+#   因此必须把 web 与 server 挂在同一域名下做反向代理：
+#     - PathPrefix(`/api/v1`)  → server:8080
+#     - 其余流量               → web:3000
+#   Dokploy 默认用 Traefik，可在 server 服务的域名设置里加 `/api/v1` 路径规则实现。
+#   web 容器的 SSR 在集群内直连 server（SYNIE_API_ORIGIN=http://server:8080），不经公网。
+#
+# 首次部署顺序：migrate 跑迁移（server/web 依赖其成功退出）→ 浏览器打开站点走初始化
+# 向导创建首个管理员（或手动 seed：`docker compose -f compose.deploy.yaml run --rm server bun db/seed.ts`，
+# 需同时注入 SEED_ADMIN_USERNAME/SEED_ADMIN_PASSWORD/SEED_ADMIN_NAME）。
+#
+# 可选环境变量（按需追加到对应服务，未列出即不启用）：
+#   server：LOGTO_ISSUER/LOGTO_CLIENT_ID/LOGTO_CLIENT_SECRET（三件套要么全配要么全不配）、
+#           BETTER_AUTH_ALLOWED_HOSTS、SOFFICE_PATH/SOFFICE_TIMEOUT_MS/SOFFICE_MAX_CONCURRENCY、
+#           UPLOADS_ROOT（默认 uploads，即容器内 /app/server/uploads）
+
+name: synie
+
+services:
+  # 一次性迁移任务：Dokploy 部署/更新时随栈启动，跑完即退出
+  migrate:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    command: ["bun", "db/migrate.ts"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?请在 Dokploy 环境变量中设置 DATABASE_URL（阿里云 PostgreSQL 完整 DSN）}
+    restart: "no"
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    environment:
+      PORT: "8080"
+      HOST: 0.0.0.0
+      DATABASE_URL: ${DATABASE_URL:?请在 Dokploy 环境变量中设置 DATABASE_URL（阿里云 PostgreSQL 完整 DSN）}
+      # 至少 32 字节、不可预测的随机值
+      AUTH_SECRET: ${AUTH_SECRET:?请在 Dokploy 环境变量中设置 AUTH_SECRET（至少 32 字节随机值）}
+      AUTH_TOKEN_TTL: ${AUTH_TOKEN_TTL:-168h}
+      # 浏览器可达的站点 origin（如 https://erp.example.com），better-auth 的 baseURL 回退
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?请在 Dokploy 环境变量中设置 BETTER_AUTH_URL（站点 origin，如 https://erp.example.com）}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      # 本地上传文件持久化（默认 uploads 根；对象存储在系统设置中另行配置）
+      - synie-uploads:/app/server/uploads
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      secrets:
+        # HeroUI Pro 组件码下载凭证（仅构建期经 BuildKit secret 注入，不进镜像层）
+        - HEROUI_AUTH_TOKEN
+    environment:
+      PORT: "3000"
+      HOST: 0.0.0.0
+      # SSR 直连后端的集群内地址；浏览器请求不经过它
+      SYNIE_API_ORIGIN: http://server:8080
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  synie-uploads:
+
+secrets:
+  # 值取自 Dokploy Environment（写入 compose 旁 .env 后按名注入）
+  HEROUI_AUTH_TOKEN:
+    environment: HEROUI_AUTH_TOKEN

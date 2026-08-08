@@ -174,12 +174,20 @@ HEROUI_AUTH_TOKEN=xxx node node_modules/@heroui-pro/react/dist/postinstall/index
 
 ## 生产环境提示
 
-进入生产部署前至少需要：
+生产部署目标是 **Dokploy（Docker）**；数据库（PostgreSQL）与对象存储为独立阿里云服务，不在容器编排内。部署工件：
 
-- 配置真实 `DATABASE_URL`。
-- 配置至少 32 字节、不可预测的 `AUTH_SECRET`，并按需设置 `AUTH_TOKEN_TTL`。
-- 使用 `bun run db:migrate` 执行并审查数据库迁移。
-- 通过 seed 或初始化向导创建首个管理员，不在日志或代码中保存口令。
-- 验证 `/api/v1/healthz`、后端测试、前端检查/构建与 Playwright e2e。
+- `server/Dockerfile`：API 镜像（非 root 运行，HEALTHCHECK 打 `/api/v1/healthz`）。
+- `web/Dockerfile`：前端镜像（多阶段构建；`HEROUI_AUTH_TOKEN` 经 BuildKit secret 注入，仅构建期用于下载 HeroUI Pro 组件码，不进镜像层与构建日志）。前端生产运行形态：`vite build` 产出 `web/dist/client` + `web/dist/server/server.js`，由 `web/serve.ts`（`bun serve.ts`）提供静态资源 + SSR，监听 `PORT`（默认 3000）。
+- `compose.deploy.yaml`：生产编排（server + web + 一次性 migrate，无 postgres）；开发用的 `compose.yaml` 不动。
+- 根 `.dockerignore`：保证构建上下文不含 `node_modules`、`server/uploads`（真实业务上传文件）、`.env*` 等。
+
+Dokploy 部署要点：
+
+1. **同源反代（必需）**：server 无 CORS 配置，浏览器侧 API 恒走同源相对路径 `/api/v1`（httpOnly cookie 会话依赖同源）。把两个服务挂在同一域名下：`/api/v1` 前缀反代到 `server:8080`，其余流量到 `web:3000`（Dokploy/Traefik 路径规则）。web 的 SSR 在集群内经 `SYNIE_API_ORIGIN=http://server:8080` 直连 server。
+2. **必配环境变量**（Dokploy Environment）：`DATABASE_URL`（阿里云 PG 完整 DSN）、`AUTH_SECRET`（至少 32 字节随机值）、`BETTER_AUTH_URL`（站点 origin，如 `https://erp.example.com`）、`HEROUI_AUTH_TOKEN`（构建 secret，heroui.pro 仪表盘获取）。可选项见 `compose.deploy.yaml` 头部注释与 `server/.env.example`。
+3. **迁移**：`compose.deploy.yaml` 的 `migrate` 服务随栈自动执行 `bun db/migrate.ts`（与开发 compose 同一思路），跑完退出后 server/web 才启动。
+4. **首个管理员**：浏览器打开站点走初始化向导；或 `docker compose -f compose.deploy.yaml run --rm server bun db/seed.ts`（注入 `SEED_ADMIN_*`）。不在日志或代码中保存口令。
+5. **上传文件**：默认落 `server` 容器 `/app/server/uploads`，已挂命名卷 `synie-uploads` 持久化；对象存储在系统设置中配置。
+6. 上线前验证 `/api/v1/healthz`、后端测试、前端检查/构建与 Playwright e2e。
 
 历史 Elixir（`backend/`）与 Go（`server-go/`）实现已移出工作树；考古见 git tag `backend-elixir-final` / `server-go-final`。
