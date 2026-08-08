@@ -15,9 +15,11 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
+import type { RateLimiter } from '~/platform/auth/limiter.ts'
 import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
+import { rateLimitByActor } from '~/platform/http/rate-limit.ts'
 import { listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
 import { idParam } from '~/platform/standard/routes.ts'
 import { FILE_RESOURCE_NAME } from '~/platform/files/meta.ts'
@@ -220,8 +222,10 @@ export function bankImportTemplateRoutes(deps: {
 
 export function bankImportRoutes(deps: {
   auth: AuthService; authz: AuthzEnforcer; banking: BankingService
+  /** 导入解析限流（按用户分桶）；缺省不限（测试基座兼容） */
+  importLimiter?: RateLimiter
 }) {
-  const { auth, authz, banking } = deps
+  const { auth, authz, banking, importLimiter } = deps
   // 读走 readAnyOf（import-as-read 重载）；写走 import 命令码，跨资源附加码用 allOf
   const readGuard = () => authz.guard(BANK_IMPORT_RESOURCE, 'read')
   const importGuard = (allOf?: readonly string[]) =>
@@ -237,7 +241,10 @@ export function bankImportRoutes(deps: {
       return c.json(await banking.getImport(permitOf(c), c.req.valid('param').id))
     })
     // 建批次必然读导入文件 → ∧ sys.file:read（迁移前是服务里两道码级闸）
-    .post('/', importGuard([codeOf(FILE_RESOURCE_NAME, 'read')]), zValidator('json', z.object({
+    // 建批次要解析对账文件，重资源：限流先于解析
+    .post('/', importGuard([codeOf(FILE_RESOURCE_NAME, 'read')]),
+      rateLimitByActor(importLimiter, '银行导入过于频繁，请稍后再试'),
+      zValidator('json', z.object({
       companyId: z.string().uuid(), bankAccountId: z.string().uuid(),
       templateId: z.string().uuid(), fileId: z.string().uuid(),
     }).strict(), validationHook), async (c) => {
@@ -248,6 +255,8 @@ export function bankImportRoutes(deps: {
     .post(
       '/:id/import',
       importGuard([codeOf(BANK_TRANSACTION_RESOURCE, 'create')]),
+      // 执行导入（解析 + 批量建流水），重资源限流
+      rateLimitByActor(importLimiter, '银行导入过于频繁，请稍后再试'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         return c.json(await banking.runImport(permitOf(c), c.req.valid('param').id))

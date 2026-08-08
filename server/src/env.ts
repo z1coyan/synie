@@ -19,6 +19,12 @@ const envSchema = z
     PGUSER: z.string().default('postgres'),
     PGPASSWORD: z.string().optional(),
     PGDATABASE: z.string().optional(),
+    /** 连接池最大连接数，默认 10 */
+    PG_POOL_MAX: z.coerce.number().int().positive().default(10),
+    /** 连接空闲回收秒数，默认 0（不主动回收，与 postgres.js 内置默认一致） */
+    PG_POOL_IDLE_TIMEOUT_S: z.coerce.number().int().min(0).default(0),
+    /** 建立连接超时秒数，默认 30（postgres.js 内置默认） */
+    PG_POOL_CONNECT_TIMEOUT_S: z.coerce.number().int().positive().default(30),
     AUTH_SECRET: z.string().min(32, 'AUTH_SECRET 至少需要 32 字节'),
     AUTH_TOKEN_TTL: z.string().regex(TTL_RE, 'AUTH_TOKEN_TTL 必须是 数字+单位（s/m/h/d），如 168h').default('168h'),
     /**
@@ -54,6 +60,16 @@ const envSchema = z
     FILE_RECON_RUN_HOUR: z.coerce.number().int().min(0).max(23).default(3),
     /** 孤儿宽限（小时）：新于此时间的对象视为进行中上传，默认 24 */
     FILE_RECON_ORPHAN_GRACE_HOURS: z.coerce.number().positive().default(24),
+    /** 停机排空超时（毫秒）：SIGTERM/SIGINT 后等待在途请求归零的上限，默认 10000 */
+    SHUTDOWN_DRAIN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+    /** 跳过启动迁移版本校验（默认 false 即开启校验；仅限特殊场景） */
+    SKIP_MIGRATION_CHECK: z.enum(['0', '1', 'true', 'false', 'yes', 'no', 'on', 'off']).optional(),
+    /** 文件上传限流（次/分钟/用户），默认 30 */
+    RATE_LIMIT_UPLOAD_PER_MIN: z.coerce.number().int().positive().default(30),
+    /** 打印渲染限流（次/分钟/用户），默认 20 */
+    RATE_LIMIT_PRINT_PER_MIN: z.coerce.number().int().positive().default(20),
+    /** 银行导入解析限流（次/分钟/用户），默认 10 */
+    RATE_LIMIT_BANK_IMPORT_PER_MIN: z.coerce.number().int().positive().default(10),
   })
   .superRefine((raw, ctx) => {
     const present = [raw.LOGTO_ISSUER, raw.LOGTO_CLIENT_ID, raw.LOGTO_CLIENT_SECRET].filter(
@@ -110,12 +126,63 @@ export interface Env {
     runHour: number
     orphanGraceMs: number
   }
+  /** PG 连接池（postgres.js 透传） */
+  pgPool: {
+    max: number
+    /** 0 = 不主动回收空闲连接 */
+    idleTimeoutSeconds: number
+    connectTimeoutSeconds: number
+  }
+  /** 停机排空：等待在途请求归零的超时（毫秒） */
+  shutdownDrainTimeoutMs: number
+  /** 跳过启动迁移版本校验（默认 false 即开启校验） */
+  skipMigrationCheck: boolean
+  /** 重资源端点限流阈值（次/分钟/用户） */
+  rateLimit: {
+    uploadPerMin: number
+    printPerMin: number
+    bankImportPerMin: number
+  }
+  /**
+   * BETTER_AUTH_URL 落 loopback 时自动放行的通配入口（未放宽为空数组）。
+   * 入口在启动时据此打 warn（静默放大信任面必须有提示）。
+   */
+  loopbackAutoAllowedHosts: string[]
 }
 
 /** 解析枚举式布尔环境变量（缺省走 fallback） */
 function parseBoolFlag(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) return fallback
   return value === '1' || value === 'true' || value === 'yes' || value === 'on'
+}
+
+/**
+ * BETTER_AUTH_URL 落 loopback 时自动放行的通配入口清单（dev 便利；生产公网 origin 返回 null）。
+ * 纯函数：parseBetterAuthAllowedHosts 合并进白名单，loadEnv 透出给启动 warn。
+ */
+export function loopbackAutoAllowPatterns(
+  betterAuthUrl: string | undefined,
+): { port: string; patterns: string[] } | null {
+  if (!betterAuthUrl) return null
+  try {
+    const u = new URL(betterAuthUrl)
+    const hn = u.hostname.toLowerCase()
+    if (hn !== 'localhost' && hn !== '127.0.0.1' && hn !== '::1') return null
+    const port = u.port || (u.protocol === 'https:' ? '443' : '80')
+    return {
+      port,
+      patterns: [
+        `10.*.*.*:${port}`,
+        `192.168.*.*:${port}`,
+        `172.*.*.*:${port}`, // 覆盖 172.16/12；略宽于 RFC1918，仅 dev
+        `100.*.*.*:${port}`, // Tailscale CGNAT 100.64/10
+        `*.ts.net:${port}`,
+      ],
+    }
+  } catch {
+    /* BETTER_AUTH_URL 已由 zod url 校验 */
+    return null
+  }
 }
 
 /** 解析 BETTER_AUTH_ALLOWED_HOSTS + BETTER_AUTH_URL.host；去重保序 */
@@ -129,14 +196,11 @@ export function parseBetterAuthAllowedHosts(
     if (h && !hosts.includes(h)) hosts.push(h)
   }
   let fallbackPort = '3000'
-  let fallbackIsLoopback = false
   if (betterAuthUrl) {
     try {
       const u = new URL(betterAuthUrl)
       push(u.host)
       fallbackPort = u.port || (u.protocol === 'https:' ? '443' : '80')
-      const hn = u.hostname.toLowerCase()
-      fallbackIsLoopback = hn === 'localhost' || hn === '127.0.0.1' || hn === '::1'
     } catch {
       /* BETTER_AUTH_URL 已由 zod url 校验 */
     }
@@ -150,16 +214,9 @@ export function parseBetterAuthAllowedHosts(
   }
   // dev 便利：BETTER_AUTH_URL 落在 loopback 时，自动放行局域网 / Tailscale 同端口入口
   // （生产公网 origin 不扩；额外主机名仍写 BETTER_AUTH_ALLOWED_HOSTS）
-  if (fallbackIsLoopback) {
-    for (const pattern of [
-      `10.*.*.*:${fallbackPort}`,
-      `192.168.*.*:${fallbackPort}`,
-      `172.*.*.*:${fallbackPort}`, // 覆盖 172.16/12；略宽于 RFC1918，仅 dev
-      `100.*.*.*:${fallbackPort}`, // Tailscale CGNAT 100.64/10
-      `*.ts.net:${fallbackPort}`,
-    ]) {
-      push(pattern)
-    }
+  const autoAllow = loopbackAutoAllowPatterns(betterAuthUrl)
+  if (autoAllow) {
+    for (const pattern of autoAllow.patterns) push(pattern)
   }
   return hosts
 }
@@ -217,5 +274,18 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
       runHour: raw.FILE_RECON_RUN_HOUR,
       orphanGraceMs: raw.FILE_RECON_ORPHAN_GRACE_HOURS * 3600_000,
     },
+    pgPool: {
+      max: raw.PG_POOL_MAX,
+      idleTimeoutSeconds: raw.PG_POOL_IDLE_TIMEOUT_S,
+      connectTimeoutSeconds: raw.PG_POOL_CONNECT_TIMEOUT_S,
+    },
+    shutdownDrainTimeoutMs: raw.SHUTDOWN_DRAIN_TIMEOUT_MS,
+    skipMigrationCheck: parseBoolFlag(raw.SKIP_MIGRATION_CHECK, false),
+    rateLimit: {
+      uploadPerMin: raw.RATE_LIMIT_UPLOAD_PER_MIN,
+      printPerMin: raw.RATE_LIMIT_PRINT_PER_MIN,
+      bankImportPerMin: raw.RATE_LIMIT_BANK_IMPORT_PER_MIN,
+    },
+    loopbackAutoAllowedHosts: loopbackAutoAllowPatterns(betterAuthUrl)?.patterns ?? [],
   }
 }

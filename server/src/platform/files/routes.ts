@@ -4,9 +4,11 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '../auth/middleware.ts'
 import type { AuthService } from '../auth/service.ts'
+import type { RateLimiter } from '../auth/limiter.ts'
 import { permitOf, type AuthzEnforcer } from '../authz/enforce.ts'
 import type { AppEnv } from '../http/context.ts'
 import { ApiError } from '../http/errors.ts'
+import { rateLimitByActor } from '../http/rate-limit.ts'
 import { listQuerySchema, toListQuery, validationHook } from '../http/zod.ts'
 import { attachmentDto, storageDto, storedFileDto } from './dto.ts'
 import { ATTACHMENT_RESOURCE_NAME, FILE_RESOURCE_NAME, STORAGE_RESOURCE_NAME } from './meta.ts'
@@ -71,6 +73,8 @@ export interface FileRoutesDeps {
   auth: AuthService
   authz: AuthzEnforcer
   files: FileService
+  /** 上传限流（按用户分桶）；缺省不限（测试基座兼容） */
+  uploadLimiter?: RateLimiter
 }
 
 /**
@@ -79,7 +83,7 @@ export interface FileRoutesDeps {
  * （via sysFiles，故码仍是 sys.file:*），handler 用 permitOf(c) 取凭证。
  */
 export function fileRoutes(deps: FileRoutesDeps) {
-  const { auth, authz, files } = deps
+  const { auth, authz, files, uploadLimiter } = deps
   const guard = (action: string) => authz.guard(FILE_RESOURCE_NAME, action)
   const guardAttachment = (action: string) => authz.guard(ATTACHMENT_RESOURCE_NAME, action)
   /** 挂接要求「能读 + 能挂」：附加码取归宿前缀（动作码事实源仍是 meta，不写字面量） */
@@ -98,7 +102,12 @@ export function fileRoutes(deps: FileRoutesDeps) {
         results: result.results.map(storedFileDto),
       })
     })
-    .post('/', guard('create'), async (c) => {
+    .post(
+      '/',
+      guard('create'),
+      // 大文件上传（≤50MB）是重资源：限流先于 multipart 解析
+      rateLimitByActor(uploadLimiter, '文件上传过于频繁，请稍后再试'),
+      async (c) => {
       let body: Record<string, string | File>
       try {
         body = (await c.req.parseBody({ all: true })) as Record<string, string | File>

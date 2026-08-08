@@ -23,6 +23,11 @@
 #           （文件存储对账，默认每日 3 点、dry-run 只报告；见 server/.env.example）
 #           ERROR_REPORT_WEBHOOK_URL（5xx 错误上报 webhook：POST JSON 摘要，不配则不启用；
 #           只发 requestId/method/path/status/错误摘要，不含堆栈细节；见 server/.env.example）
+#           PG_POOL_MAX/PG_POOL_IDLE_TIMEOUT_S/PG_POOL_CONNECT_TIMEOUT_S（连接池，默认 10/0/30）、
+#           SHUTDOWN_DRAIN_TIMEOUT_MS（停机排空等待在途请求上限，默认 10000）、
+#           SKIP_MIGRATION_CHECK（跳过启动迁移版本校验，默认 false 即开启；仅限特殊场景）、
+#           RATE_LIMIT_UPLOAD_PER_MIN/RATE_LIMIT_PRINT_PER_MIN/RATE_LIMIT_BANK_IMPORT_PER_MIN
+#           （重资源端点限流，次/分钟/用户，默认 30/20/10；见 server/.env.example）
 #
 # 数据库备份：PG 是外部云服务，不在本栈内；备份用宿主机 crontab 调 scripts/backup-db.sh
 #（恢复用 scripts/restore-db.sh），挂法见 README「生产环境提示 → 备份与恢复」。

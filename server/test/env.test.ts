@@ -140,3 +140,87 @@ describe('env 可观测性配置', () => {
     expect(() => loadEnv({ ...base, ERROR_REPORT_WEBHOOK_URL: 'not-a-url' })).toThrow('环境配置无效')
   })
 })
+
+describe('env 连接池（PG_POOL_*）', () => {
+  test('缺省：max 10、idle 0（不回收）、connect 30s', () => {
+    const env = loadEnv({ ...base })
+    expect(env.pgPool).toEqual({ max: 10, idleTimeoutSeconds: 0, connectTimeoutSeconds: 30 })
+  })
+
+  test('显式配置生效', () => {
+    const env = loadEnv({
+      ...base,
+      PG_POOL_MAX: '20',
+      PG_POOL_IDLE_TIMEOUT_S: '60',
+      PG_POOL_CONNECT_TIMEOUT_S: '5',
+    })
+    expect(env.pgPool).toEqual({ max: 20, idleTimeoutSeconds: 60, connectTimeoutSeconds: 5 })
+  })
+
+  test('非法值拒绝启动', () => {
+    expect(() => loadEnv({ ...base, PG_POOL_MAX: '0' })).toThrow('环境配置无效')
+    expect(() => loadEnv({ ...base, PG_POOL_MAX: 'abc' })).toThrow('环境配置无效')
+    expect(() => loadEnv({ ...base, PG_POOL_IDLE_TIMEOUT_S: '-1' })).toThrow('环境配置无效')
+    expect(() => loadEnv({ ...base, PG_POOL_CONNECT_TIMEOUT_S: '0' })).toThrow('环境配置无效')
+  })
+})
+
+describe('env 停机排空与迁移校验开关', () => {
+  test('缺省：排空 10s、开启迁移校验', () => {
+    const env = loadEnv({ ...base })
+    expect(env.shutdownDrainTimeoutMs).toBe(10_000)
+    expect(env.skipMigrationCheck).toBe(false)
+  })
+
+  test('显式配置生效', () => {
+    const env = loadEnv({ ...base, SHUTDOWN_DRAIN_TIMEOUT_MS: '3000', SKIP_MIGRATION_CHECK: 'true' })
+    expect(env.shutdownDrainTimeoutMs).toBe(3000)
+    expect(env.skipMigrationCheck).toBe(true)
+  })
+
+  test('非法值拒绝启动', () => {
+    expect(() => loadEnv({ ...base, SHUTDOWN_DRAIN_TIMEOUT_MS: '0' })).toThrow('环境配置无效')
+    expect(() => loadEnv({ ...base, SKIP_MIGRATION_CHECK: 'maybe' })).toThrow('环境配置无效')
+  })
+})
+
+describe('env 重资源限流阈值（RATE_LIMIT_*_PER_MIN）', () => {
+  test('缺省：上传 30 / 打印 20 / 银行导入 10（次/分钟/用户）', () => {
+    const env = loadEnv({ ...base })
+    expect(env.rateLimit).toEqual({ uploadPerMin: 30, printPerMin: 20, bankImportPerMin: 10 })
+  })
+
+  test('显式配置生效', () => {
+    const env = loadEnv({
+      ...base,
+      RATE_LIMIT_UPLOAD_PER_MIN: '60',
+      RATE_LIMIT_PRINT_PER_MIN: '5',
+      RATE_LIMIT_BANK_IMPORT_PER_MIN: '3',
+    })
+    expect(env.rateLimit).toEqual({ uploadPerMin: 60, printPerMin: 5, bankImportPerMin: 3 })
+  })
+
+  test('非法值拒绝启动', () => {
+    expect(() => loadEnv({ ...base, RATE_LIMIT_UPLOAD_PER_MIN: '0' })).toThrow('环境配置无效')
+    expect(() => loadEnv({ ...base, RATE_LIMIT_PRINT_PER_MIN: '-1' })).toThrow('环境配置无效')
+    expect(() => loadEnv({ ...base, RATE_LIMIT_BANK_IMPORT_PER_MIN: 'x' })).toThrow('环境配置无效')
+  })
+})
+
+describe('env loopback 自动放宽透出（启动 warn 依据）', () => {
+  test('loopback BETTER_AUTH_URL：透出 5 条通配段', () => {
+    const env = loadEnv({ ...base, BETTER_AUTH_URL: 'http://localhost:3000' })
+    expect(env.loopbackAutoAllowedHosts).toEqual([
+      '10.*.*.*:3000',
+      '192.168.*.*:3000',
+      '172.*.*.*:3000',
+      '100.*.*.*:3000',
+      '*.ts.net:3000',
+    ])
+  })
+
+  test('公网 BETTER_AUTH_URL / 未配置：不放宽', () => {
+    expect(loadEnv({ ...base, BETTER_AUTH_URL: 'https://erp.example.com' }).loopbackAutoAllowedHosts).toEqual([])
+    expect(loadEnv({ ...base }).loopbackAutoAllowedHosts).toEqual([])
+  })
+})

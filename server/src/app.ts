@@ -91,6 +91,7 @@ import {
   type BillService,
 } from './modules/finance/index.ts'
 import type { SynieBetterAuth } from './platform/auth/better-auth.ts'
+import type { RateLimiter } from './platform/auth/limiter.ts'
 import { authRoutes } from './platform/auth/routes.ts'
 import type { AuthService } from './platform/auth/service.ts'
 import type { AppEnv } from './platform/http/context.ts'
@@ -129,6 +130,14 @@ export interface AppDeps {
   logtoEnabled: boolean
   /** 5xx 上报通道（可选；env ERROR_REPORT_WEBHOOK_URL 配置，缺省不上报） */
   errorReporter?: ErrorReporter
+  /** 在途请求计数中间件（停机排空用，注册在 accessLog 之前的最外层）；缺省不挂 */
+  inflight?: MiddlewareHandler<AppEnv>
+  /** 重资源端点限流器（按用户分桶；缺省不限流，测试基座兼容） */
+  rateLimiters?: {
+    upload?: RateLimiter
+    printRender?: RateLimiter
+    bankImport?: RateLimiter
+  }
   registry: Registry
   /** 授权执行面（guard / decideFor / targetOf）；由 registry 派生 */
   authz: AuthzEnforcer
@@ -209,9 +218,10 @@ const accessLog: MiddlewareHandler<AppEnv> = async (c, next) => {
 }
 
 export function buildApp(deps: AppDeps) {
-  const app = new Hono<AppEnv>()
-    .basePath('/api/v1')
-    .use('*', requestId())
+  const app = new Hono<AppEnv>().basePath('/api/v1').use('*', requestId())
+  // 停机排空：在途计数挂最外层（先于 accessLog），drain 完成即访问日志已落盘
+  if (deps.inflight) app.use('*', deps.inflight)
+  const appWithRoutes = app
     .use('*', accessLog)
     .get('/healthz', async (c) => {
       try {
@@ -247,7 +257,15 @@ export function buildApp(deps: AppDeps) {
       }),
     )
     .route('/system/numbering', numberingRoutes({ auth: deps.auth, authz: deps.authz, numbering: deps.numbering }))
-    .route('/files', fileRoutes({ auth: deps.auth, authz: deps.authz, files: deps.files }))
+    .route(
+      '/files',
+      fileRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        files: deps.files,
+        uploadLimiter: deps.rateLimiters?.upload,
+      }),
+    )
     .route(
       '/system/storages',
       storageRoutes({ auth: deps.auth, authz: deps.authz, storages: deps.storages }),
@@ -259,7 +277,12 @@ export function buildApp(deps: AppDeps) {
     )
     .route(
       '/printing',
-      printingRoutes({ auth: deps.auth, authz: deps.authz, printing: deps.printing }),
+      printingRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        printing: deps.printing,
+        renderLimiter: deps.rateLimiters?.printRender,
+      }),
     )
     .route(
       '/base',
@@ -461,7 +484,12 @@ export function buildApp(deps: AppDeps) {
     )
     .route(
       '/finance/bank-imports',
-      bankImportRoutes({ auth: deps.auth, authz: deps.authz, banking: deps.banking }),
+      bankImportRoutes({
+        auth: deps.auth,
+        authz: deps.authz,
+        banking: deps.banking,
+        importLimiter: deps.rateLimiters?.bankImport,
+      }),
     )
     .route(
       '/finance/bank-import-items',
@@ -504,7 +532,7 @@ export function buildApp(deps: AppDeps) {
 
   const t = tradingRouteMounts({ auth: deps.auth, authz: deps.authz, trading: deps.trading })
   const s = scmRouteMounts({ auth: deps.auth, authz: deps.authz, scm: deps.scm })
-  const app2 = app
+  const app2 = appWithRoutes
     .route('/sales/quotations', t.salesQuotations)
     .route('/sales/quotation-items', t.salesQuotationItems)
     .route('/sales/quotation-tiers', t.salesQuotationTiers)

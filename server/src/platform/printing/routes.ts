@@ -14,11 +14,13 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '../auth/middleware.ts'
 import type { AuthService } from '../auth/service.ts'
+import type { RateLimiter } from '../auth/limiter.ts'
 import type { AuthzEnforcer } from '../authz/enforce.ts'
 import { permitOf } from '../authz/enforce.ts'
 import type { Permit } from '../authz/core/index.ts'
 import type { AppEnv } from '../http/context.ts'
 import { ApiError } from '../http/errors.ts'
+import { rateLimitByActor } from '../http/rate-limit.ts'
 import { listQuerySchema, validationHook } from '../http/zod.ts'
 import { PERMISSION_PREFIX, RESOURCE_NAME } from './meta.ts'
 import { type PrintingService } from './service.ts'
@@ -72,6 +74,8 @@ export interface PrintingRoutesDeps {
   auth: AuthService
   authz: AuthzEnforcer
   printing: PrintingService
+  /** 渲染（soffice 转换）限流（按用户分桶）；缺省不限（测试基座兼容） */
+  renderLimiter?: RateLimiter
 }
 
 /** 挂载于 /system/printing：模板 CRUD + 默认切换 */
@@ -142,7 +146,7 @@ export function systemPrintingRoutes(deps: PrintingRoutesDeps) {
 
 /** 挂载于 /printing：字段目录 / 可用模板 / 渲染 */
 export function printingRoutes(deps: PrintingRoutesDeps) {
-  const { auth, authz, printing } = deps
+  const { auth, authz, printing, renderLimiter } = deps
 
   /** 客户端 prefix → sealed registry 资源名；不在目录内即 400（与迁移前同码） */
   function resolveResource(prefix: string): { prefix: string; name: string } {
@@ -236,7 +240,12 @@ export function printingRoutes(deps: PrintingRoutesDeps) {
         })
       },
     )
-    .post('/render', zValidator('json', renderSchema, validationHook), async (c) => {
+    .post(
+      '/render',
+      // soffice 转换是重资源：限流先于渲染
+      rateLimitByActor(renderLimiter, '打印渲染过于频繁，请稍后再试'),
+      zValidator('json', renderSchema, validationHook),
+      async (c) => {
       const body = c.req.valid('json')
       const target = resolveResource(body.resource.trim())
       // mode + arity 派生动作码（S9）：单条打印 print / 多条 batch_print / 导出 export
