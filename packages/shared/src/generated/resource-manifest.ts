@@ -2306,13 +2306,15 @@ export const RESOURCE_MANIFEST: ResourceManifest = {
     "lookup": {
       "labelField": "marketFetchLastSummary",
       "searchFields": [
-        "marketFetchLastSummary"
+        "marketFetchLastSummary",
+        "fileReconLastSummary"
       ]
     },
     "wire": {
       "decimal": [],
       "date": [
         "marketFetchLastRunAt",
+        "fileReconLastRunAt",
         "insertedAt",
         "updatedAt"
       ],

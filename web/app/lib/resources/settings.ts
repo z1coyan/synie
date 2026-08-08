@@ -36,6 +36,8 @@ export interface SystemSetting {
   marketFetchSettlementEnabled: boolean
   marketFetchLastRunAt?: string | null
   marketFetchLastSummary?: string | null
+  fileReconLastRunAt?: string | null
+  fileReconLastSummary?: string | null
   insertedAt: string
   updatedAt: string
 }

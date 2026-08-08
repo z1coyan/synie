@@ -37,6 +37,7 @@ import type { TokenManager } from './platform/auth/token.ts'
 import { createAuditService } from './platform/audit/index.ts'
 import {
   buildOwnerRegistryFromMeta,
+  createFileReconcileService,
   createFileService,
   createStorageService,
 } from './platform/files/index.ts'
@@ -83,6 +84,8 @@ function assembleDomain(
   const authz = createAuthzEnforcer(opts.registry)
   const files = createFileService({ db, owners, authz })
   const storages = createStorageService({ db, authz })
+  // 存储对账（jobs/filesclean 的领域逻辑；不进 HTTP 面，仅后台调度消费）
+  const fileReconcile = createFileReconcileService({ db })
   const audit = createAuditService(db, opts.registry)
   const printing = createPrintingService({
     db,
@@ -129,6 +132,7 @@ function assembleDomain(
     numbering,
     files,
     storages,
+    fileReconcile,
     audit,
     owners,
     printing,

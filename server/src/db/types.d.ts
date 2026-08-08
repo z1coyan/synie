@@ -1783,6 +1783,8 @@ export interface SysRolePermission {
 }
 
 export interface SysSetting {
+  file_recon_last_run_at: Timestamp | null;
+  file_recon_last_summary: string | null;
   id: Generated<string>;
   inserted_at: Generated<Timestamp>;
   market_fetch_last_interval_minutes: Generated<number>;

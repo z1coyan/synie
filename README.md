@@ -190,4 +190,22 @@ Dokploy 部署要点：
 5. **上传文件**：默认落 `server` 容器 `/app/server/uploads`，已挂命名卷 `synie-uploads` 持久化；对象存储在系统设置中配置。
 6. 上线前验证 `/api/v1/healthz`、后端测试、前端检查/构建与 Playwright e2e。
 
+### 备份与恢复
+
+数据库是独立阿里云 PG，**不在容器编排内，平台不会替你备份**；备份 artifact 在 `scripts/`（pg_dump/pg_restore，需 PostgreSQL 17 客户端）：
+
+- `scripts/backup-db.sh`：自定义格式（`-Fc`）全量备份到 `BACKUP_DIR`（默认 `./backups`），文件名带 UTC 时间戳（`synie-<时间戳>.dump`）；按 `BACKUP_RETENTION`（默认 14 份）滚动保留；连接用 `DATABASE_URL` 或 `PG*` 分件（与 server 同风格）；失败非零退出并清理不完整文件。
+- `scripts/restore-db.sh`：`pg_restore --clean --if-exists --no-owner` 恢复，**覆盖目标库数据**，须显式 `RESTORE_CONFIRM=yes` 才执行；恢复后跑 `bun db/migrate.ts` 补齐备份之后的迁移。
+
+宿主机 crontab 挂法（Dokploy 容器之外的任一能连通 PG 的机器，建议就是 Dokploy 宿主机）：
+
+```cron
+# 每日 03:30 备份到 /var/backups/synie，保留最近 14 份
+30 3 * * * DATABASE_URL="postgres://user:pass@pg-host:5432/synie" BACKUP_DIR=/var/backups/synie BACKUP_RETENTION=14 /path/to/synie/scripts/backup-db.sh >> /var/log/synie-backup.log 2>&1
+```
+
+备份文件建议再异地/对象存储留存一份。**务必定期做恢复演练**（恢复到临时库验证可还原）——没演练过的备份不算备份。
+
+上传文件侧：对象存储（OSS）由云厂商保障；用本地存储接入点时 `synie-uploads` 卷需自行纳入备份。进程内另有文件存储对账作业（每日一次，默认 dry-run 只报告，见 `server/src/jobs/README.md` 与 `server/.env.example` 的 `FILE_RECON_*`）。
+
 历史 Elixir（`backend/`）与 Go（`server-go/`）实现已移出工作树；考古见 git tag `backend-elixir-final` / `server-go-final`。

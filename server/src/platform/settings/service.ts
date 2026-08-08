@@ -52,6 +52,8 @@ export interface SystemSetting {
   marketFetchSettlementEnabled: boolean
   marketFetchLastRunAt: Date | null
   marketFetchLastSummary: string | null
+  fileReconLastRunAt: Date | null
+  fileReconLastSummary: string | null
   insertedAt: Date
   updatedAt: Date
 }
@@ -86,8 +88,15 @@ const SYS_RUN_AUDIT = pickAuditFields(SYS_AUDIT_ALL, [
   'market_fetch_last_run_at',
   'market_fetch_last_summary',
 ])
+/** 文件存储对账运行记录（record_file_recon）动作的局部审计面 */
+const SYS_FILE_RECON_AUDIT = pickAuditFields(SYS_AUDIT_ALL, [
+  'file_recon_last_run_at',
+  'file_recon_last_summary',
+])
 /** 系统设置常规更新审计面 = meta 全量白名单 − 运行记录字段 */
-const SYS_AUDIT = SYS_AUDIT_ALL.filter((name) => !SYS_RUN_AUDIT.includes(name))
+const SYS_AUDIT = SYS_AUDIT_ALL.filter(
+  (name) => !SYS_RUN_AUDIT.includes(name) && !SYS_FILE_RECON_AUDIT.includes(name),
+)
 
 /** 业务域设置服务结构（组合根注入；platform 不 import 具体模块） */
 export interface SettingsDomainDeps {
@@ -141,41 +150,61 @@ export function createSystemSettingService(db: Kysely<Database>) {
     },
   })
 
-  /** 写入上次行情拉取摘要（手动/定时共用；定时侧传 systemPermit） */
-  async function recordMarketFetch(
-    permit: Permit,
-    summary: string,
-  ): Promise<SystemSetting | null> {
-    const runes = [...summary]
-    if (runes.length > 500) summary = runes.slice(0, 500).join('')
-    return withTx(db, async (trx) => {
-      const row = await trx.selectFrom('sys_setting').selectAll().forUpdate().executeTakeFirst()
-      if (!row) return null
-      const before = mapSys(row as unknown as Record<string, unknown>)
-      const updated = await trx
-        .updateTable('sys_setting')
-        .set({
-          market_fetch_last_run_at: sql`date_trunc('second', now() AT TIME ZONE 'utc')`,
-          market_fetch_last_summary: summary,
-          updated_at: sql`(now() AT TIME ZONE 'utc')`,
-        })
-        .where('id', '=', before.id)
-        .returningAll()
-        .executeTakeFirstOrThrow()
-      const after = mapSys(updated as unknown as Record<string, unknown>)
-      const changes = auditDiff(sysRunSnap(before), sysRunSnap(after), SYS_RUN_AUDIT)
-      if (Object.keys(changes).length > 0) {
-        await writeAudit(trx, permit.actor, {
-          resource: 'sys_setting',
-          recordId: after.id,
-          actionType: 'update',
-          actionName: 'record_market_fetch',
-          changes,
-        })
-      }
-      return after
-    })
+  /** 调度运行摘要的共用写入器（行情拉取 / 文件对账同构：行锁 + 截断 + 局部审计） */
+  function createRunRecorder(
+    columns: { runAt: 'market_fetch_last_run_at' | 'file_recon_last_run_at'; summary: 'market_fetch_last_summary' | 'file_recon_last_summary' },
+    auditFields: readonly string[],
+    actionName: string,
+    snap: (v: SystemSetting) => Record<string, unknown>,
+  ) {
+    return async function record(permit: Permit, summary: string): Promise<SystemSetting | null> {
+      const runes = [...summary]
+      if (runes.length > 500) summary = runes.slice(0, 500).join('')
+      return withTx(db, async (trx) => {
+        const row = await trx.selectFrom('sys_setting').selectAll().forUpdate().executeTakeFirst()
+        if (!row) return null
+        const before = mapSys(row as unknown as Record<string, unknown>)
+        const updated = await trx
+          .updateTable('sys_setting')
+          .set({
+            [columns.runAt]: sql`date_trunc('second', now() AT TIME ZONE 'utc')`,
+            [columns.summary]: summary,
+            updated_at: sql`(now() AT TIME ZONE 'utc')`,
+          })
+          .where('id', '=', before.id)
+          .returningAll()
+          .executeTakeFirstOrThrow()
+        const after = mapSys(updated as unknown as Record<string, unknown>)
+        const changes = auditDiff(snap(before), snap(after), auditFields)
+        if (Object.keys(changes).length > 0) {
+          await writeAudit(trx, permit.actor, {
+            resource: 'sys_setting',
+            recordId: after.id,
+            actionType: 'update',
+            actionName,
+            changes,
+          })
+        }
+        return after
+      })
+    }
   }
+
+  /** 写入上次行情拉取摘要（手动/定时共用；定时侧传 systemPermit） */
+  const recordMarketFetch = createRunRecorder(
+    { runAt: 'market_fetch_last_run_at', summary: 'market_fetch_last_summary' },
+    SYS_RUN_AUDIT,
+    'record_market_fetch',
+    sysRunSnap,
+  )
+
+  /** 写入上次文件存储对账摘要（jobs/filesclean 调度侧传 systemPermit） */
+  const recordFileRecon = createRunRecorder(
+    { runAt: 'file_recon_last_run_at', summary: 'file_recon_last_summary' },
+    SYS_FILE_RECON_AUDIT,
+    'record_file_recon',
+    sysFileReconSnap,
+  )
 
   return {
     getSystem: (permit: Permit) => inner.get(permit),
@@ -183,6 +212,7 @@ export function createSystemSettingService(db: Kysely<Database>) {
     loadSystemConfig: () => inner.load(systemPermit(SYS_RESOURCE_NAME, 'read')),
     updateSystem: (permit: Permit, input: SystemUpdate) => inner.update(permit, input),
     recordMarketFetch,
+    recordFileRecon,
   }
 }
 
@@ -207,6 +237,9 @@ export function createSettingsService(db: Kysely<Database>, domain: SettingsDoma
     updateSystem: (permit: Permit, input: SystemUpdate) => system.updateSystem(permit, input),
     recordMarketFetch: (permit: Permit, summary: string) =>
       system.recordMarketFetch(permit, summary),
+    /** 文件存储对账摘要（jobs/filesclean 调度侧传 systemPermit） */
+    recordFileRecon: (permit: Permit, summary: string) =>
+      system.recordFileRecon(permit, summary),
   }
 }
 
@@ -223,6 +256,10 @@ function mapSys(row: Record<string, unknown>): SystemSetting {
       ? asDate(row.market_fetch_last_run_at as Date | string)
       : null,
     marketFetchLastSummary: (row.market_fetch_last_summary as string | null) ?? null,
+    fileReconLastRunAt: row.file_recon_last_run_at
+      ? asDate(row.file_recon_last_run_at as Date | string)
+      : null,
+    fileReconLastSummary: (row.file_recon_last_summary as string | null) ?? null,
     insertedAt: asDate(row.inserted_at as Date | string),
     updatedAt: asDate(row.updated_at as Date | string),
   }
@@ -240,6 +277,13 @@ function sysRunSnap(v: SystemSetting): Record<string, unknown> {
   return {
     market_fetch_last_run_at: v.marketFetchLastRunAt ? v.marketFetchLastRunAt.toISOString() : null,
     market_fetch_last_summary: v.marketFetchLastSummary,
+  }
+}
+
+function sysFileReconSnap(v: SystemSetting): Record<string, unknown> {
+  return {
+    file_recon_last_run_at: v.fileReconLastRunAt ? v.fileReconLastRunAt.toISOString() : null,
+    file_recon_last_summary: v.fileReconLastSummary,
   }
 }
 

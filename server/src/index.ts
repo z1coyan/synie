@@ -1,4 +1,4 @@
-import { createMarketScheduler } from './jobs/index.ts'
+import { createFileCleanScheduler, createMarketScheduler } from './jobs/index.ts'
 import { buildApp } from './app.ts'
 import { createServices, toAppDeps } from './composition.ts'
 import { createDb } from './db/index.ts'
@@ -69,6 +69,17 @@ const app = buildApp({
 const marketScheduler = createMarketScheduler({ settings: services.settings, market: services.market })
 marketScheduler.start()
 
+// 文件存储对账 janitor：每日一次，默认 dry-run（FILE_RECON_* 见 env.ts）
+const fileCleanScheduler = createFileCleanScheduler({
+  settings: services.settings,
+  reconcile: services.fileReconcile,
+  enabled: env.fileRecon.enabled,
+  dryRun: env.fileRecon.dryRun,
+  orphanGraceMs: env.fileRecon.orphanGraceMs,
+  runHour: env.fileRecon.runHour,
+})
+fileCleanScheduler.start()
+
 const server = Bun.serve({
   port: env.port,
   hostname: env.host,
@@ -87,6 +98,7 @@ logJson('info', 'synie server listening', { port: server.port, host: env.host })
 
 async function shutdown() {
   marketScheduler.stop()
+  fileCleanScheduler.stop()
   server.stop()
   await db.destroy()
   process.exit(0)

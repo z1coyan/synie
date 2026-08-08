@@ -72,6 +72,22 @@ export function systemResourceMeta(): ResourceMeta {
         true,
         true,
       ),
+      field(
+        'file_recon_last_run_at',
+        'fileReconLastRunAt',
+        'datetime',
+        '上次文件存储对账完成时刻',
+        true,
+        true,
+      ),
+      field(
+        'file_recon_last_summary',
+        'fileReconLastSummary',
+        'string',
+        '上次文件存储对账结果摘要',
+        true,
+        true,
+      ),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', true, true),
       field('updated_at', 'updatedAt', 'datetime', '更新时间', true, true),
     ],
@@ -82,7 +98,15 @@ export function systemResourceMeta(): ResourceMeta {
       { key: 'update', label: '编辑', scope: 'row' },
     ],
     form: {
-      exclude: ['id', 'marketFetchLastRunAt', 'marketFetchLastSummary', 'insertedAt', 'updatedAt'],
+      exclude: [
+        'id',
+        'marketFetchLastRunAt',
+        'marketFetchLastSummary',
+        'fileReconLastRunAt',
+        'fileReconLastSummary',
+        'insertedAt',
+        'updatedAt',
+      ],
     },
   }
 }

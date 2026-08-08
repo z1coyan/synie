@@ -44,6 +44,14 @@ const envSchema = z
     LOGTO_ISSUER: z.string().url().optional(),
     LOGTO_CLIENT_ID: z.string().min(1).optional(),
     LOGTO_CLIENT_SECRET: z.string().min(1).optional(),
+    /** 文件存储对账（jobs/filesclean）：总开关，默认开 */
+    FILE_RECON_ENABLED: z.enum(['0', '1', 'true', 'false', 'yes', 'no', 'on', 'off']).optional(),
+    /** 演练模式：只报告不删除孤儿对象，默认 true（安全默认；确认无误后显式置 false） */
+    FILE_RECON_DRY_RUN: z.enum(['0', '1', 'true', 'false', 'yes', 'no', 'on', 'off']).optional(),
+    /** 每日运行时刻（上海时区小时，0-23），默认 3 */
+    FILE_RECON_RUN_HOUR: z.coerce.number().int().min(0).max(23).default(3),
+    /** 孤儿宽限（小时）：新于此时间的对象视为进行中上传，默认 24 */
+    FILE_RECON_ORPHAN_GRACE_HOURS: z.coerce.number().positive().default(24),
   })
   .superRefine((raw, ctx) => {
     const present = [raw.LOGTO_ISSUER, raw.LOGTO_CLIENT_ID, raw.LOGTO_CLIENT_SECRET].filter(
@@ -91,6 +99,19 @@ export interface Env {
   sofficeTimeoutMs?: number
   sofficeMaxConcurrency?: number
   logto?: LogtoEnv
+  /** 文件存储对账调度（jobs/filesclean）配置 */
+  fileRecon: {
+    enabled: boolean
+    dryRun: boolean
+    runHour: number
+    orphanGraceMs: number
+  }
+}
+
+/** 解析枚举式布尔环境变量（缺省走 fallback） */
+function parseBoolFlag(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined) return fallback
+  return value === '1' || value === 'true' || value === 'yes' || value === 'on'
 }
 
 /** 解析 BETTER_AUTH_ALLOWED_HOSTS + BETTER_AUTH_URL.host；去重保序 */
@@ -185,5 +206,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
             clientSecret: raw.LOGTO_CLIENT_SECRET,
           }
         : undefined,
+    fileRecon: {
+      enabled: parseBoolFlag(raw.FILE_RECON_ENABLED, true),
+      dryRun: parseBoolFlag(raw.FILE_RECON_DRY_RUN, true),
+      runHour: raw.FILE_RECON_RUN_HOUR,
+      orphanGraceMs: raw.FILE_RECON_ORPHAN_GRACE_HOURS * 3600_000,
+    },
   }
 }

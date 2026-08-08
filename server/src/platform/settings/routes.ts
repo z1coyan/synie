@@ -177,6 +177,8 @@ function sysDto(v: Awaited<ReturnType<SettingsService['getSystem']>>) {
     marketFetchSettlementEnabled: v.marketFetchSettlementEnabled,
     marketFetchLastRunAt: v.marketFetchLastRunAt?.toISOString() ?? null,
     marketFetchLastSummary: v.marketFetchLastSummary,
+    fileReconLastRunAt: v.fileReconLastRunAt?.toISOString() ?? null,
+    fileReconLastSummary: v.fileReconLastSummary,
     insertedAt: v.insertedAt.toISOString(),
     updatedAt: v.updatedAt.toISOString(),
   }

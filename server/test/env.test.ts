@@ -84,3 +84,37 @@ describe('env Logto 门控（要么全有要么全无）', () => {
     ).toThrow('环境配置无效')
   })
 })
+
+describe('env 文件存储对账（FILE_RECON_*）', () => {
+  test('缺省：启用、dry-run、3 点、24h 宽限', () => {
+    const env = loadEnv({ ...base })
+    expect(env.fileRecon).toEqual({
+      enabled: true,
+      dryRun: true,
+      runHour: 3,
+      orphanGraceMs: 24 * 3600_000,
+    })
+  })
+
+  test('显式配置生效', () => {
+    const env = loadEnv({
+      ...base,
+      FILE_RECON_ENABLED: 'false',
+      FILE_RECON_DRY_RUN: 'false',
+      FILE_RECON_RUN_HOUR: '5',
+      FILE_RECON_ORPHAN_GRACE_HOURS: '48',
+    })
+    expect(env.fileRecon).toEqual({
+      enabled: false,
+      dryRun: false,
+      runHour: 5,
+      orphanGraceMs: 48 * 3600_000,
+    })
+  })
+
+  test('非法布尔与越界时刻拒绝启动', () => {
+    expect(() => loadEnv({ ...base, FILE_RECON_DRY_RUN: 'maybe' })).toThrow('环境配置无效')
+    expect(() => loadEnv({ ...base, FILE_RECON_RUN_HOUR: '24' })).toThrow('环境配置无效')
+    expect(() => loadEnv({ ...base, FILE_RECON_ORPHAN_GRACE_HOURS: '0' })).toThrow('环境配置无效')
+  })
+})

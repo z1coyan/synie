@@ -1,14 +1,22 @@
 import { createHmac } from 'node:crypto'
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 export const ERR_OBJECT_NOT_FOUND = Symbol('object_not_found')
 export const ERR_PRESIGN_UNSUPPORTED = Symbol('presign_unsupported')
+
+/** 存储内对象的清单条目（对账用）；modifiedAt 取不到时为 null */
+export interface StoredObjectInfo {
+  key: string
+  modifiedAt: Date | null
+}
 
 export interface ObjectStorage {
   put(key: string, sourcePath: string): Promise<void>
   read(key: string): Promise<Uint8Array>
   delete(key: string): Promise<void>
+  /** 全量列出对象 key（相对 key，与 sys_file.key 对齐；供孤儿对账） */
+  list(): Promise<StoredObjectInfo[]>
   /** 不支持时 reject ERR_PRESIGN_UNSUPPORTED */
   presignedGet(key: string, ttlMs: number): Promise<string>
 }
@@ -44,6 +52,25 @@ export function createLocalStorage(root: string): ObjectStorage {
         throw err
       }
     },
+    async list() {
+      const out: StoredObjectInfo[] = []
+      const absoluteRoot = resolve(root)
+      async function walk(dir: string): Promise<void> {
+        const entries = await readdir(dir, { withFileTypes: true })
+        for (const entry of entries) {
+          const full = join(dir, entry.name)
+          if (entry.isDirectory()) {
+            await walk(full)
+          } else if (entry.isFile()) {
+            const rel = relative(absoluteRoot, full).split(sep).join('/')
+            const info = await stat(full)
+            out.push({ key: rel, modifiedAt: info.mtime })
+          }
+        }
+      }
+      await walk(absoluteRoot)
+      return out
+    },
     async presignedGet() {
       throw ERR_PRESIGN_UNSUPPORTED
     },
@@ -77,6 +104,12 @@ export function createS3Storage(input: {
     return prefix ? `${prefix}/${cleaned}` : cleaned
   }
 
+  /** ListObjects 返回的是含 prefix 的全 key，还原为 sys_file.key 形态 */
+  function stripPrefix(key: string): string {
+    const head = prefix ? `${prefix}/` : ''
+    return head && key.startsWith(head) ? key.slice(head.length) : key
+  }
+
   function objectUrl(objectKey: string): { url: string; hostHeader: string; canonicalUri: string } {
     const encodedKey = encodeS3Path(objectKey)
     if (virtualHosted) {
@@ -98,6 +131,7 @@ export function createS3Storage(input: {
     method: string,
     objectKey: string,
     body?: Uint8Array,
+    query?: Record<string, string>,
   ): Promise<Response> {
     const { url, hostHeader, canonicalUri } = objectUrl(objectKey)
     const now = new Date()
@@ -112,10 +146,11 @@ export function createS3Storage(input: {
     if (body) {
       headers['content-length'] = String(body.byteLength)
     }
+    const canonicalQuerystring = query ? canonicalQuery(query) : ''
     const authorization = signV4({
       method,
       canonicalUri,
-      canonicalQuerystring: '',
+      canonicalQuerystring,
       headers,
       payloadHash,
       amzDate,
@@ -126,7 +161,8 @@ export function createS3Storage(input: {
       service: 's3',
     })
     headers.authorization = authorization
-    return fetch(url, { method, headers, body: body ? Buffer.from(body) : undefined })
+    const fullUrl = canonicalQuerystring ? `${url}?${canonicalQuerystring}` : url
+    return fetch(fullUrl, { method, headers, body: body ? Buffer.from(body) : undefined })
   }
 
   return {
@@ -158,6 +194,31 @@ export function createS3Storage(input: {
         const text = await res.text().catch(() => '')
         throw new Error(`S3 DeleteObject failed: ${res.status} ${text}`)
       }
+    },
+    async list() {
+      const out: StoredObjectInfo[] = []
+      let continuationToken: string | null = null
+      // ListObjectsV2 分页（每页最多 1000 条），剥离配置 prefix 还原相对 key
+      for (;;) {
+        const query: Record<string, string> = {
+          'list-type': '2',
+          'max-keys': '1000',
+          prefix: prefix ? `${prefix}/` : '',
+        }
+        if (continuationToken) query['continuation-token'] = continuationToken
+        const res = await signedRequest('GET', '', undefined, query)
+        if (!res.ok) {
+          const text = await res.text().catch(() => '')
+          throw new Error(`S3 ListObjectsV2 failed: ${res.status} ${text}`)
+        }
+        const page = parseListObjectsXml(await res.text())
+        for (const item of page.items) {
+          out.push({ key: stripPrefix(item.key), modifiedAt: item.modifiedAt })
+        }
+        if (!page.truncated || !page.nextToken) break
+        continuationToken = page.nextToken
+      }
+      return out
     },
     async presignedGet(key, ttlMs) {
       const objectKey = fullKey(key)
@@ -245,6 +306,47 @@ function encodeS3Path(key: string): string {
       encodeURIComponent(segment).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`),
     )
     .join('/')
+}
+
+/** SigV4 查询串：键按字符序排序，键值全量 URI 编码（含 '/'） */
+function canonicalQuery(query: Record<string, string>): string {
+  const encode = (v: string) =>
+    encodeURIComponent(v).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+  return Object.keys(query)
+    .sort()
+    .map((k) => `${encode(k)}=${encode(query[k]!)}`)
+    .join('&')
+}
+
+/** ListObjectsV2 响应的极简解析（只取 Contents.Key/LastModified 与翻页字段）；导出供单测 */
+export function parseListObjectsXml(xml: string): {
+  items: StoredObjectInfo[]
+  truncated: boolean
+  nextToken: string | null
+} {
+  const items: StoredObjectInfo[] = []
+  for (const block of xml.split('<Contents>').slice(1)) {
+    const key = /<Key>([\s\S]*?)<\/Key>/.exec(block)?.[1]
+    if (key === undefined) continue
+    const lastModified = /<LastModified>([\s\S]*?)<\/LastModified>/.exec(block)?.[1]
+    const parsed = lastModified ? new Date(lastModified) : null
+    items.push({
+      key: xmlUnescape(key),
+      modifiedAt: parsed && !Number.isNaN(parsed.getTime()) ? parsed : null,
+    })
+  }
+  const truncated = /<IsTruncated>true<\/IsTruncated>/.test(xml)
+  const token = /<NextContinuationToken>([\s\S]*?)<\/NextContinuationToken>/.exec(xml)?.[1]
+  return { items, truncated, nextToken: token ? xmlUnescape(token) : null }
+}
+
+function xmlUnescape(value: string): string {
+  return value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
 }
 
 function toAmzDate(date: Date): string {

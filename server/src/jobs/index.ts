@@ -14,3 +14,15 @@ export {
   type MarketScheduler,
   type MarketSchedulerDeps,
 } from './marketsched/scheduler.ts'
+export {
+  decideFileClean,
+  emptyFileCleanState,
+  type FileCleanConfig,
+  type FileCleanState,
+  type FileCleanDecision,
+} from './filesclean/decision.ts'
+export {
+  createFileCleanScheduler,
+  type FileCleanScheduler,
+  type FileCleanSchedulerDeps,
+} from './filesclean/scheduler.ts'

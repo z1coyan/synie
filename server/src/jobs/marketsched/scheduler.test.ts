@@ -17,6 +17,8 @@ function fakeSettings(over: Partial<SystemSetting> = {}) {
     marketFetchSettlementEnabled: true,
     marketFetchLastRunAt: null,
     marketFetchLastSummary: null,
+    fileReconLastRunAt: null,
+    fileReconLastSummary: null,
     insertedAt: new Date(),
     updatedAt: new Date(),
     ...over,
