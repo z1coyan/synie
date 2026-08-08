@@ -12,8 +12,6 @@
 import { sql, type Kysely, type Transaction } from 'kysely'
 import { createDb } from '../src/db/index.ts'
 import type { DB as Database } from '../src/db/types.ts'
-import { extractUpSection } from './migrate.ts'
-
 const KEEP_TABLES = new Set([
   'synie_schema_migration',
   'sys_setting',
@@ -24,23 +22,22 @@ const KEEP_TABLES = new Set([
 
 /**
  * migrate 后幂等种子文件（truncate 后需重放，对齐「仅 migrate 完成」的库状态）。
- * 仅限纯种子迁移（幂等 INSERT、无 DDL）；混有 DDL 的迁移不可重放，
- * 其种子须以纯种子副本另存（如 00024 之于 00022）。
+ * 仅限纯种子迁移（幂等 INSERT、无 DDL）；混有 DDL 的迁移不可重放。
  */
 const RESEED_MIGRATIONS = [
   '00002_seed_settings_singletons.sql',
   '00003_seed_market_catalog.sql',
-  '00024_seed_numbering_rules.sql',
+  '00004_seed_numbering_rules.sql',
 ]
 
-/** 在事务内重放 migrate 幂等种子（导出供集成测试复用，避免规则种子出现第三处副本） */
+/** 在事务内重放 migrate 幂等种子（导出供集成测试复用，避免规则种子出现第二处副本） */
 export async function reseedIdempotentSeeds(
   trx: Kysely<Database> | Transaction<Database>,
   files: readonly string[] = RESEED_MIGRATIONS,
 ): Promise<void> {
   const migrationsDir = new URL('./migrations/', import.meta.url).pathname
   for (const file of files) {
-    const content = extractUpSection(await Bun.file(`${migrationsDir}${file}`).text(), file)
+    const content = await Bun.file(`${migrationsDir}${file}`).text()
     await sql.raw(content).execute(trx)
   }
 }

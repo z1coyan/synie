@@ -1,7 +1,7 @@
 /**
  * 密码写路径统一收口：同事务内写 sys_user.hashed_password 与 auth_account.password
  * （better-auth credential 账号），两侧永不漂移。
- * sys_user 尚无 auth_user 时一并创建并回链（email 占位规则与迁移 00016 回填一致）。
+ * sys_user 尚无 auth_user 时一并创建并回链（email 缺省时用占位域，见 authEmailForUser）。
  * 有真实 email 时写入 auth_user.email，供 Logto 同邮箱 accountLinking。
  */
 import { sql } from 'kysely'

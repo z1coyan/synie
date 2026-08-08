@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { createDb } from '~/db/index.ts'
 import { withTx } from '~/db/tx.ts'
@@ -12,30 +11,10 @@ import { buildTestApp, testDatabaseUrl } from './helpers.ts'
 const databaseUrl = testDatabaseUrl()
 const describePg = databaseUrl ? describe : describe.skip
 
-/** 从迁移 00016 提取回填段（backfill:begin/end 标记），对拍「存量用户可走新通道」 */
-async function runBackfill(db: Kysely<Database>): Promise<void> {
-  const content = await Bun.file(
-    new URL('../db/migrations/00016_better_auth.sql', import.meta.url),
-  ).text()
-  const begin = content.indexOf('-- backfill:begin')
-  const end = content.indexOf('-- backfill:end')
-  expect(begin).toBeGreaterThan(-1)
-  expect(end).toBeGreaterThan(begin)
-  const section = content.slice(begin, end)
-  for (const stmt of section.split(';')) {
-    const trimmed = stmt.trim()
-    if (!trimmed || trimmed.split('\n').every((line) => line.trim().startsWith('--'))) continue
-    await sql.raw(trimmed).execute(db)
-  }
-}
-
 describePg('better-auth cookie 会话双轨（PG 集成）', () => {
   let db: Kysely<Database>
   let app: Awaited<ReturnType<typeof buildTestApp>>
   const suffix = crypto.randomUUID().replaceAll('-', '').slice(0, 8)
-  // 存量用户：只插 sys_user（旧形态，无 auth_* 行），密码走迁移回填
-  const legacyUsername = `Legacy${suffix}`
-  const legacyPassword = 'legacy-pass-123'
   // 新建用户：走 credentials helper（IAM/setup 收口路径）
   const freshUsername = `fresh${suffix}`
   const freshPassword = 'fresh-pass-123'
@@ -58,22 +37,6 @@ describePg('better-auth cookie 会话双轨（PG 集成）', () => {
   beforeAll(async () => {
     db = createDb(databaseUrl!)
     app = await buildTestApp(db)
-
-    const legacyId = crypto.randomUUID()
-    sysUserIds.push(legacyId)
-    await db
-      .insertInto('sys_user')
-      .values({
-        id: legacyId,
-        username: legacyUsername,
-        name: '存量用户',
-        hashed_password: await hashPassword(legacyPassword),
-        super_admin: true,
-        all_companies: true,
-      })
-      .execute()
-    // 模拟迁移回填（幂等段；对真实迁移 SQL 对拍）
-    await runBackfill(db)
 
     const freshId = crypto.randomUUID()
     sysUserIds.push(freshId)
@@ -111,44 +74,6 @@ describePg('better-auth cookie 会话双轨（PG 集成）', () => {
     await db.destroy()
   })
 
-  test('回填存量用户：旧密码走 sign-in/username 拿 cookie，/auth/me 出正确 Actor', async () => {
-    const legacy = await db
-      .selectFrom('sys_user')
-      .select(['id', 'auth_user_id'])
-      .where('id', '=', sysUserIds[0]!)
-      .executeTakeFirstOrThrow()
-    expect(legacy.auth_user_id).toBeTruthy()
-
-    const { cookie } = await signInCookie(legacyUsername, legacyPassword)
-    const me = await app.request('/api/v1/auth/me', { headers: { cookie } })
-    expect(me.status).toBe(200)
-    const body = (await me.json()) as {
-      user: { id: string; username: string }
-      superAdmin: boolean
-    }
-    // actor 必须是 sys_user（而非 auth_user）身份
-    expect(body.user.id).toBe(legacy.id)
-    expect(body.user.username.toLowerCase()).toBe(legacyUsername.toLowerCase())
-    expect(body.superAdmin).toBe(true)
-  })
-
-  test('回填存量用户：旧 Bearer 通道原契约不变', async () => {
-    const login = await app.request('/api/v1/auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: legacyUsername, password: legacyPassword }),
-    })
-    expect(login.status).toBe(200)
-    const { token, expiresAt } = (await login.json()) as { token: string; expiresAt: string }
-    expect(token).toBeTruthy()
-    expect(expiresAt).toBeTruthy()
-
-    const me = await app.request('/api/v1/auth/me', {
-      headers: { authorization: `Bearer ${token}` },
-    })
-    expect(me.status).toBe(200)
-  })
-
   test('双轨回退：cookie 无效但 Bearer 有效仍放行；双失败 401', async () => {
     const login = await app.request('/api/v1/auth/login', {
       method: 'POST',
@@ -183,14 +108,14 @@ describePg('better-auth cookie 会话双轨（PG 集成）', () => {
     const me = await app.request('/api/v1/auth/me', { headers: { cookie } })
     expect(me.status).toBe(200)
     const body = (await me.json()) as { user: { id: string }; superAdmin: boolean }
-    expect(body.user.id).toBe(sysUserIds[1]!)
+    expect(body.user.id).toBe(sysUserIds[0]!)
     expect(body.superAdmin).toBe(false)
 
     // 改密（reset 路径同 helper）：sys_user 与 auth_account 双写不漂移
     const nextPassword = 'fresh-pass-456'
     const nextHashed = await hashPassword(nextPassword)
     await withTx(db, async (trx) => {
-      await syncUserCredential(trx, { userId: sysUserIds[1]!, hashedPassword: nextHashed })
+      await syncUserCredential(trx, { userId: sysUserIds[0]!, hashedPassword: nextHashed })
     })
     await signInCookie(freshUsername, freshPassword, 401)
     await signInCookie(freshUsername, nextPassword, 200)

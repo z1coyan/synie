@@ -135,7 +135,7 @@ run('PG 集成（setup 向导）', () => {
       await sql`DELETE FROM sys_numbering_rule`.execute(trx)
       // 回到「迁移后、setup 前」基线：仓库/部门规则由迁移播种（首张公司创建即需取号），
       // 真实全新库在 setup 前也持有这两条，truncate 后须补回——与 db:reset 共用同一重放入口
-      await reseedIdempotentSeeds(trx, ['00024_seed_numbering_rules.sql'])
+      await reseedIdempotentSeeds(trx, ['00004_seed_numbering_rules.sql'])
     })
   }
 

@@ -1,5 +1,4 @@
--- +goose Up
--- schema-only baseline 不含旧 Ecto 行情种子；全部按自然键幂等补齐，保留已有主数据。
+-- 行情主数据种子（币种/单位等）。全部按自然键幂等补齐，保留已有数据。
 INSERT INTO bas_currency (name, iso_code, symbol)
 SELECT '人民币', 'CNY', '￥'
 WHERE NOT EXISTS (SELECT 1 FROM bas_currency WHERE iso_code = 'CNY');
@@ -64,6 +63,3 @@ AND (
   OR EXISTS (SELECT 1 FROM bas_unit WHERE symbol IN ('kg', '千克') OR name IN ('千克', '公斤'))
 );
 
--- +goose Down
--- no-op：行情品种可能已被价点引用，回滚不得删除或覆盖真实主数据。
-SELECT 1;

@@ -1,18 +1,19 @@
--- +goose Up
--- 2026-07-25 从 PostgreSQL 16.14 开发库 pg_dump --schema-only 导出。
--- 已移除 psql restrict 指令、Ash helper、未引用 uuid v7 helper 与 Ecto schema_migrations。
-
+-- 2026-08-08 全量基线：系统未上线，压平历史 00001–00024 全部迁移（开发库一律重建，不保留升级路径）。
+-- 产出方式：scratch 库重放全部历史迁移后 pg_dump --schema-only --no-owner 导出（排除 migrate 运行时自建的 synie_schema_migration）。
+-- 数据回填/清洗类历史迁移（00007/00008/00016 回填段/00017/00021/00022 回填段）对全新库无意义，随压平移除。
+--
 --
 -- PostgreSQL database dump
 --
 
 
--- Dumped from database version 16.14 (Debian 16.14-1.pgdg13+1)
+-- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10 (Ubuntu 17.10-0ubuntu0.25.10.1)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SET search_path = public, pg_catalog;
@@ -29,6 +30,12 @@ CREATE EXTENSION IF NOT EXISTS citext WITH SCHEMA public;
 
 
 --
+-- Name: EXTENSION citext; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION citext IS 'data type for case-insensitive character strings';
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -449,6 +456,74 @@ CREATE TABLE public.acc_vat_invoice (
 
 
 --
+-- Name: auth_account; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.auth_account (
+    id text NOT NULL,
+    user_id text NOT NULL,
+    provider_id text NOT NULL,
+    account_id text NOT NULL,
+    access_token text,
+    refresh_token text,
+    id_token text,
+    access_token_expires_at timestamp with time zone,
+    refresh_token_expires_at timestamp with time zone,
+    scope text,
+    password text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: auth_session; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.auth_session (
+    id text NOT NULL,
+    user_id text NOT NULL,
+    token text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    ip_address text,
+    user_agent text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: auth_user; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.auth_user (
+    id text NOT NULL,
+    name text NOT NULL,
+    email text NOT NULL,
+    email_verified boolean DEFAULT false NOT NULL,
+    image text,
+    username text,
+    display_username text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: auth_verification; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.auth_verification (
+    id text NOT NULL,
+    identifier text NOT NULL,
+    value text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: bas_account; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -538,6 +613,34 @@ CREATE TABLE public.bas_market_price_point (
     instrument_id uuid NOT NULL,
     currency_id uuid NOT NULL,
     unit_id uuid NOT NULL
+);
+
+
+--
+-- Name: bas_party_address; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bas_party_address (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    party_type text NOT NULL,
+    party_id uuid NOT NULL,
+    name text NOT NULL,
+    purpose text NOT NULL,
+    contact_name text,
+    contact_phone text,
+    address text NOT NULL,
+    is_default boolean DEFAULT false NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    remarks text,
+    inserted_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
+    updated_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
+    province text DEFAULT ''::text NOT NULL,
+    city text DEFAULT ''::text NOT NULL,
+    district text DEFAULT ''::text NOT NULL,
+    CONSTRAINT bas_party_address_address_nonempty CHECK ((length(btrim(address)) > 0)),
+    CONSTRAINT bas_party_address_name_nonempty CHECK ((length(btrim(name)) > 0)),
+    CONSTRAINT bas_party_address_party_type_check CHECK ((party_type = ANY (ARRAY['customer'::text, 'supplier'::text, 'company'::text]))),
+    CONSTRAINT bas_party_address_purpose_check CHECK ((purpose = ANY (ARRAY['shipping'::text, 'office'::text, 'other'::text])))
 );
 
 
@@ -736,7 +839,9 @@ CREATE TABLE public.inv_material (
     default_unit_id uuid NOT NULL,
     is_customer_material boolean DEFAULT false NOT NULL,
     customer_id uuid,
-    CONSTRAINT customer_material_pair CHECK ((((is_customer_material = false) AND (customer_id IS NULL)) OR ((is_customer_material = true) AND (customer_id IS NOT NULL))))
+    material_type text DEFAULT 'STOCK'::text NOT NULL,
+    CONSTRAINT customer_material_pair CHECK ((((is_customer_material = false) AND (customer_id IS NULL)) OR ((is_customer_material = true) AND (customer_id IS NOT NULL)))),
+    CONSTRAINT inv_material_material_type_check CHECK ((material_type = ANY (ARRAY['STOCK'::text, 'VIRTUAL'::text, 'ASSET'::text])))
 );
 
 
@@ -972,8 +1077,16 @@ CREATE TABLE public.inv_warehouse (
     account_id uuid,
     party_type text,
     party_id uuid,
+    code text NOT NULL,
     CONSTRAINT party_pair CHECK (((party_type IS NULL) = (party_id IS NULL)))
 );
+
+
+--
+-- Name: COLUMN inv_warehouse.code; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.inv_warehouse.code IS '仓库编码：系统按编号规则生成（公司内唯一），创建后不可改，不接受手填';
 
 
 --
@@ -987,8 +1100,17 @@ CREATE TABLE public.mfg_bom (
     updated_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
     material_id uuid NOT NULL,
     code text NOT NULL,
-    plan_name text
+    plan_name text,
+    status text DEFAULT 'active'::text NOT NULL,
+    CONSTRAINT mfg_bom_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'active'::text, 'inactive'::text])))
 );
+
+
+--
+-- Name: COLUMN mfg_bom.status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.mfg_bom.status IS 'draft|active|inactive；仅 active 可被新工单/委外选入；仅 draft 可物理删除';
 
 
 --
@@ -1053,7 +1175,56 @@ CREATE TABLE public.mfg_demand (
     inserted_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
     updated_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
     company_id uuid NOT NULL,
-    created_by_id uuid
+    created_by_id uuid,
+    assigned_dept_id uuid,
+    assign_type text NOT NULL,
+    need_date date,
+    CONSTRAINT mfg_demand_assign_dept_link CHECK (((assign_type = 'make'::text) = (assigned_dept_id IS NOT NULL))),
+    CONSTRAINT mfg_demand_assign_type_values CHECK ((assign_type = ANY (ARRAY['purchase'::text, 'make'::text, 'stock'::text, 'close'::text])))
+);
+
+
+--
+-- Name: COLUMN mfg_demand.assigned_dept_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.mfg_demand.assigned_dept_id IS '下发车间（指派部门形态）：业务字段，须与需求单同公司；填写不受操作者部门约束，已确认后改派走 dispatch 动作';
+
+
+--
+-- Name: COLUMN mfg_demand.assign_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.mfg_demand.assign_type IS '指派类型（purchase/make/stock/close）：纯路由声明，不占量不约束行级安排；make 时下发车间必填，其余类型必须为空';
+
+
+--
+-- Name: COLUMN mfg_demand.need_date; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.mfg_demand.need_date IS '单头需求日：新增需求行的行需求日默认值，「批量带入」可刷新到全部既有行；改单头不追溯既有行';
+
+
+--
+-- Name: mfg_demand_arrangement; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mfg_demand_arrangement (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    demand_item_id uuid NOT NULL,
+    company_id uuid NOT NULL,
+    arrangement_type text NOT NULL,
+    qty numeric NOT NULL,
+    base_qty numeric DEFAULT '0'::numeric NOT NULL,
+    work_order_id uuid,
+    purchase_order_item_id uuid,
+    remarks text,
+    inserted_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
+    updated_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
+    CONSTRAINT mfg_demand_arrangement_base_qty_nonnegative CHECK ((base_qty >= (0)::numeric)),
+    CONSTRAINT mfg_demand_arrangement_downstream_shape CHECK ((((arrangement_type = 'make'::text) AND (work_order_id IS NOT NULL) AND (purchase_order_item_id IS NULL)) OR ((arrangement_type = ANY (ARRAY['purchase'::text, 'outsource'::text])) AND (purchase_order_item_id IS NOT NULL) AND (work_order_id IS NULL)) OR ((arrangement_type = ANY (ARRAY['stock'::text, 'close'::text])) AND (work_order_id IS NULL) AND (purchase_order_item_id IS NULL)))),
+    CONSTRAINT mfg_demand_arrangement_qty_positive CHECK ((qty > (0)::numeric)),
+    CONSTRAINT mfg_demand_arrangement_type_check CHECK ((arrangement_type = ANY (ARRAY['make'::text, 'purchase'::text, 'outsource'::text, 'stock'::text, 'close'::text])))
 );
 
 
@@ -1066,8 +1237,8 @@ CREATE TABLE public.mfg_demand_item (
     idx bigint NOT NULL,
     qty numeric NOT NULL,
     base_qty numeric DEFAULT '0'::numeric NOT NULL,
-    need_date date,
-    fulfillment_method text DEFAULT 'make'::text NOT NULL,
+    need_date date NOT NULL,
+    fulfillment_method text,
     status text DEFAULT 'pending'::text NOT NULL,
     material_code text DEFAULT ''::text NOT NULL,
     material_name text DEFAULT ''::text NOT NULL,
@@ -1083,9 +1254,36 @@ CREATE TABLE public.mfg_demand_item (
     sales_order_item_id uuid,
     ordered_qty numeric DEFAULT '0'::numeric NOT NULL,
     received_qty numeric DEFAULT '0'::numeric NOT NULL,
+    arranged_qty numeric DEFAULT '0'::numeric NOT NULL,
+    completed_qty numeric DEFAULT '0'::numeric NOT NULL,
+    source_work_order_id uuid,
+    CONSTRAINT arranged_qty_nonnegative CHECK ((arranged_qty >= (0)::numeric)),
+    CONSTRAINT completed_qty_nonnegative CHECK ((completed_qty >= (0)::numeric)),
+    CONSTRAINT mfg_demand_item_source_exclusive CHECK ((NOT ((sales_order_item_id IS NOT NULL) AND (source_work_order_id IS NOT NULL)))),
     CONSTRAINT ordered_qty_nonnegative CHECK ((ordered_qty >= (0)::numeric)),
     CONSTRAINT qty_positive CHECK ((qty > (0)::numeric)),
     CONSTRAINT received_qty_nonnegative CHECK ((received_qty >= (0)::numeric))
+);
+
+
+--
+-- Name: COLUMN mfg_demand_item.source_work_order_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.mfg_demand_item.source_work_order_id IS '来源生产工单（工单物料需求派生写入）：与销售来源互斥，派生行不参与销售占用';
+
+
+--
+-- Name: mfg_mold_design; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mfg_mold_design (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    mold_type text NOT NULL,
+    material_id uuid NOT NULL,
+    inserted_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
+    updated_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
+    CONSTRAINT mfg_mold_design_type_check CHECK ((mold_type = ANY (ARRAY['STAMPING'::text, 'FORMING'::text, 'POSITIONING'::text, 'OTHER'::text])))
 );
 
 
@@ -1188,6 +1386,7 @@ CREATE TABLE public.mfg_setting (
     output_overreceive_ratio numeric DEFAULT '0'::numeric NOT NULL,
     inserted_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
     updated_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
+    mold_category_id uuid,
     CONSTRAINT output_overreceive_ratio_range CHECK (((output_overreceive_ratio >= (0)::numeric) AND (output_overreceive_ratio <= (1)::numeric)))
 );
 
@@ -1215,7 +1414,69 @@ CREATE TABLE public.mfg_work_order (
     demand_item_id uuid NOT NULL,
     material_id uuid NOT NULL,
     unit_id uuid NOT NULL,
-    created_by_id uuid
+    created_by_id uuid,
+    bom_id uuid,
+    owner_dept_id uuid
+);
+
+
+--
+-- Name: COLUMN mfg_work_order.owner_dept_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.mfg_work_order.owner_dept_id IS '归属部门（盖章形态）：创建时按创建人部门自动写入，不可手填；人调部门不追溯存量行';
+
+
+--
+-- Name: mfg_work_order_byproduct; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mfg_work_order_byproduct (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    work_order_id uuid NOT NULL,
+    material_id uuid NOT NULL,
+    unit_id uuid NOT NULL,
+    quantity numeric NOT NULL,
+    note text,
+    idx bigint DEFAULT 0 NOT NULL,
+    inserted_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
+    updated_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
+    CONSTRAINT mfg_wo_byproduct_qty_positive CHECK ((quantity > (0)::numeric))
+);
+
+
+--
+-- Name: mfg_work_order_component; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mfg_work_order_component (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    work_order_id uuid NOT NULL,
+    material_id uuid NOT NULL,
+    unit_id uuid NOT NULL,
+    quantity numeric NOT NULL,
+    loss_rate numeric,
+    note text,
+    idx bigint DEFAULT 0 NOT NULL,
+    inserted_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
+    updated_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
+    CONSTRAINT mfg_wo_component_qty_positive CHECK ((quantity > (0)::numeric))
+);
+
+
+--
+-- Name: mfg_work_order_route; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mfg_work_order_route (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    work_order_id uuid NOT NULL,
+    operation_id uuid NOT NULL,
+    seq bigint NOT NULL,
+    requirement text,
+    is_outsourced boolean DEFAULT false NOT NULL,
+    inserted_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
+    updated_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL
 );
 
 
@@ -1622,7 +1883,7 @@ CREATE TABLE public.pur_receipt_item (
     order_item_id uuid NOT NULL,
     material_id uuid NOT NULL,
     unit_id uuid NOT NULL,
-    warehouse_id uuid NOT NULL,
+    warehouse_id uuid,
     reconciled_qty numeric DEFAULT '0'::numeric NOT NULL,
     CONSTRAINT qty_positive CHECK ((qty > (0)::numeric)),
     CONSTRAINT reconciled_qty_nonnegative CHECK ((reconciled_qty >= (0)::numeric))
@@ -1777,10 +2038,50 @@ CREATE TABLE public.sal_delivery_item (
     order_item_id uuid NOT NULL,
     material_id uuid NOT NULL,
     unit_id uuid NOT NULL,
-    warehouse_id uuid NOT NULL,
+    warehouse_id uuid,
     reconciled_qty numeric DEFAULT '0'::numeric NOT NULL,
     CONSTRAINT qty_positive CHECK ((qty > (0)::numeric)),
     CONSTRAINT reconciled_qty_nonnegative CHECK ((reconciled_qty >= (0)::numeric))
+);
+
+
+--
+-- Name: sal_delivery_pack_box; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sal_delivery_pack_box (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    box_no bigint NOT NULL,
+    inserted_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
+    updated_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
+    delivery_id uuid NOT NULL,
+    company_id uuid NOT NULL
+);
+
+
+--
+-- Name: sal_delivery_pack_line; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sal_delivery_pack_line (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    idx bigint NOT NULL,
+    qty numeric NOT NULL,
+    base_qty numeric DEFAULT '0'::numeric NOT NULL,
+    material_code text NOT NULL,
+    material_name text NOT NULL,
+    material_spec text,
+    customer_part_no text,
+    unit_name text NOT NULL,
+    remarks text,
+    inserted_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
+    updated_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
+    delivery_id uuid NOT NULL,
+    company_id uuid NOT NULL,
+    pack_box_id uuid NOT NULL,
+    material_id uuid NOT NULL,
+    unit_id uuid NOT NULL,
+    CONSTRAINT qty_positive CHECK ((qty > (0)::numeric))
 );
 
 
@@ -1981,7 +2282,6 @@ CREATE TABLE public.sal_setting (
 );
 
 
-
 --
 -- Name: scm_order_flow_item; Type: VIEW; Schema: public; Owner: -
 --
@@ -2096,6 +2396,37 @@ CREATE TABLE public.sys_audit_log (
 
 
 --
+-- Name: sys_department; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sys_department (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid NOT NULL,
+    parent_id uuid,
+    code text NOT NULL,
+    name text NOT NULL,
+    path text NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    inserted_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
+    updated_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL
+);
+
+
+--
+-- Name: TABLE sys_department; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sys_department IS '部门：挂公司的组织树主数据（IAM 维护）；path 为物化路径，子树查询走前缀匹配';
+
+
+--
+-- Name: COLUMN sys_department.path; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sys_department.path IS '物化路径：/{祖先id}/…/{本id}/；移动节点重算整棵子树';
+
+
+--
 -- Name: sys_file; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2169,8 +2500,35 @@ CREATE TABLE public.sys_role (
     enabled boolean DEFAULT true NOT NULL,
     inserted_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
     updated_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
-    builtin boolean DEFAULT false NOT NULL
+    builtin boolean DEFAULT false NOT NULL,
+    grants_all boolean DEFAULT false NOT NULL
 );
+
+
+--
+-- Name: COLUMN sys_role.grants_all; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sys_role.grants_all IS '全域授权旗标：持有即覆盖全部权限码（all 范围）；内置 admin 用此旗标取代 * 通配行';
+
+
+--
+-- Name: sys_role_menu; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sys_role_menu (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    role_id uuid NOT NULL,
+    menu_code text NOT NULL,
+    inserted_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL
+);
+
+
+--
+-- Name: TABLE sys_role_menu; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sys_role_menu IS '角色菜单白名单：每行=该角色可见的一个叶子菜单 code；角色无行=不限制（全可见）';
 
 
 --
@@ -2181,8 +2539,17 @@ CREATE TABLE public.sys_role_permission (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     permission text NOT NULL,
     inserted_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
-    role_id uuid NOT NULL
+    role_id uuid NOT NULL,
+    scope text DEFAULT 'all'::text NOT NULL,
+    CONSTRAINT sys_role_permission_scope_check CHECK ((scope = ANY (ARRAY['all'::text, 'dept_tree'::text, 'dept'::text, 'self'::text])))
 );
+
+
+--
+-- Name: COLUMN sys_role_permission.scope; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sys_role_permission.scope IS '数据范围：all/dept_tree/dept/self（granted 预留、第一期拒写）；多角色同码取格上最大';
 
 
 --
@@ -2279,8 +2646,18 @@ CREATE TABLE public.sys_user (
     updated_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
     super_admin boolean DEFAULT false NOT NULL,
     all_companies boolean DEFAULT false NOT NULL,
-    preferred_language text
+    preferred_language text,
+    email text,
+    auth_user_id text,
+    department_id uuid
 );
+
+
+--
+-- Name: COLUMN sys_user.department_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sys_user.department_id IS '所属部门（至多一个）；部门所在公司必须已在该用户公司授权集内（IAM 写侧硬校验）';
 
 
 --
@@ -2450,6 +2827,38 @@ ALTER TABLE ONLY public.acc_vat_invoice
 
 
 --
+-- Name: auth_account auth_account_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.auth_account
+    ADD CONSTRAINT auth_account_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: auth_session auth_session_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.auth_session
+    ADD CONSTRAINT auth_session_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: auth_user auth_user_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.auth_user
+    ADD CONSTRAINT auth_user_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: auth_verification auth_verification_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.auth_verification
+    ADD CONSTRAINT auth_verification_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: bas_account bas_account_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2471,6 +2880,14 @@ ALTER TABLE ONLY public.bas_market_instrument
 
 ALTER TABLE ONLY public.bas_market_price_point
     ADD CONSTRAINT bas_market_price_point_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bas_party_address bas_party_address_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bas_party_address
+    ADD CONSTRAINT bas_party_address_pkey PRIMARY KEY (id);
 
 
 --
@@ -2658,6 +3075,14 @@ ALTER TABLE ONLY public.mfg_bom_route
 
 
 --
+-- Name: mfg_demand_arrangement mfg_demand_arrangement_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_demand_arrangement
+    ADD CONSTRAINT mfg_demand_arrangement_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: mfg_demand_item mfg_demand_item_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2671,6 +3096,22 @@ ALTER TABLE ONLY public.mfg_demand_item
 
 ALTER TABLE ONLY public.mfg_demand
     ADD CONSTRAINT mfg_demand_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mfg_mold_design mfg_mold_design_material_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_mold_design
+    ADD CONSTRAINT mfg_mold_design_material_unique UNIQUE (material_id);
+
+
+--
+-- Name: mfg_mold_design mfg_mold_design_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_mold_design
+    ADD CONSTRAINT mfg_mold_design_pkey PRIMARY KEY (id);
 
 
 --
@@ -2722,11 +3163,35 @@ ALTER TABLE ONLY public.mfg_setting
 
 
 --
+-- Name: mfg_work_order_byproduct mfg_work_order_byproduct_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_work_order_byproduct
+    ADD CONSTRAINT mfg_work_order_byproduct_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mfg_work_order_component mfg_work_order_component_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_work_order_component
+    ADD CONSTRAINT mfg_work_order_component_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: mfg_work_order mfg_work_order_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.mfg_work_order
     ADD CONSTRAINT mfg_work_order_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mfg_work_order_route mfg_work_order_route_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_work_order_route
+    ADD CONSTRAINT mfg_work_order_route_pkey PRIMARY KEY (id);
 
 
 --
@@ -2898,6 +3363,30 @@ ALTER TABLE ONLY public.sal_delivery_item
 
 
 --
+-- Name: sal_delivery_pack_box sal_delivery_pack_box_delivery_box_no_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sal_delivery_pack_box
+    ADD CONSTRAINT sal_delivery_pack_box_delivery_box_no_key UNIQUE (delivery_id, box_no);
+
+
+--
+-- Name: sal_delivery_pack_box sal_delivery_pack_box_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sal_delivery_pack_box
+    ADD CONSTRAINT sal_delivery_pack_box_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sal_delivery_pack_line sal_delivery_pack_line_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sal_delivery_pack_line
+    ADD CONSTRAINT sal_delivery_pack_line_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: sal_delivery sal_delivery_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2969,7 +3458,6 @@ ALTER TABLE ONLY public.sal_setting
     ADD CONSTRAINT sal_setting_pkey PRIMARY KEY (id);
 
 
-
 --
 -- Name: sys_attachment sys_attachment_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
@@ -3003,6 +3491,14 @@ ALTER TABLE ONLY public.bas_currency
 
 
 --
+-- Name: sys_department sys_department_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sys_department
+    ADD CONSTRAINT sys_department_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: sys_file sys_file_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3032,6 +3528,14 @@ ALTER TABLE ONLY public.sys_numbering_rule
 
 ALTER TABLE ONLY public.sys_print_template
     ADD CONSTRAINT sys_print_template_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sys_role_menu sys_role_menu_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sys_role_menu
+    ADD CONSTRAINT sys_role_menu_pkey PRIMARY KEY (id);
 
 
 --
@@ -3112,6 +3616,14 @@ ALTER TABLE ONLY public.sys_user
 
 ALTER TABLE ONLY public.sys_user_role
     ADD CONSTRAINT sys_user_role_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sys_user sys_user_unique_auth_user_id; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sys_user
+    ADD CONSTRAINT sys_user_unique_auth_user_id UNIQUE (auth_user_id);
 
 
 --
@@ -3297,6 +3809,55 @@ CREATE UNIQUE INDEX acc_vat_invoice_no_uniq ON public.acc_vat_invoice USING btre
 
 
 --
+-- Name: auth_account_provider_account_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX auth_account_provider_account_idx ON public.auth_account USING btree (provider_id, account_id);
+
+
+--
+-- Name: auth_account_user_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX auth_account_user_id_idx ON public.auth_account USING btree (user_id);
+
+
+--
+-- Name: auth_session_unique_token_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX auth_session_unique_token_index ON public.auth_session USING btree (token);
+
+
+--
+-- Name: auth_session_user_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX auth_session_user_id_idx ON public.auth_session USING btree (user_id);
+
+
+--
+-- Name: auth_user_unique_email_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX auth_user_unique_email_index ON public.auth_user USING btree (email);
+
+
+--
+-- Name: auth_user_unique_username_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX auth_user_unique_username_index ON public.auth_user USING btree (username);
+
+
+--
+-- Name: auth_verification_identifier_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX auth_verification_identifier_idx ON public.auth_verification USING btree (identifier);
+
+
+--
 -- Name: bas_account_unique_code_per_company_index; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3329,6 +3890,20 @@ CREATE UNIQUE INDEX bas_market_instrument_unique_code_index ON public.bas_market
 --
 
 CREATE UNIQUE INDEX bas_market_price_point_unique_active_point_index ON public.bas_market_price_point USING btree (instrument_id, observed_at, price_kind) WHERE (is_voided = false);
+
+
+--
+-- Name: bas_party_address_default_per_purpose_uidx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX bas_party_address_default_per_purpose_uidx ON public.bas_party_address USING btree (party_type, party_id, purpose) WHERE (is_default = true);
+
+
+--
+-- Name: bas_party_address_party_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX bas_party_address_party_idx ON public.bas_party_address USING btree (party_type, party_id);
 
 
 --
@@ -3489,14 +4064,14 @@ CREATE UNIQUE INDEX inv_material_unit_unique_material_unit_index ON public.inv_m
 -- Name: inv_stock_count_unique_doc_no_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX inv_stock_count_unique_doc_no_index ON public.inv_stock_count USING btree (doc_no);
+CREATE UNIQUE INDEX inv_stock_count_unique_doc_no_index ON public.inv_stock_count USING btree (company_id, doc_no);
 
 
 --
 -- Name: inv_stock_doc_unique_doc_no_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX inv_stock_doc_unique_doc_no_index ON public.inv_stock_doc USING btree (doc_no);
+CREATE UNIQUE INDEX inv_stock_doc_unique_doc_no_index ON public.inv_stock_doc USING btree (company_id, doc_no);
 
 
 --
@@ -3517,7 +4092,14 @@ CREATE INDEX inv_stock_entry_voucher_type_voucher_id_index ON public.inv_stock_e
 -- Name: inv_stock_transfer_unique_doc_no_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX inv_stock_transfer_unique_doc_no_index ON public.inv_stock_transfer USING btree (doc_no);
+CREATE UNIQUE INDEX inv_stock_transfer_unique_doc_no_index ON public.inv_stock_transfer USING btree (company_id, doc_no);
+
+
+--
+-- Name: inv_warehouse_unique_code_per_company_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX inv_warehouse_unique_code_per_company_index ON public.inv_warehouse USING btree (company_id, code);
 
 
 --
@@ -3535,10 +4117,45 @@ CREATE UNIQUE INDEX mfg_bom_unique_code_index ON public.mfg_bom USING btree (cod
 
 
 --
+-- Name: mfg_demand_arrangement_item_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX mfg_demand_arrangement_item_idx ON public.mfg_demand_arrangement USING btree (demand_item_id);
+
+
+--
+-- Name: mfg_demand_arrangement_po_item_uidx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX mfg_demand_arrangement_po_item_uidx ON public.mfg_demand_arrangement USING btree (purchase_order_item_id) WHERE (purchase_order_item_id IS NOT NULL);
+
+
+--
+-- Name: mfg_demand_arrangement_work_order_uidx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX mfg_demand_arrangement_work_order_uidx ON public.mfg_demand_arrangement USING btree (work_order_id) WHERE (work_order_id IS NOT NULL);
+
+
+--
+-- Name: mfg_demand_assigned_dept_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX mfg_demand_assigned_dept_id_index ON public.mfg_demand USING btree (assigned_dept_id);
+
+
+--
+-- Name: mfg_demand_item_source_work_order_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX mfg_demand_item_source_work_order_id_index ON public.mfg_demand_item USING btree (source_work_order_id);
+
+
+--
 -- Name: mfg_demand_unique_demand_no_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX mfg_demand_unique_demand_no_index ON public.mfg_demand USING btree (demand_no);
+CREATE UNIQUE INDEX mfg_demand_unique_demand_no_index ON public.mfg_demand USING btree (company_id, demand_no);
 
 
 --
@@ -3552,7 +4169,7 @@ CREATE UNIQUE INDEX mfg_operation_unique_code_index ON public.mfg_operation USIN
 -- Name: mfg_output_unique_output_no_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX mfg_output_unique_output_no_index ON public.mfg_output USING btree (output_no);
+CREATE UNIQUE INDEX mfg_output_unique_output_no_index ON public.mfg_output USING btree (company_id, output_no);
 
 
 --
@@ -3563,17 +4180,45 @@ CREATE UNIQUE INDEX mfg_process_template_unique_code_index ON public.mfg_process
 
 
 --
--- Name: mfg_work_order_active_demand_item_index; Type: INDEX; Schema: public; Owner: -
+-- Name: mfg_wo_byproduct_wo_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX mfg_work_order_active_demand_item_index ON public.mfg_work_order USING btree (demand_item_id) WHERE (status <> 'voided'::text);
+CREATE INDEX mfg_wo_byproduct_wo_idx ON public.mfg_work_order_byproduct USING btree (work_order_id);
+
+
+--
+-- Name: mfg_wo_component_wo_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX mfg_wo_component_wo_idx ON public.mfg_work_order_component USING btree (work_order_id);
+
+
+--
+-- Name: mfg_wo_route_wo_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX mfg_wo_route_wo_idx ON public.mfg_work_order_route USING btree (work_order_id);
+
+
+--
+-- Name: mfg_work_order_demand_item_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX mfg_work_order_demand_item_idx ON public.mfg_work_order USING btree (demand_item_id) WHERE (status <> 'voided'::text);
+
+
+--
+-- Name: mfg_work_order_owner_dept_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX mfg_work_order_owner_dept_id_index ON public.mfg_work_order USING btree (owner_dept_id);
 
 
 --
 -- Name: mfg_work_order_unique_work_order_no_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX mfg_work_order_unique_work_order_no_index ON public.mfg_work_order USING btree (work_order_no);
+CREATE UNIQUE INDEX mfg_work_order_unique_work_order_no_index ON public.mfg_work_order USING btree (company_id, work_order_no);
 
 
 --
@@ -3587,21 +4232,21 @@ CREATE INDEX pur_order_item_demand_line_id_index ON public.pur_order_item USING 
 -- Name: pur_order_unique_order_no_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX pur_order_unique_order_no_index ON public.pur_order USING btree (order_no);
+CREATE UNIQUE INDEX pur_order_unique_order_no_index ON public.pur_order USING btree (company_id, order_no);
 
 
 --
 -- Name: pur_outsourced_issue_unique_issue_no_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX pur_outsourced_issue_unique_issue_no_index ON public.pur_outsourced_issue USING btree (issue_no);
+CREATE UNIQUE INDEX pur_outsourced_issue_unique_issue_no_index ON public.pur_outsourced_issue USING btree (company_id, issue_no);
 
 
 --
 -- Name: pur_outsourced_receipt_unique_receipt_no_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX pur_outsourced_receipt_unique_receipt_no_index ON public.pur_outsourced_receipt USING btree (receipt_no);
+CREATE UNIQUE INDEX pur_outsourced_receipt_unique_receipt_no_index ON public.pur_outsourced_receipt USING btree (company_id, receipt_no);
 
 
 --
@@ -3622,21 +4267,21 @@ CREATE UNIQUE INDEX pur_quotation_tier_unique_item_min_qty_index ON public.pur_q
 -- Name: pur_quotation_unique_quotation_no_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX pur_quotation_unique_quotation_no_index ON public.pur_quotation USING btree (quotation_no);
+CREATE UNIQUE INDEX pur_quotation_unique_quotation_no_index ON public.pur_quotation USING btree (company_id, quotation_no);
 
 
 --
 -- Name: pur_receipt_unique_receipt_no_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX pur_receipt_unique_receipt_no_index ON public.pur_receipt USING btree (receipt_no);
+CREATE UNIQUE INDEX pur_receipt_unique_receipt_no_index ON public.pur_receipt USING btree (company_id, receipt_no);
 
 
 --
 -- Name: pur_reconciliation_unique_reconciliation_no_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX pur_reconciliation_unique_reconciliation_no_index ON public.pur_reconciliation USING btree (reconciliation_no);
+CREATE UNIQUE INDEX pur_reconciliation_unique_reconciliation_no_index ON public.pur_reconciliation USING btree (company_id, reconciliation_no);
 
 
 --
@@ -3664,14 +4309,14 @@ CREATE UNIQUE INDEX sal_customers_unique_code_index ON public.sal_customers USIN
 -- Name: sal_delivery_unique_delivery_no_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX sal_delivery_unique_delivery_no_index ON public.sal_delivery USING btree (delivery_no);
+CREATE UNIQUE INDEX sal_delivery_unique_delivery_no_index ON public.sal_delivery USING btree (company_id, delivery_no);
 
 
 --
 -- Name: sal_order_unique_order_no_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX sal_order_unique_order_no_index ON public.sal_order USING btree (order_no);
+CREATE UNIQUE INDEX sal_order_unique_order_no_index ON public.sal_order USING btree (company_id, order_no);
 
 
 --
@@ -3692,14 +4337,14 @@ CREATE UNIQUE INDEX sal_quotation_tier_unique_item_min_qty_index ON public.sal_q
 -- Name: sal_quotation_unique_quotation_no_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX sal_quotation_unique_quotation_no_index ON public.sal_quotation USING btree (quotation_no);
+CREATE UNIQUE INDEX sal_quotation_unique_quotation_no_index ON public.sal_quotation USING btree (company_id, quotation_no);
 
 
 --
 -- Name: sal_reconciliation_unique_reconciliation_no_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX sal_reconciliation_unique_reconciliation_no_index ON public.sal_reconciliation USING btree (reconciliation_no);
+CREATE UNIQUE INDEX sal_reconciliation_unique_reconciliation_no_index ON public.sal_reconciliation USING btree (company_id, reconciliation_no);
 
 
 --
@@ -3731,6 +4376,27 @@ CREATE INDEX sys_audit_log_resource_record_id_inserted_at_index ON public.sys_au
 
 
 --
+-- Name: sys_department_company_code_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX sys_department_company_code_index ON public.sys_department USING btree (company_id, code);
+
+
+--
+-- Name: sys_department_parent_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX sys_department_parent_id_index ON public.sys_department USING btree (parent_id);
+
+
+--
+-- Name: sys_department_path_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX sys_department_path_index ON public.sys_department USING btree (path text_pattern_ops);
+
+
+--
 -- Name: sys_numbering_counter_unique_scope_per_rule_index; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3749,6 +4415,13 @@ CREATE UNIQUE INDEX sys_numbering_rule_one_enabled_per_resource_index ON public.
 --
 
 CREATE UNIQUE INDEX sys_print_template_one_default_per_resource_index ON public.sys_print_template USING btree (is_default, resource) WHERE is_default;
+
+
+--
+-- Name: sys_role_menu_unique_role_menu_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX sys_role_menu_unique_role_menu_index ON public.sys_role_menu USING btree (role_id, menu_code);
 
 
 --
@@ -3822,10 +4495,24 @@ CREATE UNIQUE INDEX sys_user_company_unique_user_company_index ON public.sys_use
 
 
 --
+-- Name: sys_user_department_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX sys_user_department_id_index ON public.sys_user USING btree (department_id);
+
+
+--
 -- Name: sys_user_role_unique_user_role_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX sys_user_role_unique_user_role_index ON public.sys_user_role USING btree (user_id, role_id);
+
+
+--
+-- Name: sys_user_unique_email_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX sys_user_unique_email_index ON public.sys_user USING btree (lower(email)) WHERE (email IS NOT NULL);
 
 
 --
@@ -4313,6 +5000,22 @@ ALTER TABLE ONLY public.acc_vat_invoice
 
 ALTER TABLE ONLY public.acc_vat_invoice
     ADD CONSTRAINT acc_vat_invoice_tax_account_id_fkey FOREIGN KEY (tax_account_id) REFERENCES public.bas_account(id);
+
+
+--
+-- Name: auth_account auth_account_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.auth_account
+    ADD CONSTRAINT auth_account_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.auth_user(id) ON DELETE CASCADE;
+
+
+--
+-- Name: auth_session auth_session_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.auth_session
+    ADD CONSTRAINT auth_session_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.auth_user(id) ON DELETE CASCADE;
 
 
 --
@@ -4900,6 +5603,38 @@ ALTER TABLE ONLY public.mfg_bom_route
 
 
 --
+-- Name: mfg_demand_arrangement mfg_demand_arrangement_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_demand_arrangement
+    ADD CONSTRAINT mfg_demand_arrangement_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.bas_company(id);
+
+
+--
+-- Name: mfg_demand_arrangement mfg_demand_arrangement_demand_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_demand_arrangement
+    ADD CONSTRAINT mfg_demand_arrangement_demand_item_id_fkey FOREIGN KEY (demand_item_id) REFERENCES public.mfg_demand_item(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mfg_demand_arrangement mfg_demand_arrangement_work_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_demand_arrangement
+    ADD CONSTRAINT mfg_demand_arrangement_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES public.mfg_work_order(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mfg_demand mfg_demand_assigned_dept_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_demand
+    ADD CONSTRAINT mfg_demand_assigned_dept_id_fkey FOREIGN KEY (assigned_dept_id) REFERENCES public.sys_department(id);
+
+
+--
 -- Name: mfg_demand mfg_demand_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4948,11 +5683,27 @@ ALTER TABLE ONLY public.mfg_demand_item
 
 
 --
+-- Name: mfg_demand_item mfg_demand_item_source_work_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_demand_item
+    ADD CONSTRAINT mfg_demand_item_source_work_order_id_fkey FOREIGN KEY (source_work_order_id) REFERENCES public.mfg_work_order(id);
+
+
+--
 -- Name: mfg_demand_item mfg_demand_item_unit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.mfg_demand_item
     ADD CONSTRAINT mfg_demand_item_unit_id_fkey FOREIGN KEY (unit_id) REFERENCES public.bas_unit(id);
+
+
+--
+-- Name: mfg_mold_design mfg_mold_design_material_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_mold_design
+    ADD CONSTRAINT mfg_mold_design_material_fk FOREIGN KEY (material_id) REFERENCES public.inv_material(id);
 
 
 --
@@ -5052,11 +5803,67 @@ ALTER TABLE ONLY public.mfg_process_template_item
 
 
 --
+-- Name: mfg_work_order mfg_work_order_bom_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_work_order
+    ADD CONSTRAINT mfg_work_order_bom_id_fkey FOREIGN KEY (bom_id) REFERENCES public.mfg_bom(id) ON DELETE SET NULL;
+
+
+--
+-- Name: mfg_work_order_byproduct mfg_work_order_byproduct_material_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_work_order_byproduct
+    ADD CONSTRAINT mfg_work_order_byproduct_material_id_fkey FOREIGN KEY (material_id) REFERENCES public.inv_material(id);
+
+
+--
+-- Name: mfg_work_order_byproduct mfg_work_order_byproduct_unit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_work_order_byproduct
+    ADD CONSTRAINT mfg_work_order_byproduct_unit_id_fkey FOREIGN KEY (unit_id) REFERENCES public.bas_unit(id);
+
+
+--
+-- Name: mfg_work_order_byproduct mfg_work_order_byproduct_work_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_work_order_byproduct
+    ADD CONSTRAINT mfg_work_order_byproduct_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES public.mfg_work_order(id) ON DELETE CASCADE;
+
+
+--
 -- Name: mfg_work_order mfg_work_order_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.mfg_work_order
     ADD CONSTRAINT mfg_work_order_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.bas_company(id);
+
+
+--
+-- Name: mfg_work_order_component mfg_work_order_component_material_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_work_order_component
+    ADD CONSTRAINT mfg_work_order_component_material_id_fkey FOREIGN KEY (material_id) REFERENCES public.inv_material(id);
+
+
+--
+-- Name: mfg_work_order_component mfg_work_order_component_unit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_work_order_component
+    ADD CONSTRAINT mfg_work_order_component_unit_id_fkey FOREIGN KEY (unit_id) REFERENCES public.bas_unit(id);
+
+
+--
+-- Name: mfg_work_order_component mfg_work_order_component_work_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_work_order_component
+    ADD CONSTRAINT mfg_work_order_component_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES public.mfg_work_order(id) ON DELETE CASCADE;
 
 
 --
@@ -5089,6 +5896,30 @@ ALTER TABLE ONLY public.mfg_work_order
 
 ALTER TABLE ONLY public.mfg_work_order
     ADD CONSTRAINT mfg_work_order_material_id_fkey FOREIGN KEY (material_id) REFERENCES public.inv_material(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: mfg_work_order mfg_work_order_owner_dept_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_work_order
+    ADD CONSTRAINT mfg_work_order_owner_dept_id_fkey FOREIGN KEY (owner_dept_id) REFERENCES public.sys_department(id);
+
+
+--
+-- Name: mfg_work_order_route mfg_work_order_route_operation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_work_order_route
+    ADD CONSTRAINT mfg_work_order_route_operation_id_fkey FOREIGN KEY (operation_id) REFERENCES public.mfg_operation(id);
+
+
+--
+-- Name: mfg_work_order_route mfg_work_order_route_work_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfg_work_order_route
+    ADD CONSTRAINT mfg_work_order_route_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES public.mfg_work_order(id) ON DELETE CASCADE;
 
 
 --
@@ -5916,6 +6747,62 @@ ALTER TABLE ONLY public.sal_delivery_item
 
 
 --
+-- Name: sal_delivery_pack_box sal_delivery_pack_box_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sal_delivery_pack_box
+    ADD CONSTRAINT sal_delivery_pack_box_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.bas_company(id);
+
+
+--
+-- Name: sal_delivery_pack_box sal_delivery_pack_box_delivery_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sal_delivery_pack_box
+    ADD CONSTRAINT sal_delivery_pack_box_delivery_id_fkey FOREIGN KEY (delivery_id) REFERENCES public.sal_delivery(id) ON DELETE CASCADE;
+
+
+--
+-- Name: sal_delivery_pack_line sal_delivery_pack_line_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sal_delivery_pack_line
+    ADD CONSTRAINT sal_delivery_pack_line_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.bas_company(id);
+
+
+--
+-- Name: sal_delivery_pack_line sal_delivery_pack_line_delivery_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sal_delivery_pack_line
+    ADD CONSTRAINT sal_delivery_pack_line_delivery_id_fkey FOREIGN KEY (delivery_id) REFERENCES public.sal_delivery(id) ON DELETE CASCADE;
+
+
+--
+-- Name: sal_delivery_pack_line sal_delivery_pack_line_material_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sal_delivery_pack_line
+    ADD CONSTRAINT sal_delivery_pack_line_material_id_fkey FOREIGN KEY (material_id) REFERENCES public.inv_material(id);
+
+
+--
+-- Name: sal_delivery_pack_line sal_delivery_pack_line_pack_box_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sal_delivery_pack_line
+    ADD CONSTRAINT sal_delivery_pack_line_pack_box_id_fkey FOREIGN KEY (pack_box_id) REFERENCES public.sal_delivery_pack_box(id) ON DELETE CASCADE;
+
+
+--
+-- Name: sal_delivery_pack_line sal_delivery_pack_line_unit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sal_delivery_pack_line
+    ADD CONSTRAINT sal_delivery_pack_line_unit_id_fkey FOREIGN KEY (unit_id) REFERENCES public.bas_unit(id);
+
+
+--
 -- Name: sal_delivery sal_delivery_warehouse_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6140,6 +7027,22 @@ ALTER TABLE ONLY public.sys_attachment
 
 
 --
+-- Name: sys_department sys_department_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sys_department
+    ADD CONSTRAINT sys_department_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.bas_company(id);
+
+
+--
+-- Name: sys_department sys_department_parent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sys_department
+    ADD CONSTRAINT sys_department_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES public.sys_department(id);
+
+
+--
 -- Name: sys_file sys_file_uploaded_by_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6161,6 +7064,14 @@ ALTER TABLE ONLY public.sys_numbering_counter
 
 ALTER TABLE ONLY public.sys_print_template
     ADD CONSTRAINT sys_print_template_file_id_fkey FOREIGN KEY (file_id) REFERENCES public.sys_file(id);
+
+
+--
+-- Name: sys_role_menu sys_role_menu_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sys_role_menu
+    ADD CONSTRAINT sys_role_menu_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.sys_role(id);
 
 
 --
@@ -6204,6 +7115,14 @@ ALTER TABLE ONLY public.sys_todo_state
 
 
 --
+-- Name: sys_user sys_user_auth_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sys_user
+    ADD CONSTRAINT sys_user_auth_user_id_fkey FOREIGN KEY (auth_user_id) REFERENCES public.auth_user(id);
+
+
+--
 -- Name: sys_user_company sys_user_company_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6217,6 +7136,14 @@ ALTER TABLE ONLY public.sys_user_company
 
 ALTER TABLE ONLY public.sys_user_company
     ADD CONSTRAINT sys_user_company_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.sys_user(id);
+
+
+--
+-- Name: sys_user sys_user_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sys_user
+    ADD CONSTRAINT sys_user_department_id_fkey FOREIGN KEY (department_id) REFERENCES public.sys_department(id);
 
 
 --
@@ -6239,107 +7166,4 @@ ALTER TABLE ONLY public.sys_user_role
 -- PostgreSQL database dump complete
 --
 
--- +goose Down
-DROP VIEW IF EXISTS public.scm_order_flow_item CASCADE;
-DROP TABLE IF EXISTS public.sys_user_role CASCADE;
-DROP TABLE IF EXISTS public.sys_user_company CASCADE;
-DROP TABLE IF EXISTS public.sys_user CASCADE;
-DROP TABLE IF EXISTS public.sys_todo_state CASCADE;
-DROP TABLE IF EXISTS public.sys_todo CASCADE;
-DROP TABLE IF EXISTS public.sys_storage CASCADE;
-DROP TABLE IF EXISTS public.sys_setting CASCADE;
-DROP TABLE IF EXISTS public.sys_role_permission CASCADE;
-DROP TABLE IF EXISTS public.sys_role CASCADE;
-DROP TABLE IF EXISTS public.sys_print_template CASCADE;
-DROP TABLE IF EXISTS public.sys_numbering_rule CASCADE;
-DROP TABLE IF EXISTS public.sys_numbering_counter CASCADE;
-DROP TABLE IF EXISTS public.sys_file CASCADE;
-DROP TABLE IF EXISTS public.sys_audit_log CASCADE;
-DROP TABLE IF EXISTS public.sys_attachment CASCADE;
-DROP TABLE IF EXISTS public.sal_setting CASCADE;
-DROP TABLE IF EXISTS public.sal_reconciliation_item CASCADE;
-DROP TABLE IF EXISTS public.sal_reconciliation CASCADE;
-DROP TABLE IF EXISTS public.sal_quotation_tier CASCADE;
-DROP TABLE IF EXISTS public.sal_quotation_item CASCADE;
-DROP TABLE IF EXISTS public.sal_quotation CASCADE;
-DROP TABLE IF EXISTS public.sal_order_item CASCADE;
-DROP TABLE IF EXISTS public.sal_order CASCADE;
-DROP TABLE IF EXISTS public.sal_delivery_item CASCADE;
-DROP TABLE IF EXISTS public.sal_delivery CASCADE;
-DROP TABLE IF EXISTS public.sal_customers CASCADE;
-DROP TABLE IF EXISTS public.sal_company_account_default CASCADE;
-DROP TABLE IF EXISTS public.pur_supplier CASCADE;
-DROP TABLE IF EXISTS public.pur_reconciliation_item CASCADE;
-DROP TABLE IF EXISTS public.pur_reconciliation CASCADE;
-DROP TABLE IF EXISTS public.pur_receipt_item CASCADE;
-DROP TABLE IF EXISTS public.pur_receipt CASCADE;
-DROP TABLE IF EXISTS public.pur_quotation_tier CASCADE;
-DROP TABLE IF EXISTS public.pur_quotation_item CASCADE;
-DROP TABLE IF EXISTS public.pur_quotation CASCADE;
-DROP TABLE IF EXISTS public.pur_outsourced_receipt_item_material CASCADE;
-DROP TABLE IF EXISTS public.pur_outsourced_receipt_item_byproduct CASCADE;
-DROP TABLE IF EXISTS public.pur_outsourced_receipt_item CASCADE;
-DROP TABLE IF EXISTS public.pur_outsourced_receipt CASCADE;
-DROP TABLE IF EXISTS public.pur_outsourced_issue_item CASCADE;
-DROP TABLE IF EXISTS public.pur_outsourced_issue CASCADE;
-DROP TABLE IF EXISTS public.pur_order_item_material CASCADE;
-DROP TABLE IF EXISTS public.pur_order_item_byproduct CASCADE;
-DROP TABLE IF EXISTS public.pur_order_item CASCADE;
-DROP TABLE IF EXISTS public.pur_order CASCADE;
-DROP TABLE IF EXISTS public.mfg_work_order CASCADE;
-DROP TABLE IF EXISTS public.mfg_setting CASCADE;
-DROP TABLE IF EXISTS public.mfg_process_template_item CASCADE;
-DROP TABLE IF EXISTS public.mfg_process_template CASCADE;
-DROP TABLE IF EXISTS public.mfg_output_item CASCADE;
-DROP TABLE IF EXISTS public.mfg_output CASCADE;
-DROP TABLE IF EXISTS public.mfg_operation CASCADE;
-DROP TABLE IF EXISTS public.mfg_demand_item CASCADE;
-DROP TABLE IF EXISTS public.mfg_demand CASCADE;
-DROP TABLE IF EXISTS public.mfg_bom_route CASCADE;
-DROP TABLE IF EXISTS public.mfg_bom_component CASCADE;
-DROP TABLE IF EXISTS public.mfg_bom_byproduct CASCADE;
-DROP TABLE IF EXISTS public.mfg_bom CASCADE;
-DROP TABLE IF EXISTS public.inv_warehouse CASCADE;
-DROP TABLE IF EXISTS public.inv_stock_transfer_item CASCADE;
-DROP TABLE IF EXISTS public.inv_stock_transfer CASCADE;
-DROP TABLE IF EXISTS public.inv_stock_entry CASCADE;
-DROP TABLE IF EXISTS public.inv_stock_doc_item CASCADE;
-DROP TABLE IF EXISTS public.inv_stock_doc CASCADE;
-DROP TABLE IF EXISTS public.inv_stock_count_item CASCADE;
-DROP TABLE IF EXISTS public.inv_stock_count CASCADE;
-DROP TABLE IF EXISTS public.inv_material_unit CASCADE;
-DROP TABLE IF EXISTS public.inv_material_category CASCADE;
-DROP TABLE IF EXISTS public.inv_material CASCADE;
-DROP TABLE IF EXISTS public.hr_payroll_payment CASCADE;
-DROP TABLE IF EXISTS public.hr_payroll CASCADE;
-DROP TABLE IF EXISTS public.hr_employees CASCADE;
-DROP TABLE IF EXISTS public.hr_employee_loan CASCADE;
-DROP TABLE IF EXISTS public.hr_attendance_punch CASCADE;
-DROP TABLE IF EXISTS public.hr_attendance_import CASCADE;
-DROP TABLE IF EXISTS public.hr_attendance_day CASCADE;
-DROP TABLE IF EXISTS public.hr_attendance_correction CASCADE;
-DROP TABLE IF EXISTS public.bas_unit CASCADE;
-DROP TABLE IF EXISTS public.bas_market_price_point CASCADE;
-DROP TABLE IF EXISTS public.bas_market_instrument CASCADE;
-DROP TABLE IF EXISTS public.bas_currency CASCADE;
-DROP TABLE IF EXISTS public.bas_company CASCADE;
-DROP TABLE IF EXISTS public.bas_account CASCADE;
-DROP TABLE IF EXISTS public.acc_vat_invoice CASCADE;
-DROP TABLE IF EXISTS public.acc_setting CASCADE;
-DROP TABLE IF EXISTS public.acc_gl_journal_line CASCADE;
-DROP TABLE IF EXISTS public.acc_gl_journal CASCADE;
-DROP TABLE IF EXISTS public.acc_gl_entry CASCADE;
-DROP TABLE IF EXISTS public.acc_expense_report_item CASCADE;
-DROP TABLE IF EXISTS public.acc_expense_report CASCADE;
-DROP TABLE IF EXISTS public.acc_bill_transaction CASCADE;
-DROP TABLE IF EXISTS public.acc_bill_holding CASCADE;
-DROP TABLE IF EXISTS public.acc_bill CASCADE;
-DROP TABLE IF EXISTS public.acc_bank_transaction CASCADE;
-DROP TABLE IF EXISTS public.acc_bank_reconciliation CASCADE;
-DROP TABLE IF EXISTS public.acc_bank_import_template CASCADE;
-DROP TABLE IF EXISTS public.acc_bank_import_item CASCADE;
-DROP TABLE IF EXISTS public.acc_bank_import CASCADE;
-DROP TABLE IF EXISTS public.acc_bank_account CASCADE;
-DROP SEQUENCE IF EXISTS public.inv_stock_entry_seq_seq CASCADE;
-DROP SEQUENCE IF EXISTS public.acc_gl_entry_seq_seq CASCADE;
-DROP EXTENSION IF EXISTS citext;
+

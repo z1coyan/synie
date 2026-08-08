@@ -161,8 +161,7 @@ export function createBetterAuth(deps: {
       },
       accountLinking: {
         enabled: true,
-        // 回填的存量 auth_user（email 占位、未验证）用 Logto 同 email 登录时允许隐式关联；
-        // 本地账号全部由管理员供给，无「抢注邮箱」风险
+        // 本地账号全部由管理员供给，无「抢注邮箱」风险，Logto 同 email 登录允许隐式关联
         trustedProviders: ['logto'],
         requireLocalEmailVerified: false,
       },

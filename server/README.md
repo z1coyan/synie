@@ -14,7 +14,7 @@ Synie ERP 的**产品后端**：**Bun + Hono + Kysely + PostgreSQL**，与 `web/
 | HTTP | **Hono** + `@hono/zod-validator` | 路由链式定义，类型供 `hc<ApiType>` 推断 |
 | 客户端契约 | **hono/client（hc）** | `src/app.ts` 的 `ApiType` 是契约事实源 |
 | 数据层 | **Kysely** + postgres.js（官方 PostgresJSDialect） | 纯 JS 驱动，Bun 原生；类型由 kysely-codegen 从迁移后开发库生成（`bun run db:codegen`，生成物提交） |
-| 迁移 | `db/migrations/*.sql` + `db/migrate.ts` | 每文件一事务，advisory lock 串行；兼容 goose Up 段标注 |
+| 迁移 | `db/migrations/*.sql` + `db/migrate.ts` | 纯 SQL，每文件一事务，advisory lock 串行；无回滚，未上线期改历史即压平重建 baseline |
 | 认证 | **Bun.password（argon2id）+ hono/jwt（HS256）** | PHC 串互通；登录限流单进程 10 次/5 分钟 |
 | 金额 | `@synie/shared` decimal（decimal.js，half-up） | wire 一律字符串；金额 2 位 / 单价 4 位 / 数量 6 位 |
 | 测试 | `bun test`；PG 集成测试门控 `SYNIE_TEST_DATABASE_URL` | 未设则集成用例 Skip |
