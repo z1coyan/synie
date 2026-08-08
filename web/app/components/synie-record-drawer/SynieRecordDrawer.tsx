@@ -416,9 +416,9 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
     )
   }
 
+  // isHandleOnly:侧向 Sheet 正文拖关会与文本选择/表单交互冲突(HeroUI 对 left/right
+  // 不做选区守卫)。本抽屉不放把手,关闭走 X/按钮/遮罩;移动端底部 Sheet 见 filter-sheet。
   return (
-    {/* isHandleOnly:侧向 Sheet 正文拖关会与文本选择/表单交互冲突(HeroUI 对 left/right
-        不做选区守卫)。本抽屉不放把手,关闭走 X/按钮/遮罩;移动端底部 Sheet 见 filter-sheet。 */}
     <Sheet
       isOpen={isOpen}
       onOpenChange={props.onOpenChange}
