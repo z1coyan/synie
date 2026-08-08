@@ -94,7 +94,8 @@ import type { SynieBetterAuth } from './platform/auth/better-auth.ts'
 import { authRoutes } from './platform/auth/routes.ts'
 import type { AuthService } from './platform/auth/service.ts'
 import type { AppEnv } from './platform/http/context.ts'
-import { notFound, onError } from './platform/http/errors.ts'
+import { createOnError, notFound } from './platform/http/errors.ts'
+import type { ErrorReporter } from './platform/http/error-report.ts'
 import { logJson, serializeError } from './platform/http/log.ts'
 import { metaRoutes } from './platform/meta/routes.ts'
 import type { Registry } from './platform/meta/registry.ts'
@@ -126,6 +127,8 @@ export interface AppDeps {
   betterAuth: SynieBetterAuth
   /** Logto OIDC 是否启用（env 三件套齐备）；透出到 setup status 供登录页判断 */
   logtoEnabled: boolean
+  /** 5xx 上报通道（可选；env ERROR_REPORT_WEBHOOK_URL 配置，缺省不上报） */
+  errorReporter?: ErrorReporter
   registry: Registry
   /** 授权执行面（guard / decideFor / targetOf）；由 registry 派生 */
   authz: AuthzEnforcer
@@ -534,7 +537,7 @@ export function buildApp(deps: AppDeps) {
     .route('/purchase/reconciliation-items', t.purchaseReconciliationItems)
     .route('/base/order-flow-items', s.orderFlowItems)
 
-  app2.onError(onError)
+  app2.onError(createOnError({ reporter: deps.errorReporter }))
   app2.notFound(notFound)
   return app2
 }

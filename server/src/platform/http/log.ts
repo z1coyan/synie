@@ -5,6 +5,23 @@
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
+const LEVEL_RANK: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 }
+
+/**
+ * 进程级最低日志级别：由入口在 loadEnv 后 setLogLevel(env.logLevel) 注入（默认 info）。
+ * 语义约束：5xx 访问日志与错误落盘一律用 error 级别（见 app.ts accessLog / errors.ts），
+ * 故即使 LOG_LEVEL=error，5xx 也始终可见，不会被过滤吞掉。
+ */
+let minLevel: LogLevel = 'info'
+
+export function setLogLevel(level: LogLevel): void {
+  minLevel = level
+}
+
+export function getLogLevel(): LogLevel {
+  return minLevel
+}
+
 const MAX_CAUSE_DEPTH = 6
 
 /** 将 unknown 错误展平为可 JSON 序列化的结构（含 stack、cause 链、常见 PG 字段） */
@@ -48,6 +65,7 @@ export function serializeError(err: unknown, depth = 0): unknown {
 }
 
 export function logJson(level: LogLevel, msg: string, extra?: Record<string, unknown>): void {
+  if (LEVEL_RANK[level] < LEVEL_RANK[minLevel]) return
   const line = JSON.stringify({
     level,
     msg,

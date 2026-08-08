@@ -34,6 +34,8 @@ const envSchema = z
      */
     BETTER_AUTH_ALLOWED_HOSTS: z.string().optional(),
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+    /** 5xx 错误上报 webhook（通用 POST JSON 摘要）；不配则不启用 */
+    ERROR_REPORT_WEBHOOK_URL: z.string().url().optional(),
     /** LibreOffice soffice 可执行路径；空则走 PATH 中的 soffice */
     SOFFICE_PATH: z.string().optional(),
     /** PDF 转换超时（毫秒），默认 120000 */
@@ -95,6 +97,8 @@ export interface Env {
    */
   betterAuthAllowedHosts: string[]
   logLevel: 'debug' | 'info' | 'warn' | 'error'
+  /** 5xx 错误上报 webhook URL；undefined 即不启用 */
+  errorReportWebhookUrl?: string
   sofficePath?: string
   sofficeTimeoutMs?: number
   sofficeMaxConcurrency?: number
@@ -195,6 +199,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
       raw.BETTER_AUTH_ALLOWED_HOSTS,
     ),
     logLevel: raw.LOG_LEVEL,
+    errorReportWebhookUrl: raw.ERROR_REPORT_WEBHOOK_URL,
     sofficePath: raw.SOFFICE_PATH,
     sofficeTimeoutMs: raw.SOFFICE_TIMEOUT_MS,
     sofficeMaxConcurrency: raw.SOFFICE_MAX_CONCURRENCY,

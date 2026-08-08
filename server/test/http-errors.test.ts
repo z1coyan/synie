@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { ApiError, onError, toErrorBody } from '~/platform/http/errors.ts'
+import { ApiError, createOnError, onError, toErrorBody } from '~/platform/http/errors.ts'
+import type { ErrorReportSummary } from '~/platform/http/error-report.ts'
 import { serializeError } from '~/platform/http/log.ts'
 import { validationHook } from '~/platform/http/zod.ts'
 
@@ -80,6 +81,59 @@ describe('onError 错误日志', () => {
     const res = await app.request('/nope')
     expect(res.status).toBe(404)
     expect(errorSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('createOnError 5xx 上报通道', () => {
+  const errorSpy = spyOn(console, 'error').mockImplementation(() => {})
+
+  afterEach(() => {
+    errorSpy.mockClear()
+  })
+
+  test('5xx 调 reporter 发摘要（不含堆栈/内部细节）', async () => {
+    const reports: ErrorReportSummary[] = []
+    const app = new Hono()
+    app.onError(createOnError({ reporter: { report: (s) => reports.push(s) } }))
+    app.get('/boom', () => {
+      throw new Error('secret-db-leak')
+    })
+    const res = await app.request('/boom')
+    expect(res.status).toBe(500)
+    expect(reports).toHaveLength(1)
+    const summary = reports[0]!
+    expect(summary.method).toBe('GET')
+    expect(summary.path).toBe('/boom')
+    expect(summary.status).toBe(500)
+    expect(summary.errorCode).toBe('internal')
+    expect(typeof summary.ts).toBe('string')
+    // 未知错误只发类型名：message/堆栈不外发
+    expect(summary.error).not.toContain('secret-db-leak')
+    expect(JSON.stringify(summary)).not.toContain('stack')
+  })
+
+  test('ApiError 5xx 摘要带面向用户的 message', async () => {
+    const reports: ErrorReportSummary[] = []
+    const app = new Hono()
+    app.onError(createOnError({ reporter: { report: (s) => reports.push(s) } }))
+    app.get('/nyi', () => {
+      throw new ApiError('not_implemented', '未接入')
+    })
+    const res = await app.request('/nyi')
+    expect(res.status).toBe(501)
+    expect(reports[0]!.error).toBe('ApiError: 未接入')
+  })
+
+  test('4xx 不上报', async () => {
+    const reports: ErrorReportSummary[] = []
+    const app = new Hono()
+    app.onError(createOnError({ reporter: { report: (s) => reports.push(s) } }))
+    app.get('/nope', () => {
+      throw new ApiError('not_found', '不存在')
+    })
+    const res = await app.request('/nope')
+    expect(res.status).toBe(404)
+    expect(reports).toHaveLength(0)
   })
 })
 

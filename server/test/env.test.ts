@@ -118,3 +118,25 @@ describe('env 文件存储对账（FILE_RECON_*）', () => {
     expect(() => loadEnv({ ...base, FILE_RECON_ORPHAN_GRACE_HOURS: '0' })).toThrow('环境配置无效')
   })
 })
+
+describe('env 可观测性配置', () => {
+  test('LOG_LEVEL 缺省 info；合法值透传', () => {
+    expect(loadEnv({ ...base }).logLevel).toBe('info')
+    expect(loadEnv({ ...base, LOG_LEVEL: 'error' }).logLevel).toBe('error')
+  })
+
+  test('LOG_LEVEL 非法值拒绝启动（枚举式校验）', () => {
+    expect(() => loadEnv({ ...base, LOG_LEVEL: 'verbose' })).toThrow('环境配置无效')
+    expect(() => loadEnv({ ...base, LOG_LEVEL: 'INFO' })).toThrow('环境配置无效')
+  })
+
+  test('ERROR_REPORT_WEBHOOK_URL 缺省不启用；合法 URL 透传', () => {
+    expect(loadEnv({ ...base }).errorReportWebhookUrl).toBeUndefined()
+    const env = loadEnv({ ...base, ERROR_REPORT_WEBHOOK_URL: 'https://hooks.example.com/synie' })
+    expect(env.errorReportWebhookUrl).toBe('https://hooks.example.com/synie')
+  })
+
+  test('ERROR_REPORT_WEBHOOK_URL 非法 URL 拒绝启动', () => {
+    expect(() => loadEnv({ ...base, ERROR_REPORT_WEBHOOK_URL: 'not-a-url' })).toThrow('环境配置无效')
+  })
+})

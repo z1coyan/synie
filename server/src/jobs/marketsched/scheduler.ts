@@ -4,6 +4,7 @@ import {
   type RefreshResult,
 } from '~/modules/base/market/service.ts'
 import { systemPermit } from '~/platform/authz/core/index.ts'
+import { logJson } from '~/platform/http/log.ts'
 import { SYS_RESOURCE_NAME } from '~/platform/settings/meta.ts'
 import type { SettingsService } from '~/platform/settings/service.ts'
 import {
@@ -37,6 +38,7 @@ export function createMarketScheduler(deps: MarketSchedulerDeps) {
   let initialTimer: ReturnType<typeof setTimeout> | null = null
   let tickTimer: ReturnType<typeof setInterval> | null = null
 
+  // 默认走平台结构化日志（统一 ts 字段、受 LOG_LEVEL 过滤）；deps.log 仅供测试注入
   function log(
     level: 'info' | 'error',
     msg: string,
@@ -46,7 +48,7 @@ export function createMarketScheduler(deps: MarketSchedulerDeps) {
       deps.log(level, msg, extra)
       return
     }
-    console.log(JSON.stringify({ level, msg, ...extra }))
+    logJson(level, msg, extra)
   }
 
   async function tick(): Promise<void> {

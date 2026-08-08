@@ -13,9 +13,12 @@ import { createAuthzEnforcer } from './platform/authz/enforce.ts'
 import { createRegistry } from './platform/meta/registry.ts'
 import { registerAllResources } from './platform/meta/register-all.ts'
 import { createSofficeConverter } from './platform/printing/index.ts'
-import { logJson, serializeError } from './platform/http/log.ts'
+import { createWebhookErrorReporter } from './platform/http/error-report.ts'
+import { logJson, serializeError, setLogLevel } from './platform/http/log.ts'
 
 const env = loadEnv()
+// LOG_LEVEL 生效：低于该级别的日志不再输出（5xx 走 error 级别，始终可见）
+setLogLevel(env.logLevel)
 const db = createDb(env.databaseUrl)
 
 const tokens = createTokenManager({ secret: env.authSecret, ttlSeconds: env.tokenTtlSeconds })
@@ -56,8 +59,14 @@ const services = createServices(db, {
   }),
 })
 
+// 5xx 上报 webhook（不配 ERROR_REPORT_WEBHOOK_URL 则不启用，零行为变化）
+const errorReporter = env.errorReportWebhookUrl
+  ? createWebhookErrorReporter({ url: env.errorReportWebhookUrl })
+  : undefined
+
 const app = buildApp({
   db,
+  errorReporter,
   auth,
   betterAuth,
   logtoEnabled: Boolean(env.logto),

@@ -21,6 +21,8 @@
 #           UPLOADS_ROOT（默认 uploads，即容器内 /app/server/uploads）、
 #           FILE_RECON_ENABLED/FILE_RECON_DRY_RUN/FILE_RECON_RUN_HOUR/FILE_RECON_ORPHAN_GRACE_HOURS
 #           （文件存储对账，默认每日 3 点、dry-run 只报告；见 server/.env.example）
+#           ERROR_REPORT_WEBHOOK_URL（5xx 错误上报 webhook：POST JSON 摘要，不配则不启用；
+#           只发 requestId/method/path/status/错误摘要，不含堆栈细节；见 server/.env.example）
 #
 # 数据库备份：PG 是外部云服务，不在本栈内；备份用宿主机 crontab 调 scripts/backup-db.sh
 #（恢复用 scripts/restore-db.sh），挂法见 README「生产环境提示 → 备份与恢复」。
@@ -52,6 +54,8 @@ services:
       # 浏览器可达的站点 origin（如 https://erp.example.com），better-auth 的 baseURL 回退
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?请在 Dokploy 环境变量中设置 BETTER_AUTH_URL（站点 origin，如 https://erp.example.com）}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # 5xx 错误上报 webhook（可选；不配则不启用。取消注释并在 Dokploy 环境变量中设置）
+      # ERROR_REPORT_WEBHOOK_URL: ${ERROR_REPORT_WEBHOOK_URL}
     volumes:
       # 本地上传文件持久化（默认 uploads 根；对象存储在系统设置中另行配置）
       - synie-uploads:/app/server/uploads

@@ -3,6 +3,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { ApiErrorBody, ApiErrorCode } from '@synie/shared'
 import { API_ERROR_STATUS } from '@synie/shared'
 import { logJson, serializeError } from './log.ts'
+import type { ErrorReporter } from './error-report.ts'
 
 /**
  * 统一错误模型（移植自 server-go platform/apierror）。
@@ -45,25 +46,62 @@ export function toErrorBody(err: unknown): { body: ApiErrorBody; status: number 
   }
 }
 
+/** 外发摘要最大长度（防超长堆栈式 message 打到 webhook） */
+const ERROR_SUMMARY_MAX = 200
+
 /**
- * Hono onError：统一错误出口。
+ * 外发摘要：ApiError 的 message 是面向用户的可外发；未知错误只发类型名——
+ * 内部细节（堆栈/PG 字段）留本地日志，防敏感外泄。
+ */
+function summarizeForReport(err: unknown): string {
+  const text =
+    err instanceof ApiError
+      ? `${err.name}: ${err.message}`
+      : err instanceof Error
+        ? err.name
+        : 'UnknownError'
+  return text.length > ERROR_SUMMARY_MAX ? `${text.slice(0, ERROR_SUMMARY_MAX)}…` : text
+}
+
+export interface OnErrorDeps {
+  /** 5xx 上报通道（可选，如 webhook adapter）；只收摘要，详见 error-report.ts */
+  reporter?: ErrorReporter
+}
+
+/**
+ * Hono onError 工厂：统一错误出口。
  * - 响应体：5xx 不透出内部细节
  * - 日志：凡 status≥500 必须 error 落盘（含 stack / cause / requestId），便于排障
+ * - 上报：配了 reporter 时 5xx 额外发摘要（fire-and-forget，失败不影响响应）
  */
-export function onError(err: unknown, c: Context): Response {
-  const { body, status } = toErrorBody(err)
-  if (status >= 500) {
-    logJson('error', 'http_error', {
-      requestId: c.get('requestId'),
-      method: c.req.method,
-      path: c.req.path,
-      status,
-      errorCode: body.error.code,
-      error: serializeError(err),
-    })
+export function createOnError(deps: OnErrorDeps = {}) {
+  return function onError(err: unknown, c: Context): Response {
+    const { body, status } = toErrorBody(err)
+    if (status >= 500) {
+      logJson('error', 'http_error', {
+        requestId: c.get('requestId'),
+        method: c.req.method,
+        path: c.req.path,
+        status,
+        errorCode: body.error.code,
+        error: serializeError(err),
+      })
+      deps.reporter?.report({
+        requestId: c.get('requestId') as string | undefined,
+        method: c.req.method,
+        path: c.req.path,
+        status,
+        errorCode: body.error.code,
+        error: summarizeForReport(err),
+        ts: new Date().toISOString(),
+      })
+    }
+    return c.json(body, status as ContentfulStatusCode)
   }
-  return c.json(body, status as ContentfulStatusCode)
 }
+
+/** 默认 onError（无上报通道）；生产入口用 createOnError({ reporter }) 注入 webhook */
+export const onError = createOnError()
 
 export function notFound(c: Context): Response {
   return c.json({ error: { code: 'not_found', message: '资源不存在' } } satisfies ApiErrorBody, 404)
