@@ -362,68 +362,69 @@ export function BomDrawerProvider({
         }}
         rowId={rowId}
         onEdit={() => drawer.setMode('edit')}
+        // 配料挂基本信息首 tab（字段栅格之后）；路线/副产品仍分 tab
+        extraContent={(m) => (
+          <SynieEditableTable
+            resource="mfgBomComponents"
+            label="配料"
+            items={components}
+            onChange={setComponents}
+            readOnly={m === 'view' || (m !== 'create' && !drawer.detailLoaded)}
+            exclude={['bomId']}
+            columns={['materialId', 'unitId', 'quantity', 'lossRate', 'note']}
+            overrides={bomLineMaterialOverrides}
+            transformItem={clearMaterialProjectionOnChange}
+            fields={{
+              materialId: {
+                order: 0,
+                required: true,
+                // 配料/副产品限库存物料(虚拟/资产无实物);后端权威拦截兜底
+                remote: { filterState: { materialType: { kind: 'enum', values: ['STOCK'] } } },
+                effects: () => ({ unitId: null }),
+              },
+              unitId: {
+                order: 1,
+                required: true,
+                input: ({
+                  value,
+                  onChange,
+                  isDisabled,
+                  values: itemValues,
+                }) => (
+                  <MaterialUnitSelect
+                    materialId={
+                      itemValues.materialId == null
+                        ? null
+                        : String(itemValues.materialId)
+                    }
+                    value={value}
+                    onChange={onChange}
+                    isDisabled={isDisabled}
+                  />
+                ),
+              },
+              quantity: {
+                order: 2,
+                required: true,
+                label: '净用量',
+                placeholder: '每 1 默认单位母物料',
+              },
+              lossRate: {
+                order: 3,
+                label: '损耗率',
+                placeholder: '空即无损耗,如 0.05',
+              },
+              note: { order: 4 },
+            }}
+            validateItem={(vals) => {
+              if (!vals.materialId) return '请选择物料'
+              if (!(Number(vals.quantity) > 0)) return '净用量必须大于 0'
+              if (vals.lossRate != null && Number(vals.lossRate) < 0)
+                return '损耗率不能为负'
+            }}
+          />
+        )}
         tabExtraContent={{
-          components: (m) => (
-            <SynieEditableTable
-              resource="mfgBomComponents"
-              label="配料"
-              items={components}
-              onChange={setComponents}
-              readOnly={m === 'view' || (m !== 'create' && !drawer.detailLoaded)}
-              exclude={['bomId']}
-              columns={['materialId', 'unitId', 'quantity', 'lossRate', 'note']}
-              overrides={bomLineMaterialOverrides}
-              transformItem={clearMaterialProjectionOnChange}
-              fields={{
-                materialId: {
-                  order: 0,
-                  required: true,
-                  // 配料/副产品限库存物料(虚拟/资产无实物);后端权威拦截兜底
-                  remote: { filterState: { materialType: { kind: 'enum', values: ['STOCK'] } } },
-                  effects: () => ({ unitId: null }),
-                },
-                unitId: {
-                  order: 1,
-                  required: true,
-                  input: ({
-                    value,
-                    onChange,
-                    isDisabled,
-                    values: itemValues,
-                  }) => (
-                    <MaterialUnitSelect
-                      materialId={
-                        itemValues.materialId == null
-                          ? null
-                          : String(itemValues.materialId)
-                      }
-                      value={value}
-                      onChange={onChange}
-                      isDisabled={isDisabled}
-                    />
-                  ),
-                },
-                quantity: {
-                  order: 2,
-                  required: true,
-                  label: '净用量',
-                  placeholder: '每 1 默认单位母物料',
-                },
-                lossRate: {
-                  order: 3,
-                  label: '损耗率',
-                  placeholder: '空即无损耗,如 0.05',
-                },
-                note: { order: 4 },
-              }}
-              validateItem={(vals) => {
-                if (!vals.materialId) return '请选择物料'
-                if (!(Number(vals.quantity) > 0)) return '净用量必须大于 0'
-                if (vals.lossRate != null && Number(vals.lossRate) < 0)
-                  return '损耗率不能为负'
-              }}
-            />
-          ),
           routes: (m) => (
             <SynieEditableTable
               resource="mfgBomRoutes"

@@ -91,9 +91,17 @@ const DEFINITIONS = {
   mfgBoms: {
     label: 'BOM',
     contentClassName: 'w-full lg:w-[880px]',
+    // 物料四字段为列表/富单元格用的 join 投影，非用户录入；状态走启用/停用动作不进表单
+    exclude: [
+      'status',
+      'materialCode',
+      'materialName',
+      'materialSpec',
+      'customerPartNo',
+    ],
+    // 配料归基本信息（首 tab + extraContent）；工艺路线/副产品仍分 tab
     tabs: [
       { key: 'basic', label: '基本信息' },
-      { key: 'components', label: '配料' },
       { key: 'routes', label: '工艺路线' },
       { key: 'byproducts', label: '副产品' },
     ],

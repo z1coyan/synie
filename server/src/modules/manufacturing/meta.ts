@@ -311,7 +311,17 @@ export function bomResourceMeta(): ResourceMeta {
       { key: 'deactivate', label: '停用', scope: 'row', permissionAction: 'update' },
     ],
     form: {
-      exclude: ['id', 'status', 'insertedAt', 'updatedAt'],
+      // 物料四字段是列表 join 投影，非表单录入；状态走启停动作
+      exclude: [
+        'id',
+        'status',
+        'insertedAt',
+        'updatedAt',
+        'materialCode',
+        'materialName',
+        'materialSpec',
+        'customerPartNo',
+      ],
       fields: {
         code: { placeholder: '保存后自动编号' },
         materialId: { required: true },
