@@ -84,6 +84,23 @@ export function moveVisibleColumn(order: string[], name: string, delta: -1 | 1):
   return next
 }
 
+/** 将可见列从 fromIndex 拖到 toIndex（插入式重排）。 */
+export function moveVisibleColumnTo(order: string[], fromIndex: number, toIndex: number): string[] {
+  if (
+    fromIndex === toIndex ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= order.length ||
+    toIndex >= order.length
+  ) {
+    return order
+  }
+  const next = order.slice()
+  const [item] = next.splice(fromIndex, 1)
+  next.splice(toIndex, 0, item!)
+  return next
+}
+
 /** 默认可见序：页面白名单（有则）+ 合成列默认挂末尾。 */
 export function buildDefaultOrder(
   pageColumns: string[] | undefined,

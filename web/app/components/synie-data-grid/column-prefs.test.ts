@@ -3,6 +3,7 @@ import {
   ATTACHMENT_IMAGES_COLUMN,
   buildDefaultOrder,
   moveVisibleColumn,
+  moveVisibleColumnTo,
   parseColumnPrefs,
   resolveColumnSettingsEnabled,
   resolveVisibleOrder,
@@ -61,6 +62,12 @@ describe('toggle / move', () => {
     expect(moveVisibleColumn(['a', 'b', 'c'], 'b', -1)).toEqual(['b', 'a', 'c'])
     expect(moveVisibleColumn(['a', 'b', 'c'], 'b', 1)).toEqual(['a', 'c', 'b'])
     expect(moveVisibleColumn(['a', 'b'], 'a', -1)).toEqual(['a', 'b'])
+  })
+  test('拖拽插入重排', () => {
+    expect(moveVisibleColumnTo(['a', 'b', 'c'], 0, 2)).toEqual(['b', 'c', 'a'])
+    expect(moveVisibleColumnTo(['a', 'b', 'c'], 2, 0)).toEqual(['c', 'a', 'b'])
+    expect(moveVisibleColumnTo(['a', 'b', 'c'], 1, 1)).toEqual(['a', 'b', 'c'])
+    expect(moveVisibleColumnTo(['a', 'b'], -1, 0)).toEqual(['a', 'b'])
   })
 })
 
