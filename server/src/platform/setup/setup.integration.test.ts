@@ -30,6 +30,7 @@ import {
   seedSampleData,
 } from '~/modules/setup/index.ts'
 import { createSetupService, SALES_ROLE_MENUS, SALES_ROLE_PERMISSIONS } from './service.ts'
+import { reseedIdempotentSeeds } from '../../../db/reset.ts'
 import { testActor } from '~/platform/authz/testing.ts'
 
 const url = testDatabaseUrl()
@@ -132,22 +133,9 @@ run('PG 集成（setup 向导）', () => {
       await sql`UPDATE sys_setting SET setup_completed_at = NULL`.execute(trx)
       await sql`DELETE FROM sys_numbering_counter`.execute(trx)
       await sql`DELETE FROM sys_numbering_rule`.execute(trx)
-      // 回到「迁移后、setup 前」基线：仓库/部门规则由迁移 00022 播种（首张公司创建即需取号），
-      // 真实全新库在 setup 前也持有这两条，truncate 后须补回
-      await sql`
-        INSERT INTO sys_numbering_rule (resource, name, segments, per_company, enabled)
-        SELECT 'base.warehouse', '仓库编号',
-               ARRAY(SELECT value FROM jsonb_array_elements('[{"type":"text","value":"B(W)-"},{"type":"seq","padding":4}]'::jsonb)),
-               true, true
-        WHERE NOT EXISTS (SELECT 1 FROM sys_numbering_rule WHERE resource = 'base.warehouse')
-      `.execute(trx)
-      await sql`
-        INSERT INTO sys_numbering_rule (resource, name, segments, per_company, enabled)
-        SELECT 'sys.department', '部门编码',
-               ARRAY(SELECT value FROM jsonb_array_elements('[{"type":"text","value":"B(D)-"},{"type":"seq","padding":4}]'::jsonb)),
-               true, true
-        WHERE NOT EXISTS (SELECT 1 FROM sys_numbering_rule WHERE resource = 'sys.department')
-      `.execute(trx)
+      // 回到「迁移后、setup 前」基线：仓库/部门规则由迁移播种（首张公司创建即需取号），
+      // 真实全新库在 setup 前也持有这两条，truncate 后须补回——与 db:reset 共用同一重放入口
+      await reseedIdempotentSeeds(trx, ['00024_seed_numbering_rules.sql'])
     })
   }
 

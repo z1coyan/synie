@@ -9,8 +9,9 @@
  * 用法（仓库根或 server/）：
  *   DATABASE_URL=postgres://synie:synie@localhost:5441/synie?sslmode=disable bun run db:reset
  */
-import { sql } from 'kysely'
+import { sql, type Kysely, type Transaction } from 'kysely'
 import { createDb } from '../src/db/index.ts'
+import type { DB as Database } from '../src/db/types.ts'
 import { extractUpSection } from './migrate.ts'
 
 const KEEP_TABLES = new Set([
@@ -21,11 +22,28 @@ const KEEP_TABLES = new Set([
   'acc_setting',
 ])
 
-/** migrate 后幂等种子文件（truncate 后需重放，对齐「仅 migrate 完成」的库状态） */
+/**
+ * migrate 后幂等种子文件（truncate 后需重放，对齐「仅 migrate 完成」的库状态）。
+ * 仅限纯种子迁移（幂等 INSERT、无 DDL）；混有 DDL 的迁移不可重放，
+ * 其种子须以纯种子副本另存（如 00024 之于 00022）。
+ */
 const RESEED_MIGRATIONS = [
   '00002_seed_settings_singletons.sql',
   '00003_seed_market_catalog.sql',
+  '00024_seed_numbering_rules.sql',
 ]
+
+/** 在事务内重放 migrate 幂等种子（导出供集成测试复用，避免规则种子出现第三处副本） */
+export async function reseedIdempotentSeeds(
+  trx: Kysely<Database> | Transaction<Database>,
+  files: readonly string[] = RESEED_MIGRATIONS,
+): Promise<void> {
+  const migrationsDir = new URL('./migrations/', import.meta.url).pathname
+  for (const file of files) {
+    const content = extractUpSection(await Bun.file(`${migrationsDir}${file}`).text(), file)
+    await sql.raw(content).execute(trx)
+  }
+}
 
 function isDevDatabaseUrl(url: string): boolean {
   let host: string
@@ -144,11 +162,7 @@ async function main() {
       `.execute(trx)
 
       // 重放 migrate 幂等种子，等价于「刚跑完 migrate」而非完全空 schema
-      const migrationsDir = new URL('./migrations/', import.meta.url).pathname
-      for (const file of RESEED_MIGRATIONS) {
-        const content = extractUpSection(await Bun.file(`${migrationsDir}${file}`).text(), file)
-        await sql.raw(content).execute(trx)
-      }
+      await reseedIdempotentSeeds(trx)
     })
 
     const status = await sql<{ initialized: boolean; has_users: boolean }>`
@@ -172,7 +186,10 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err)
-  process.exit(1)
-})
+// import.meta.main 门控：集成测试 import reseedIdempotentSeeds 时不触发复位
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error(err instanceof Error ? err.message : err)
+    process.exit(1)
+  })
+}
