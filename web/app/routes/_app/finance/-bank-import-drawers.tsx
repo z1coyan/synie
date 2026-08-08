@@ -223,10 +223,12 @@ export function FinanceBankImportDrawers(props: Props) {
         }}
       />
 
+      {/* isHandleOnly:侧向 Sheet 正文拖动与文本选择/表格交互冲突;关闭走 X/按钮/遮罩 */}
       <Sheet
         isOpen={props.historyOpen}
         onOpenChange={props.onHistoryOpenChange}
         placement="right"
+        isHandleOnly
       >
         <Sheet.Backdrop>
           <Sheet.Content className="w-full lg:w-[880px]">

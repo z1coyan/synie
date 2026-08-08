@@ -417,7 +417,14 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   }
 
   return (
-    <Sheet isOpen={isOpen} onOpenChange={props.onOpenChange} placement="right">
+    {/* isHandleOnly:侧向 Sheet 正文拖关会与文本选择/表单交互冲突(HeroUI 对 left/right
+        不做选区守卫)。本抽屉不放把手,关闭走 X/按钮/遮罩;移动端底部 Sheet 见 filter-sheet。 */}
+    <Sheet
+      isOpen={isOpen}
+      onOpenChange={props.onOpenChange}
+      placement="right"
+      isHandleOnly
+    >
       <Sheet.Backdrop>
         <Sheet.Content className={contentClassName}>
           {/* 显式 aria-label:Heading slot 的 labelledby 在过渡期渲染中晚一拍,RAC 会刷

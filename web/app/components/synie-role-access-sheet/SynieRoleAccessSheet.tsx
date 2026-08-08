@@ -296,7 +296,8 @@ export function SynieRoleAccessSheet(props: SynieRoleAccessSheetProps) {
 
   return (
     <>
-      <Sheet isOpen={isOpen} onOpenChange={requestOpenChange} placement="right">
+      {/* isHandleOnly:侧向 Sheet 正文拖动与文本选择/矩阵勾选冲突;关闭走 X/按钮/遮罩 */}
+      <Sheet isOpen={isOpen} onOpenChange={requestOpenChange} placement="right" isHandleOnly>
         <Sheet.Backdrop>
           <Sheet.Content className="w-full lg:w-[1080px]">
             <Sheet.Dialog className="h-full">

@@ -196,7 +196,13 @@ function MoldsPage() {
         />
       </div>
 
-      <Sheet isOpen={drawer !== null} onOpenChange={(isOpen) => !isOpen && close()} placement="right">
+      {/* isHandleOnly:侧向 Sheet 正文拖动与文本选择/表单交互冲突;关闭走 X/按钮/遮罩 */}
+      <Sheet
+        isOpen={drawer !== null}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        placement="right"
+        isHandleOnly
+      >
         <Sheet.Backdrop>
           <Sheet.Content className="w-full lg:w-[640px]">
             <Sheet.Dialog className="h-full">
