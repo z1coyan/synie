@@ -105,3 +105,69 @@ jobs:
 
       - name: Typecheck
         run: bun run typecheck
+
+  # 底线 smoke:空库 → 迁移 → 起 server → 最小初始化(scripts/ci-provision.ts) →
+  # 关键链路 API 验收(scripts/verify-web-hc-api.ts:登录/主数据 CRUD/销售链/权限拒绝)。
+  # 直连 server API,不经 web 代理,因此不需要 HeroUI token / 浏览器 / 前端构建;
+  # bun install 无 HEROUI_AUTH_TOKEN 时 @heroui-pro 只装占位包,不影响本 job。
+  smoke:
+    name: Smoke (migrate + server + critical-path API verify)
+    runs-on: ubuntu-latest
+    env:
+      # 一次性 CI 专用口令,库随 job 销毁,不得复用到其他环境
+      DATABASE_URL: postgres://synie:synie@localhost:5432/synie_smoke?sslmode=disable
+      AUTH_SECRET: ci-smoke-secret-do-not-use-elsewhere-32b
+      PORT: '8091'
+      SYNIE_API_URL: http://127.0.0.1:8091/api/v1
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: synie
+          POSTGRES_PASSWORD: synie
+          POSTGRES_DB: synie_smoke
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U synie -d synie_smoke"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Migrate database
+        run: bun run db:migrate
+        working-directory: server
+
+      # 后台起 server(日志落文件,失败时倒出便于排查),轮询 healthz 等就绪
+      - name: Start server and wait for readiness
+        working-directory: server
+        run: |
+          nohup bun src/index.ts > "$RUNNER_TEMP/synie-server.log" 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf -o /dev/null "$SYNIE_API_URL/healthz"; then
+              echo "server ready (${i}s)"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "server 启动超时,日志如下:" >&2
+          cat "$RUNNER_TEMP/synie-server.log" >&2
+          exit 1
+
+      # 初始化向导最短路径:建超管 + 完成初始化(不写示例数据)
+      - name: Provision (setup wizard minimal path)
+        run: bun scripts/ci-provision.ts
+
+      # 关键链路验收;脚本自身带就绪等待与请求超时,失败即 job 红
+      - name: Verify critical-path API
+        run: bun scripts/verify-web-hc-api.ts

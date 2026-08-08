@@ -2,12 +2,20 @@
  * 工单 17 关键路径 API 验收（不依赖 HeroUI Pro / Playwright UI）：
  * 登录 → 主数据 CRUD → 销售报价/订单链 → 权限拒绝
  *
- *   SYNIE_API_URL=http://127.0.0.1:8091/api/v1 \
+ * 前置：server 已启动且库已迁移、初始化向导已完成（CI 见 scripts/ci-provision.ts）。
+ *
+ *   SYNIE_API_URL=http://127.0.0.1:8080/api/v1 \
  *   E2E_ADMIN_PASSWORD=... bun scripts/verify-web-hc-api.ts
+ *
+ * 加固项（CI smoke 门禁用）：
+ *   VERIFY_WAIT_TIMEOUT_MS     等 /healthz 就绪的总时限，默认 30000
+ *   VERIFY_REQUEST_TIMEOUT_MS  单次请求超时，默认 10000
  */
-const apiBase = process.env.SYNIE_API_URL ?? process.env.API_BASE ?? 'http://127.0.0.1:8091/api/v1'
+const apiBase = process.env.SYNIE_API_URL ?? process.env.API_BASE ?? 'http://127.0.0.1:8080/api/v1'
 const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
 const password = process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
+const waitTimeoutMs = Number(process.env.VERIFY_WAIT_TIMEOUT_MS ?? 30_000)
+const requestTimeoutMs = Number(process.env.VERIFY_REQUEST_TIMEOUT_MS ?? 10_000)
 const suffix = Date.now().toString(36).toUpperCase()
 
 async function call(
@@ -17,6 +25,7 @@ async function call(
 ): Promise<{ status: number; json: unknown }> {
   const res = await fetch(`${apiBase}${path}`, {
     method,
+    signal: AbortSignal.timeout(requestTimeoutMs),
     headers: {
       'Content-Type': 'application/json',
       ...(opts?.token ? { Authorization: `Bearer ${opts.token}` } : {}),
@@ -44,6 +53,26 @@ async function call(
 function asRecord(v: unknown): Record<string, unknown> {
   if (!v || typeof v !== 'object') throw new Error(`expected object, got ${typeof v}`)
   return v as Record<string, unknown>
+}
+
+// 就绪等待：server 与本脚本并发拉起时不至于首请求即败；超时整体失败而非悬挂
+console.log(`[verify] wait ready (≤${waitTimeoutMs}ms)`)
+{
+  const deadline = Date.now() + waitTimeoutMs
+  let lastErr: unknown = null
+  for (;;) {
+    try {
+      const res = await fetch(`${apiBase}/healthz`, { signal: AbortSignal.timeout(2_000) })
+      if (res.ok) break
+      lastErr = new Error(`healthz → ${res.status}`)
+    } catch (err) {
+      lastErr = err
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`等待 API 就绪超时（${waitTimeoutMs}ms）：${apiBase} — ${String(lastErr)}`)
+    }
+    await Bun.sleep(500)
+  }
 }
 
 console.log('[verify] healthz')
@@ -124,7 +153,7 @@ const quotation = asRecord(
     await call('POST', '/sales/quotations', {
       token,
       body: {
-        quotationNo: `SQ-${suffix}`,
+        // 编号由初始化播种的编号规则系统生成，手填会被 400 拒绝
         quotationDate: '2026-07-01',
         validUntil: '2026-08-31',
         partyType: 'CUSTOMER',
@@ -141,7 +170,7 @@ const order = asRecord(
     await call('POST', '/sales/orders', {
       token,
       body: {
-        orderNo: `SO-${suffix}`,
+        // 同上：编号系统生成
         orderDate: '2026-07-02',
         partyType: 'CUSTOMER',
         partyId: customer.id,
