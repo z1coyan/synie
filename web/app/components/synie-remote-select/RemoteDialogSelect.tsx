@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Button, CloseButton, Label, Modal } from '@heroui/react'
 import { SynieDataGrid, type ColumnOverride } from '../synie-data-grid/SynieDataGrid'
 import type { Row, SortState } from '../synie-data-grid/types'
-import { optionLabel, resolveSource } from './remote-query'
+import { defaultReferenceRenderers, resolveSource } from './remote-query'
 import { useRemoteRecords } from './use-remote'
 import type { RemoteSelectProps } from './RemoteSelect'
 
@@ -40,16 +40,16 @@ export function RemoteDialogSelect(props: RemoteDialogSelectProps) {
   for (const r of resolved.data ?? []) known.set(r.id, r)
 
   if (!src) return null
+  // 无页面级 renderValue 时吃 ReferencePresentation 默认（物料为「编号：名称」）
+  const valueOf = props.renderValue ?? defaultReferenceRenderers(src.resource, src.labelField).renderValue
   const selectedRow = props.value != null ? (known.get(props.value) ?? null) : null
   const display = selectedRow
-    ? (props.renderValue?.(selectedRow) ?? optionLabel(src, selectedRow))
+    ? valueOf(selectedRow)
     : props.value != null
       ? String(props.value).slice(0, 8)
       : null
 
-  const footerLabel = draft[0]
-    ? (props.renderValue?.(draft[0]) ?? optionLabel(src, draft[0]))
-    : '未选择'
+  const footerLabel = draft[0] ? valueOf(draft[0]) : '未选择'
 
   return (
     <>

@@ -1,5 +1,6 @@
 // bun app/components/synie-remote-select/remote-select-checks.ts 可直接运行的纯函数自检
 import { optionLabel, resolveFkTarget, resolveSource } from './remote-query'
+import { materialValueLabel } from '~/lib/resources/catalog/reference-presentation'
 import type { Row } from '../synie-data-grid/types'
 
 function eq(actual: unknown, expected: unknown, label: string) {
@@ -80,5 +81,27 @@ const source = resolveSource({ searchFields: ['name', 'code'] }, ref)!
 eq(optionLabel(source, { id, name: '集团总部' } as unknown as Row), '集团总部', 'label 字段')
 eq(optionLabel(source, { id, name: null } as unknown as Row), '11111111', 'label 缺失退截断 id')
 eq(optionLabel(source, null), '', '空行为空串')
+
+// 物料选中回显：编号：名称
+eq(
+  materialValueLabel({ id, code: 'M-001', name: '冲网' } as unknown as Row),
+  'M-001：冲网',
+  '物料回显 编号：名称',
+)
+eq(
+  materialValueLabel({ id, code: 'M-001', name: null } as unknown as Row),
+  'M-001',
+  '物料回显仅编号',
+)
+eq(
+  materialValueLabel({ id, code: null, name: '冲网' } as unknown as Row),
+  '冲网',
+  '物料回显仅名称',
+)
+eq(
+  materialValueLabel({ id, code: null, name: null } as unknown as Row),
+  '11111111',
+  '物料回显皆空退截断 id',
+)
 
 console.log('remote-select-checks ok')

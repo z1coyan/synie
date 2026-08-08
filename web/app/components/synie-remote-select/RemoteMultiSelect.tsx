@@ -3,7 +3,12 @@ import { Autocomplete, Label, Tag, TagGroup } from '@heroui/react'
 import { useDraft } from '../synie-data-grid/use-debounced'
 import type { Row } from '../synie-data-grid/types'
 import { RemoteOptionsPopover } from './options-popover'
-import { optionLabel, resolveSource, type RemoteSourceConfig } from './remote-query'
+import {
+  defaultReferenceRenderers,
+  optionLabel,
+  resolveSource,
+  type RemoteSourceConfig,
+} from './remote-query'
 import { useRemoteOptions, useRemoteRecords } from './use-remote'
 
 export interface RemoteMultiSelectProps extends RemoteSourceConfig {
@@ -31,9 +36,16 @@ export function RemoteMultiSelect(props: RemoteMultiSelectProps) {
   for (const r of resolved.data ?? []) known.set(r.id, r)
 
   if (!src) return null
+  // 无页面级 renderValue 时吃 ReferencePresentation 默认（物料为「编号：名称」）
+  const valueOf = props.renderValue ?? defaultReferenceRenderers(src.resource, src.labelField).renderValue
   const rowsFor = (ids: string[]) => ids.map((id) => known.get(id)).filter((r): r is Row => r != null)
   const emit = (ids: string[]) => props.onChange(ids, rowsFor(ids))
-  const labelOf = (id: string) => optionLabel(src, known.get(id)) || id.slice(0, 8)
+  const labelOf = (id: string) => {
+    const row = known.get(id)
+    if (!row) return id.slice(0, 8)
+    const rendered = valueOf(row)
+    return typeof rendered === 'string' || typeof rendered === 'number' ? String(rendered) : optionLabel(src, row)
+  }
 
   return (
     <Autocomplete
@@ -65,7 +77,7 @@ export function RemoteMultiSelect(props: RemoteMultiSelectProps) {
                   const row = known.get(id)
                   return (
                     <Tag key={id} id={id} textValue={labelOf(id)}>
-                      {row && props.renderValue ? props.renderValue(row) : labelOf(id)}
+                      {row ? valueOf(row) : id.slice(0, 8)}
                     </Tag>
                   )
                 })}

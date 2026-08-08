@@ -3,7 +3,11 @@ import { Autocomplete, Label } from '@heroui/react'
 import { useDraft } from '../synie-data-grid/use-debounced'
 import type { Row } from '../synie-data-grid/types'
 import { RemoteOptionsPopover } from './options-popover'
-import { optionLabel, resolveSource, type RemoteSourceConfig } from './remote-query'
+import {
+  defaultReferenceRenderers,
+  resolveSource,
+  type RemoteSourceConfig,
+} from './remote-query'
 import { useRemoteOptions, useRemoteRecords } from './use-remote'
 
 export interface RemoteSelectProps extends RemoteSourceConfig {
@@ -34,6 +38,8 @@ export function RemoteSelect(props: RemoteSelectProps) {
   for (const r of resolved.data ?? []) known.set(r.id, r)
 
   if (!src) return null
+  // 无页面级 renderValue 时吃 ReferencePresentation 默认（物料为「编号：名称」）
+  const valueOf = props.renderValue ?? defaultReferenceRenderers(src.resource, src.labelField).renderValue
   const selectedRow = props.value != null ? (known.get(props.value) ?? null) : null
 
   return (
@@ -53,7 +59,7 @@ export function RemoteSelect(props: RemoteSelectProps) {
       <Autocomplete.Trigger>
         <Autocomplete.Value>
           {selectedRow ? (
-            (props.renderValue?.(selectedRow) ?? optionLabel(src, selectedRow))
+            valueOf(selectedRow)
           ) : props.value != null ? (
             // 反查未返回(加载中/已删/无权限):截断 id 顶着,不空白
             String(props.value).slice(0, 8)

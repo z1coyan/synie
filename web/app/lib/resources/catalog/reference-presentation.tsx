@@ -13,7 +13,7 @@ export interface ReferencePresentation {
   lookup: ResourceLookupMeta
   /** 下拉项：主行 label + 副行 subtitleFields */
   renderItem: (row: Row) => ReactNode
-  /** 选中回填：默认 label */
+  /** 选中回填：默认 label；物料为「编号：名称」 */
   renderValue: (row: Row) => ReactNode
   optionLabel: (row: Row | null | undefined) => string
 }
@@ -25,6 +25,15 @@ function subtitleText(row: Row, fields: string[] | undefined): string {
     .filter((v) => v != null && String(v).trim() !== '')
     .map(String)
     .join(' · ')
+}
+
+/** 物料选中回显：编号：名称（缺一则退另一侧，皆空退截断 id） */
+export function materialValueLabel(row: Row): string {
+  const code = row.code == null ? '' : String(row.code).trim()
+  const name = row.name == null ? '' : String(row.name).trim()
+  if (code && name) return `${code}：${name}`
+  if (code || name) return code || name
+  return String(row.id).slice(0, 8)
 }
 
 export function createReferencePresentation(
@@ -40,6 +49,12 @@ export function createReferencePresentation(
     return value == null ? String(row.id).slice(0, 8) : String(value)
   }
 
+  // 物料编号是业务主键口径，选中回显需带编号；下拉项主行仍用 name，副行 code·spec 不变
+  const renderValue =
+    resource === 'invMaterials'
+      ? (row: Row) => materialValueLabel(row)
+      : (row: Row) => optionLabel(row)
+
   return {
     resource,
     lookup,
@@ -54,6 +69,6 @@ export function createReferencePresentation(
         </div>
       )
     },
-    renderValue: (row) => optionLabel(row),
+    renderValue,
   }
 }
