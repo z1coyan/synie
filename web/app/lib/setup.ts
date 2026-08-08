@@ -15,15 +15,18 @@ export interface SetupFirstUserInput {
 
 export type SetupLanguage = 'zh-CN' | 'en-US'
 
-// 完成旗标落库后永不回退:true 可永久缓存,省得每次路由切换都重查;
-// false 不缓存——向导完成初始化后的首次检查必须看到最新值
+// 完成旗标落库后永不回退:true 可缓存,省得每次路由切换都重查;
+// false 不缓存——向导完成初始化后的首次检查必须看到最新值。
+// 缓存仅限浏览器端:vite dev / SSR 服务进程长存且模块单例跨请求共享,
+// 服务端缓存 true 会让 db:reset 后 /setup 永远 307 回工作台(2026-08-08 事故)
 let initializedCache: SetupStatus | null = null
 
 /** 初始化向导状态(未认证可查);路由门控与向导页共用 */
 export async function fetchSetupStatus(): Promise<SetupStatus> {
-  if (initializedCache) return initializedCache
+  const isBrowser = typeof window !== 'undefined'
+  if (isBrowser && initializedCache) return initializedCache
   const status = await apiData(api.setup.status.$get())
-  if (status.initialized) initializedCache = status
+  if (isBrowser && status.initialized) initializedCache = status
   return status
 }
 
