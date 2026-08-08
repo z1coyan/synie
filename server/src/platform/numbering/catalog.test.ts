@@ -82,7 +82,7 @@ describe('编号字段目录 fail-closed', () => {
     expect(() => buildNumberingCatalog(registry)).toThrow('派生不出编号字段')
   })
 
-  test('普通 fk 一层展开产出 lookup，多态 fk 保留原始 ID 列', () => {
+  test('普通 fk 一层展开产出 lookup；多态 fk 保留 ID 并展开共有标量', () => {
     const registry = createRegistry()
     registry.register({
       name: 'demoCompanies',
@@ -92,6 +92,16 @@ describe('编号字段目录 fail-closed', () => {
       authz: { kind: 'global' },
       table: 'demo_company',
       fields: [scalar('id'), scalar('code', '编号'), scalar('name', '名称')],
+      actions: read,
+    })
+    registry.register({
+      name: 'demoCustomers',
+      classification: { presentation: 'none', interactive: false },
+      permissionPrefix: 'demo.customer',
+      permissionLabel: '演示客户',
+      authz: { kind: 'global' },
+      table: 'demo_customer',
+      fields: [scalar('id'), scalar('code', '客户编号'), scalar('name', '客户名称')],
       actions: read,
     })
     registry.register({
@@ -107,7 +117,10 @@ describe('编号字段目录 fail-closed', () => {
         scalar('doc_no', '单据编号'),
         {
           name: 'party_type', apiName: 'partyType', dbColumn: 'party_type', type: 'enum',
-          label: '对手类型', enumOptions: [{ value: 'COMPANY', label: '公司' }],
+          label: '对手类型', enumOptions: [
+            { value: 'COMPANY', label: '公司' },
+            { value: 'CUSTOMER', label: '客户' },
+          ],
         },
         {
           name: 'party_id', apiName: 'partyId', dbColumn: 'party_id', type: 'fk', label: '对手',
@@ -116,6 +129,7 @@ describe('编号字段目录 fail-closed', () => {
             discriminator: 'partyType', discriminatorType: 'enum',
             variants: [
               { value: 'COMPANY', resource: 'demoCompanies', labelField: 'name', label: '公司' },
+              { value: 'CUSTOMER', resource: 'demoCustomers', labelField: 'name', label: '客户' },
             ],
           },
         },
@@ -133,11 +147,27 @@ describe('编号字段目录 fail-closed', () => {
       'doc_no',
       'party_type',
       'party_id',
+      'party.code',
+      'party.name',
       'company.code',
       'company.name',
     ])
     expect(resource.byPath.get('party_id')).toEqual({
       path: 'party_id', label: '对手', type: 'fk', sourceField: 'party_id',
+    })
+    // 各变体 code 标签不同 → 统一「编号」
+    expect(resource.byPath.get('party.code')).toEqual({
+      path: 'party.code',
+      label: '对手·编号',
+      type: 'string',
+      sourceField: 'party_id',
+      polyLookup: {
+        discriminatorField: 'party_type',
+        variants: [
+          { value: 'COMPANY', table: 'demo_company', valueColumn: 'code' },
+          { value: 'CUSTOMER', table: 'demo_customer', valueColumn: 'code' },
+        ],
+      },
     })
     expect(resource.byPath.get('company.code')).toEqual({
       path: 'company.code',

@@ -582,13 +582,35 @@ async function incrementCounter(db: DbHandle, ruleId: string, scopeKey: string):
 
 async function resolveField(
   db: DbHandle,
-  field: { sourceField: string; lookup?: { table: string; valueColumn: string } },
+  field: {
+    sourceField: string
+    lookup?: { table: string; valueColumn: string }
+    polyLookup?: {
+      discriminatorField: string
+      variants: Array<{ value: string; table: string; valueColumn: string }>
+    }
+  },
   values: Record<string, unknown>,
 ): Promise<unknown> {
   const value = values[field.sourceField]
   if (value === undefined || value === null) return null
-  if (!field.lookup) return value
   if (typeof value !== 'string') return null
+
+  if (field.polyLookup) {
+    const discRaw = values[field.polyLookup.discriminatorField]
+    if (discRaw === undefined || discRaw === null) return null
+    const disc = String(discRaw).toLowerCase()
+    const variant = field.polyLookup.variants.find((v) => v.value.toLowerCase() === disc)
+    if (!variant) return null
+    const result = await sql<{ v: string | null }>`
+      SELECT ${sql.raw(variant.valueColumn)}::text AS v
+      FROM ${sql.raw(variant.table)}
+      WHERE id = ${value}::uuid
+    `.execute(db)
+    return result.rows[0]?.v ?? null
+  }
+
+  if (!field.lookup) return value
   const result = await sql<{ v: string | null }>`
     SELECT ${sql.raw(field.lookup.valueColumn)}::text AS v
     FROM ${sql.raw(field.lookup.table)}

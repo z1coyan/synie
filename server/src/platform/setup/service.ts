@@ -423,145 +423,142 @@ async function seedNumberingRules(trx: DbHandle): Promise<void> {
       segments: `[{"type":"text","value":"B(D)-"},{"type":"seq","padding":4}]`,
     },
   ]
-  const docs: Array<{ resource: string; name: string; prefix: string; field: string; label: string }> =
-    [
-      { resource: 'sales.order', name: '销售订单编号', prefix: 'S(O)', field: 'order_date', label: '订单日期' },
-      {
-        resource: 'sales.quotation',
-        name: '销售报价编号',
-        prefix: 'S(Q)',
-        field: 'quotation_date',
-        label: '报价日期',
-      },
-      {
-        resource: 'sales.delivery',
-        name: '销售发货编号',
-        prefix: 'S(D)',
-        field: 'delivery_date',
-        label: '发货日期',
-      },
-      {
-        resource: 'sales.reconciliation',
-        name: '销售对账编号',
-        prefix: 'S(R)',
-        field: 'posting_date',
-        label: '业务日期',
-      },
-      {
-        resource: 'purchase.order',
-        name: '采购订单编号',
-        prefix: 'P(O)',
-        field: 'order_date',
-        label: '订单日期',
-      },
-      {
-        resource: 'purchase.quotation',
-        name: '采购报价编号',
-        prefix: 'P(Q)',
-        field: 'quotation_date',
-        label: '报价日期',
-      },
-      {
-        resource: 'purchase.receipt',
-        name: '采购入库单编号',
-        prefix: 'P(R)',
-        field: 'receipt_date',
-        label: '入库日期',
-      },
-      {
-        resource: 'purchase.reconciliation',
-        name: '采购对账编号',
-        prefix: 'P(C)',
-        field: 'posting_date',
-        label: '业务日期',
-      },
-      {
-        resource: 'purchase.outsourced_issue',
-        name: '委外发料编号',
-        prefix: 'P(OI)',
-        field: 'issue_date',
-        label: '发料日期',
-      },
-      {
-        resource: 'purchase.outsourced_receipt',
-        name: '委外入库编号',
-        prefix: 'P(OR)',
-        field: 'receipt_date',
-        label: '入库日期',
-      },
-      {
-        resource: 'inv.stock_doc',
-        name: '手工出入库单编号',
-        prefix: 'I(D)',
-        field: 'doc_date',
-        label: '业务日期',
-      },
-      {
-        resource: 'inv.stock_transfer',
-        name: '手工调拨单编号',
-        prefix: 'I(T)',
-        field: 'doc_date',
-        label: '业务日期',
-      },
-      {
-        resource: 'inv.stock_count',
-        name: '库存盘点单编号',
-        prefix: 'I(C)',
-        field: 'posting_date',
-        label: '业务日期',
-      },
-      {
-        resource: 'mfg.demand',
-        name: '履约需求单编号',
-        prefix: 'M(D)',
-        field: 'demand_date',
-        label: '业务日期',
-      },
-      {
-        resource: 'mfg.work_order',
-        name: '生产工单编号',
-        prefix: 'M(W)',
-        field: 'need_date',
-        label: '需求日',
-      },
-      {
-        resource: 'mfg.output',
-        name: '生产入库单编号',
-        prefix: 'M(R)',
-        field: 'output_date',
-        label: '入库日期',
-      },
-      {
-        resource: 'acc.gl_journal',
-        name: '会计凭证编号',
-        prefix: 'A(J)',
-        field: 'date',
-        label: '凭证日期',
-      },
-      {
-        resource: 'acc.vat_invoice',
-        name: '增值税发票编号',
-        prefix: 'A(I)',
-        field: 'invoice_date',
-        label: '开票日期',
-      },
-      {
-        resource: 'acc.bill_transaction',
-        name: '承兑交易编号',
-        prefix: 'A(B)',
-        field: 'occurred_on',
-        label: '发生日期',
-      },
-      {
-        resource: 'acc.expense_report',
-        name: '费用报销编号',
-        prefix: 'A(E)',
-        field: 'expense_date',
-        label: '费用日期',
-      },
-    ]
+  // mid 缺省 = 仅前缀+序号。日期段带 format；非日期段（如对手编号）不带 format。
+  // 销售/采购对账单无业务日期：中间段用 party.code（客户/供应商/内部公司编号）。
+  const docs: Array<{
+    resource: string
+    name: string
+    prefix: string
+    mid?: { field: string; label: string; dateFormat?: string }
+  }> = [
+    {
+      resource: 'sales.order',
+      name: '销售订单编号',
+      prefix: 'S(O)',
+      mid: { field: 'order_date', label: '订单日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
+      resource: 'sales.quotation',
+      name: '销售报价编号',
+      prefix: 'S(Q)',
+      mid: { field: 'quotation_date', label: '报价日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
+      resource: 'sales.delivery',
+      name: '销售发货编号',
+      prefix: 'S(D)',
+      mid: { field: 'delivery_date', label: '发货日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
+      resource: 'sales.reconciliation',
+      name: '销售对账编号',
+      prefix: 'S(R)',
+      mid: { field: 'party.code', label: '客户编号' },
+    },
+    {
+      resource: 'purchase.order',
+      name: '采购订单编号',
+      prefix: 'P(O)',
+      mid: { field: 'order_date', label: '订单日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
+      resource: 'purchase.quotation',
+      name: '采购报价编号',
+      prefix: 'P(Q)',
+      mid: { field: 'quotation_date', label: '报价日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
+      resource: 'purchase.receipt',
+      name: '采购入库单编号',
+      prefix: 'P(R)',
+      mid: { field: 'receipt_date', label: '入库日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
+      resource: 'purchase.reconciliation',
+      name: '采购对账编号',
+      prefix: 'P(C)',
+      mid: { field: 'party.code', label: '供应商编号' },
+    },
+    {
+      resource: 'purchase.outsourced_issue',
+      name: '委外发料编号',
+      prefix: 'P(OI)',
+      mid: { field: 'issue_date', label: '发料日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
+      resource: 'purchase.outsourced_receipt',
+      name: '委外入库编号',
+      prefix: 'P(OR)',
+      mid: { field: 'receipt_date', label: '入库日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
+      resource: 'inv.stock_doc',
+      name: '手工出入库单编号',
+      prefix: 'I(D)',
+      mid: { field: 'doc_date', label: '业务日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
+      resource: 'inv.stock_transfer',
+      name: '手工调拨单编号',
+      prefix: 'I(T)',
+      mid: { field: 'doc_date', label: '业务日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
+      resource: 'inv.stock_count',
+      name: '库存盘点单编号',
+      prefix: 'I(C)',
+      mid: { field: 'posting_date', label: '业务日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
+      resource: 'mfg.demand',
+      name: '履约需求单编号',
+      prefix: 'M(D)',
+      mid: { field: 'demand_date', label: '业务日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
+      resource: 'mfg.work_order',
+      name: '生产工单编号',
+      prefix: 'M(W)',
+      mid: { field: 'need_date', label: '需求日', dateFormat: 'YYYYMMDD' },
+    },
+    {
+      resource: 'mfg.output',
+      name: '生产入库单编号',
+      prefix: 'M(R)',
+      mid: { field: 'output_date', label: '入库日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
+      resource: 'acc.gl_journal',
+      name: '会计凭证编号',
+      prefix: 'A(J)',
+      mid: { field: 'date', label: '凭证日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
+      resource: 'acc.vat_invoice',
+      name: '增值税发票编号',
+      prefix: 'A(I)',
+      mid: { field: 'invoice_date', label: '开票日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
+      resource: 'acc.bill_transaction',
+      name: '承兑交易编号',
+      prefix: 'A(B)',
+      mid: { field: 'occurred_on', label: '发生日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
+      resource: 'acc.expense_report',
+      name: '费用报销编号',
+      prefix: 'A(E)',
+      mid: { field: 'expense_date', label: '费用日期', dateFormat: 'YYYYMMDD' },
+    },
+  ]
   for (const doc of docs) {
-    const segments = `[{"type":"text","value":"${doc.prefix}-"},{"type":"field","field":"${doc.field}","format":"YYYYMMDD","label":"${doc.label}"},{"type":"text","value":"-"},{"type":"seq","padding":4}]`
+    let midSeg = ''
+    if (doc.mid) {
+      const formatPart = doc.mid.dateFormat ? `,"format":"${doc.mid.dateFormat}"` : ''
+      midSeg = `{"type":"field","field":"${doc.mid.field}","label":"${doc.mid.label}"${formatPart}},{"type":"text","value":"-"},`
+    }
+    const segments = `[{"type":"text","value":"${doc.prefix}-"},${midSeg}{"type":"seq","padding":4}]`
     rules.push({
       resource: doc.resource,
       name: doc.name,
@@ -700,6 +697,12 @@ export const SALES_ROLE_PERMISSIONS: ReadonlyArray<string> = [
   'mfg.demand:void',
   // 物料：只读
   'base.material:read',
+  // 物料分类：只读
+  'base.material_category:read',
+  // 公司：只读
+  'base.company:read',
+  // 部门：只读（履约需求单指派归属部门等场景的选择器数据源）
+  'sys.department:read',
   // 库存分录：只读（库存余额视图复用同一码）
   'inv.stock_entry:read',
   // 仓库：只读
@@ -710,6 +713,11 @@ export const SALES_ROLE_PERMISSIONS: ReadonlyArray<string> = [
   'base.currency:read',
   // 计量单位：只读
   'base.unit:read',
+  // 附件：上传/查看/删除（文件即附件，挂接复用 sys.file:* 码；文件无独立 update 动作，「修改」= 删旧传新；
+  // 不配附件管理菜单 menu.system.files，仅经业务单据的附件面板使用）
+  'sys.file:create',
+  'sys.file:read',
+  'sys.file:delete',
 ]
 
 /**
