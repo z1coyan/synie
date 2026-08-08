@@ -138,13 +138,10 @@ export function reconciliationHeadMeta(side: TradingSide): ResourceMeta {
           variants: partyVariants,
         },
       }),
-      f(
-        'posting_date',
-        'postingDate',
-        'date',
-        '过账日期(赠送/样品单结单总账;有金额结单时必填,默认结单当日)',
-        { filterable: true, sortable: true },
-      ),
+      f('posting_date', 'postingDate', 'date', '过账日期', {
+        filterable: true,
+        sortable: true,
+      }),
       f('remarks', 'remarks', 'string', '备注', { filterable: true, sortable: true }),
       f('status', 'status', 'enum', '状态', {
         enumOptions: statusOptions,

@@ -15,7 +15,7 @@ export function todoTypeLabel(type: TodoType): string {
 
 export function todoSourcePath(todo: SysTodo): string {
   if (todo.sourceType === 'sales.reconciliation') {
-    return '/sales/reconciliations/reconciliations'
+    return '/sales/reconciliations'
   }
   if (todo.sourceType === 'purchase.reconciliation') {
     return '/purchase/reconciliations/reconciliations'

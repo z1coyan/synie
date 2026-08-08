@@ -283,7 +283,7 @@ test("销售采购对账 Grid、Drawer 与默认科目设置全程使用 Go REST
     expect(pageErrors, "对账页面加载前不应有运行时错误").toEqual([]);
     await openReconciliationDrawer(
       page,
-      "/sales/reconciliations/reconciliations",
+      "/sales/reconciliations",
       "salReconciliations",
       salesNo,
       "销售对账单",

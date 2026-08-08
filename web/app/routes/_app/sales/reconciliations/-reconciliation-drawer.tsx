@@ -348,7 +348,7 @@ type ReconciliationDrawerDraft = ReconciliationSavedDraft & {
 
 /**
  * 销售对账创建/编辑抽屉(头+对账条目)。
- * 对账单/对账条目两 tab 共用;列表 layout 传 urlSync,开/关/模式走 URL。
+ * 对账单列表页共用;列表 layout 传 urlSync,开/关/模式走 URL。
  *
  * @param urlSync 列表页传 true:抽屉开/关/模式写 ?record=&mode=,深链/刷新/后退可寻址。
  */
