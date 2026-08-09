@@ -9,6 +9,10 @@ import { z } from 'zod'
 const TTL_RE = /^(\d+)([smhd])$/
 const TTL_UNIT_SECONDS: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 }
 
+/** compose 以 ${VAR:-} 透传可选变量时未配置会落空串；空串视同未配置 */
+const emptyAsUnset = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((v) => (v === '' ? undefined : v), schema)
+
 const envSchema = z
   .object({
     PORT: z.coerce.number().int().min(1).max(65535).default(8080),
@@ -49,9 +53,9 @@ const envSchema = z
     /** soffice 最大并发，默认 2 */
     SOFFICE_MAX_CONCURRENCY: z.coerce.number().int().positive().optional(),
     /** Logto OIDC（三项要么全有要么全无；缺省即不启用 Logto 登录） */
-    LOGTO_ISSUER: z.string().url().optional(),
-    LOGTO_CLIENT_ID: z.string().min(1).optional(),
-    LOGTO_CLIENT_SECRET: z.string().min(1).optional(),
+    LOGTO_ISSUER: emptyAsUnset(z.string().url().optional()),
+    LOGTO_CLIENT_ID: emptyAsUnset(z.string().min(1).optional()),
+    LOGTO_CLIENT_SECRET: emptyAsUnset(z.string().min(1).optional()),
     /** 文件存储对账（jobs/filesclean）：总开关，默认开 */
     FILE_RECON_ENABLED: z.enum(['0', '1', 'true', 'false', 'yes', 'no', 'on', 'off']).optional(),
     /** 演练模式：只报告不删除孤儿对象，默认 true（安全默认；确认无误后显式置 false） */

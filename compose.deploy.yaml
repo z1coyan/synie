@@ -16,8 +16,7 @@
 # 需同时注入 SEED_ADMIN_USERNAME/SEED_ADMIN_PASSWORD/SEED_ADMIN_NAME）。
 #
 # 可选环境变量（按需追加到对应服务，未列出即不启用）：
-#   server：LOGTO_ISSUER/LOGTO_CLIENT_ID/LOGTO_CLIENT_SECRET（三件套要么全配要么全不配）、
-#           BETTER_AUTH_ALLOWED_HOSTS、SOFFICE_PATH/SOFFICE_TIMEOUT_MS/SOFFICE_MAX_CONCURRENCY、
+#   server：BETTER_AUTH_ALLOWED_HOSTS、SOFFICE_PATH/SOFFICE_TIMEOUT_MS/SOFFICE_MAX_CONCURRENCY、
 #           UPLOADS_ROOT（默认 uploads，即容器内 /app/server/uploads）、
 #           FILE_RECON_ENABLED/FILE_RECON_DRY_RUN/FILE_RECON_RUN_HOUR/FILE_RECON_ORPHAN_GRACE_HOURS
 #           （文件存储对账，默认每日 3 点、dry-run 只报告；见 server/.env.example）
@@ -63,6 +62,11 @@ services:
       # 浏览器可达的站点 origin（如 https://erp.example.com），better-auth 的 baseURL 回退
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?请在 Dokploy 环境变量中设置 BETTER_AUTH_URL（站点 origin，如 https://erp.example.com）}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Logto OIDC（可选；三项要么全配要么全不配，齐备才启用 Logto 登录。
+      # 未配时透传空串，server 按未配置处理）
+      LOGTO_ISSUER: ${LOGTO_ISSUER:-}
+      LOGTO_CLIENT_ID: ${LOGTO_CLIENT_ID:-}
+      LOGTO_CLIENT_SECRET: ${LOGTO_CLIENT_SECRET:-}
       # 5xx 错误上报 webhook（可选；不配则不启用。取消注释并在 Dokploy 环境变量中设置）
       # ERROR_REPORT_WEBHOOK_URL: ${ERROR_REPORT_WEBHOOK_URL}
     ports:

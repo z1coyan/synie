@@ -12,6 +12,15 @@ describe('env Logto 门控（要么全有要么全无）', () => {
     expect(env.logto).toBeUndefined()
   })
 
+  test('空串视为未配置（compose 透传 ${VAR:-} 的场景）', () => {
+    const env = loadEnv({ ...base, LOGTO_ISSUER: '', LOGTO_CLIENT_ID: '', LOGTO_CLIENT_SECRET: '' })
+    expect(env.logto).toBeUndefined()
+    // 部分空串部分有值 → 仍按"部分配置"拒绝启动
+    expect(() =>
+      loadEnv({ ...base, LOGTO_ISSUER: '', LOGTO_CLIENT_ID: 'client-id', LOGTO_CLIENT_SECRET: '' }),
+    ).toThrow('必须同时设置或同时缺省')
+  })
+
   test('三件套齐备且带 BETTER_AUTH_URL：logto 解析成功', () => {
     const env = loadEnv({
       ...base,
