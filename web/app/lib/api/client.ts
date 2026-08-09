@@ -1,3 +1,5 @@
+import { createIsomorphicFn } from '@tanstack/react-start'
+import { getRequestHeader } from '@tanstack/react-start/server'
 import { createApiClient, type ApiClient } from '@synie/server/client'
 import type { ApiType } from '@synie/server/app'
 import type { ApiErrorBody, ApiErrorCode } from '@synie/shared'
@@ -43,23 +45,33 @@ function ssrApiOrigin(): string {
 }
 
 /**
+ * 逐请求从 Start 请求上下文（AsyncLocalStorage）取 cookie。
+ * createIsomorphicFn 是同构边界：Start 编译器在客户端构建中删除 .server 分支
+ * 及其 server-only import，SSR 构建中保留之；import-protection 因此放行本文件。
+ * bun test 不经编译器，运行时 stub 直接取 server 实现，SSR 契约测试照常注入上下文。
+ */
+const getSsrRequestCookie = createIsomorphicFn()
+  .server(() => {
+    try {
+      return getRequestHeader('cookie')
+    } catch {
+      // 非请求上下文（构建期/预热）无 AsyncLocalStorage store，优雅降级
+      return undefined
+    }
+  })
+  .client(() => undefined)
+
+/**
  * SSR 每次 fetch 从**当前请求**上下文（AsyncLocalStorage）动态取 cookie 转发。
  * 安全红线：client 是模块级单例，cookie 绝不能在实例化时捕获，
  * 否则并发 SSR 请求之间会串会话。
  * 非请求上下文（构建期/预热）取不到 headers 时优雅降级为不带 cookie。
  */
-async function ssrForwardedHeaders(): Promise<Record<string, string>> {
-  // Vite 客户端构建将 import.meta.env.SSR 静态替换为 false，
-  // 本分支连同下方动态 import 一起被摇掉，不会把 node 依赖打进浏览器包；
-  // bun test 下 import.meta.env 是 process.env 别名，测试显式设 SSR=1 走通本分支
-  if (!import.meta.env.SSR) return {}
-  try {
-    const { getRequestHeader } = await import('@tanstack/react-start/server')
-    const cookie = getRequestHeader('cookie')
-    return cookie ? { cookie } : {}
-  } catch {
-    return {}
-  }
+function ssrForwardedHeaders(): Record<string, string> {
+  // 本函数只挂载在 SSR 变体单例上（见下 typeof window 分支），浏览器不会触达；
+  // .client 分支仅是编译期同构契约的占位
+  const cookie = getSsrRequestCookie()
+  return cookie ? { cookie } : {}
 }
 
 /**
