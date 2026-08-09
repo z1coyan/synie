@@ -61,6 +61,9 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # 5xx 错误上报 webhook（可选；不配则不启用。取消注释并在 Dokploy 环境变量中设置）
       # ERROR_REPORT_WEBHOOK_URL: ${ERROR_REPORT_WEBHOOK_URL}
+    ports:
+      # 直连端口（绕过 Traefik 的备用入口）；主入口仍是域名反代
+      - "${SERVER_PORT:-26001}:8080"
     volumes:
       # 本地上传文件持久化（默认 uploads 根；对象存储在系统设置中另行配置）
       - synie-uploads:/app/server/uploads
@@ -81,6 +84,9 @@ services:
       HOST: 0.0.0.0
       # SSR 直连后端的集群内地址；浏览器请求不经过它
       SYNIE_API_ORIGIN: http://server:8080
+    ports:
+      # 直连端口（绕过 Traefik 的备用入口）；主入口仍是域名反代
+      - "${WEB_PORT:-26000}:3000"
     depends_on:
       server:
         condition: service_healthy
