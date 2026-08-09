@@ -333,24 +333,28 @@ export async function adjustReconciledProjection(
     `.execute(db)
     rows = r.rows
   } else {
+    // 三来源同池：采购入库/委外入库/采购退货条目（恰一）；委外退货为纯数量单不进池
     const r = await sql<Proj>`
-      SELECT COALESCE(receipt_item_id, outsourced_receipt_item_id)::text AS id,
+      SELECT COALESCE(receipt_item_id, outsourced_receipt_item_id, return_item_id)::text AS id,
         SUM(base_qty)::text AS delta,
         (outsourced_receipt_item_id IS NOT NULL) AS outsourced,
+        (return_item_id IS NOT NULL) AS "returnItem",
         MIN(idx)::text AS idx
       FROM pur_reconciliation_item WHERE reconciliation_id=${reconciliationId}::uuid
-      GROUP BY receipt_item_id, outsourced_receipt_item_id
+      GROUP BY receipt_item_id, outsourced_receipt_item_id, return_item_id
     `.execute(db)
     rows = r.rows
   }
   rows.sort((a, b) => a.id.localeCompare(b.id))
   for (const value of rows) {
     const delta = decimal(value.delta).mul(direction)
-    if (side === 'sales' && value.returnItem) {
-      // 销售退货条目：母单 sal_return 须已审核未作废；守卫 0 ≤ reconciled+Δ ≤ base_qty
+    if (value.returnItem) {
+      // 退货条目（销售/采购同构）：母单须已审核未作废；守卫 0 ≤ reconciled+Δ ≤ base_qty
+      const returnTable = side === 'sales' ? 'sal_return_item' : 'pur_return_item'
+      const returnHeadTable = side === 'sales' ? 'sal_return' : 'pur_return'
       const parent = await sql<{ status: string }>`
-        SELECT h.status FROM sal_return_item i
-        JOIN sal_return h ON h.id=i.return_id
+        SELECT h.status FROM ${sql.raw(returnTable)} i
+        JOIN ${sql.raw(returnHeadTable)} h ON h.id=i.return_id
         WHERE i.id=${value.id}::uuid FOR UPDATE OF h,i
       `.execute(db)
       if (!parent.rows[0]) throw new ApiError('conflict', '对账来源条目不存在')
@@ -358,7 +362,7 @@ export async function adjustReconciledProjection(
         throw new ApiError('conflict', '仅已审核且未作废来源条目可对账')
       }
       const tag = await sql`
-        UPDATE sal_return_item SET
+        UPDATE ${sql.raw(returnTable)} SET
           reconciled_qty=reconciled_qty+${wireRequiredDecimal(delta)},
           updated_at=(now() AT TIME ZONE 'utc')
         WHERE id=${value.id}::uuid

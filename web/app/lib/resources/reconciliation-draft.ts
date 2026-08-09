@@ -13,7 +13,7 @@ export interface ReconciliationDraftItem {
   /** 销售侧来源（二选一）：发货条目 / 销售退货条目（退货行金额取负） */
   deliveryItemId?: string | null
   returnItemId?: string | null
-  /** 采购侧来源（二选一）：采购入库条目 / 委外入库条目 */
+  /** 采购侧来源（三选一）：采购入库条目 / 委外入库条目 / 采购退货条目（退货行金额取负） */
   receiptItemId?: string | null
   outsourcedReceiptItemId?: string | null
   remarks?: string | null
@@ -72,10 +72,14 @@ export function buildReconciliationDraft(
       }
       const receiptItemId = nullableString(row.receiptItemId)
       const outsourcedReceiptItemId = nullableString(row.outsourcedReceiptItemId)
-      if ((receiptItemId == null) === (outsourcedReceiptItemId == null)) {
-        throw new Error(`第${String(idx)}行入库条目必须二选一`)
+      const returnItemId = nullableString(row.returnItemId)
+      const picked = [receiptItemId, outsourcedReceiptItemId, returnItemId].filter(
+        (v) => v != null,
+      ).length
+      if (picked !== 1) {
+        throw new Error(`第${String(idx)}行来源条目必须恰选一个(入库/委外入库/采购退货)`)
       }
-      return { ...base, receiptItemId, outsourcedReceiptItemId }
+      return { ...base, receiptItemId, outsourcedReceiptItemId, returnItemId }
     }),
   }
 }

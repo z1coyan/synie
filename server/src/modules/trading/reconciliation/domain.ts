@@ -203,8 +203,9 @@ export function validateItemShape(
     let count = 0
     if (input.receiptItemId) count++
     if (input.outsourcedReceiptItemId) count++
+    if (input.returnItemId) count++
     if (count !== 1) {
-      fields.source = ['标准入库条目与委外入库条目必须恰选一个']
+      fields.source = ['入库/委外入库/采购退货条目必须恰选一个']
     }
     if (input.deliveryItemId) {
       fields.deliveryItemId = ['采购对账不允许发货条目来源']
@@ -257,6 +258,22 @@ export async function loadSource(
       JOIN sal_order o ON o.id=oi.order_id
       WHERE i.id=${input.deliveryItemId!}::uuid${lockSql}
     `.execute(db)
+  } else if (side === 'purchase' && input.returnItemId) {
+    // 采购退货条目：价税口径沿用退货条目快照（源单行=入库快照，手工行=手填价×单头汇率）；
+    // 汇率：源单行取源订单汇率（经 order_item_id 桥接），手工行取退货单头汇率
+    rows = await sql<Record<string, unknown>>`
+      SELECT i.id::text, h.company_id::text, h.party_type, h.party_id::text, h.status,
+        h.return_no AS no, h.return_date AS source_date, i.material_name, i.unit_name,
+        i.order_currency_code AS currency_code, i.qty::text, i.base_qty::text,
+        i.reconciled_qty::text, i.order_price::text,
+        COALESCE(o.exchange_rate, h.exchange_rate, 1)::text AS exchange_rate,
+        o.order_type, o.id::text AS order_id
+      FROM pur_return_item i
+      JOIN pur_return h ON h.id=i.return_id
+      LEFT JOIN pur_order_item oi ON oi.id=i.order_item_id
+      LEFT JOIN pur_order o ON o.id=oi.order_id
+      WHERE i.id=${input.returnItemId}::uuid${lockSql}
+    `.execute(db)
   } else if (input.receiptItemId) {
     rows = await sql<Record<string, unknown>>`
       SELECT i.id::text, h.company_id::text, h.party_type, h.party_id::text, h.status,
@@ -307,7 +324,7 @@ export async function loadSource(
     orderType: row.order_type != null ? String(row.order_type) : '',
     orderId: row.order_id != null ? String(row.order_id) : '',
     outsourced: side === 'purchase' && Boolean(input.outsourcedReceiptItemId),
-    isReturn: side === 'sales' && Boolean(input.returnItemId),
+    isReturn: Boolean(input.returnItemId),
   }
 }
 
@@ -350,10 +367,11 @@ export async function validateSource(
         LIMIT 1
       )
       ELSE (
-        SELECT COALESCE(si.order_currency_code, oi.order_currency_code)
+        SELECT COALESCE(si.order_currency_code, oi.order_currency_code, ti.order_currency_code)
         FROM pur_reconciliation_item ri
         LEFT JOIN pur_receipt_item si ON si.id=ri.receipt_item_id
         LEFT JOIN pur_outsourced_receipt_item oi ON oi.id=ri.outsourced_receipt_item_id
+        LEFT JOIN pur_return_item ti ON ti.id=ri.return_item_id
         WHERE ri.reconciliation_id=${headId}::uuid
           AND (${selfId}::uuid IS NULL OR ri.id<>${selfId}::uuid)
         LIMIT 1

@@ -242,7 +242,7 @@ export function reconciliationItemMeta(side: TradingSide): ResourceMeta {
           'receipt_item_id',
           'receiptItemId',
           'fk',
-          '入库条目(采购入库;与委外入库条目恰挂其一)',
+          '入库条目(采购入库;三来源恰挂其一)',
           {
             filterable: true,
             ref: {
@@ -256,12 +256,27 @@ export function reconciliationItemMeta(side: TradingSide): ResourceMeta {
           'outsourced_receipt_item_id',
           'outsourcedReceiptItemId',
           'fk',
-          '委外入库条目(与采购入库条目恰挂其一)',
+          '委外入库条目(三来源恰挂其一)',
           {
             filterable: true,
             ref: {
               resource: 'purOutsourcedReceiptItems',
               relation: 'outsourcedReceiptItem',
+              labelField: 'materialCode',
+            },
+          },
+        ),
+        f(
+          'return_item_id',
+          'returnItemId',
+          'fk',
+          '采购退货条目(三来源恰挂其一;行金额取负)',
+          {
+            nullable: true,
+            filterable: true,
+            ref: {
+              resource: 'purReturnItems',
+              relation: 'returnItem',
               labelField: 'materialCode',
             },
           },

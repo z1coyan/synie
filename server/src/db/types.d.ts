@@ -1396,6 +1396,7 @@ export interface PurReconciliationItem {
   receipt_item_id: string | null;
   reconciliation_id: string;
   remarks: string | null;
+  return_item_id: string | null;
   updated_at: Generated<Timestamp>;
 }
 

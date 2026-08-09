@@ -63,22 +63,25 @@ export function itemSource(spec: ReconciliationSideSpec): RawBuilder<unknown> {
       LEFT JOIN sal_return th ON th.id=ti.return_id
     ) ${sql.raw(ITEM_ALIAS)}`
   }
+  // 三来源同池（入库/委外入库/采购退货恰一）：来源单号/日期与快照列 COALESCE 投影
   return sql` FROM (
     SELECT ri.id,ri.idx,ri.qty,ri.base_qty,ri.amount,ri.base_amount,ri.remarks,
       ri.inserted_at,ri.updated_at,ri.reconciliation_id,ri.company_id,
-      ri.receipt_item_id,ri.outsourced_receipt_item_id,
+      ri.receipt_item_id,ri.outsourced_receipt_item_id,ri.return_item_id,
       r.reconciliation_no,r.status AS reconciliation_status,
-      COALESCE(sh.receipt_no,oh.receipt_no) AS receipt_no,
-      COALESCE(sh.receipt_date,oh.receipt_date) AS receipt_date,
-      COALESCE(si.material_name,oi.material_name) AS material_name,
-      COALESCE(si.unit_name,oi.unit_name) AS unit_name,
-      COALESCE(si.order_currency_code,oi.order_currency_code) AS order_currency_code
+      COALESCE(sh.receipt_no,oh.receipt_no,th.return_no) AS receipt_no,
+      COALESCE(sh.receipt_date,oh.receipt_date,th.return_date) AS receipt_date,
+      COALESCE(si.material_name,oi.material_name,ti.material_name) AS material_name,
+      COALESCE(si.unit_name,oi.unit_name,ti.unit_name) AS unit_name,
+      COALESCE(si.order_currency_code,oi.order_currency_code,ti.order_currency_code) AS order_currency_code
     FROM pur_reconciliation_item ri
     JOIN pur_reconciliation r ON r.id=ri.reconciliation_id
     LEFT JOIN pur_receipt_item si ON si.id=ri.receipt_item_id
     LEFT JOIN pur_receipt sh ON sh.id=si.receipt_id
     LEFT JOIN pur_outsourced_receipt_item oi ON oi.id=ri.outsourced_receipt_item_id
     LEFT JOIN pur_outsourced_receipt oh ON oh.id=oi.receipt_id
+    LEFT JOIN pur_return_item ti ON ti.id=ri.return_item_id
+    LEFT JOIN pur_return th ON th.id=ti.return_id
   ) ${sql.raw(ITEM_ALIAS)}`
 }
 
@@ -153,10 +156,8 @@ export function presentItem(
           : null
         : null,
     returnItemId:
-      side === 'sales'
-        ? row.returnItemId != null
-          ? String(row.returnItemId)
-          : null
+      row.returnItemId != null
+        ? String(row.returnItemId)
         : null,
     receiptItemId:
       side === 'purchase'

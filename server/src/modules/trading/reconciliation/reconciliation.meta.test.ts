@@ -110,6 +110,7 @@ describe('对账 Meta 表面', () => {
     }))
     expect(item.fields.map((c) => c.name)).toContain('receiptItemId')
     expect(item.fields.map((c) => c.name)).toContain('outsourcedReceiptItemId')
+    expect(item.fields.map((c) => c.name)).toContain('returnItemId')
   })
 
   test('订单流 Meta 为 OR 读权限投影', () => {

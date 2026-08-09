@@ -145,6 +145,7 @@ function itemCreatePayload(
   } else {
     payload.receiptItemId = input.receiptItemId ?? null
     payload.outsourcedReceiptItemId = input.outsourcedReceiptItemId ?? null
+    payload.returnItemId = input.returnItemId ?? null
   }
   return payload
 }
@@ -178,6 +179,7 @@ function itemUpdatePatch(
     if (input.outsourcedReceiptItemIdPresent) {
       patch.outsourcedReceiptItemId = input.outsourcedReceiptItemId ?? null
     }
+    if (input.returnItemIdPresent) patch.returnItemId = input.returnItemId ?? null
   }
   if (input.remarksPresent) patch.remarks = input.remarks ?? null
   return patch
@@ -196,6 +198,7 @@ function draftItemPayload(side: TradingSide, item: Record<string, unknown>): Rec
   } else {
     payload.receiptItemId = item.receiptItemId ?? null
     payload.outsourcedReceiptItemId = item.outsourcedReceiptItemId ?? null
+    payload.returnItemId = item.returnItemId ?? null
   }
   return payload
 }
@@ -528,11 +531,9 @@ export function createReconciliationService(
                   : String(draft.deliveryItemId)
                 : null,
             returnItemId:
-              side === 'sales'
-                ? draft.returnItemId == null || draft.returnItemId === ''
-                  ? null
-                  : String(draft.returnItemId)
-                : null,
+              draft.returnItemId == null || draft.returnItemId === ''
+                ? null
+                : String(draft.returnItemId),
             receiptItemId:
               side === 'purchase'
                 ? draft.receiptItemId == null || draft.receiptItemId === ''
@@ -562,7 +563,7 @@ export function createReconciliationService(
           draft.amount = amounts.amount
           draft.baseAmount = amounts.baseAmount
           draft.remarks = draft.remarks == null ? null : String(draft.remarks)
-          // 双来源恰一：按来源落对应外键并清空另一臂
+          // 多来源恰一：按来源落对应外键并清空其他臂
           if (side === 'sales') {
             if (source.isReturn) {
               draft.returnItemId = source.id
@@ -571,6 +572,10 @@ export function createReconciliationService(
               draft.deliveryItemId = source.id
               draft.returnItemId = null
             }
+          } else if (source.isReturn) {
+            draft.returnItemId = source.id
+            draft.receiptItemId = null
+            draft.outsourcedReceiptItemId = null
           }
         },
       },
