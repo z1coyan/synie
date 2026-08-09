@@ -11,3 +11,4 @@ server/uploads/
 .playwright-mcp/
 # 一次性迁移编排脚本（aggregate-kernel 计划见 docs/migration/，脚本留本地复跑）
 .grok/workflows/aggregate-kernel*.rhai
+.tmp/
