@@ -5,8 +5,9 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { Input, Label, NumberField, TextField, toast } from '@heroui/react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Button, Input, Label, NumberField, TextField, toast } from '@heroui/react'
+import { Link } from '@tanstack/react-router'
 import {
   headerFieldErrors,
   rowErrors,
@@ -28,6 +29,9 @@ import { MaterialUnitSelect } from '~/components/synie-material-unit-select/Mate
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
+import { generateSalesReturnReplenishment } from '~/lib/resources/returns'
+import { demandClient } from '~/lib/resources/manufacturing'
+import { toastError } from '~/lib/toast'
 import { auditMaterialCell, type AuditDocConfig } from '../../scm/-audit-doc'
 import {
   CompanyDefaultSync,
@@ -281,6 +285,92 @@ function isManualItem(vals: Record<string, unknown>): boolean {
 }
 
 /**
+ * 「生成补货需求单」按钮 + 已生成需求单链接（已审核单查看态）。
+ * 可重复点击，每次生成一张新草稿；重复生成的超量由需求单确认时占用校验兜底。
+ */
+function ReplenishmentPanel({
+  row,
+  queryClient,
+  invalidate,
+}: {
+  row: Row
+  queryClient: ReturnType<typeof useQueryClient>
+  invalidate: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const generated = useQuery({
+    queryKey: ['returnReplenishments', String(row.id)],
+    enabled: row.id != null,
+    queryFn: () =>
+      demandClient
+        .query({
+          limit: 50,
+          offset: 0,
+          filter: {
+            sourceReturnId: { kind: 'fk', op: 'in', values: [String(row.id)], labels: [] },
+          },
+          sort: { column: 'insertedAt', direction: 'descending' },
+        })
+        .then((r) => r.results),
+  })
+
+  const run = async () => {
+    setBusy(true)
+    try {
+      const result = await generateSalesReturnReplenishment(String(row.id))
+      toast.success(`已生成补货需求单 ${result.demandNo}`)
+      await Promise.all([
+        resourceBindingFor('mfgDemands').cache.invalidateGrid(queryClient),
+        resourceBindingFor('mfgDemandItems').cache.invalidateGrid(queryClient),
+      ])
+      invalidate()
+      generated.refetch()
+    } catch (e) {
+      toastError('生成补货需求单失败')(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-4 flex flex-col gap-2 border-t border-separator pt-4">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium">补货需求单</span>
+        <Button
+          size="sm"
+          variant="secondary"
+          isDisabled={busy}
+          isPending={busy}
+          onPress={() => void run()}
+        >
+          生成补货需求单
+        </Button>
+      </div>
+      {(generated.data ?? []).length > 0 ? (
+        <ul className="flex flex-col gap-0.5 text-sm text-muted">
+          {(generated.data ?? []).map((d) => (
+            <li key={String(d.id)}>
+              <Link
+                to="/mfg/demands"
+                search={{ record: String(d.id), mode: 'view' }}
+                className="text-accent hover:underline"
+              >
+                {String(d.demandNo)}
+              </Link>
+              <span className="ml-2 text-xs">
+                {d.status === 'DRAFT' ? '草稿' : d.status === 'CONFIRMED' ? '已确认' : String(d.status)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-muted">尚未生成；点击按钮把全部退货行转成一张履约需求单草稿</p>
+      )}
+    </div>
+  )
+}
+
+/**
  * 头关键字段变更清行(ItemsResetGuard)的指纹字段:公司/对手类型/对手任一变则清空条目草稿。
  */
 const ITEMS_RESET_FIELDS = ['companyId', 'partyType', 'partyId'] as const
@@ -469,6 +559,17 @@ export function ReturnDrawerProvider({
         row={drawer.draft}
         fieldErrors={fieldErrors}
         keepOpenOnAuditFailure
+        footerActions={(mode, row) =>
+          mode === 'view' && row?.status === 'AUDITED' ? (
+            <ReplenishmentPanel
+              row={row}
+              queryClient={queryClient}
+              invalidate={() =>
+                void salesReturnBinding.cache.invalidateGrid(queryClient)
+              }
+            />
+          ) : null
+        }
         onEdit={
           returnStatus === 'DRAFT' ? () => drawer.setMode('edit') : undefined
         }

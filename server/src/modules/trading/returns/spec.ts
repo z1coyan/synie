@@ -285,6 +285,10 @@ export function returnHeadMeta(side: ReturnKind): ResourceMeta {
       { key: 'delete', label: '删除', scope: 'row', isDanger: true },
       { key: 'audit', label: '审核', scope: 'row' },
       { key: 'void', label: '作废', scope: 'row', isDanger: true },
+      // 补货需求生成：仅销售退货（采购/委外退货不放——缺口重现后供应商/协作方重送即可）
+      ...(sales
+        ? [{ key: 'generate_replenishment', label: '生成补货需求单', scope: 'row' as const }]
+        : []),
     ],
     form: { kind: 'extension' },
     // 前缀组打印头锚点（本票无打印动作；打印目录派生需唯一头）

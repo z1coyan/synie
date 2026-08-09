@@ -679,13 +679,14 @@ export const SALES_ROLE_PERMISSIONS: ReadonlyArray<string> = [
   'sales.delivery:print',
   'sales.delivery:export',
   'sales.delivery:batch_print',
-  // 销售退货单：完整权限
+  // 销售退货单：完整权限（含生成补货需求单）
   'sales.return:create',
   'sales.return:read',
   'sales.return:update',
   'sales.return:delete',
   'sales.return:audit',
   'sales.return:void',
+  'sales.return:generate_replenishment',
   // 销售对账单：完整权限
   'sales.reconciliation:create',
   'sales.reconciliation:read',

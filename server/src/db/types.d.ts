@@ -863,6 +863,10 @@ export interface MfgDemand {
    */
   need_date: Timestamp | null;
   remarks: string | null;
+  /**
+   * 退货补货来源留痕（销售退货单「生成补货需求单」派生写入；可重复生成，每次一张新草稿）
+   */
+  source_return_id: string | null;
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
 }

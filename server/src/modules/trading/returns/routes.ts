@@ -180,6 +180,18 @@ export function returnHeadRoutes(deps: ReturnsRouteDeps & { side: ReturnKind }) 
     )
 }
 
+/** 销售退货头路由：基线路由 + 「生成补货需求单」（同一链式装配，ApiType 推导完整） */
+export function salesReturnHeadRoutes(deps: ReturnsRouteDeps) {
+  const { auth, authz, returns } = deps
+  const RESOURCE = returnSpec('sales').headResource
+  return returnHeadRoutes({ ...deps, side: 'sales' }).post(
+    '/:id/generate-replenishment',
+    authz.guard(RESOURCE, 'generate_replenishment'),
+    zValidator('param', idParam, validationHook),
+    async (c) => c.json(await returns.generateReplenishment(permitOf(c), c.req.valid('param').id)),
+  )
+}
+
 export function returnItemRoutes(deps: ReturnsRouteDeps & { side: ReturnKind }) {
   const { auth, authz, returns, side } = deps
   // 聚合草稿的子资源只读：写由整单 PUT 承担

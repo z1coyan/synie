@@ -18,6 +18,7 @@ import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { returnHeadRoutes, returnItemRoutes } from './routes.ts'
 import { createReturnsService, type ReturnDraftInput } from './service.ts'
+import { createDemandService } from '~/modules/manufacturing/demand-service.ts'
 
 /** 编号服务与授权判定共用同一份 sealed registry（授权归宿解析） */
 const registry = createSealedResourceRegistry()
@@ -34,6 +35,7 @@ run('PG 集成（销售退货）', () => {
     { inventory: createInventoryEngine(), gl: createGlEngine() },
     registry,
   )
+  const demands = createDemandService(db, numbering, registry)
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `RT${suffix}`
 
@@ -59,6 +61,16 @@ run('PG 集成（销售退货）', () => {
   const zeroDeliveryId = crypto.randomUUID()
   const zeroDeliveryItemId = crypto.randomUUID()
   const zeroOrderItemId = crypto.randomUUID()
+  // 补货/占用口径夹具：订单条目三（订 100 已发 100）+ 已确认需求单占满 100
+  const order3Id = crypto.randomUUID()
+  const orderItem3Id = crypto.randomUUID()
+  const delivery3Id = crypto.randomUUID()
+  const deliveryItem3Id = crypto.randomUUID()
+  const occupiedDemandId = crypto.randomUUID()
+  // 无退货占用回归专用：订单四（订 50）+ 已确认需求单占满 50，全程无退货
+  const order4Id = crypto.randomUUID()
+  const orderItem4Id = crypto.randomUUID()
+  const occupiedDemand2Id = crypto.randomUUID()
 
   const actor: Actor = testActor({
     userId: '',
@@ -204,6 +216,69 @@ run('PG 集成（销售退货）', () => {
           ${zeroDeliveryId}::uuid,${companyId}::uuid,${zeroOrderItemId}::uuid,${materialId}::uuid,${unitId}::uuid,${warehouseId}::uuid,0)
     `.execute(db)
 
+    // 补货/占用口径夹具：订单三（订 100、已发 100）+ 发货四全发 + 已确认需求单占满 100
+    await sql`
+      INSERT INTO sal_order(id,order_no,order_date,party_type,party_id,status,company_id,exchange_rate,currency_id,order_type)
+      VALUES (${order3Id}::uuid, ${prefix + '-SO3'}, '2026-07-20', 'customer', ${customerId}::uuid,
+        'audited', ${companyId}::uuid, 1, ${currencyId}::uuid, 'regular')
+    `.execute(db)
+    await sql`
+      INSERT INTO sal_order_item(id,idx,qty,price,amount,order_id,company_id,material_id,unit_id,
+        material_code,material_name,unit_name,base_qty,base_price,base_amount,tax_rate,shipped_qty)
+      VALUES (${orderItem3Id}::uuid,1,100,10,1000,${order3Id}::uuid,${companyId}::uuid,
+        ${materialId}::uuid,${unitId}::uuid,${'M' + suffix},${prefix + '物料'},${prefix + '件'},100,10,1000,0,100)
+    `.execute(db)
+    await sql`
+      INSERT INTO sal_delivery(id,delivery_no,delivery_date,party_type,party_id,status,company_id,
+        warehouse_id,debit_account_id,credit_account_id)
+      VALUES (${delivery3Id}::uuid,${prefix + '-SD3'},'2026-07-27','customer',${customerId}::uuid,
+        'audited',${companyId}::uuid,${warehouseId}::uuid,${creditAccountId}::uuid,${debitAccountId}::uuid)
+    `.execute(db)
+    await sql`
+      INSERT INTO sal_delivery_item(
+        id,idx,qty,base_qty,material_code,material_name,unit_name,order_no,
+        order_qty,order_base_qty,order_unit_name,order_price,order_amount,
+        order_base_price,order_base_amount,order_tax_rate,order_currency_code,
+        delivery_id,company_id,order_item_id,material_id,unit_id,warehouse_id,reconciled_qty
+      ) VALUES (
+        ${deliveryItem3Id}::uuid,1,100,100,${'M' + suffix},${prefix + '物料'},${prefix + '件'},${prefix + '-SO3'},
+        100,100,${prefix + '件'},10,1000,10,1000,0,${'T' + suffix.slice(0, 2)},
+        ${delivery3Id}::uuid,${companyId}::uuid,${orderItem3Id}::uuid,${materialId}::uuid,${unitId}::uuid,${warehouseId}::uuid,0
+      )
+    `.execute(db)
+    await sql`
+      INSERT INTO mfg_demand(id,demand_no,demand_date,status,company_id,assign_type)
+      VALUES (${occupiedDemandId}::uuid, ${prefix + '-MD'}, '2026-07-21', 'confirmed', ${companyId}::uuid, 'stock')
+    `.execute(db)
+    await sql`
+      INSERT INTO mfg_demand_item(id,idx,qty,base_qty,need_date,status,demand_id,company_id,
+        material_id,unit_id,sales_order_item_id)
+      VALUES (${crypto.randomUUID()}::uuid,1,100,100,'2026-08-01','pending',${occupiedDemandId}::uuid,
+        ${companyId}::uuid,${materialId}::uuid,${unitId}::uuid,${orderItem3Id}::uuid)
+    `.execute(db)
+    // 无退货回归夹具：订单四订 50 + 已确认需求单占满 50
+    await sql`
+      INSERT INTO sal_order(id,order_no,order_date,party_type,party_id,status,company_id,exchange_rate,currency_id,order_type)
+      VALUES (${order4Id}::uuid, ${prefix + '-SO4'}, '2026-07-20', 'customer', ${customerId}::uuid,
+        'audited', ${companyId}::uuid, 1, ${currencyId}::uuid, 'regular')
+    `.execute(db)
+    await sql`
+      INSERT INTO sal_order_item(id,idx,qty,price,amount,order_id,company_id,material_id,unit_id,
+        material_code,material_name,unit_name,base_qty,base_price,base_amount,tax_rate,shipped_qty)
+      VALUES (${orderItem4Id}::uuid,1,50,10,500,${order4Id}::uuid,${companyId}::uuid,
+        ${materialId}::uuid,${unitId}::uuid,${'M' + suffix},${prefix + '物料'},${prefix + '件'},50,10,500,0,50)
+    `.execute(db)
+    await sql`
+      INSERT INTO mfg_demand(id,demand_no,demand_date,status,company_id,assign_type)
+      VALUES (${occupiedDemand2Id}::uuid, ${prefix + '-MD2'}, '2026-07-21', 'confirmed', ${companyId}::uuid, 'stock')
+    `.execute(db)
+    await sql`
+      INSERT INTO mfg_demand_item(id,idx,qty,base_qty,need_date,status,demand_id,company_id,
+        material_id,unit_id,sales_order_item_id)
+      VALUES (${crypto.randomUUID()}::uuid,1,50,50,'2026-08-01','pending',${occupiedDemand2Id}::uuid,
+        ${companyId}::uuid,${materialId}::uuid,${unitId}::uuid,${orderItem4Id}::uuid)
+    `.execute(db)
+
     const existing = await db
       .selectFrom('sys_numbering_rule')
       .select('id')
@@ -223,6 +298,25 @@ run('PG 集成（销售退货）', () => {
       })
       createdRuleIds.push(rule.id)
     }
+    const demandRule = await db
+      .selectFrom('sys_numbering_rule')
+      .select('id')
+      .where('resource', '=', 'mfg.demand')
+      .where('enabled', '=', true)
+      .executeTakeFirst()
+    if (!demandRule) {
+      const rule = await numbering.create(p('sysNumberingRules', 'create'), {
+        resource: 'mfg.demand',
+        name: `${prefix}需求规则`,
+        segments: [
+          { type: 'text', value: `MD${suffix}-` },
+          { type: 'seq', padding: 4 },
+        ],
+        perCompany: false,
+        enabled: true,
+      })
+      createdRuleIds.push(rule.id)
+    }
   })
 
   afterAll(async () => {
@@ -232,10 +326,12 @@ run('PG 集成（销售退货）', () => {
     await sql`DELETE FROM acc_gl_entry WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM inv_stock_entry WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sys_audit_log WHERE company_id=${companyId}::uuid`.execute(db)
+    await sql`DELETE FROM mfg_demand_item WHERE company_id=${companyId}::uuid`.execute(db)
+    await sql`DELETE FROM mfg_demand WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sal_return WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sal_delivery WHERE company_id=${companyId}::uuid`.execute(db)
-    await sql`DELETE FROM sal_order_item WHERE order_id=${orderId}::uuid`.execute(db)
-    await sql`DELETE FROM sal_order WHERE id=${orderId}::uuid`.execute(db)
+    await sql`DELETE FROM sal_order_item WHERE order_id IN (${orderId}::uuid, ${order3Id}::uuid, ${order4Id}::uuid)`.execute(db)
+    await sql`DELETE FROM sal_order WHERE id IN (${orderId}::uuid, ${order3Id}::uuid, ${order4Id}::uuid)`.execute(db)
     await sql`DELETE FROM bas_account WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM inv_warehouse WHERE id=${warehouseId}::uuid`.execute(db)
     await sql`DELETE FROM inv_material WHERE id IN (${materialId}::uuid, ${material2Id}::uuid, ${virtualMaterialId}::uuid)`.execute(db)
@@ -683,6 +779,138 @@ run('PG 集成（销售退货）', () => {
       .catch((e: unknown) => e)
     expect(err).toBeInstanceOf(ApiError)
     expect((err as ApiError).fields?.['header.currencyId']).toEqual(['已有条目时不可修改'])
+  })
+
+  test('生成补货需求单：行/来源/需求日/留痕正确；可重复生成；草稿不占量', async () => {
+    const draft = await returns.createDraft(p('salReturns', 'create'), 'sales', {
+      ...draftInput([]),
+      items: [
+        { idx: 1, qty: '20', deliveryItemId: deliveryItem3Id, warehouseId },
+        {
+          idx: 2,
+          qty: '3',
+          deliveryItemId: null,
+          materialId,
+          orderPrice: '10',
+          orderTaxRate: '0',
+          warehouseId,
+        },
+      ],
+    })
+    await returns.auditHead(p('salReturns', 'audit'), 'sales', draft.id)
+
+    const first = await returns.generateReplenishment(p('salReturns', 'generate_replenishment'), draft.id)
+    expect(first.demandNo.length).toBeGreaterThan(0)
+    const head = await sql<{
+      status: string
+      assign_type: string
+      demand_date: string
+      source_return_id: string | null
+    }>`
+      SELECT status, assign_type, demand_date::text, source_return_id::text
+      FROM mfg_demand WHERE id=${first.demandId}::uuid
+    `.execute(db)
+    expect(head.rows[0]!.status).toBe('draft')
+    expect(head.rows[0]!.assign_type).toBe('stock')
+    expect(head.rows[0]!.demand_date!.slice(0, 10)).toBe('2026-08-09')
+    expect(head.rows[0]!.source_return_id).toBe(draft.id)
+
+    const lines = await sql<{
+      idx: string
+      base_qty: string
+      need_date: string
+      sales_order_item_id: string | null
+    }>`
+      SELECT idx::text, base_qty::text, need_date::text, sales_order_item_id::text
+      FROM mfg_demand_item WHERE demand_id=${first.demandId}::uuid ORDER BY idx
+    `.execute(db)
+    expect(lines.rows).toHaveLength(2)
+    // 源单行来源 = 对应销售订单条目；手工行无来源
+    expect(lines.rows[0]!.sales_order_item_id).toBe(orderItem3Id)
+    expect(lines.rows[0]!.base_qty).toBe('20')
+    expect(lines.rows[0]!.need_date!.slice(0, 10)).toBe('2026-08-09')
+    expect(lines.rows[1]!.sales_order_item_id).toBeNull()
+    expect(lines.rows[1]!.base_qty).toBe('3')
+
+    // 草稿不占量：已发回减后的缺口不因此改变（占用发生在确认时）
+    expect(await orderItemShipped(orderItem3Id)).toBe('80')
+
+    // 重复点击各成一张新草稿，同一来源留痕
+    const second = await returns.generateReplenishment(p('salReturns', 'generate_replenishment'), draft.id)
+    expect(second.demandId).not.toBe(first.demandId)
+    const heads = await sql<{ c: string }>`
+      SELECT count(*)::text AS c FROM mfg_demand
+      WHERE source_return_id=${draft.id}::uuid AND status='draft'
+    `.execute(db)
+    expect(heads.rows[0]!.c).toBe('2')
+  })
+
+  test('非已审核退货单不可生成补货需求单', async () => {
+    const draft = await returns.createDraft(p('salReturns', 'create'), 'sales', draftInput([
+      { idx: 1, qty: '1', deliveryItemId },
+    ]))
+    await expect(
+      returns.generateReplenishment(p('salReturns', 'generate_replenishment'), draft.id),
+    ).rejects.toThrow(/仅已审核销售退货单可生成补货需求单/)
+  })
+
+  test('占用新口径：订100占100退20→补20可确认、补21被拒；无退货时行为不变', async () => {
+    // 回归：无退货条目（订单四订 50 占 50）时占用上限 = 订购 base，再占 1 即拒
+    const before = await demands.createDemand(p('mfgDemands', 'create'), {
+      companyId,
+      assignType: 'stock',
+      demandDate: '2026-08-09',
+    })
+    await demands.createDemandItem(p('mfgDemandItems', 'create'), {
+      demandId: before.id,
+      idx: 1,
+      materialId,
+      unitId,
+      qty: '1',
+      needDate: '2026-08-10',
+      salesOrderItemId: orderItem4Id,
+    })
+    await expect(demands.confirmDemand(p('mfgDemands', 'confirm'), before.id)).rejects.toThrow(
+      /超出销售订单可占用数量/,
+    )
+
+    // 退 20（上一测试已审核的退货单退了 20：shipped 100→80、已退 20）→ 上限 = 100 + 20
+    // 补 20：100 + 20 ≤ 120 → 可确认
+    const ok = await demands.createDemand(p('mfgDemands', 'create'), {
+      companyId,
+      assignType: 'stock',
+      demandDate: '2026-08-09',
+    })
+    await demands.createDemandItem(p('mfgDemandItems', 'create'), {
+      demandId: ok.id,
+      idx: 1,
+      materialId,
+      unitId,
+      qty: '20',
+      needDate: '2026-08-10',
+      salesOrderItemId: orderItem3Id,
+    })
+    const confirmed = await demands.confirmDemand(p('mfgDemands', 'confirm'), ok.id)
+    expect(confirmed.status).toBe('CONFIRMED')
+
+    // 补 21：已占 120 + 21 > 120 → 拒
+    const over = await demands.createDemand(p('mfgDemands', 'create'), {
+      companyId,
+      assignType: 'stock',
+      demandDate: '2026-08-09',
+    })
+    await demands.createDemandItem(p('mfgDemandItems', 'create'), {
+      demandId: over.id,
+      idx: 1,
+      materialId,
+      unitId,
+      qty: '21',
+      needDate: '2026-08-10',
+      salesOrderItemId: orderItem3Id,
+    })
+    await expect(demands.confirmDemand(p('mfgDemands', 'confirm'), over.id)).rejects.toThrow(
+      /超出销售订单可占用数量/,
+    )
   })
 
   test('HTTP：整单三连与条目只读面、无权限 fail-closed', async () => {

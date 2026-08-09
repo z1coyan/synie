@@ -28,7 +28,7 @@ const EXPECTED_COMMANDS = {
   salOrders: { audit: 'row', close: 'row', void: 'row' },
   salQuotations: { audit: 'row', void: 'row' },
   salReconciliations: { confirm: 'row', unconfirm: 'row', audit: 'row', void: 'row' },
-  salReturns: { audit: 'row', void: 'row' },
+  salReturns: { audit: 'row', void: 'row', generate_replenishment: 'row' },
   sysPrintTemplates: { setDefault: 'row', unsetDefault: 'row' },
   sysStorages: { setDefault: 'row' },
 } as const
@@ -45,7 +45,7 @@ describe('ResourceBinding 语义 CommandAdapter 覆盖', () => {
       expect(actual, resource).toEqual(expected)
       commandCount += Object.keys(actual).length
     }
-    expect(commandCount).toBe(61)
+    expect(commandCount).toBe(62)
   })
 
   test('未声明命令的资源不获得 Proxy/action fallback', () => {

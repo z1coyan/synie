@@ -44,7 +44,7 @@ import {
   validateHeadRefs,
   validateHeadWire,
 } from './domain.ts'
-import { runAuditHead, runVoidHead } from './workflow.ts'
+import { runAuditHead, runGenerateReplenishment, runVoidHead } from './workflow.ts'
 import { returnHeadMeta, returnSpec, type ReturnKind, type ReturnSideSpec } from './spec.ts'
 import type { ReturnDraftDto, ReturnDraftInput } from './types.ts'
 import {
@@ -443,6 +443,8 @@ export function createReturnsService(
       runAuditHead(db, p, side, id, engineDeps),
     voidHead: (p: Permit, side: ReturnKind, id: string) =>
       runVoidHead(db, p, side, id, engineDeps),
+    generateReplenishment: (p: Permit, id: string) =>
+      runGenerateReplenishment(db, p, id, { headTargets, numberer }),
     listItems: async (p: Permit, side: ReturnKind, q: Partial<ListQuery>) =>
       listMapped(await sides[side].items.list(p, q), presentReturnItem),
     getItem: async (p: Permit, side: ReturnKind, id: string) =>

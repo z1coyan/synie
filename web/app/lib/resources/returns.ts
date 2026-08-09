@@ -19,6 +19,15 @@ export async function voidSalesReturn(id: string) {
   return apiData(api.sales.returns[':id'].void.$post({ param: { id } }))
 }
 
+/** 「生成补货需求单」：已审核单把全部退货行转成一张履约需求单草稿；返回 { demandId, demandNo } */
+export async function generateSalesReturnReplenishment(
+  id: string,
+): Promise<{ demandId: string; demandNo: string }> {
+  return apiData(
+    api.sales.returns[':id']['generate-replenishment'].$post({ param: { id } }),
+  ) as Promise<{ demandId: string; demandNo: string }>
+}
+
 export const salesReturnCommandAdapter = createRowCommandAdapter({
   audit: {
     handler: auditSalesReturn,
@@ -39,6 +48,10 @@ export const salesReturnCommandAdapter = createRowCommandAdapter({
       'invStockEntries',
       'accGlEntries',
     ],
+  },
+  generate_replenishment: {
+    handler: generateSalesReturnReplenishment,
+    affectedResources: ['mfgDemands', 'mfgDemandItems'],
   },
 })
 

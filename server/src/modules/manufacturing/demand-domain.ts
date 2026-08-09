@@ -157,10 +157,20 @@ export async function effectConfirmOccupy(
     const occupied = decimal(occ.rows[0]?.occupied ?? '0')
     const add = groups.get(salesId)!
     const ordered = decimal(String(so.base_qty))
-    if (occupied.add(add).gt(ordered)) {
+    // 占用上限 = 订购 base + 该条目已审核销售退货量（挂源行部分）——客户退回后仍欠客户的量
+    // （ADR 2026-08-09；无退货时退化为订购 base）。校验时点不变（确认时）
+    const ret = await sql<{ q: string }>`
+      SELECT coalesce(sum(ri.base_qty), 0)::text AS q
+      FROM sal_return_item ri
+      JOIN sal_return rh ON rh.id = ri.return_id
+      WHERE ri.order_item_id = ${salesId}
+        AND rh.status = 'audited'
+    `.execute(trx)
+    const limit = ordered.add(decimal(ret.rows[0]?.q ?? '0'))
+    if (occupied.add(add).gt(limit)) {
       throw new ApiError(
         'conflict',
-        `超出销售订单可占用数量(已占用${occupied},剩余${ordered.sub(occupied)},本单${add})`,
+        `超出销售订单可占用数量(已占用${occupied},剩余${limit.sub(occupied)},本单${add})`,
       )
     }
   }
@@ -369,7 +379,9 @@ export interface DerivedDemandLine {
   qty: string
   baseQty: string
   needDate: string
-  sourceWorkOrderId: string
+  sourceWorkOrderId: string | null
+  /** 销售来源（退货补货派生写入；与 sourceWorkOrderId 互斥，DB CHECK 兜底） */
+  salesOrderItemId?: string | null
   materialCode: string
   materialName: string
   materialSpec: string | null
@@ -377,7 +389,7 @@ export interface DerivedDemandLine {
 }
 
 /**
- * 受信任写：工单「生成物料需求」动作内直接落需求单头+行。
+ * 受信任写：工单「生成物料需求」/销售退货「生成补货需求单」动作内直接落需求单头+行。
  */
 export async function insertDerivedDemand(
   trx: DbHandle,
@@ -389,6 +401,8 @@ export async function insertDerivedDemand(
     remarks: string
     assignType: DemandAssignType | 'purchase' | 'make' | 'stock' | 'close'
     assignedDeptId: string | null
+    /** 退货补货来源留痕（销售退货派生写入） */
+    sourceReturnId?: string | null
     lines: DerivedDemandLine[]
   },
 ): Promise<{ id: string; demandNo: string; assignedDeptId: string | null }> {
@@ -404,6 +418,7 @@ export async function insertDerivedDemand(
         status: 'draft',
         company_id: input.companyId,
         assigned_dept_id: input.assignedDeptId,
+        source_return_id: input.sourceReturnId ?? null,
         created_by_id: actor.userId || null,
       })
       .returningAll()
@@ -432,7 +447,7 @@ export async function insertDerivedDemand(
           need_date: line.needDate,
           fulfillment_method: null,
           status: 'pending',
-          sales_order_item_id: null,
+          sales_order_item_id: line.salesOrderItemId ?? null,
           source_work_order_id: line.sourceWorkOrderId,
           material_code: line.materialCode,
           material_name: line.materialName,

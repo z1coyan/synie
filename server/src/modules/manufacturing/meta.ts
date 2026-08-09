@@ -526,6 +526,11 @@ export function demandResourceMeta(): ResourceMeta {
         'assignedDept',
         'name',
       ),
+      // 退货补货来源留痕：仅由销售退货「生成补货需求单」派生写入（受信任写，不走表单）
+      fk('source_return_id', 'sourceReturnId', '来源退货单', 'salReturns', 'sourceReturn', 'returnNo', {
+        readonly: true,
+        filterable: true,
+      }),
     ],
     actions: [
       ...headCrud,

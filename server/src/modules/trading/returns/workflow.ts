@@ -23,6 +23,8 @@ import { loadAuthorized } from '~/db/load.ts'
 import { accountCurrencies } from '~/platform/posting/account-currency.ts'
 import { lowerParty as lowerPartyType } from '~/platform/posting/text.ts'
 import { postFulfillment, reverseFulfillment } from '../order/projection.ts'
+import { insertDerivedDemand } from '~/modules/manufacturing/demand-domain.ts'
+import type { NumberingService } from '~/platform/numbering/service.ts'
 import {
   headSnap,
   loadActionItems,
@@ -323,6 +325,79 @@ export async function runVoidHead(
 
     const row = await loadHead(trx, spec, id)
     return mapHeadDto(row!)
+  })
+}
+
+/**
+ * 「生成补货需求单」（仅销售退货、已审核单）：全部退货行转成一张履约需求单草稿——
+ * 行 = 退货行物料 + 数量（行单位/折默认单位），需求日默认 = 退货日期；
+ * 源单行来源 = 对应销售订单条目，手工行 = 无来源手工行。
+ * 可重复点击，每次生成一张新草稿；头留 source_return_id 链接供追溯。
+ * 重复生成的超量由需求单确认时的销售占用校验兜底（占用上限 = 订购 + 已退）。
+ */
+export async function runGenerateReplenishment(
+  db: Kysely<Database>,
+  permit: Permit,
+  id: string,
+  deps: {
+    headTargets: Record<ReturnKind, AuthzTarget>
+    numberer: Pick<NumberingService, 'nextInTx'>
+  },
+) {
+  const spec = returnSpec('sales')
+  return withTx(db, async (trx) => {
+    const before = mapHead(await lockHead(trx, permit, spec, id, deps.headTargets))
+    if (before.status !== 'AUDITED') {
+      throw new ApiError('conflict', `仅已审核${spec.label}可生成补货需求单`)
+    }
+    const rows = await sql<Record<string, unknown>>`
+      SELECT idx, material_id, unit_id, qty::text, base_qty::text,
+        material_code, material_name, material_spec, unit_name, order_item_id
+      FROM ${ident(spec.itemTable)}
+      WHERE return_id=${before.id}::uuid
+      ORDER BY idx, id
+    `.execute(trx)
+    if (rows.rows.length === 0) {
+      throw new ApiError('conflict', '没有退货条目可生成补货需求')
+    }
+    const demandNo = await deps.numberer.nextInTx(trx, {
+      resource: 'mfg.demand',
+      values: { company_id: before.companyId, demand_date: before.documentDate },
+    })
+    // 指派类型默认 stock（现货补发是退货补货最常见形态；纯意图层路由声明，计划员可在草稿改派）
+    const created = await insertDerivedDemand(trx, permit.actor, {
+      companyId: before.companyId,
+      demandNo,
+      demandDate: before.documentDate,
+      remarks: `退货补货:${before.no}`,
+      assignType: 'stock',
+      assignedDeptId: null,
+      sourceReturnId: before.id,
+      lines: rows.rows.map((r) => ({
+        idx: Number(r.idx),
+        materialId: String(r.material_id),
+        unitId: String(r.unit_id),
+        qty: String(r.qty),
+        baseQty: String(r.base_qty),
+        needDate: before.documentDate,
+        sourceWorkOrderId: null,
+        salesOrderItemId: r.order_item_id ? String(r.order_item_id) : null,
+        materialCode: String(r.material_code),
+        materialName: String(r.material_name),
+        materialSpec: r.material_spec == null ? null : String(r.material_spec),
+        unitName: String(r.unit_name),
+      })),
+    })
+    await writeAudit(trx, permit.actor, {
+      resource: spec.headTable,
+      recordId: before.id,
+      recordLabel: before.no,
+      companyId: before.companyId,
+      actionType: 'update',
+      actionName: 'generate_replenishment',
+      changes: {},
+    })
+    return { demandId: created.id, demandNo: created.demandNo }
   })
 }
 

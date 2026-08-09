@@ -65,7 +65,7 @@ import {
 } from './outsourced/routes.ts'
 import { createReturnsService } from './returns/service.ts'
 import { returnHeadMeta, returnItemMeta } from './returns/spec.ts'
-import { returnHeadRoutes, returnItemRoutes } from './returns/routes.ts'
+import { returnHeadRoutes, returnItemRoutes, salesReturnHeadRoutes } from './returns/routes.ts'
 import { createReconciliationService } from './reconciliation/service.ts'
 import {
   reconciliationHeadMeta,
@@ -168,7 +168,7 @@ export function tradingRouteMounts(deps: {
     salesDeliveryPackLines: packLineRoutes({ auth, authz, fulfillment }),
     purchaseReceipts: purchaseFulfillmentHeadRoutes({ auth, authz, fulfillment }),
     purchaseReceiptItems: purchaseFulfillmentItemRoutes({ auth, authz, fulfillment }),
-    salesReturns: returnHeadRoutes({ auth, authz, returns, side: 'sales' }),
+    salesReturns: salesReturnHeadRoutes({ auth, authz, returns }),
     salesReturnItems: returnItemRoutes({ auth, authz, returns, side: 'sales' }),
     purchaseReturns: returnHeadRoutes({ auth, authz, returns, side: 'purchase' }),
     purchaseReturnItems: returnItemRoutes({ auth, authz, returns, side: 'purchase' }),
