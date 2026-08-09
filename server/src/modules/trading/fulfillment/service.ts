@@ -199,7 +199,7 @@ export function createFulfillmentService(
     projection: {
       source: ITEM_SOURCE.purchase,
       alias: ITEM_ALIAS,
-      selectExtra: sql`receipt_no, receipt_date, receipt_status, party_type, remaining_reconcilable_qty`,
+      selectExtra: sql`receipt_no, receipt_date, receipt_status, party_type, remaining_reconcilable_qty, remaining_returnable_qty`,
       mapExtra: mapPurchaseItemExtras,
     },
     parent: {

@@ -79,6 +79,11 @@ export interface ControlledProjectionOptions {
    * 工单入库路径：`rowId` = `demandItemId`（重算键是需求行）。
    */
   afterAdjust?: AfterAdjust
+  /**
+   * 跳过「订单条目→需求行」已收回写（采购退货定案：需求行已完成/已收不随退货反转，
+   * 只动订单条目 received_qty 投影；见 ADR 2026-08-09）。
+   */
+  skipDemandChain?: boolean
 }
 
 const ORDER_FULFILLMENT: Record<
@@ -222,7 +227,7 @@ async function adjustFulfillment(
       )
     }
   }
-  if (side === 'purchase' && demandDeltas.size > 0) {
+  if (side === 'purchase' && demandDeltas.size > 0 && options?.skipDemandChain !== true) {
     await adjustDemandReceivedQty(db, demandDeltas, {
       afterAdjust: options?.afterAdjust,
       direction: dirSign,

@@ -259,14 +259,9 @@ export function fulfillmentItemMeta(side: TradingSide): ResourceMeta {
       f('reconciled_qty', 'reconciledQty', 'decimal', sales ? '已对账数量(默认单位;由销售对账单生效/回退同步)' : '已对账数量(默认单位;由采购对账单生效/回退同步)', {
         readonly: true, filterable: true, sortable: true,
       }),
-      // 已退数量投影仅销售侧（sal_delivery_item.returned_qty；采购侧随采购退货票落地）
-      ...(sales
-        ? [
-            f('returned_qty', 'returnedQty', 'decimal', '已退数量(默认单位;由销售退货审核/作废同步)', {
-              readonly: true, filterable: true, sortable: true,
-            }),
-          ]
-        : []),
+      f('returned_qty', 'returnedQty', 'decimal', sales ? '已退数量(默认单位;由销售退货审核/作废同步)' : '已退数量(默认单位;由采购退货审核/作废同步)', {
+        readonly: true, filterable: true, sortable: true,
+      }),
       f('remarks', 'remarks', 'string', '行备注', { filterable: true, sortable: true }),
       f('inserted_at', 'insertedAt', 'datetime', '创建时间', { readonly: true, filterable: true, sortable: true }),
       f('updated_at', 'updatedAt', 'datetime', '更新时间', { readonly: true, filterable: true, sortable: true }),
@@ -317,14 +312,10 @@ export function fulfillmentItemMeta(side: TradingSide): ResourceMeta {
       f('remaining_reconcilable_qty', 'remainingReconcilableQty', 'decimal', '剩余可对账量(默认单位)', {
         readonly: true, calculated: true, filterable: true, sortable: true,
       }),
-      // 剩余可退 = 发货数量 − 已退数量：退货选择器过滤 >0 用（仅销售侧）
-      ...(sales
-        ? [
-            f('remaining_returnable_qty', 'remainingReturnableQty', 'decimal', '剩余可退量(默认单位)', {
-              readonly: true, calculated: true, filterable: true, sortable: true,
-            }),
-          ]
-        : []),
+      // 剩余可退 = 履约数量 − 已退数量：退货选择器过滤 >0 用
+      f('remaining_returnable_qty', 'remainingReturnableQty', 'decimal', '剩余可退量(默认单位)', {
+        readonly: true, calculated: true, filterable: true, sortable: true,
+      }),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     // exclude 保留历史审计面：头冗余对手不进审计 diff

@@ -123,6 +123,7 @@ export function presentSalesItem(row: Record<string, unknown>): SalesDraftItemDt
 export function presentPurchaseItem(row: Record<string, unknown>): PurchaseReceiptItemDto {
   const baseQty = String(row.baseQty ?? 0)
   const reconciled = String(row.reconciledQty ?? 0)
+  const returned = String(row.returnedQty ?? 0)
   return {
     id: String(row.id),
     idx: Number(row.idx),
@@ -160,6 +161,10 @@ export function presentPurchaseItem(row: Record<string, unknown>): PurchaseRecei
     partyId: String(row.partyId ?? ''),
     remainingReconcilableQty: wireRequiredDecimal(
       String(row.remainingReconcilableQty ?? decimal(baseQty).sub(reconciled)),
+    ),
+    returnedQty: wireRequiredDecimal(returned),
+    remainingReturnableQty: wireRequiredDecimal(
+      String(row.remainingReturnableQty ?? decimal(baseQty).sub(returned)),
     ),
   }
 }
@@ -247,6 +252,7 @@ export function mapSalesItemExtras(row: Record<string, unknown>): Record<string,
 export function mapPurchaseItemExtras(row: Record<string, unknown>): Record<string, unknown> {
   const baseQty = String(row.base_qty ?? 0)
   const reconciled = String(row.reconciled_qty ?? 0)
+  const returned = String(row.returned_qty ?? 0)
   return {
     receiptNo: String(row.receipt_no ?? ''),
     receiptDate: asDate(row.receipt_date),
@@ -254,6 +260,9 @@ export function mapPurchaseItemExtras(row: Record<string, unknown>): Record<stri
     partyType: upperStatus(String(row.party_type ?? '')),
     remainingReconcilableQty: wireRequiredDecimal(
       String(row.remaining_reconcilable_qty ?? decimal(baseQty).sub(reconciled)),
+    ),
+    remainingReturnableQty: wireRequiredDecimal(
+      String(row.remaining_returnable_qty ?? decimal(baseQty).sub(returned)),
     ),
   }
 }
@@ -330,17 +339,13 @@ export function mapItemDto(side: TradingSide, row: Record<string, unknown>) {
     remainingReconcilableQty: wireRequiredDecimal(
       String(row.remaining_reconcilable_qty ?? decimal(baseQty).sub(reconciled)),
     ),
-    ...(side === 'sales'
-      ? {
-          returnedQty: wireRequiredDecimal(String(row.returned_qty ?? 0)),
-          remainingReturnableQty: wireRequiredDecimal(
-            String(
-              row.remaining_returnable_qty ??
-                decimal(baseQty).sub(decimal(String(row.returned_qty ?? 0))),
-            ),
-          ),
-        }
-      : {}),
+    returnedQty: wireRequiredDecimal(String(row.returned_qty ?? 0)),
+    remainingReturnableQty: wireRequiredDecimal(
+      String(
+        row.remaining_returnable_qty ??
+          decimal(baseQty).sub(decimal(String(row.returned_qty ?? 0))),
+      ),
+    ),
   }
 }
 

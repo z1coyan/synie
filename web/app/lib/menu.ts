@@ -273,6 +273,12 @@ export const menuModules: MenuModule[] = [
             relatedPermissions: ['purchase.receipt'],
           },
           {
+            code: 'menu.purchase.returns',
+            label: '采购退货',
+            path: '/purchase/returns',
+            relatedPermissions: ['purchase.return'],
+          },
+          {
             code: 'menu.purchase.reconciliations',
             label: '采购对账',
             path: '/purchase/reconciliations',

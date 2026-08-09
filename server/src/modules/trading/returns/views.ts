@@ -1,9 +1,10 @@
-/** 销售退货 wire 呈现：标准服务返回值 → 路由/草稿 DTO。 */
+/** 退货 wire 呈现：标准服务返回值 → 路由/草稿 DTO（销售/采购对称）。 */
 import { decimal } from '@synie/shared'
 import {
   asDate,
   asDateTime,
   asOptionalString,
+  type TradingSide,
   upperStatus,
   wireRequiredDecimal,
 } from '../common.ts'
@@ -74,7 +75,8 @@ export function presentReturnItem(row: Record<string, unknown>): ReturnItemDto {
     updatedAt: asIso(row.updatedAt)!,
     returnId: String(row.returnId ?? ''),
     companyId: String(row.companyId ?? ''),
-    deliveryItemId: String(row.deliveryItemId ?? ''),
+    deliveryItemId: row.deliveryItemId == null ? null : String(row.deliveryItemId),
+    receiptItemId: row.receiptItemId == null ? null : String(row.receiptItemId),
     orderItemId: row.orderItemId == null ? null : String(row.orderItemId),
     materialId: row.materialId == null ? null : String(row.materialId),
     unitId: row.unitId == null ? null : String(row.unitId),
@@ -159,14 +161,18 @@ export function returnHeadPayload(input: ReturnDraftInput): Record<string, unkno
   return payload
 }
 
-export function returnDraftPayload(input: ReturnDraftInput): Record<string, unknown> {
+export function returnDraftPayload(
+  side: TradingSide,
+  input: ReturnDraftInput,
+): Record<string, unknown> {
   const payload = returnHeadPayload(input)
+  const sourceKey = side === 'sales' ? 'deliveryItemId' : 'receiptItemId'
   if (Array.isArray(input.items)) {
     payload.items = input.items.map((item) => ({
       ...(item.id !== undefined ? { id: item.id } : {}),
       idx: item.idx,
       qty: item.qty,
-      deliveryItemId: item.deliveryItemId ?? null,
+      [sourceKey]: (side === 'sales' ? item.deliveryItemId : item.receiptItemId) ?? null,
       materialId: item.materialId ?? null,
       orderPrice: item.orderPrice ?? null,
       orderTaxRate: item.orderTaxRate ?? null,
@@ -176,50 +182,4 @@ export function returnDraftPayload(input: ReturnDraftInput): Record<string, unkn
     }))
   }
   return payload
-}
-
-/** 条目列表行（裸列投影）→ wire DTO */
-export function mapItemDto(row: Record<string, unknown>): ReturnItemDto {
-  const baseQty = String(row.base_qty)
-  const reconciled = String(row.reconciled_qty ?? 0)
-  return {
-    id: String(row.id),
-    idx: Number(row.idx),
-    qty: wireRequiredDecimal(String(row.qty)),
-    baseQty: wireRequiredDecimal(baseQty),
-    materialCode: asOptionalString(row.material_code),
-    materialName: asOptionalString(row.material_name),
-    materialSpec: asOptionalString(row.material_spec),
-    customerPartNo: asOptionalString(row.customer_part_no),
-    unitName: asOptionalString(row.unit_name),
-    orderNo: asOptionalString(row.order_no),
-    orderQty: wireOptionalDecimal(row.order_qty),
-    orderBaseQty: wireOptionalDecimal(row.order_base_qty),
-    orderUnitName: asOptionalString(row.order_unit_name),
-    orderPrice: wireOptionalDecimal(row.order_price),
-    orderAmount: wireOptionalDecimal(row.order_amount),
-    orderBasePrice: wireOptionalDecimal(row.order_base_price),
-    orderBaseAmount: wireOptionalDecimal(row.order_base_amount),
-    orderTaxRate: wireOptionalDecimal(row.order_tax_rate),
-    orderCurrencyCode: asOptionalString(row.order_currency_code),
-    reconciledQty: wireRequiredDecimal(reconciled),
-    remarks: asOptionalString(row.remarks),
-    insertedAt: asDateTime(row.inserted_at)!,
-    updatedAt: asDateTime(row.updated_at)!,
-    returnId: String(row.return_id),
-    companyId: String(row.company_id),
-    deliveryItemId: String(row.delivery_item_id),
-    orderItemId: asOptionalString(row.order_item_id),
-    materialId: asOptionalString(row.material_id),
-    unitId: asOptionalString(row.unit_id),
-    warehouseId: row.warehouse_id ? String(row.warehouse_id) : null,
-    returnNo: String(row.return_no ?? ''),
-    returnDate: asDate(row.return_date),
-    returnStatus: upperStatus(String(row.return_status ?? 'DRAFT')),
-    partyType: upperStatus(String(row.party_type)),
-    partyId: String(row.party_id),
-    remainingReconcilableQty: wireRequiredDecimal(
-      String(row.remaining_reconcilable_qty ?? decimal(baseQty).sub(reconciled)),
-    ),
-  }
 }

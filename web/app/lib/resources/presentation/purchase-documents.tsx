@@ -32,6 +32,7 @@ export const PURCHASE_DOCUMENT_RESOURCES = [
   'purQuotations',
   'purOrders',
   'purReceipts',
+  'purReturns',
   'purOutsourcedReceipts',
   'purOutsourcedIssues',
   'purReconciliations',
@@ -150,6 +151,68 @@ const DEFINITIONS = {
         '对供应商展示的交易条款,如交付、付款、验收约定',
         7,
       ),
+    },
+  },
+  purReturns: {
+    label: '采购退货单',
+    contentClassName: 'w-full lg:w-[960px]',
+    exclude: AUDIT_TRAIL_EXCLUDE,
+    fields: {
+      companyId: {
+        required: true,
+        order: -1,
+        cols: 6,
+        edit: 'createOnly',
+      },
+      returnNo: {
+        order: 0,
+        cols: 6,
+        placeholder: '保存后自动编号',
+      },
+      returnDate: { order: 1, cols: 6, required: true },
+      postingDate: {
+        order: 2,
+        cols: 6,
+        label: '过账日期',
+      },
+      ...tradingPartyFields({
+        kind: 'purchase',
+        typeOrder: 3,
+        idOrder: 4,
+      }),
+      currencyId: {
+        order: 5,
+        cols: 6,
+        label: '原币(源单行须与订单快照币种一致)',
+        remote: {
+          filterState: { active: { kind: 'bool', eq: true } },
+        },
+      },
+      exchangeRate: {
+        order: 6,
+        cols: 6,
+        label: '汇率(默认 1)',
+      },
+      warehouseId: {
+        order: 7,
+        cols: 6,
+        label: '默认仓库(可空)',
+      },
+      remarks: { order: 8, label: '备注' },
+      debitAccountId: {
+        order: 100,
+        cols: 6,
+        required: true,
+        label: '借方科目(未开票应付)',
+        hidden: true,
+      },
+      creditAccountId: {
+        order: 101,
+        cols: 6,
+        required: true,
+        label: '贷方科目',
+        hidden: true,
+      },
     },
   },
   purReceipts: {

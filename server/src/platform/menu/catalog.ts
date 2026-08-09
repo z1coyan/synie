@@ -117,6 +117,7 @@ export const menuCatalog: MenuCatalogModule[] = [
           { code: 'menu.purchase.quotations', label: '采购报价' },
           { code: 'menu.purchase.orders', label: '采购订单' },
           { code: 'menu.purchase.receipts', label: '采购入库' },
+          { code: 'menu.purchase.returns', label: '采购退货' },
           { code: 'menu.purchase.reconciliations', label: '采购对账' },
         ],
       },

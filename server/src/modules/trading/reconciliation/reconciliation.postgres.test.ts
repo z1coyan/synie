@@ -1002,7 +1002,7 @@ run('PG 集成（销售/采购对账）', () => {
 
     let voidErr: unknown
     try {
-      await returns.voidHead(permitFor(actor, 'salReturns', 'void'), salesReturnId)
+      await returns.voidHead(permitFor(actor, 'salReturns', 'void'), 'sales', salesReturnId)
     } catch (e) {
       voidErr = e
     }
@@ -1013,7 +1013,7 @@ run('PG 集成（销售/采购对账）', () => {
     // 撤回对账释放占用后，退货单照常识作废（本夹具退货为手工行口径：无库存/总账分录，幂等空转）
     await svc.unconfirm(headPermit('sales', 'unconfirm'), 'sales', head.id)
     await svc.deleteHead(headPermit('sales', 'delete'), 'sales', head.id)
-    const voided = await returns.voidHead(permitFor(actor, 'salReturns', 'void'), salesReturnId)
+    const voided = await returns.voidHead(permitFor(actor, 'salReturns', 'void'), 'sales', salesReturnId)
     expect(voided.status).toBe('VOIDED')
   })
 

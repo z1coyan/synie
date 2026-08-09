@@ -222,6 +222,8 @@ export interface PurchaseReceiptItemDto {
   partyType: string
   partyId: string
   remainingReconcilableQty: string
+  returnedQty: string
+  remainingReturnableQty: string
 }
 
 export interface PurchaseReceiptDraftDto {

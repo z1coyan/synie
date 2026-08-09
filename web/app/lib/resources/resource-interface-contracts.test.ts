@@ -21,6 +21,7 @@ const READ_ONLY_RESOURCES = [
   'hrAttendanceDays',
   'hrAttendancePunches',
   'invStockEntries',
+  'purReturnItems',
   'salDeliveryItems',
   'salDeliveryPackBoxes',
   'salDeliveryPackLines',

@@ -38,18 +38,24 @@ const afterDemandReceived: AfterAdjust = async (db, { rowId }) => {
 
 const demandOpts: ControlledProjectionOptions = { afterAdjust: afterDemandReceived }
 
+/**
+ * `skipDemandChain`：采购退货回减/回滚已收数量时传 true——
+ * 需求行已完成/已收不随退货反转（ADR 2026-08-09），只动订单条目投影。
+ */
 export async function postFulfillment(
   db: DbHandle,
   side: TradingSide,
   input: FulfillmentInput,
+  opts?: { skipDemandChain?: boolean },
 ): Promise<void> {
-  return postFulfillmentCore(db, side, input, demandOpts)
+  return postFulfillmentCore(db, side, input, { ...demandOpts, ...opts })
 }
 
 export async function reverseFulfillment(
   db: DbHandle,
   side: TradingSide,
   input: FulfillmentInput,
+  opts?: { skipDemandChain?: boolean },
 ): Promise<void> {
-  return reverseFulfillmentCore(db, side, input, demandOpts)
+  return reverseFulfillmentCore(db, side, input, { ...demandOpts, ...opts })
 }

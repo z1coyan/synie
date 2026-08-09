@@ -16,7 +16,7 @@ import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError, onError } from '~/platform/http/errors.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
-import { salesReturnHeadRoutes, salesReturnItemRoutes } from './routes.ts'
+import { returnHeadRoutes, returnItemRoutes } from './routes.ts'
 import { createReturnsService, type ReturnDraftInput } from './service.ts'
 
 /** 编号服务与授权判定共用同一份 sealed registry（授权归宿解析） */
@@ -93,8 +93,8 @@ run('PG 集成（销售退货）', () => {
     },
   } as unknown as AuthService
   const http = new Hono<AppEnv>()
-    .route('/api/v1/sales/returns', salesReturnHeadRoutes({ auth, authz, returns }))
-    .route('/api/v1/sales/return-items', salesReturnItemRoutes({ auth, authz, returns }))
+    .route('/api/v1/sales/returns', returnHeadRoutes({ auth, authz, returns, side: 'sales' }))
+    .route('/api/v1/sales/return-items', returnItemRoutes({ auth, authz, returns, side: 'sales' }))
   http.onError(onError)
 
   function draftInput(
@@ -291,6 +291,7 @@ run('PG 集成（销售退货）', () => {
   test('整单创建：源单行快照随发货条目带入并落审计', async () => {
     const draft = await returns.createDraft(
       p('salReturns', 'create'),
+      'sales',
       draftInput([{ idx: 1, qty: '5', deliveryItemId }]),
     )
     expect(draft.returnNo.length).toBeGreaterThan(0)
@@ -307,19 +308,20 @@ run('PG 集成（销售退货）', () => {
     expect(item.orderCurrencyCode).toBe('T' + suffix.slice(0, 2))
     expect(item.reconciledQty).toBe('0')
 
-    const loaded = await returns.getDraft(p('salReturns', 'read'), draft.id)
+    const loaded = await returns.getDraft(p('salReturns', 'read'), 'sales', draft.id)
     expect(loaded.items).toHaveLength(1)
   })
 
   test('审核：库存正向回库 + GL 销售发货反转 + 已退累加 + 已发回减', async () => {
     const draft = await returns.createDraft(
       p('salReturns', 'create'),
+      'sales',
       draftInput([
         { idx: 1, qty: '10', deliveryItemId },
         { idx: 2, qty: '20', deliveryItemId: deliveryItem2Id },
       ]),
     )
-    const audited = await returns.auditHead(p('salReturns', 'audit'), draft.id)
+    const audited = await returns.auditHead(p('salReturns', 'audit'), 'sales', draft.id)
     expect(audited.status).toBe('AUDITED')
 
     // 库存：两行正向回库分录
@@ -369,9 +371,10 @@ run('PG 集成（销售退货）', () => {
     // 行一剩余可退 = 100 − 10（上一测已退）= 90；退 95 超出
     const draft = await returns.createDraft(
       p('salReturns', 'create'),
+      'sales',
       draftInput([{ idx: 1, qty: '95', deliveryItemId }]),
     )
-    await expect(returns.auditHead(p('salReturns', 'audit'), draft.id)).rejects.toThrow(
+    await expect(returns.auditHead(p('salReturns', 'audit'), 'sales', draft.id)).rejects.toThrow(
       /超出剩余可退数量/,
     )
     // 拦截后无任何副作用
@@ -383,13 +386,14 @@ run('PG 集成（销售退货）', () => {
   test('作废：库存/总账分录作废 + 已退已发全量回滚', async () => {
     const draft = await returns.createDraft(
       p('salReturns', 'create'),
+      'sales',
       draftInput([{ idx: 1, qty: '5', deliveryItemId }]),
     )
-    await returns.auditHead(p('salReturns', 'audit'), draft.id)
+    await returns.auditHead(p('salReturns', 'audit'), 'sales', draft.id)
     expect((await deliveryItemRow(deliveryItemId)).returned_qty).toBe('15')
     expect(await orderItemShipped(orderItemId)).toBe('85')
 
-    const voided = await returns.voidHead(p('salReturns', 'void'), draft.id)
+    const voided = await returns.voidHead(p('salReturns', 'void'), 'sales', draft.id)
     expect(voided.status).toBe('VOIDED')
 
     const stock = await stockEntries(draft.id)
@@ -405,21 +409,22 @@ run('PG 集成（销售退货）', () => {
   test('作废拦截：任一条目已对账（reconciled_qty>0）不可作废', async () => {
     const draft = await returns.createDraft(
       p('salReturns', 'create'),
+      'sales',
       draftInput([{ idx: 1, qty: '3', deliveryItemId }]),
     )
-    await returns.auditHead(p('salReturns', 'audit'), draft.id)
+    await returns.auditHead(p('salReturns', 'audit'), 'sales', draft.id)
     // 模拟对账单生效占用（对账票未落地，手工置数）
     await sql`
       UPDATE sal_return_item SET reconciled_qty=1 WHERE return_id=${draft.id}::uuid
     `.execute(db)
-    await expect(returns.voidHead(p('salReturns', 'void'), draft.id)).rejects.toThrow(
+    await expect(returns.voidHead(p('salReturns', 'void'), 'sales', draft.id)).rejects.toThrow(
       /存在已对账退货条目,不可作废/,
     )
     // 清理占用后照常识作废
     await sql`
       UPDATE sal_return_item SET reconciled_qty=0 WHERE return_id=${draft.id}::uuid
     `.execute(db)
-    await returns.voidHead(p('salReturns', 'void'), draft.id)
+    await returns.voidHead(p('salReturns', 'void'), 'sales', draft.id)
     expect((await deliveryItemRow(deliveryItemId)).returned_qty).toBe('10')
     expect(await orderItemShipped(orderItemId)).toBe('90')
   })
@@ -427,9 +432,10 @@ run('PG 集成（销售退货）', () => {
   test('零金额整单跳过总账（科目仍必填）；缺科目草稿保存即拦截', async () => {
     const draft = await returns.createDraft(
       p('salReturns', 'create'),
+      'sales',
       draftInput([{ idx: 1, qty: '2', deliveryItemId: zeroDeliveryItemId }]),
     )
-    const audited = await returns.auditHead(p('salReturns', 'audit'), draft.id)
+    const audited = await returns.auditHead(p('salReturns', 'audit'), 'sales', draft.id)
     expect(audited.status).toBe('AUDITED')
     expect(await glEntries(draft.id)).toHaveLength(0)
     const stock = await stockEntries(draft.id)
@@ -438,11 +444,11 @@ run('PG 集成（销售退货）', () => {
     // 回滚保持账面：零金额行已退 2、已发 8
     expect((await deliveryItemRow(zeroDeliveryItemId)).returned_qty).toBe('2')
     expect(await orderItemShipped(zeroOrderItemId)).toBe('8')
-    await returns.voidHead(p('salReturns', 'void'), draft.id)
+    await returns.voidHead(p('salReturns', 'void'), 'sales', draft.id)
 
     // 贷方科目非未开票应收角色 → 草稿保存即拦截
     const roleError = await returns
-      .createDraft(p('salReturns', 'create'), {
+      .createDraft(p('salReturns', 'create'), 'sales', {
         ...draftInput([{ idx: 1, qty: '1', deliveryItemId }]),
         creditAccountId: debitAccountId,
       })
@@ -478,6 +484,7 @@ run('PG 集成（销售退货）', () => {
     const statusError = await returns
       .createDraft(
         p('salReturns', 'create'),
+        'sales',
         draftInput([{ idx: 1, qty: '1', deliveryItemId: draftDeliveryItemId }]),
       )
       .catch((err: unknown) => err)
@@ -492,7 +499,7 @@ run('PG 集成（销售退货）', () => {
     const input = draftInput([{ idx: 1, qty: '4', deliveryItemId: null }])
     // 手工行：手填物料/价税；头不传原币与汇率 → 服务端按公司本币 + 1 代入
     const { currencyId: _omit, ...headNoCurrency } = input
-    const draft = await returns.createDraft(p('salReturns', 'create'), {
+    const draft = await returns.createDraft(p('salReturns', 'create'), 'sales', {
       ...headNoCurrency,
       items: [
         {
@@ -509,7 +516,7 @@ run('PG 集成（销售退货）', () => {
     expect(draft.currencyId).toBe(currencyId)
     expect(draft.exchangeRate).toBe('1')
     const item = draft.items[0]!
-    expect(item.deliveryItemId).toBe('')
+    expect(item.deliveryItemId).toBeNull()
     expect(item.materialCode).toBe('M' + suffix)
     expect(item.materialName).toBe(prefix + '物料')
     expect(item.unitName).toBe(prefix + '件')
@@ -526,7 +533,7 @@ run('PG 集成（销售退货）', () => {
 
   test('手工行审核：库存回库 + GL 含手工行口径（价×汇率），不动任何订单投影', async () => {
     // 混合行：源单行（行二，余可退 30）退 5 → 5×500/50=50；手工行 4×12.5×汇率 2=100；合计 150
-    const draft = await returns.createDraft(p('salReturns', 'create'), {
+    const draft = await returns.createDraft(p('salReturns', 'create'), 'sales', {
       ...draftInput([]),
       exchangeRate: '2',
       items: [
@@ -545,7 +552,7 @@ run('PG 集成（销售退货）', () => {
     const shippedBefore = await orderItemShipped(orderItem2Id)
     const returnedBefore = (await deliveryItemRow(deliveryItem2Id)).returned_qty
 
-    const audited = await returns.auditHead(p('salReturns', 'audit'), draft.id)
+    const audited = await returns.auditHead(p('salReturns', 'audit'), 'sales', draft.id)
     expect(audited.status).toBe('AUDITED')
 
     // 库存：两行（含手工行）正向回库
@@ -568,7 +575,7 @@ run('PG 集成（销售退货）', () => {
     expect(await orderItemShipped(orderItemId)).toBe('90')
 
     // 作废：手工行只回滚库存/总账，源单行投影还原
-    await returns.voidHead(p('salReturns', 'void'), draft.id)
+    await returns.voidHead(p('salReturns', 'void'), 'sales', draft.id)
     expect(await orderItemShipped(orderItem2Id)).toBe(shippedBefore)
     expect((await deliveryItemRow(deliveryItem2Id)).returned_qty).toBe(returnedBefore)
     const cancelledStock = await stockEntries(draft.id)
@@ -577,7 +584,7 @@ run('PG 集成（销售退货）', () => {
 
   test('混合行一致性：源行发货快照原币与单头原币不一致即拒绝', async () => {
     const err = await returns
-      .createDraft(p('salReturns', 'create'), {
+      .createDraft(p('salReturns', 'create'), 'sales', {
         ...draftInput([]),
         currencyId: currency2Id,
         items: [
@@ -602,7 +609,7 @@ run('PG 集成（销售退货）', () => {
 
   test('手工行校验：缺物料/价/税拒绝；库存类缺行仓拒绝；虚拟物料行仓可空不写库存', async () => {
     const noMaterial = await returns
-      .createDraft(p('salReturns', 'create'), {
+      .createDraft(p('salReturns', 'create'), 'sales', {
         ...draftInput([]),
         items: [
           {
@@ -619,7 +626,7 @@ run('PG 集成（销售退货）', () => {
     expect((noMaterial as ApiError).fields?.['items[0].materialId']).toEqual(['必填'])
 
     const noWarehouse = await returns
-      .createDraft(p('salReturns', 'create'), {
+      .createDraft(p('salReturns', 'create'), 'sales', {
         ...draftInput([]),
         items: [
           {
@@ -639,7 +646,7 @@ run('PG 集成（销售退货）', () => {
     ])
 
     // 虚拟物料：行仓可空，审核不写库存分录但过总账
-    const draft = await returns.createDraft(p('salReturns', 'create'), {
+    const draft = await returns.createDraft(p('salReturns', 'create'), 'sales', {
       ...draftInput([]),
       items: [
         {
@@ -653,21 +660,22 @@ run('PG 集成（销售退货）', () => {
         },
       ],
     })
-    await returns.auditHead(p('salReturns', 'audit'), draft.id)
+    await returns.auditHead(p('salReturns', 'audit'), 'sales', draft.id)
     expect(await stockEntries(draft.id)).toHaveLength(0)
     const gl = await glEntries(draft.id)
     expect(gl).toHaveLength(2)
     expect(Number(gl[0]!.debit)).toBe(60)
-    await returns.voidHead(p('salReturns', 'void'), draft.id)
+    await returns.voidHead(p('salReturns', 'void'), 'sales', draft.id)
   })
 
   test('已有条目时不可修改单头原币', async () => {
     const draft = await returns.createDraft(
       p('salReturns', 'create'),
+      'sales',
       draftInput([{ idx: 1, qty: '1', deliveryItemId }]),
     )
     const err = await returns
-      .replaceDraft(p('salReturns', 'update'), draft.id, {
+      .replaceDraft(p('salReturns', 'update'), 'sales', draft.id, {
         ...draftInput([{ idx: 1, qty: '1', deliveryItemId, id: draft.items[0]!.id }]),
         no: draft.returnNo,
         currencyId: currency2Id,

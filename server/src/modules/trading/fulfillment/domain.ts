@@ -68,11 +68,8 @@ function buildItemSource(side: TradingSide): RawBuilder<unknown> {
       ? `(SELECT o.order_type FROM sal_order_item oi
           JOIN sal_order o ON o.id=oi.order_id WHERE oi.id=i.order_item_id) AS order_type`
       : `NULL::text AS order_type`
-  // 剩余可退投影仅销售侧（returned_qty 仅 sal_delivery_item 有列）
-  const returnableSql =
-    side === 'sales'
-      ? `(i.base_qty - i.returned_qty) AS remaining_returnable_qty,`
-      : ``
+  // 剩余可退投影（双侧 returned_qty 列随退货模块落地）
+  const returnableSql = `(i.base_qty - i.returned_qty) AS remaining_returnable_qty,`
   return sql` FROM (
     SELECT i.*, h.${sql.raw(spec.numberCol)}, h.${sql.raw(spec.dateCol)},
       h.status AS ${sql.raw(statusCol)}, h.party_type, h.party_id,

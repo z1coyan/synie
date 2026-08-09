@@ -65,7 +65,7 @@ import {
 } from './outsourced/routes.ts'
 import { createReturnsService } from './returns/service.ts'
 import { returnHeadMeta, returnItemMeta } from './returns/spec.ts'
-import { salesReturnHeadRoutes, salesReturnItemRoutes } from './returns/routes.ts'
+import { returnHeadRoutes, returnItemRoutes } from './returns/routes.ts'
 import { createReconciliationService } from './reconciliation/service.ts'
 import {
   reconciliationHeadMeta,
@@ -104,8 +104,10 @@ export function registerTradingResources(registry: Registry): void {
   }
   registry.register(packBoxMeta())
   registry.register(packLineMeta())
-  registry.register(returnHeadMeta())
-  registry.register(returnItemMeta())
+  for (const side of ['sales', 'purchase'] as const) {
+    registry.register(returnHeadMeta(side))
+    registry.register(returnItemMeta(side))
+  }
   registry.register(orderMaterialMeta())
   registry.register(orderByproductMeta())
   registry.register(outsourcedIssueMeta())
@@ -166,8 +168,10 @@ export function tradingRouteMounts(deps: {
     salesDeliveryPackLines: packLineRoutes({ auth, authz, fulfillment }),
     purchaseReceipts: purchaseFulfillmentHeadRoutes({ auth, authz, fulfillment }),
     purchaseReceiptItems: purchaseFulfillmentItemRoutes({ auth, authz, fulfillment }),
-    salesReturns: salesReturnHeadRoutes({ auth, authz, returns }),
-    salesReturnItems: salesReturnItemRoutes({ auth, authz, returns }),
+    salesReturns: returnHeadRoutes({ auth, authz, returns, side: 'sales' }),
+    salesReturnItems: returnItemRoutes({ auth, authz, returns, side: 'sales' }),
+    purchaseReturns: returnHeadRoutes({ auth, authz, returns, side: 'purchase' }),
+    purchaseReturnItems: returnItemRoutes({ auth, authz, returns, side: 'purchase' }),
     outsourcedIssues: outsourcedIssueRoutes({ auth, authz, outsourced }),
     outsourcedIssueItems: outsourcedIssueItemRoutes({ auth, authz, outsourced }),
     outsourcedReceipts: outsourcedReceiptRoutes({ auth, authz, outsourced }),

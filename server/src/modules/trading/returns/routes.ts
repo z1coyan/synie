@@ -1,4 +1,4 @@
-/** 销售退货路由：整单草稿三连 + 审核/作废；条目子资源只读（写由整单 PUT 承担）。 */
+/** 退货路由：整单草稿三连 + 审核/作废；条目子资源只读（写由整单 PUT 承担）。销售/采购对称。 */
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -16,8 +16,9 @@ import {
   validationHook,
 } from '~/platform/http/zod.ts'
 import { idParam } from '~/platform/standard/routes.ts'
+import type { TradingSide } from '../common.ts'
 import type { ReturnsService } from './service.ts'
-import { RETURN_HEAD_RESOURCE, RETURN_ITEM_RESOURCE } from './spec.ts'
+import { returnSpec } from './spec.ts'
 
 export interface ReturnsRouteDeps {
   auth: AuthService
@@ -41,8 +42,9 @@ const draftItemSchema = z
     id: z.string().uuid().optional(),
     idx: z.number().int(),
     qty: decimalStringSchema,
-    // 源单行锚点；留空即手工行（手填物料/价税）
+    // 源单行锚点（销售=发货条目 / 采购=入库条目）；留空即手工行（手填物料/价税）
     deliveryItemId: z.string().uuid().nullable().optional(),
+    receiptItemId: z.string().uuid().nullable().optional(),
     materialId: z.string().uuid().nullable().optional(),
     orderPrice: decimalStringSchema.nullable().optional(),
     orderTaxRate: decimalStringSchema.nullable().optional(),
@@ -101,9 +103,10 @@ function toDraftInput(
   }
 }
 
-export function salesReturnHeadRoutes(deps: ReturnsRouteDeps) {
-  const { auth, authz, returns } = deps
-  const headGuard = (action: string) => authz.guard(RETURN_HEAD_RESOURCE, action)
+export function returnHeadRoutes(deps: ReturnsRouteDeps & { side: TradingSide }) {
+  const { auth, authz, returns, side } = deps
+  const RESOURCE = returnSpec(side).headResource
+  const headGuard = (action: string) => authz.guard(RESOURCE, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
@@ -111,7 +114,7 @@ export function salesReturnHeadRoutes(deps: ReturnsRouteDeps) {
       headGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await returns.listHeads(permitOf(c), toListQuery(c.req.valid('json')))
+        const r = await returns.listHeads(permitOf(c), side, toListQuery(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )
@@ -121,7 +124,7 @@ export function salesReturnHeadRoutes(deps: ReturnsRouteDeps) {
       zValidator('json', draftCreateSchema, draftValidationHook(['items'])),
       async (c) =>
         c.json(
-          await returns.createDraft(permitOf(c), toDraftInput(c.req.valid('json'))),
+          await returns.createDraft(permitOf(c), side, toDraftInput(c.req.valid('json'))),
           201,
         ),
     )
@@ -130,23 +133,24 @@ export function salesReturnHeadRoutes(deps: ReturnsRouteDeps) {
       '/:id/draft',
       headGuard('read'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(await returns.getDraft(permitOf(c), c.req.valid('param').id)),
+      async (c) => c.json(await returns.getDraft(permitOf(c), side, c.req.valid('param').id)),
     )
     .get(
       '/:id',
       headGuard('read'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(await returns.getHead(permitOf(c), c.req.valid('param').id)),
+      async (c) => c.json(await returns.getHead(permitOf(c), side, c.req.valid('param').id)),
     )
     .put(
       '/:id',
-      aggregateReplaceGuard(authz, RETURN_HEAD_RESOURCE),
+      aggregateReplaceGuard(authz, RESOURCE),
       zValidator('param', idParam, validationHook),
       zValidator('json', draftReplaceSchema, draftValidationHook(['items'])),
       async (c) =>
         c.json(
           await returns.replaceDraft(
             permitOf(c),
+            side,
             c.req.valid('param').id,
             toDraftInput(c.req.valid('json')),
           ),
@@ -157,7 +161,7 @@ export function salesReturnHeadRoutes(deps: ReturnsRouteDeps) {
       headGuard('delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        await returns.deleteHead(permitOf(c), c.req.valid('param').id)
+        await returns.deleteHead(permitOf(c), side, c.req.valid('param').id)
         return c.body(null, 204)
       },
     )
@@ -165,20 +169,21 @@ export function salesReturnHeadRoutes(deps: ReturnsRouteDeps) {
       '/:id/audit',
       headGuard('audit'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(await returns.auditHead(permitOf(c), c.req.valid('param').id)),
+      async (c) =>
+        c.json(await returns.auditHead(permitOf(c), side, c.req.valid('param').id)),
     )
     .post(
       '/:id/void',
       headGuard('void'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(await returns.voidHead(permitOf(c), c.req.valid('param').id)),
+      async (c) => c.json(await returns.voidHead(permitOf(c), side, c.req.valid('param').id)),
     )
 }
 
-export function salesReturnItemRoutes(deps: ReturnsRouteDeps) {
-  const { auth, authz, returns } = deps
+export function returnItemRoutes(deps: ReturnsRouteDeps & { side: TradingSide }) {
+  const { auth, authz, returns, side } = deps
   // 聚合草稿的子资源只读：写由整单 PUT 承担
-  const itemGuard = (action: string) => authz.guard(RETURN_ITEM_RESOURCE, action)
+  const itemGuard = (action: string) => authz.guard(returnSpec(side).itemResource, action)
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
@@ -186,7 +191,7 @@ export function salesReturnItemRoutes(deps: ReturnsRouteDeps) {
       itemGuard('read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const r = await returns.listItems(permitOf(c), toListQuery(c.req.valid('json')))
+        const r = await returns.listItems(permitOf(c), side, toListQuery(c.req.valid('json')))
         return c.json({ count: r.count, results: r.results })
       },
     )
@@ -194,6 +199,6 @@ export function salesReturnItemRoutes(deps: ReturnsRouteDeps) {
       '/:id',
       itemGuard('read'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(await returns.getItem(permitOf(c), c.req.valid('param').id)),
+      async (c) => c.json(await returns.getItem(permitOf(c), side, c.req.valid('param').id)),
     )
 }

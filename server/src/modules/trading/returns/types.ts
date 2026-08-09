@@ -1,4 +1,4 @@
-/** 销售退货服务公开类型（镜像 fulfillment 销售侧，无装箱子树）。 */
+/** 退货（销售/采购）服务公开类型（镜像 fulfillment，无装箱子树）。 */
 export interface ReturnHead {
   id: string
   no: string
@@ -25,9 +25,10 @@ export interface ReturnDraftItemInput {
   id?: string
   idx: number
   qty: string
-  /** 源单行锚点；留空即手工行（手填物料/价税） */
+  /** 源单行锚点（销售=发货条目 / 采购=入库条目）；留空即手工行（手填物料/价税） */
   deliveryItemId?: string | null
-  /** 手工行必填；源单行由发货快照覆盖 */
+  receiptItemId?: string | null
+  /** 手工行必填；源单行由来源快照覆盖 */
   materialId?: string | null
   /** 原币含税单价：手工行手填；源单行随快照 */
   orderPrice?: string | null
@@ -81,7 +82,10 @@ export interface ReturnItemDto {
   updatedAt: string
   returnId: string
   companyId: string
-  deliveryItemId: string
+  /** 销售侧=发货条目锚点；采购侧恒 null */
+  deliveryItemId: string | null
+  /** 采购侧=入库条目锚点；销售侧恒 null */
+  receiptItemId: string | null
   orderItemId: string | null
   materialId: string | null
   unitId: string | null

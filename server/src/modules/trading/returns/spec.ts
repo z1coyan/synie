@@ -1,20 +1,111 @@
 /**
- * 销售退货 Meta 声明（源单行；手工行为 #57 预留列与可空快照）。
- * 机制镜像 trading/fulfillment 销售侧：无装箱子树，条目来源是发货条目而非订单条目。
- * 采购/委外退货后续票进同目录（pur_return / pur_outsourced_return）。
+ * 退货 Meta 声明与 side 规格（销售退货 / 采购退货对称配置；委外退货后续票进同目录）。
+ * 机制镜像 trading/fulfillment 双侧：无装箱子树，条目来源是履约条目（发货/入库）而非订单条目；
+ * 源单行锚点可空 = 手工行（手填物料/单位/数量/含税单价/税率）。
  */
+import type { TradingSide } from '../common.ts'
 import type { ResourceMeta } from '~/platform/meta/types.ts'
 
-export const RETURN_HEAD_RESOURCE = 'salReturns'
-export const RETURN_ITEM_RESOURCE = 'salReturnItems'
-export const RETURN_HEAD_TABLE = 'sal_return'
-export const RETURN_ITEM_TABLE = 'sal_return_item'
-export const RETURN_VOUCHER_TYPE = 'sales.return'
-export const RETURN_PERMISSION_PREFIX = 'sales.return'
-export const RETURN_HEAD_LABEL = '销售退货单'
-export const RETURN_ITEM_LABEL = '销售退货条目'
-/** 贷方科目强制角色（方向为销售发货反转：借选定科目/贷未开票应收） */
-export const RETURN_REQUIRED_ROLE = 'unbilled_receivable'
+export interface ReturnSideSpec {
+  side: TradingSide
+  label: string
+  itemLabel: string
+  prefix: string
+  headTable: string
+  itemTable: string
+  headResource: string
+  itemResource: string
+  voucherType: string
+  /** 源单（履约）表与列 */
+  sourceHeadTable: string
+  sourceItemTable: string
+  sourceParentCol: string
+  sourceItemResource: string
+  /** 条目上源单锚点 fk 的 apiName（deliveryItemId / receiptItemId） */
+  sourceItemApi: string
+  orderItemTable: string
+  /** 文案用词：源单/源条目 */
+  sourceLabel: string
+  sourceItemLabel: string
+  allowedParty: ReadonlySet<string>
+  /** 强制角色科目所在侧与销售/采购退货的 GL 方向 */
+  requiredRoleSide: 'debit' | 'credit'
+  requiredRole: string
+  /** 审核库存方向：销售退货回库 in / 采购退货出仓 out */
+  stockDirection: 'in' | 'out'
+  numberCol: string
+  dateCol: string
+  parentCol: string
+  numberApi: string
+  dateApi: string
+  parentApi: string
+  statusApi: string
+}
+
+export function returnSpec(side: TradingSide): ReturnSideSpec {
+  if (side === 'sales') {
+    return {
+      side: 'sales',
+      label: '销售退货单',
+      itemLabel: '销售退货条目',
+      prefix: 'sales.return',
+      headTable: 'sal_return',
+      itemTable: 'sal_return_item',
+      headResource: 'salReturns',
+      itemResource: 'salReturnItems',
+      voucherType: 'sales.return',
+      sourceHeadTable: 'sal_delivery',
+      sourceItemTable: 'sal_delivery_item',
+      sourceParentCol: 'delivery_id',
+      sourceItemResource: 'salDeliveryItems',
+      sourceItemApi: 'deliveryItemId',
+      orderItemTable: 'sal_order_item',
+      sourceLabel: '发货单',
+      sourceItemLabel: '发货条目',
+      allowedParty: new Set(['customer', 'company']),
+      requiredRoleSide: 'credit',
+      requiredRole: 'unbilled_receivable',
+      stockDirection: 'in',
+      numberCol: 'return_no',
+      dateCol: 'return_date',
+      parentCol: 'return_id',
+      numberApi: 'returnNo',
+      dateApi: 'returnDate',
+      parentApi: 'returnId',
+      statusApi: 'returnStatus',
+    }
+  }
+  return {
+    side: 'purchase',
+    label: '采购退货单',
+    itemLabel: '采购退货条目',
+    prefix: 'purchase.return',
+    headTable: 'pur_return',
+    itemTable: 'pur_return_item',
+    headResource: 'purReturns',
+    itemResource: 'purReturnItems',
+    voucherType: 'purchase.return',
+    sourceHeadTable: 'pur_receipt',
+    sourceItemTable: 'pur_receipt_item',
+    sourceParentCol: 'receipt_id',
+    sourceItemResource: 'purReceiptItems',
+    sourceItemApi: 'receiptItemId',
+    orderItemTable: 'pur_order_item',
+    sourceLabel: '入库单',
+    sourceItemLabel: '入库条目',
+    allowedParty: new Set(['supplier', 'company']),
+    requiredRoleSide: 'debit',
+    requiredRole: 'unbilled_payable',
+    stockDirection: 'out',
+    numberCol: 'return_no',
+    dateCol: 'return_date',
+    parentCol: 'return_id',
+    numberApi: 'returnNo',
+    dateApi: 'returnDate',
+    parentApi: 'returnId',
+    statusApi: 'returnStatus',
+  }
+}
 
 const PARTY = [
   { value: 'SUPPLIER', label: '供应商' },
@@ -27,10 +118,6 @@ const STATUS = [
   { value: 'AUDITED', label: '已审核' },
   { value: 'VOIDED', label: '已作废' },
 ]
-const PARTY_VARIANTS = [
-  { value: 'COMPANY', resource: 'basCompanies', labelField: 'name', label: '内部公司' },
-  { value: 'CUSTOMER', resource: 'salCustomers', labelField: 'name', label: '客户' },
-]
 
 function f(
   name: string,
@@ -42,35 +129,46 @@ function f(
   return { name, apiName, dbColumn: name, type, label, ...opts }
 }
 
-export function returnHeadMeta(): ResourceMeta {
+export function returnHeadMeta(side: TradingSide): ResourceMeta {
+  const spec = returnSpec(side)
+  const sales = side === 'sales'
+  const variants = sales
+    ? [
+        { value: 'COMPANY', resource: 'basCompanies', labelField: 'name', label: '内部公司' },
+        { value: 'CUSTOMER', resource: 'salCustomers', labelField: 'name', label: '客户' },
+      ]
+    : [
+        { value: 'COMPANY', resource: 'basCompanies', labelField: 'name', label: '内部公司' },
+        { value: 'SUPPLIER', resource: 'purSuppliers', labelField: 'name', label: '供应商' },
+      ]
   return {
-    name: RETURN_HEAD_RESOURCE,
-    // 整单抽屉为 Presentation Extension（镜像 salDeliveries）
+    name: spec.headResource,
+    // 整单抽屉为 Presentation Extension（镜像履约单据）
     classification: { presentation: 'extension', interactive: true },
-    permissionPrefix: RETURN_PERMISSION_PREFIX,
+    permissionPrefix: spec.prefix,
     numbering: true,
-    permissionLabel: RETURN_HEAD_LABEL,
-    table: RETURN_HEAD_TABLE,
+    permissionLabel: spec.label,
+    table: spec.headTable,
     authz: { kind: 'company' },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('return_no', 'returnNo', 'string', '退货单号', {
         readonly: true, filterable: true, sortable: true,
       }),
-      f('return_date', 'returnDate', 'date', '退货日期(库存分录业务日)', {
+      f('return_date', 'returnDate', 'date', sales ? '退货日期(库存分录业务日)' : '退货日期(库存分录业务日)', {
         required: true, filterable: true, sortable: true,
       }),
       f('posting_date', 'postingDate', 'date', '过账日期(总账;有金额审核时必填)', {
         filterable: true, sortable: true,
       }),
-      f('party_type', 'partyType', 'enum', '对手类型(客户/内部公司)', {
+      f('party_type', 'partyType', 'enum', sales ? '对手类型(客户/内部公司)' : '对手类型(供应商/内部公司)', {
         required: true, enumOptions: PARTY, filterable: true, sortable: true,
       }),
       f('party_id', 'partyId', 'fk', '对手', {
         required: true, filterable: true,
-        ref: { resource: null, relation: null, labelField: null, discriminator: 'partyType', discriminatorType: 'enum', variants: PARTY_VARIANTS },
+        ref: { resource: null, relation: null, labelField: null, discriminator: 'partyType', discriminatorType: 'enum', variants },
       }),
-      // 原币与汇率：本票源单行按订单快照币种校验一致；为 #57 手工行预留全单换算口径
+      // 原币与汇率：源单行按订单快照币种校验一致；手工行按本头汇率折本币
       f('currency_id', 'currencyId', 'fk', '原币(源单行须与订单快照币种一致)', {
         filterable: true,
         ref: { resource: 'basCurrencies', relation: 'currency', labelField: 'name' },
@@ -93,11 +191,11 @@ export function returnHeadMeta(): ResourceMeta {
         filterable: true,
         ref: { resource: 'invWarehouses', relation: 'warehouse', labelField: 'name' },
       }),
-      f('debit_account_id', 'debitAccountId', 'fk', '借方科目(自选;草稿必填)', {
+      f('debit_account_id', 'debitAccountId', 'fk', sales ? '借方科目(自选;草稿必填)' : '借方科目(未开票应付;草稿必填)', {
         required: true, filterable: true,
         ref: { resource: 'basAccounts', relation: 'debitAccount', labelField: 'name' },
       }),
-      f('credit_account_id', 'creditAccountId', 'fk', '贷方科目(未开票应收;草稿必填)', {
+      f('credit_account_id', 'creditAccountId', 'fk', sales ? '贷方科目(未开票应收;草稿必填)' : '贷方科目(自选;草稿必填)', {
         required: true, filterable: true,
         ref: { resource: 'basAccounts', relation: 'creditAccount', labelField: 'name' },
       }),
@@ -125,22 +223,33 @@ export function returnHeadMeta(): ResourceMeta {
   }
 }
 
-export function returnItemMeta(): ResourceMeta {
+export function returnItemMeta(side: TradingSide): ResourceMeta {
+  const spec = returnSpec(side)
+  const sales = side === 'sales'
+  const variants = sales
+    ? [
+        { value: 'COMPANY', resource: 'basCompanies', labelField: 'name', label: '内部公司' },
+        { value: 'CUSTOMER', resource: 'salCustomers', labelField: 'name', label: '客户' },
+      ]
+    : [
+        { value: 'COMPANY', resource: 'basCompanies', labelField: 'name', label: '内部公司' },
+        { value: 'SUPPLIER', resource: 'purSuppliers', labelField: 'name', label: '供应商' },
+      ]
   return {
-    name: RETURN_ITEM_RESOURCE,
+    name: spec.itemResource,
     classification: { presentation: 'none', interactive: false },
     /** 行图纸快照只读展示宿主：保存时从物料复制挂接，删行/删单清理（ownerType=表名） */
     attachments: {},
-    permissionPrefix: RETURN_PERMISSION_PREFIX,
-    permissionLabel: RETURN_HEAD_LABEL,
-    table: RETURN_ITEM_TABLE,
-    authz: { kind: 'via', parent: RETURN_HEAD_RESOURCE, fk: 'return_id' },
+    permissionPrefix: spec.prefix,
+    permissionLabel: spec.label,
+    table: spec.itemTable,
+    authz: { kind: 'via', parent: spec.headResource, fk: 'return_id' },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('idx', 'idx', 'integer', '行号', { required: true, filterable: true, sortable: true }),
       f('qty', 'qty', 'decimal', '录入数量', { required: true, filterable: true, sortable: true }),
       f('base_qty', 'baseQty', 'decimal', '折算数量(物料默认单位,6 位)', { readonly: true, filterable: true, sortable: true }),
-      // 快照列：源单行随发货条目带入；为手工行（#57）预留可空
+      // 快照列：源单行随履约条目带入；手工行随物料/手填带入
       f('material_code', 'materialCode', 'string', '物料编号', { readonly: true, nullable: true, filterable: true, sortable: true }),
       f('material_name', 'materialName', 'string', '物料名称', { readonly: true, nullable: true, filterable: true, sortable: true }),
       f('material_spec', 'materialSpec', 'string', '规格', { readonly: true, nullable: true, filterable: true, sortable: true }),
@@ -150,36 +259,42 @@ export function returnItemMeta(): ResourceMeta {
       f('order_qty', 'orderQty', 'decimal', '订购数量(订单行单位)', { readonly: true, nullable: true, filterable: true, sortable: true }),
       f('order_base_qty', 'orderBaseQty', 'decimal', '订购数量(默认单位)', { readonly: true, nullable: true, filterable: true, sortable: true }),
       f('order_unit_name', 'orderUnitName', 'string', '订单行单位名称', { readonly: true, nullable: true, filterable: true, sortable: true }),
-      // 含税单价/税率：源单行随发货快照带入(保存时覆盖)；手工行手填(wire 可写)
+      // 含税单价/税率：源单行随履约快照带入(保存时覆盖)；手工行手填(wire 可写)
       f('order_price', 'orderPrice', 'decimal', '原币含税单价(手工行手填)', { nullable: true, filterable: true, sortable: true }),
       f('order_amount', 'orderAmount', 'decimal', '原币含税金额', { readonly: true, nullable: true, filterable: true, sortable: true }),
       f('order_base_price', 'orderBasePrice', 'decimal', '本币含税单价', { readonly: true, nullable: true, filterable: true, sortable: true }),
       f('order_base_amount', 'orderBaseAmount', 'decimal', '本币含税金额', { readonly: true, nullable: true, filterable: true, sortable: true }),
       f('order_tax_rate', 'orderTaxRate', 'decimal', '税率(手工行手填)', { nullable: true, filterable: true, sortable: true }),
       f('order_currency_code', 'orderCurrencyCode', 'string', '订单原币代码', { readonly: true, nullable: true, filterable: true, sortable: true }),
-      f('reconciled_qty', 'reconciledQty', 'decimal', '已对账数量(默认单位;由销售对账单生效/回退同步)', {
+      f('reconciled_qty', 'reconciledQty', 'decimal', sales ? '已对账数量(默认单位;由销售对账单生效/回退同步)' : '已对账数量(默认单位;由采购对账单生效/回退同步)', {
         readonly: true, filterable: true, sortable: true,
       }),
       f('remarks', 'remarks', 'string', '行备注', { filterable: true, sortable: true }),
       f('inserted_at', 'insertedAt', 'datetime', '创建时间', { readonly: true, filterable: true, sortable: true }),
       f('updated_at', 'updatedAt', 'datetime', '更新时间', { readonly: true, filterable: true, sortable: true }),
-      f('return_id', 'returnId', 'fk', '销售退货单', {
+      f('return_id', 'returnId', 'fk', spec.label, {
         required: true, createOnly: true, filterable: true,
-        ref: { resource: RETURN_HEAD_RESOURCE, relation: 'return', labelField: 'returnNo' },
+        ref: { resource: spec.headResource, relation: 'return', labelField: 'returnNo' },
       }),
       f('company_id', 'companyId', 'fk', '公司', {
         readonly: true, filterable: true,
         ref: { resource: 'basCompanies', relation: 'company', labelField: 'name' },
       }),
-      f('delivery_item_id', 'deliveryItemId', 'fk', '发货条目(源单行锚点;手工行留空)', {
-        nullable: true, filterable: true,
-        ref: { resource: 'salDeliveryItems', relation: 'deliveryItem', labelField: 'materialCode' },
-      }),
-      f('order_item_id', 'orderItemId', 'fk', '订单条目(随发货条目带入)', {
+      f(
+        sales ? 'delivery_item_id' : 'receipt_item_id',
+        sales ? 'deliveryItemId' : 'receiptItemId',
+        'fk',
+        `${spec.sourceItemLabel}(源单行锚点;手工行留空)`,
+        {
+          nullable: true, filterable: true,
+          ref: { resource: spec.sourceItemResource, relation: 'sourceItem', labelField: 'materialCode' },
+        },
+      ),
+      f('order_item_id', 'orderItemId', 'fk', '订单条目(随来源条目带入)', {
         readonly: true, nullable: true, filterable: true,
-        ref: { resource: 'salOrderItems', relation: 'orderItem', labelField: 'materialCode' },
+        ref: { resource: sales ? 'salOrderItems' : 'purOrderItems', relation: 'orderItem', labelField: 'materialCode' },
       }),
-      // 物料：手工行手填(wire 可写)；源单行随发货条目带入(保存时覆盖)
+      // 物料：手工行手填(wire 可写)；源单行随来源条目带入(保存时覆盖)
       f('material_id', 'materialId', 'fk', '物料(手工行必填)', {
         nullable: true, filterable: true,
         ref: { resource: 'invMaterials', relation: 'material', labelField: 'name' },
@@ -188,7 +303,7 @@ export function returnItemMeta(): ResourceMeta {
         filterable: true,
         ref: { resource: 'basUnits', relation: 'unit', labelField: 'name' },
       }),
-      f('warehouse_id', 'warehouseId', 'fk', '退货入仓', {
+      f('warehouse_id', 'warehouseId', 'fk', sales ? '退货入仓' : '退货出仓', {
         filterable: true,
         ref: { resource: 'invWarehouses', relation: 'warehouse', labelField: 'name' },
       }),
@@ -201,12 +316,12 @@ export function returnItemMeta(): ResourceMeta {
       f('return_status', 'returnStatus', 'enum', '退货单状态', {
         readonly: true, calculated: true, enumOptions: STATUS, filterable: true, sortable: true,
       }),
-      f('party_type', 'partyType', 'enum', '对手类型(客户/内部公司)', {
+      f('party_type', 'partyType', 'enum', sales ? '对手类型(客户/内部公司)' : '对手类型(供应商/内部公司)', {
         readonly: true, calculated: true, enumOptions: PARTY, filterable: true, sortable: true,
       }),
       f('party_id', 'partyId', 'fk', '对手', {
         readonly: true, filterable: true, printRawId: true,
-        ref: { resource: null, relation: null, labelField: null, discriminator: 'partyType', discriminatorType: 'enum', variants: PARTY_VARIANTS },
+        ref: { resource: null, relation: null, labelField: null, discriminator: 'partyType', discriminatorType: 'enum', variants },
       }),
       f('remaining_reconcilable_qty', 'remainingReconcilableQty', 'decimal', '剩余可对账量(默认单位)', {
         readonly: true, calculated: true, filterable: true, sortable: true,

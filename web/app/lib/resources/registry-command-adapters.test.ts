@@ -22,6 +22,7 @@ const EXPECTED_COMMANDS = {
   purQuotations: { audit: 'row', void: 'row' },
   purReceipts: { audit: 'row', void: 'row' },
   purReconciliations: { confirm: 'row', unconfirm: 'row', audit: 'row', void: 'row' },
+  purReturns: { audit: 'row', void: 'row' },
   salDeliveries: { audit: 'row', void: 'row' },
   salOrders: { audit: 'row', close: 'row', void: 'row' },
   salQuotations: { audit: 'row', void: 'row' },
@@ -32,7 +33,7 @@ const EXPECTED_COMMANDS = {
 } as const
 
 describe('ResourceBinding 语义 CommandAdapter 覆盖', () => {
-  test('声明命令的 26 个资源均由显式 key/target adapter 覆盖', () => {
+  test('声明命令的 27 个资源均由显式 key/target adapter 覆盖', () => {
     let commandCount = 0
     for (const [resource, expected] of Object.entries(EXPECTED_COMMANDS)) {
       const commands = resourceBindingFor(resource).commands?.commands
@@ -43,7 +44,7 @@ describe('ResourceBinding 语义 CommandAdapter 覆盖', () => {
       expect(actual, resource).toEqual(expected)
       commandCount += Object.keys(actual).length
     }
-    expect(commandCount).toBe(57)
+    expect(commandCount).toBe(59)
   })
 
   test('未声明命令的资源不获得 Proxy/action fallback', () => {

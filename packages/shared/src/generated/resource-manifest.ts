@@ -1657,7 +1657,9 @@ export const RESOURCE_MANIFEST: ResourceManifest = {
         "orderBaseAmount",
         "orderTaxRate",
         "reconciledQty",
-        "remainingReconcilableQty"
+        "returnedQty",
+        "remainingReconcilableQty",
+        "remainingReturnableQty"
       ],
       "date": [
         "insertedAt",
@@ -1732,6 +1734,68 @@ export const RESOURCE_MANIFEST: ResourceManifest = {
       ],
       "date": [
         "postingDate",
+        "insertedAt",
+        "updatedAt"
+      ],
+      "decimalZero": []
+    }
+  },
+  "purReturnItems": {
+    "label": "采购退货单",
+    "lookup": {
+      "labelField": "materialCode",
+      "searchFields": [
+        "materialCode",
+        "materialName",
+        "materialSpec",
+        "customerPartNo",
+        "unitName",
+        "orderNo",
+        "orderUnitName",
+        "orderCurrencyCode",
+        "remarks",
+        "returnNo"
+      ]
+    },
+    "wire": {
+      "decimal": [
+        "qty",
+        "baseQty",
+        "orderQty",
+        "orderBaseQty",
+        "orderPrice",
+        "orderAmount",
+        "orderBasePrice",
+        "orderBaseAmount",
+        "orderTaxRate",
+        "reconciledQty",
+        "remainingReconcilableQty"
+      ],
+      "date": [
+        "insertedAt",
+        "updatedAt",
+        "returnDate"
+      ],
+      "decimalZero": []
+    }
+  },
+  "purReturns": {
+    "label": "采购退货单",
+    "lookup": {
+      "labelField": "returnNo",
+      "searchFields": [
+        "returnNo",
+        "remarks"
+      ]
+    },
+    "wire": {
+      "decimal": [
+        "exchangeRate"
+      ],
+      "date": [
+        "returnDate",
+        "postingDate",
+        "auditedAt",
         "insertedAt",
         "updatedAt"
       ],

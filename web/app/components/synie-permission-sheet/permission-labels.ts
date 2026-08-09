@@ -35,6 +35,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'purchase.quotation': '采购报价单',
   'purchase.order': '采购订单',
   'purchase.receipt': '采购入库单',
+  'purchase.return': '采购退货单',
   'purchase.outsourced_issue': '委外发料单',
   'purchase.outsourced_receipt': '委外入库单',
   'purchase.reconciliation': '采购对账单',

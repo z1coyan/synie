@@ -32,7 +32,7 @@ describe('authz 声明覆盖', () => {
   test('形态分布快照（防止归类漂移；新增资源需有意识更新本断言）', () => {
     const counts = { company: 0, global: 0, via: 0 }
     for (const meta of all) counts[meta.authz!.kind] += 1
-    expect(counts).toEqual({ company: 35, global: 35, via: 37 })
+    expect(counts).toEqual({ company: 36, global: 35, via: 38 })
     expect(counts.company + counts.global + counts.via).toBe(all.length)
   })
 

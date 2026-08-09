@@ -172,3 +172,114 @@ export const salesReturnItemClient = restTransport(
   api.sales['return-items'],
   { capabilities: { create: false, update: false, delete: false } },
 )
+
+// ── 采购退货（镜像销售退货反转：出仓 + 借未开票应付/贷选定科目） ──
+
+export async function auditPurchaseReturn(
+  id: string,
+  _input?: ReturnAuditRequest,
+) {
+  return apiData(api.purchase.returns[':id'].audit.$post({ param: { id } }))
+}
+
+export async function voidPurchaseReturn(id: string) {
+  return apiData(api.purchase.returns[':id'].void.$post({ param: { id } }))
+}
+
+export const purchaseReturnCommandAdapter = createRowCommandAdapter({
+  audit: {
+    handler: auditPurchaseReturn,
+    affectedResources: [
+      'purReturnItems',
+      'purReceiptItems',
+      'purOrderItems',
+      'invStockEntries',
+      'accGlEntries',
+    ],
+  },
+  void: {
+    handler: voidPurchaseReturn,
+    affectedResources: [
+      'purReturnItems',
+      'purReceiptItems',
+      'purOrderItems',
+      'invStockEntries',
+      'accGlEntries',
+    ],
+  },
+})
+
+export interface PurchaseReturnDraftItemInput {
+  id?: string
+  idx: number
+  qty: string
+  /** 源单行锚点：已审核未作废且剩余可退 > 0 的入库条目；留空即手工行 */
+  receiptItemId?: string | null
+  /** 手工行必填(物料)；源单行由入库快照覆盖 */
+  materialId?: string | null
+  /** 原币含税单价：手工行手填；源单行随快照 */
+  orderPrice?: string | null
+  /** 税率：手工行手填；源单行随快照 */
+  orderTaxRate?: string | null
+  unitId?: string | null
+  /** 行仓:库存类物料必填(后端校验),虚拟行可空 */
+  warehouseId: string | null
+  remarks?: string | null
+}
+
+export interface PurchaseReturnDraftInput {
+  companyId: string
+  returnNo?: string | null
+  returnDate?: string | null
+  postingDate?: string | null
+  partyType: string
+  partyId: string
+  currencyId?: string | null
+  exchangeRate?: string | null
+  remarks?: string | null
+  warehouseId?: string | null
+  debitAccountId: string
+  creditAccountId: string
+  /** 完整快照字段；省略与显式清空语义不同，因此不可选。 */
+  items: PurchaseReturnDraftItemInput[]
+}
+
+/** 权威 SavedDraft：表头 + 全部 items */
+export type PurchaseReturnSavedDraft = Row & {
+  items: Row[]
+}
+
+/**
+ * Aggregate Draft → wire 的唯一转换入口。
+ * 集合字段 fail-closed：缺失、null 或非数组不能被解释为“清空全部子项”。
+ */
+export function purchaseReturnDraftInput(
+  input: PurchaseReturnDraftInput,
+): PurchaseReturnDraftInput {
+  const record = draftRecord(input, '根对象')
+  const items = draftArray(record, 'items', 'items').map((item, itemIndex) =>
+    decimalWireInput(
+      draftRecord(item, `items[${itemIndex}]`),
+      ['qty'],
+    ) as unknown as PurchaseReturnDraftItemInput,
+  )
+  return { ...input, items }
+}
+
+/** production：标准草稿三连 + 领域 wire。 */
+export const purchaseReturnDraftAdapter = aggregateDraftTransport<
+  PurchaseReturnDraftInput,
+  PurchaseReturnSavedDraft
+>(api.purchase.returns, { wire: purchaseReturnDraftInput })
+
+export const purchaseReturnClient = restTransport(
+  'purReturns',
+  api.purchase.returns,
+  { capabilities: { create: false, update: false } },
+)
+
+export const purchaseReturnItemClient = restTransport(
+  'purReturnItems',
+  api.purchase['return-items'],
+  { capabilities: { create: false, update: false, delete: false } },
+)
