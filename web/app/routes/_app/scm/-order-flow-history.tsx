@@ -7,6 +7,9 @@ import { resourceBindingFor } from '~/lib/resources/registry'
 const FLOW_LABELS: Record<string, string> = {
   'purchase.receipt': '采购入库',
   'sales.delivery': '销售发货',
+  'sales.return': '销售退货',
+  'purchase.return': '采购退货',
+  'purchase.outsourced_return': '委外退货',
 }
 
 const STATUS_LABELS: Record<string, string> = {

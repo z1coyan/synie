@@ -5,6 +5,9 @@ export const ORDER_FLOW_SOURCE_READ_PERMISSIONS = [
   'purchase.outsourced_issue:read',
   'purchase.outsourced_receipt:read',
   'sales.delivery:read',
+  'sales.return:read',
+  'purchase.return:read',
+  'purchase.outsourced_return:read',
 ] as const
 
 const FLOW_TYPES = [
@@ -12,6 +15,9 @@ const FLOW_TYPES = [
   { value: 'OUTSOURCED_ISSUE', label: '委外发料' },
   { value: 'OUTSOURCED_RECEIPT', label: '委外入库' },
   { value: 'SALES_DELIVERY', label: '销售发货' },
+  { value: 'SALES_RETURN', label: '销售退货' },
+  { value: 'PURCHASE_RETURN', label: '采购退货' },
+  { value: 'OUTSOURCED_RETURN', label: '委外退货' },
 ]
 
 const STATUS = [

@@ -39,6 +39,9 @@ const FLOW_PREFIXES = new Set([
   'outsourced_issue',
   'outsourced_receipt',
   'sales_delivery',
+  'sales_return',
+  'purchase_return',
+  'outsourced_return',
 ])
 
 const UUID_RE =

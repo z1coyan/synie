@@ -560,15 +560,26 @@ export async function loadOrderHistory(
   }>
 }> {
   if (side === 'sales') {
+    // 发货 + 销售退货同池（退货数量正数展示、类型名自明方向；ADR 2026-07-25 预留扩展点）
     const rows = await sql<Record<string, unknown>>`
-      SELECT 'sales.delivery' AS flow_type, d.delivery_no AS document_no, d.delivery_date AS document_date,
-        d.status, di.company_id, oi.order_id, di.order_item_id, di.material_code, di.material_name,
-        di.material_spec, di.customer_part_no, di.unit_name, di.qty AS quantity
-      FROM sal_delivery_item di
-      JOIN sal_delivery d ON d.id=di.delivery_id
-      JOIN sal_order_item oi ON oi.id=di.order_item_id
-      WHERE oi.order_id=${orderId}::uuid
-      ORDER BY d.delivery_date DESC, di.idx, di.id
+      SELECT * FROM (
+        SELECT 'sales.delivery' AS flow_type, d.delivery_no AS document_no, d.delivery_date AS document_date,
+          d.status, di.company_id, oi.order_id, di.order_item_id, di.material_code, di.material_name,
+          di.material_spec, di.customer_part_no, di.unit_name, di.qty AS quantity, di.idx, di.id
+        FROM sal_delivery_item di
+        JOIN sal_delivery d ON d.id=di.delivery_id
+        JOIN sal_order_item oi ON oi.id=di.order_item_id
+        WHERE oi.order_id=${orderId}::uuid
+        UNION ALL
+        SELECT 'sales.return' AS flow_type, h.return_no AS document_no, h.return_date AS document_date,
+          h.status, i.company_id, oi.order_id, i.order_item_id, i.material_code, i.material_name,
+          i.material_spec, i.customer_part_no, i.unit_name, i.qty AS quantity, i.idx, i.id
+        FROM sal_return_item i
+        JOIN sal_return h ON h.id=i.return_id
+        JOIN sal_order_item oi ON oi.id=i.order_item_id
+        WHERE oi.order_id=${orderId}::uuid
+      ) flows
+      ORDER BY flows.document_date DESC, flows.idx, flows.id
     `.execute(db)
     return {
       results: rows.rows.map((r) => ({
@@ -588,15 +599,35 @@ export async function loadOrderHistory(
       })),
     }
   }
+  // 入库 + 采购退货 + 委外退货同池（保留既有臂，仅追加两类退货；
+  // 数量正数展示、类型名自明方向；ADR 2026-07-25 预留扩展点）
   const rows = await sql<Record<string, unknown>>`
-    SELECT 'purchase.receipt' AS flow_type, d.receipt_no AS document_no, d.receipt_date AS document_date,
-      d.status, di.company_id, oi.order_id, di.order_item_id, di.material_code, di.material_name,
-      di.material_spec, di.customer_part_no, di.unit_name, di.qty AS quantity
-    FROM pur_receipt_item di
-    JOIN pur_receipt d ON d.id=di.receipt_id
-    JOIN pur_order_item oi ON oi.id=di.order_item_id
-    WHERE oi.order_id=${orderId}::uuid
-    ORDER BY d.receipt_date DESC, di.idx, di.id
+    SELECT * FROM (
+      SELECT 'purchase.receipt' AS flow_type, d.receipt_no AS document_no, d.receipt_date AS document_date,
+        d.status, di.company_id, oi.order_id, di.order_item_id, di.material_code, di.material_name,
+        di.material_spec, di.customer_part_no, di.unit_name, di.qty AS quantity, di.idx, di.id
+      FROM pur_receipt_item di
+      JOIN pur_receipt d ON d.id=di.receipt_id
+      JOIN pur_order_item oi ON oi.id=di.order_item_id
+      WHERE oi.order_id=${orderId}::uuid
+      UNION ALL
+      SELECT 'purchase.return' AS flow_type, h.return_no AS document_no, h.return_date AS document_date,
+        h.status, i.company_id, oi.order_id, i.order_item_id, i.material_code, i.material_name,
+        i.material_spec, i.customer_part_no, i.unit_name, i.qty AS quantity, i.idx, i.id
+      FROM pur_return_item i
+      JOIN pur_return h ON h.id=i.return_id
+      JOIN pur_order_item oi ON oi.id=i.order_item_id
+      WHERE oi.order_id=${orderId}::uuid
+      UNION ALL
+      SELECT 'purchase.outsourced_return' AS flow_type, h.return_no AS document_no, h.return_date AS document_date,
+        h.status, i.company_id, oi.order_id, i.order_item_id, i.material_code, i.material_name,
+        i.material_spec, i.customer_part_no, i.unit_name, i.qty AS quantity, i.idx, i.id
+      FROM pur_outsourced_return_item i
+      JOIN pur_outsourced_return h ON h.id=i.return_id
+      JOIN pur_order_item oi ON oi.id=i.order_item_id
+      WHERE oi.order_id=${orderId}::uuid
+    ) flows
+    ORDER BY flows.document_date DESC, flows.idx, flows.id
   `.execute(db)
   return {
     results: rows.rows.map((r) => ({

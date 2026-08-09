@@ -17,6 +17,7 @@ import { testActor } from '~/platform/authz/testing.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { onError } from '~/platform/http/errors.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+import { loadOrderHistory } from '~/modules/trading/order/domain.ts'
 import { ORDER_FLOW_SOURCE_READ_PERMISSIONS } from './meta.ts'
 import { orderFlowRoutes } from './routes.ts'
 import { createOrderFlowService, FLOW_RESOURCE } from './service.ts'
@@ -50,10 +51,21 @@ run('PG 集成（订单收发货历史投影）', () => {
   const otherOrderItemId = crypto.randomUUID()
   const otherDeliveryId = crypto.randomUUID()
   const otherDeliveryItemId = crypto.randomUUID()
+  // 退货三类夹具
+  const supplierId = crypto.randomUUID()
+  const salesReturnId = crypto.randomUUID()
+  const salesReturnItemId = crypto.randomUUID()
+  const purOrderId = crypto.randomUUID()
+  const purOrderItemId = crypto.randomUUID()
+  const purReturnId = crypto.randomUUID()
+  const purReturnItemId = crypto.randomUUID()
+  const outsourcedReturnId = crypto.randomUUID()
+  const outsourcedReturnItemId = crypto.randomUUID()
 
   /** 视图主键是「单据类型:uuid」文本 */
   const flowId = `sales_delivery:${deliveryItemId}`
   const otherFlowId = `sales_delivery:${otherDeliveryItemId}`
+  const salesReturnFlowId = `sales_return:${salesReturnItemId}`
 
   function scopedActor(companyIds: string[], permissions: string[]): Actor {
     return testActor({
@@ -203,13 +215,100 @@ run('PG 集成（订单收发货历史投影）', () => {
       deliveryItem: otherDeliveryItemId,
       tag: 'B',
     })
+
+    // 退货三类：销售退货（挂 A 司销售订单条目）/采购退货/委外退货（挂 A 司采购订单条目）
+    await sql`
+      INSERT INTO pur_supplier(id,code,name,short_name)
+      VALUES (${supplierId}::uuid, ${`FS${suffix}`}, ${`流水供应商${suffix}`}, 'FS')
+    `.execute(db)
+    await sql`
+      INSERT INTO sal_return(id,return_no,return_date,party_type,party_id,status,company_id,
+        warehouse_id,debit_account_id,credit_account_id)
+      VALUES (${salesReturnId}::uuid,${`ST${suffix}`},CURRENT_DATE,'customer',
+        ${customerId}::uuid,'audited',${companyId}::uuid,${warehouseId}::uuid,
+        ${debitId}::uuid,${creditId}::uuid)
+    `.execute(db)
+    await sql`
+      INSERT INTO sal_return_item(
+        id,idx,qty,base_qty,material_code,material_name,unit_name,order_no,
+        order_qty,order_base_qty,order_unit_name,order_price,order_amount,
+        order_base_price,order_base_amount,order_tax_rate,order_currency_code,
+        return_id,company_id,delivery_item_id,order_item_id,material_id,unit_id,warehouse_id
+      ) VALUES (
+        ${salesReturnItemId}::uuid,1,2,2,${`M${suffix}`},${`料${suffix}`},${`件${suffix}`},
+        ${`SOA${suffix}`},10,10,${`件${suffix}`},10,20,10,20,0,${`F${suffix.slice(0, 2)}`},
+        ${salesReturnId}::uuid,${companyId}::uuid,${deliveryItemId}::uuid,${orderItemId}::uuid,
+        ${materialId}::uuid,${unitId}::uuid,${warehouseId}::uuid
+      )
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_order(id,order_no,order_date,party_type,party_id,status,company_id,
+        exchange_rate,currency_id,is_outsourced)
+      VALUES (${purOrderId}::uuid, ${`PO${suffix}`}, CURRENT_DATE, 'supplier',
+        ${supplierId}::uuid, 'audited', ${companyId}::uuid, 1, ${currencyId}::uuid, false)
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_order_item(
+        id,idx,qty,price,amount,order_id,company_id,material_id,unit_id,
+        material_code,material_name,unit_name,base_qty
+      ) VALUES (
+        ${purOrderItemId}::uuid,1,10,8,80,${purOrderId}::uuid,${companyId}::uuid,
+        ${materialId}::uuid,${unitId}::uuid,${`M${suffix}`},${`料${suffix}`},${`件${suffix}`},10
+      )
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_return(id,return_no,return_date,party_type,party_id,status,company_id,
+        warehouse_id,debit_account_id,credit_account_id)
+      VALUES (${purReturnId}::uuid,${`PT${suffix}`},CURRENT_DATE,'supplier',
+        ${supplierId}::uuid,'audited',${companyId}::uuid,${warehouseId}::uuid,
+        ${debitId}::uuid,${creditId}::uuid)
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_return_item(
+        id,idx,qty,base_qty,material_code,material_name,unit_name,order_no,
+        order_qty,order_base_qty,order_unit_name,order_price,order_amount,
+        order_base_price,order_base_amount,order_tax_rate,order_currency_code,
+        return_id,company_id,order_item_id,material_id,unit_id,warehouse_id
+      ) VALUES (
+        ${purReturnItemId}::uuid,1,3,3,${`M${suffix}`},${`料${suffix}`},${`件${suffix}`},
+        ${`PO${suffix}`},10,10,${`件${suffix}`},8,24,8,24,0,${`F${suffix.slice(0, 2)}`},
+        ${purReturnId}::uuid,${companyId}::uuid,${purOrderItemId}::uuid,
+        ${materialId}::uuid,${unitId}::uuid,${warehouseId}::uuid
+      )
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_outsourced_return(id,return_no,return_date,party_type,party_id,status,company_id,
+        warehouse_id)
+      VALUES (${outsourcedReturnId}::uuid,${`OT${suffix}`},CURRENT_DATE,'supplier',
+        ${supplierId}::uuid,'audited',${companyId}::uuid,${warehouseId}::uuid)
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_outsourced_return_item(
+        id,idx,qty,base_qty,material_code,material_name,unit_name,order_no,
+        order_qty,order_base_qty,order_unit_name,
+        return_id,company_id,order_item_id,material_id,unit_id,warehouse_id
+      ) VALUES (
+        ${outsourcedReturnItemId}::uuid,1,4,4,${`M${suffix}`},${`料${suffix}`},${`件${suffix}`},
+        ${`PO${suffix}`},10,10,${`件${suffix}`},
+        ${outsourcedReturnId}::uuid,${companyId}::uuid,${purOrderItemId}::uuid,
+        ${materialId}::uuid,${unitId}::uuid,${warehouseId}::uuid
+      )
+    `.execute(db)
   })
 
   afterAll(async () => {
     // 单据先删（两司共用 A 司科目，账户必须在全部单据之后删）
     for (const id of [companyId, otherCompanyId]) {
+      await sql`DELETE FROM sal_return_item WHERE company_id=${id}::uuid`.execute(db)
+      await sql`DELETE FROM sal_return WHERE company_id=${id}::uuid`.execute(db)
+      await sql`DELETE FROM pur_return_item WHERE company_id=${id}::uuid`.execute(db)
+      await sql`DELETE FROM pur_return WHERE company_id=${id}::uuid`.execute(db)
+      await sql`DELETE FROM pur_outsourced_return_item WHERE company_id=${id}::uuid`.execute(db)
+      await sql`DELETE FROM pur_outsourced_return WHERE company_id=${id}::uuid`.execute(db)
       await sql`DELETE FROM sal_delivery_item WHERE company_id=${id}::uuid`.execute(db)
       await sql`DELETE FROM sal_delivery WHERE company_id=${id}::uuid`.execute(db)
+      await sql`DELETE FROM pur_order_item WHERE company_id=${id}::uuid`.execute(db)
+      await sql`DELETE FROM pur_order WHERE company_id=${id}::uuid`.execute(db)
       await sql`DELETE FROM sal_order_item WHERE company_id=${id}::uuid`.execute(db)
       await sql`DELETE FROM sal_order WHERE company_id=${id}::uuid`.execute(db)
     }
@@ -221,6 +320,7 @@ run('PG 集成（订单收发货历史投影）', () => {
     await sql`DELETE FROM inv_material_category WHERE id=${categoryId}::uuid`.execute(db)
     await sql`DELETE FROM bas_unit WHERE id=${unitId}::uuid`.execute(db)
     await sql`DELETE FROM sal_customers WHERE id=${customerId}::uuid`.execute(db)
+    await sql`DELETE FROM pur_supplier WHERE id=${supplierId}::uuid`.execute(db)
     await sql`DELETE FROM bas_company WHERE id IN (${companyId}::uuid, ${otherCompanyId}::uuid)`.execute(
       db,
     )
@@ -295,7 +395,8 @@ run('PG 集成（订单收发货历史投影）', () => {
       offset: 0,
       filter: { orderId: { kind: 'fk', op: 'in', values: [orderId] } } as never,
     })
-    expect(anchored.results.map((r) => r.id)).toEqual([flowId])
+    // 发货 + 销售退货同池（同日期按 id 字典序：sales_delivery < sales_return）
+    expect(anchored.results.map((r) => r.id)).toEqual([flowId, salesReturnFlowId])
     const otherAnchored = await orderFlow.list(permitFor(scoped), {
       limit: 50,
       offset: 0,
@@ -318,5 +419,69 @@ run('PG 集成（订单收发货历史投影）', () => {
     await expect(orderFlow.get(permitFor(noCompany), flowId)).rejects.toMatchObject({
       code: 'not_found',
     })
+  })
+
+  test('退货三臂：销售/采购/委外退货行进对应订单锚点（数量正数、类型自明）', async () => {
+    const scoped = scopedActor([companyId], ['sales.return:read'])
+    const salesAnchored = await orderFlow.list(permitFor(scoped), {
+      limit: 50,
+      offset: 0,
+      filter: { orderId: { kind: 'fk', op: 'in', values: [orderId] } } as never,
+    })
+    const returnRow = salesAnchored.results.find((r) => r.id === salesReturnFlowId)
+    expect(returnRow).toMatchObject({
+      flowType: 'SALES_RETURN',
+      voucherNo: `ST${suffix}`,
+      status: 'AUDITED',
+      orderId,
+      orderItemId,
+      materialCode: `M${suffix}`,
+      unitName: `件${suffix}`,
+      qty: '2',
+    })
+
+    const purAnchored = await orderFlow.list(permitFor(scoped), {
+      limit: 50,
+      offset: 0,
+      filter: { orderId: { kind: 'fk', op: 'in', values: [purOrderId] } } as never,
+    })
+    const purIds = purAnchored.results.map((r) => r.id)
+    expect(purIds).toContain(`purchase_return:${purReturnItemId}`)
+    expect(purIds).toContain(`outsourced_return:${outsourcedReturnItemId}`)
+    const purReturnRow = purAnchored.results.find(
+      (r) => r.id === `purchase_return:${purReturnItemId}`,
+    )
+    expect(purReturnRow).toMatchObject({ flowType: 'PURCHASE_RETURN', qty: '3' })
+    const outsourcedRow = purAnchored.results.find(
+      (r) => r.id === `outsourced_return:${outsourcedReturnItemId}`,
+    )
+    expect(outsourcedRow).toMatchObject({ flowType: 'OUTSOURCED_RETURN', qty: '4' })
+
+    // 单条读取（新前缀经 FLOW_PREFIXES 校验放行）
+    const one = await orderFlow.get(permitFor(scoped), salesReturnFlowId)
+    expect(one.id).toBe(salesReturnFlowId)
+
+    // 订单抽屉 history 端点（loadOrderHistory）同池：销售含退货、采购含两类退货
+    const salesHistory = await loadOrderHistory(db, 'sales', orderId)
+    expect(salesHistory.results.map((r) => r.flowType)).toEqual([
+      'sales.delivery',
+      'sales.return',
+    ])
+    const purHistory = await loadOrderHistory(db, 'purchase', purOrderId)
+    expect(purHistory.results.map((r) => r.flowType).sort()).toEqual([
+      'purchase.outsourced_return',
+      'purchase.return',
+    ])
+  })
+
+  test('anyOf：退货三码同样可读（readAnyOf 新码生效）', async () => {
+    for (const code of [
+      'sales.return:read',
+      'purchase.return:read',
+      'purchase.outsourced_return:read',
+    ]) {
+      httpActor = scopedActor([companyId], [code])
+      expect((await query()).status).toBe(200)
+    }
   })
 })
