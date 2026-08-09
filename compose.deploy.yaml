@@ -41,6 +41,10 @@ services:
       context: .
       dockerfile: server/Dockerfile
     command: ["bun", "db/migrate.ts"]
+    networks:
+      # dokploy-network：连通 Dokploy 托管数据库（swarm 服务，跨栈 DNS 只在该网络可达）
+      - default
+      - dokploy-network
     environment:
       DATABASE_URL: ${DATABASE_URL:?请在 Dokploy 环境变量中设置 DATABASE_URL（阿里云 PostgreSQL 完整 DSN）}
     restart: "no"
@@ -64,6 +68,9 @@ services:
     ports:
       # 直连端口（绕过 Traefik 的备用入口）；主入口仍是域名反代
       - "${SERVER_PORT:-26001}:8080"
+    networks:
+      - default
+      - dokploy-network
     volumes:
       # 本地上传文件持久化（默认 uploads 根；对象存储在系统设置中另行配置）
       - synie-uploads:/app/server/uploads
@@ -87,6 +94,9 @@ services:
     ports:
       # 直连端口（绕过 Traefik 的备用入口）；主入口仍是域名反代
       - "${WEB_PORT:-26000}:3000"
+    networks:
+      - default
+      - dokploy-network
     depends_on:
       server:
         condition: service_healthy
@@ -94,6 +104,11 @@ services:
 
 volumes:
   synie-uploads:
+
+networks:
+  # Dokploy 全局网络（由 Dokploy 预建）：Traefik 反代与托管数据库互通都走它
+  dokploy-network:
+    external: true
 
 secrets:
   # 值取自 Dokploy Environment（写入 compose 旁 .env 后按名注入）
