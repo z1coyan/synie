@@ -504,6 +504,12 @@ async function seedNumberingRules(trx: DbHandle): Promise<void> {
       mid: { field: 'receipt_date', label: '入库日期', dateFormat: 'YYYYMMDD' },
     },
     {
+      resource: 'purchase.outsourced_return',
+      name: '委外退货编号',
+      prefix: 'P(RT)',
+      mid: { field: 'return_date', label: '退货日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
       resource: 'inv.stock_doc',
       name: '手工出入库单编号',
       prefix: 'I(D)',

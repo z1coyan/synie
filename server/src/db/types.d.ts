@@ -1216,6 +1216,7 @@ export interface PurOutsourcedReceiptItem {
   receipt_id: string;
   reconciled_qty: Generated<Numeric>;
   remarks: string | null;
+  returned_qty: Generated<Numeric>;
   unit_id: string;
   unit_name: string;
   updated_at: Generated<Timestamp>;
@@ -1262,6 +1263,49 @@ export interface PurOutsourcedReceiptItemMaterial {
   unit_id: string;
   unit_name: string;
   updated_at: Generated<Timestamp>;
+}
+
+export interface PurOutsourcedReturn {
+  audited_at: Timestamp | null;
+  audited_by_id: string | null;
+  company_id: string;
+  created_by_id: string | null;
+  id: Generated<string>;
+  inserted_at: Generated<Timestamp>;
+  party_id: string;
+  party_type: string;
+  remarks: string | null;
+  return_date: Generated<Timestamp>;
+  return_no: string;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  warehouse_id: string | null;
+}
+
+export interface PurOutsourcedReturnItem {
+  base_qty: Generated<Numeric>;
+  company_id: string;
+  customer_part_no: string | null;
+  id: Generated<string>;
+  idx: Int8;
+  inserted_at: Generated<Timestamp>;
+  material_code: string | null;
+  material_id: string | null;
+  material_name: string | null;
+  material_spec: string | null;
+  order_base_qty: Numeric | null;
+  order_item_id: string | null;
+  order_no: string | null;
+  order_qty: Numeric | null;
+  order_unit_name: string | null;
+  outsourced_receipt_item_id: string | null;
+  qty: Numeric;
+  remarks: string | null;
+  return_id: string;
+  unit_id: string | null;
+  unit_name: string | null;
+  updated_at: Generated<Timestamp>;
+  warehouse_id: string | null;
 }
 
 export interface PurQuotation {
@@ -2065,6 +2109,8 @@ export interface DB {
   pur_outsourced_receipt_item: PurOutsourcedReceiptItem;
   pur_outsourced_receipt_item_byproduct: PurOutsourcedReceiptItemByproduct;
   pur_outsourced_receipt_item_material: PurOutsourcedReceiptItemMaterial;
+  pur_outsourced_return: PurOutsourcedReturn;
+  pur_outsourced_return_item: PurOutsourcedReturnItem;
   pur_quotation: PurQuotation;
   pur_quotation_item: PurQuotationItem;
   pur_quotation_tier: PurQuotationTier;

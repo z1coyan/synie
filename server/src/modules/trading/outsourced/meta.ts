@@ -183,6 +183,8 @@ export function outsourcedReceiptItemMeta(): ResourceMeta {
       f('party_type', 'partyType', 'enum', '对手类型(供应商/内部公司)', {"readonly": true, "calculated": true, "sortable": true, "filterable": true, "enumOptions": [{"label": "供应商", "value": "SUPPLIER"}, {"label": "客户", "value": "CUSTOMER"}, {"label": "内部公司", "value": "COMPANY"}, {"label": "员工", "value": "EMPLOYEE"}]}),
       f('party_id', 'partyId', 'fk', '对手', {"readonly": true, "calculated": true, "filterable": true, "ref": {"resource": null, "relation": null, "labelField": null, "discriminator": "partyType", "discriminatorType": "enum", "variants": [{"label": "内部公司", "labelField": "name", "resource": "basCompanies", "value": "COMPANY"}, {"label": "供应商", "labelField": "name", "resource": "purSuppliers", "value": "SUPPLIER"}]}}),
       f('remaining_reconcilable_qty', 'remainingReconcilableQty', 'decimal', '剩余可对账量(默认单位)', {"readonly": true, "calculated": true, "sortable": true, "filterable": true}),
+      f('returned_qty', 'returnedQty', 'decimal', '已退数量(默认单位;由委外退货审核/作废同步)', {"readonly": true, "sortable": true, "filterable": true}),
+      f('remaining_returnable_qty', 'remainingReturnableQty', 'decimal', '剩余可退量(默认单位)', {"readonly": true, "calculated": true, "sortable": true, "filterable": true}),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     // 投影列已 calculated，不进物理审计；无需 exclude

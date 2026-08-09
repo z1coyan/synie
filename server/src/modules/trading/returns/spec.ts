@@ -6,8 +6,17 @@
 import type { TradingSide } from '../common.ts'
 import type { ResourceMeta } from '~/platform/meta/types.ts'
 
+/** 退货三类：销售/采购为金额单；委外为纯数量单（无金额/科目/币种/对账） */
+export type ReturnKind = TradingSide | 'outsourced'
+
 export interface ReturnSideSpec {
-  side: TradingSide
+  side: ReturnKind
+  /** 订单投影侧（委外退货挂委外采购订单条目，投影走 purchase 侧） */
+  projectionSide: TradingSide
+  /** 委外退货=true：reverseFulfillment/postFulfillment 传 requireOutsourced */
+  requireOutsourced: boolean
+  /** 金额单=true：科目/原币/GL/对账投影；委外纯数量单=false */
+  monetary: boolean
   label: string
   itemLabel: string
   prefix: string
@@ -21,17 +30,19 @@ export interface ReturnSideSpec {
   sourceItemTable: string
   sourceParentCol: string
   sourceItemResource: string
-  /** 条目上源单锚点 fk 的 apiName（deliveryItemId / receiptItemId） */
+  /** 条目上源单锚点 fk 的 apiName（deliveryItemId / receiptItemId / outsourcedReceiptItemId） */
   sourceItemApi: string
+  /** 源单锚点物理列 */
+  sourceItemCol: string
   orderItemTable: string
   /** 文案用词：源单/源条目 */
   sourceLabel: string
   sourceItemLabel: string
   allowedParty: ReadonlySet<string>
-  /** 强制角色科目所在侧与销售/采购退货的 GL 方向 */
+  /** 强制角色科目所在侧与销售/采购退货的 GL 方向（仅 monetary） */
   requiredRoleSide: 'debit' | 'credit'
   requiredRole: string
-  /** 审核库存方向：销售退货回库 in / 采购退货出仓 out */
+  /** 审核库存方向：销售退货回库 in / 采购与委外退货出仓 out */
   stockDirection: 'in' | 'out'
   numberCol: string
   dateCol: string
@@ -42,10 +53,13 @@ export interface ReturnSideSpec {
   statusApi: string
 }
 
-export function returnSpec(side: TradingSide): ReturnSideSpec {
+export function returnSpec(side: ReturnKind): ReturnSideSpec {
   if (side === 'sales') {
     return {
       side: 'sales',
+      projectionSide: 'sales',
+      requireOutsourced: false,
+      monetary: true,
       label: '销售退货单',
       itemLabel: '销售退货条目',
       prefix: 'sales.return',
@@ -59,6 +73,7 @@ export function returnSpec(side: TradingSide): ReturnSideSpec {
       sourceParentCol: 'delivery_id',
       sourceItemResource: 'salDeliveryItems',
       sourceItemApi: 'deliveryItemId',
+      sourceItemCol: 'delivery_item_id',
       orderItemTable: 'sal_order_item',
       sourceLabel: '发货单',
       sourceItemLabel: '发货条目',
@@ -75,9 +90,13 @@ export function returnSpec(side: TradingSide): ReturnSideSpec {
       statusApi: 'returnStatus',
     }
   }
-  return {
-    side: 'purchase',
-    label: '采购退货单',
+  if (side === 'purchase') {
+    return {
+      side: 'purchase',
+      projectionSide: 'purchase',
+      requireOutsourced: false,
+      monetary: true,
+      label: '采购退货单',
     itemLabel: '采购退货条目',
     prefix: 'purchase.return',
     headTable: 'pur_return',
@@ -90,12 +109,49 @@ export function returnSpec(side: TradingSide): ReturnSideSpec {
     sourceParentCol: 'receipt_id',
     sourceItemResource: 'purReceiptItems',
     sourceItemApi: 'receiptItemId',
+    sourceItemCol: 'receipt_item_id',
     orderItemTable: 'pur_order_item',
     sourceLabel: '入库单',
     sourceItemLabel: '入库条目',
     allowedParty: new Set(['supplier', 'company']),
     requiredRoleSide: 'debit',
     requiredRole: 'unbilled_payable',
+    stockDirection: 'out',
+    numberCol: 'return_no',
+    dateCol: 'return_date',
+    parentCol: 'return_id',
+    numberApi: 'returnNo',
+    dateApi: 'returnDate',
+    parentApi: 'returnId',
+    statusApi: 'returnStatus',
+    }
+  }
+  // 委外退货：纯数量单（无金额/科目/币种/对账；不回补外协仓材料、不退副产物）
+  return {
+    side: 'outsourced',
+    projectionSide: 'purchase',
+    requireOutsourced: true,
+    monetary: false,
+    label: '委外退货单',
+    itemLabel: '委外退货条目',
+    prefix: 'purchase.outsourced_return',
+    headTable: 'pur_outsourced_return',
+    itemTable: 'pur_outsourced_return_item',
+    headResource: 'purOutsourcedReturns',
+    itemResource: 'purOutsourcedReturnItems',
+    voucherType: 'purchase.outsourced_return',
+    sourceHeadTable: 'pur_outsourced_receipt',
+    sourceItemTable: 'pur_outsourced_receipt_item',
+    sourceParentCol: 'receipt_id',
+    sourceItemResource: 'purOutsourcedReceiptItems',
+    sourceItemApi: 'outsourcedReceiptItemId',
+    sourceItemCol: 'outsourced_receipt_item_id',
+    orderItemTable: 'pur_order_item',
+    sourceLabel: '委外入库单',
+    sourceItemLabel: '委外入库条目',
+    allowedParty: new Set(['supplier', 'company']),
+    requiredRoleSide: 'debit',
+    requiredRole: '',
     stockDirection: 'out',
     numberCol: 'return_no',
     dateCol: 'return_date',
@@ -129,9 +185,10 @@ function f(
   return { name, apiName, dbColumn: name, type, label, ...opts }
 }
 
-export function returnHeadMeta(side: TradingSide): ResourceMeta {
+export function returnHeadMeta(side: ReturnKind): ResourceMeta {
   const spec = returnSpec(side)
   const sales = side === 'sales'
+  const monetary = spec.monetary
   const variants = sales
     ? [
         { value: 'COMPANY', resource: 'basCompanies', labelField: 'name', label: '内部公司' },
@@ -155,12 +212,17 @@ export function returnHeadMeta(side: TradingSide): ResourceMeta {
       f('return_no', 'returnNo', 'string', '退货单号', {
         readonly: true, filterable: true, sortable: true,
       }),
-      f('return_date', 'returnDate', 'date', sales ? '退货日期(库存分录业务日)' : '退货日期(库存分录业务日)', {
+      f('return_date', 'returnDate', 'date', '退货日期(库存分录业务日)', {
         required: true, filterable: true, sortable: true,
       }),
-      f('posting_date', 'postingDate', 'date', '过账日期(总账;有金额审核时必填)', {
-        filterable: true, sortable: true,
-      }),
+      // 过账日期/原币汇率/表底科目仅金额单（委外纯数量单不过总账）
+      ...(monetary
+        ? [
+            f('posting_date', 'postingDate', 'date', '过账日期(总账;有金额审核时必填)', {
+              filterable: true, sortable: true,
+            }),
+          ]
+        : []),
       f('party_type', 'partyType', 'enum', sales ? '对手类型(客户/内部公司)' : '对手类型(供应商/内部公司)', {
         required: true, enumOptions: PARTY, filterable: true, sortable: true,
       }),
@@ -169,13 +231,17 @@ export function returnHeadMeta(side: TradingSide): ResourceMeta {
         ref: { resource: null, relation: null, labelField: null, discriminator: 'partyType', discriminatorType: 'enum', variants },
       }),
       // 原币与汇率：源单行按订单快照币种校验一致；手工行按本头汇率折本币
-      f('currency_id', 'currencyId', 'fk', '原币(源单行须与订单快照币种一致)', {
-        filterable: true,
-        ref: { resource: 'basCurrencies', relation: 'currency', labelField: 'name' },
-      }),
-      f('exchange_rate', 'exchangeRate', 'decimal', '汇率(默认 1)', {
-        filterable: true, sortable: true,
-      }),
+      ...(monetary
+        ? [
+            f('currency_id', 'currencyId', 'fk', '原币(源单行须与订单快照币种一致)', {
+              filterable: true,
+              ref: { resource: 'basCurrencies', relation: 'currency', labelField: 'name' },
+            }),
+            f('exchange_rate', 'exchangeRate', 'decimal', '汇率(默认 1)', {
+              filterable: true, sortable: true,
+            }),
+          ]
+        : []),
       f('remarks', 'remarks', 'string', '备注(对内;可带入库存分录)', { filterable: true, sortable: true }),
       f('status', 'status', 'enum', '状态', {
         readonly: true, enumOptions: STATUS, filterable: true, sortable: true,
@@ -191,14 +257,18 @@ export function returnHeadMeta(side: TradingSide): ResourceMeta {
         filterable: true,
         ref: { resource: 'invWarehouses', relation: 'warehouse', labelField: 'name' },
       }),
-      f('debit_account_id', 'debitAccountId', 'fk', sales ? '借方科目(自选;草稿必填)' : '借方科目(未开票应付;草稿必填)', {
-        required: true, filterable: true,
-        ref: { resource: 'basAccounts', relation: 'debitAccount', labelField: 'name' },
-      }),
-      f('credit_account_id', 'creditAccountId', 'fk', sales ? '贷方科目(未开票应收;草稿必填)' : '贷方科目(自选;草稿必填)', {
-        required: true, filterable: true,
-        ref: { resource: 'basAccounts', relation: 'creditAccount', labelField: 'name' },
-      }),
+      ...(monetary
+        ? [
+            f('debit_account_id', 'debitAccountId', 'fk', sales ? '借方科目(自选;草稿必填)' : '借方科目(未开票应付;草稿必填)', {
+              required: true, filterable: true,
+              ref: { resource: 'basAccounts', relation: 'debitAccount', labelField: 'name' },
+            }),
+            f('credit_account_id', 'creditAccountId', 'fk', sales ? '贷方科目(未开票应收;草稿必填)' : '贷方科目(自选;草稿必填)', {
+              required: true, filterable: true,
+              ref: { resource: 'basAccounts', relation: 'creditAccount', labelField: 'name' },
+            }),
+          ]
+        : []),
       f('created_by_id', 'createdById', 'fk', '录入人', {
         readonly: true, filterable: true,
         ref: { resource: 'sysUsers', relation: 'createdBy', labelField: 'name' },
@@ -223,9 +293,10 @@ export function returnHeadMeta(side: TradingSide): ResourceMeta {
   }
 }
 
-export function returnItemMeta(side: TradingSide): ResourceMeta {
+export function returnItemMeta(side: ReturnKind): ResourceMeta {
   const spec = returnSpec(side)
   const sales = side === 'sales'
+  const monetary = spec.monetary
   const variants = sales
     ? [
         { value: 'COMPANY', resource: 'basCompanies', labelField: 'name', label: '内部公司' },
@@ -259,16 +330,21 @@ export function returnItemMeta(side: TradingSide): ResourceMeta {
       f('order_qty', 'orderQty', 'decimal', '订购数量(订单行单位)', { readonly: true, nullable: true, filterable: true, sortable: true }),
       f('order_base_qty', 'orderBaseQty', 'decimal', '订购数量(默认单位)', { readonly: true, nullable: true, filterable: true, sortable: true }),
       f('order_unit_name', 'orderUnitName', 'string', '订单行单位名称', { readonly: true, nullable: true, filterable: true, sortable: true }),
-      // 含税单价/税率：源单行随履约快照带入(保存时覆盖)；手工行手填(wire 可写)
-      f('order_price', 'orderPrice', 'decimal', '原币含税单价(手工行手填)', { nullable: true, filterable: true, sortable: true }),
-      f('order_amount', 'orderAmount', 'decimal', '原币含税金额', { readonly: true, nullable: true, filterable: true, sortable: true }),
-      f('order_base_price', 'orderBasePrice', 'decimal', '本币含税单价', { readonly: true, nullable: true, filterable: true, sortable: true }),
-      f('order_base_amount', 'orderBaseAmount', 'decimal', '本币含税金额', { readonly: true, nullable: true, filterable: true, sortable: true }),
-      f('order_tax_rate', 'orderTaxRate', 'decimal', '税率(手工行手填)', { nullable: true, filterable: true, sortable: true }),
-      f('order_currency_code', 'orderCurrencyCode', 'string', '订单原币代码', { readonly: true, nullable: true, filterable: true, sortable: true }),
-      f('reconciled_qty', 'reconciledQty', 'decimal', sales ? '已对账数量(默认单位;由销售对账单生效/回退同步)' : '已对账数量(默认单位;由采购对账单生效/回退同步)', {
-        readonly: true, filterable: true, sortable: true,
-      }),
+      // 价税快照/原币/已对账列仅金额单（委外纯数量单无金额、不进对账）
+      ...(monetary
+        ? [
+            // 含税单价/税率：源单行随履约快照带入(保存时覆盖)；手工行手填(wire 可写)
+            f('order_price', 'orderPrice', 'decimal', '原币含税单价(手工行手填)', { nullable: true, filterable: true, sortable: true }),
+            f('order_amount', 'orderAmount', 'decimal', '原币含税金额', { readonly: true, nullable: true, filterable: true, sortable: true }),
+            f('order_base_price', 'orderBasePrice', 'decimal', '本币含税单价', { readonly: true, nullable: true, filterable: true, sortable: true }),
+            f('order_base_amount', 'orderBaseAmount', 'decimal', '本币含税金额', { readonly: true, nullable: true, filterable: true, sortable: true }),
+            f('order_tax_rate', 'orderTaxRate', 'decimal', '税率(手工行手填)', { nullable: true, filterable: true, sortable: true }),
+            f('order_currency_code', 'orderCurrencyCode', 'string', '订单原币代码', { readonly: true, nullable: true, filterable: true, sortable: true }),
+            f('reconciled_qty', 'reconciledQty', 'decimal', sales ? '已对账数量(默认单位;由销售对账单生效/回退同步)' : '已对账数量(默认单位;由采购对账单生效/回退同步)', {
+              readonly: true, filterable: true, sortable: true,
+            }),
+          ]
+        : []),
       f('remarks', 'remarks', 'string', '行备注', { filterable: true, sortable: true }),
       f('inserted_at', 'insertedAt', 'datetime', '创建时间', { readonly: true, filterable: true, sortable: true }),
       f('updated_at', 'updatedAt', 'datetime', '更新时间', { readonly: true, filterable: true, sortable: true }),
@@ -281,8 +357,8 @@ export function returnItemMeta(side: TradingSide): ResourceMeta {
         ref: { resource: 'basCompanies', relation: 'company', labelField: 'name' },
       }),
       f(
-        sales ? 'delivery_item_id' : 'receipt_item_id',
-        sales ? 'deliveryItemId' : 'receiptItemId',
+        spec.sourceItemCol,
+        spec.sourceItemApi,
         'fk',
         `${spec.sourceItemLabel}(源单行锚点;手工行留空)`,
         {
@@ -307,6 +383,7 @@ export function returnItemMeta(side: TradingSide): ResourceMeta {
         filterable: true,
         ref: { resource: 'invWarehouses', relation: 'warehouse', labelField: 'name' },
       }),
+      // 剩余可对账仅金额单（委外不进对账池）
       f('return_no', 'returnNo', 'string', '退货单号', {
         readonly: true, calculated: true, filterable: true, sortable: true,
       }),
@@ -323,9 +400,13 @@ export function returnItemMeta(side: TradingSide): ResourceMeta {
         readonly: true, filterable: true, printRawId: true,
         ref: { resource: null, relation: null, labelField: null, discriminator: 'partyType', discriminatorType: 'enum', variants },
       }),
-      f('remaining_reconcilable_qty', 'remainingReconcilableQty', 'decimal', '剩余可对账量(默认单位)', {
-        readonly: true, calculated: true, filterable: true, sortable: true,
-      }),
+      ...(monetary
+        ? [
+            f('remaining_reconcilable_qty', 'remainingReconcilableQty', 'decimal', '剩余可对账量(默认单位)', {
+              readonly: true, calculated: true, filterable: true, sortable: true,
+            }),
+          ]
+        : []),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     // exclude 保留历史审计面：头冗余对手不进审计 diff

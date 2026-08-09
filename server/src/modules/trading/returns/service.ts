@@ -31,7 +31,6 @@ import {
   runeLen,
   syncDrawingAttachments,
   toDateOnly,
-  type TradingSide,
   wireRequiredDecimal,
 } from '../common.ts'
 import { utcToday } from '~/db/dates.ts'
@@ -39,14 +38,14 @@ import {
   deriveItem,
   headLikeFromDraft,
   ITEM_ALIAS,
-  ITEM_DERIVED,
   ITEM_SOURCE,
+  itemDerived,
   RETURN_WRITE_ERRORS,
   validateHeadRefs,
   validateHeadWire,
 } from './domain.ts'
 import { runAuditHead, runVoidHead } from './workflow.ts'
-import { returnHeadMeta, returnSpec, type ReturnSideSpec } from './spec.ts'
+import { returnHeadMeta, returnSpec, type ReturnKind, type ReturnSideSpec } from './spec.ts'
 import type { ReturnDraftDto, ReturnDraftInput } from './types.ts'
 import {
   mapReturnItemExtras,
@@ -64,9 +63,9 @@ export type {
   ReturnItemDto,
 } from './types.ts'
 
-// 审核/作废审计：双侧 meta 并集；单号/日期列经 rename 为通用键
+// 审核/作废审计：三侧 meta 并集；单号/日期列经 rename 为通用键
 const HEAD_AUDIT = mergeAuditFields(
-  ...(['sales', 'purchase'] as const).map((s) =>
+  ...(['sales', 'purchase', 'outsourced'] as const).map((s) =>
     auditFieldsOf(returnHeadMeta(s), {
       rename: { return_no: 'number', return_date: 'document_date' },
     }),
@@ -92,12 +91,13 @@ export function createReturnsService(
   registry: Registry,
 ) {
   const { inventory, gl } = engines
-  const headTargets: Record<TradingSide, AuthzTarget> = {
+  const headTargets: Record<ReturnKind, AuthzTarget> = {
     sales: registry.authzTarget(returnSpec('sales').headResource),
     purchase: registry.authzTarget(returnSpec('purchase').headResource),
+    outsourced: registry.authzTarget(returnSpec('outsourced').headResource),
   }
 
-  function buildSide(side: TradingSide): SideCtx {
+  function buildSide(side: ReturnKind): SideCtx {
     const spec = returnSpec(side)
     const sourceKey = spec.sourceItemApi
 
@@ -153,16 +153,18 @@ export function createReturnsService(
           if (action === 'create') {
             if (!draft.returnDate) draft.returnDate = utcToday()
             else draft.returnDate = toDateOnly(String(draft.returnDate))
-            // 原币/汇率缺省代入：公司本币 + 1（手工行全单换算口径）
-            if (!draft.currencyId && draft.companyId) {
-              const company = await trx
-                .selectFrom('bas_company')
-                .select('base_currency_id')
-                .where('id', '=', String(draft.companyId))
-                .executeTakeFirst()
-              draft.currencyId = company?.base_currency_id ?? null
+            // 原币/汇率缺省代入：公司本币 + 1（手工行全单换算口径；仅金额单）
+            if (spec.monetary) {
+              if (!draft.currencyId && draft.companyId) {
+                const company = await trx
+                  .selectFrom('bas_company')
+                  .select('base_currency_id')
+                  .where('id', '=', String(draft.companyId))
+                  .executeTakeFirst()
+                draft.currencyId = company?.base_currency_id ?? null
+              }
+              if (draft.exchangeRate == null || draft.exchangeRate === '') draft.exchangeRate = '1'
             }
-            if (draft.exchangeRate == null || draft.exchangeRate === '') draft.exchangeRate = '1'
           } else if (draft.returnDate != null) {
             draft.returnDate = toDateOnly(String(draft.returnDate))
           }
@@ -185,6 +187,7 @@ export function createReturnsService(
             const partyIdChanged =
               String(draft.partyId ?? before.partyId) !== String(before.partyId)
             const currencyChanged =
+              spec.monetary &&
               String(draft.currencyId ?? before.currencyId) !== String(before.currencyId)
             if (partyTypeChanged || partyIdChanged || currencyChanged) {
               const has = await sql<{ e: boolean }>`
@@ -228,11 +231,13 @@ export function createReturnsService(
       defaultOrder: sql`"idx" ASC, "id" ASC`,
       writeErrors: RETURN_WRITE_ERRORS,
       recordLabel: (item) => String(item.idx),
-      derivedFields: [...ITEM_DERIVED],
+      derivedFields: [...itemDerived(spec)],
       projection: {
         source: ITEM_SOURCE[side],
         alias: ITEM_ALIAS,
-        selectExtra: sql`return_no, return_date, return_status, party_type, remaining_reconcilable_qty`,
+        selectExtra: spec.monetary
+          ? sql`return_no, return_date, return_status, party_type, remaining_reconcilable_qty`
+          : sql`return_no, return_date, return_status, party_type`,
         mapExtra: mapReturnItemExtras,
       },
       parent: {
@@ -258,12 +263,14 @@ export function createReturnsService(
           if (draft[sourceKey]) {
             // 源单行：锚点以外的物料/价税一律由来源快照覆盖，手填忽略
           } else {
-            // 手工行：物料/含税单价/税率手填必填（单价可为 0——零金额跳过总账）
+            // 手工行：物料必填；价税仅金额单（单价可为 0——零金额跳过总账）
             if (!draft.materialId) {
               throw ApiError.validation(`${spec.itemLabel}参数不合法`, {
                 materialId: ['必填'],
               })
             }
+          }
+          if (!draft[sourceKey] && spec.monetary) {
             if (draft.orderPrice == null || draft.orderPrice === '') {
               throw ApiError.validation(`${spec.itemLabel}参数不合法`, {
                 orderPrice: ['必填'],
@@ -400,9 +407,10 @@ export function createReturnsService(
     return { spec, heads, items, aggregate }
   }
 
-  const sides: Record<TradingSide, SideCtx> = {
+  const sides: Record<ReturnKind, SideCtx> = {
     sales: buildSide('sales'),
     purchase: buildSide('purchase'),
+    outsourced: buildSide('outsourced'),
   }
 
   const engineDeps = { inventory, gl, headTargets, auditFields: HEAD_AUDIT }
@@ -413,33 +421,33 @@ export function createReturnsService(
   ) => ({ count: r.count, results: r.results.map((row) => present(row as Record<string, unknown>)) })
 
   return {
-    getDraft: async (p: Permit, side: TradingSide, id: string): Promise<ReturnDraftDto> =>
+    getDraft: async (p: Permit, side: ReturnKind, id: string): Promise<ReturnDraftDto> =>
       presentReturnDraft(await sides[side].aggregate.loadDraft(p, id)),
-    createDraft: async (p: Permit, side: TradingSide, input: ReturnDraftInput): Promise<ReturnDraftDto> =>
+    createDraft: async (p: Permit, side: ReturnKind, input: ReturnDraftInput): Promise<ReturnDraftDto> =>
       presentReturnDraft(await sides[side].aggregate.createDraft(p, returnDraftPayload(side, input))),
     replaceDraft: async (
       p: Permit,
-      side: TradingSide,
+      side: ReturnKind,
       id: string,
       input: ReturnDraftInput,
     ): Promise<ReturnDraftDto> =>
       presentReturnDraft(
         await sides[side].aggregate.replaceDraft(p, id, returnDraftPayload(side, input)),
       ),
-    listHeads: async (p: Permit, side: TradingSide, q: Partial<ListQuery>) =>
+    listHeads: async (p: Permit, side: ReturnKind, q: Partial<ListQuery>) =>
       listMapped(await sides[side].heads.list(p, q), presentReturnHead),
-    getHead: async (p: Permit, side: TradingSide, id: string) =>
+    getHead: async (p: Permit, side: ReturnKind, id: string) =>
       presentReturnHead((await sides[side].heads.get(p, id)) as Record<string, unknown>),
-    deleteHead: (p: Permit, side: TradingSide, id: string) => sides[side].heads.remove(p, id),
-    auditHead: (p: Permit, side: TradingSide, id: string) =>
+    deleteHead: (p: Permit, side: ReturnKind, id: string) => sides[side].heads.remove(p, id),
+    auditHead: (p: Permit, side: ReturnKind, id: string) =>
       runAuditHead(db, p, side, id, engineDeps),
-    voidHead: (p: Permit, side: TradingSide, id: string) =>
+    voidHead: (p: Permit, side: ReturnKind, id: string) =>
       runVoidHead(db, p, side, id, engineDeps),
-    listItems: async (p: Permit, side: TradingSide, q: Partial<ListQuery>) =>
+    listItems: async (p: Permit, side: ReturnKind, q: Partial<ListQuery>) =>
       listMapped(await sides[side].items.list(p, q), presentReturnItem),
-    getItem: async (p: Permit, side: TradingSide, id: string) =>
+    getItem: async (p: Permit, side: ReturnKind, id: string) =>
       presentReturnItem((await sides[side].items.get(p, id)) as Record<string, unknown>),
-    _aggregateForContract: (side: TradingSide): AggregateService => ({
+    _aggregateForContract: (side: ReturnKind): AggregateService => ({
       loadDraft: async (p, id) =>
         asRec(presentReturnDraft(await sides[side].aggregate.loadDraft(p, id))),
       createDraft: async (p, input) =>

@@ -557,6 +557,8 @@ export function buildApp(deps: AppDeps) {
     .route('/sales/return-items', t.salesReturnItems)
     .route('/purchase/returns', t.purchaseReturns)
     .route('/purchase/return-items', t.purchaseReturnItems)
+    .route('/purchase/outsourced-returns', t.purchaseOutsourcedReturns)
+    .route('/purchase/outsourced-return-items', t.purchaseOutsourcedReturnItems)
     .route('/purchase/outsourced-issues', t.outsourcedIssues)
     .route('/purchase/outsourced-issue-items', t.outsourcedIssueItems)
     .route('/purchase/outsourced-receipts', t.outsourcedReceipts)

@@ -283,3 +283,100 @@ export const purchaseReturnItemClient = restTransport(
   api.purchase['return-items'],
   { capabilities: { create: false, update: false, delete: false } },
 )
+
+// ── 委外退货（纯数量单：无金额/科目/币种，不过总账、不进对账） ──
+
+export async function auditPurchaseOutsourcedReturn(id: string) {
+  return apiData(api.purchase['outsourced-returns'][':id'].audit.$post({ param: { id } }))
+}
+
+export async function voidPurchaseOutsourcedReturn(id: string) {
+  return apiData(api.purchase['outsourced-returns'][':id'].void.$post({ param: { id } }))
+}
+
+export const purchaseOutsourcedReturnCommandAdapter = createRowCommandAdapter({
+  audit: {
+    handler: auditPurchaseOutsourcedReturn,
+    affectedResources: [
+      'purOutsourcedReturnItems',
+      'purOutsourcedReceiptItems',
+      'purOrderItems',
+      'invStockEntries',
+    ],
+  },
+  void: {
+    handler: voidPurchaseOutsourcedReturn,
+    affectedResources: [
+      'purOutsourcedReturnItems',
+      'purOutsourcedReceiptItems',
+      'purOrderItems',
+      'invStockEntries',
+    ],
+  },
+})
+
+export interface PurchaseOutsourcedReturnDraftItemInput {
+  id?: string
+  idx: number
+  qty: string
+  /** 源单行锚点：已审核未作废、剩余可退 > 0 且未对账的委外入库条目；留空即手工行 */
+  outsourcedReceiptItemId?: string | null
+  /** 手工行必填(物料)；源单行由入库快照覆盖 */
+  materialId?: string | null
+  unitId?: string | null
+  /** 行仓:库存类物料必填(后端校验) */
+  warehouseId: string | null
+  remarks?: string | null
+}
+
+export interface PurchaseOutsourcedReturnDraftInput {
+  companyId: string
+  returnNo?: string | null
+  returnDate?: string | null
+  partyType: string
+  partyId: string
+  remarks?: string | null
+  warehouseId?: string | null
+  /** 完整快照字段；省略与显式清空语义不同，因此不可选。 */
+  items: PurchaseOutsourcedReturnDraftItemInput[]
+}
+
+/** 权威 SavedDraft：表头 + 全部 items */
+export type PurchaseOutsourcedReturnSavedDraft = Row & {
+  items: Row[]
+}
+
+/**
+ * Aggregate Draft → wire 的唯一转换入口。
+ * 集合字段 fail-closed：缺失、null 或非数组不能被解释为“清空全部子项”。
+ */
+export function purchaseOutsourcedReturnDraftInput(
+  input: PurchaseOutsourcedReturnDraftInput,
+): PurchaseOutsourcedReturnDraftInput {
+  const record = draftRecord(input, '根对象')
+  const items = draftArray(record, 'items', 'items').map((item, itemIndex) =>
+    decimalWireInput(
+      draftRecord(item, `items[${itemIndex}]`),
+      ['qty'],
+    ) as unknown as PurchaseOutsourcedReturnDraftItemInput,
+  )
+  return { ...input, items }
+}
+
+/** production：标准草稿三连 + 领域 wire。 */
+export const purchaseOutsourcedReturnDraftAdapter = aggregateDraftTransport<
+  PurchaseOutsourcedReturnDraftInput,
+  PurchaseOutsourcedReturnSavedDraft
+>(api.purchase['outsourced-returns'], { wire: purchaseOutsourcedReturnDraftInput })
+
+export const purchaseOutsourcedReturnClient = restTransport(
+  'purOutsourcedReturns',
+  api.purchase['outsourced-returns'],
+  { capabilities: { create: false, update: false } },
+)
+
+export const purchaseOutsourcedReturnItemClient = restTransport(
+  'purOutsourcedReturnItems',
+  api.purchase['outsourced-return-items'],
+  { capabilities: { create: false, update: false, delete: false } },
+)

@@ -18,10 +18,9 @@ import {
   lowerParty,
   partyExists,
   runeLen,
-  type TradingSide,
   upperStatus,
 } from '../common.ts'
-import { returnSpec, type ReturnSideSpec } from './spec.ts'
+import { returnSpec, type ReturnKind, type ReturnSideSpec } from './spec.ts'
 import type { ReturnHead } from './types.ts'
 
 export const ITEM_ALIAS = 'return_items'
@@ -31,42 +30,53 @@ export const ITEM_SELECT = sql`SELECT *`
  * beforeWrite 派生列（readonly 物理列：快照随来源条目/物料带入）。
  * materialId/orderPrice/orderTaxRate 为 wire 可写列（手工行手填、源单行保存时覆盖），
  * 不入本清单（writable+derived 双登记会重复写列）。
+ * 委外纯数量单无价税/原币/对账列。
  */
-export const ITEM_DERIVED = [
-  'baseQty',
-  'materialCode',
-  'materialName',
-  'materialSpec',
-  'customerPartNo',
-  'unitName',
-  'orderNo',
-  'orderQty',
-  'orderBaseQty',
-  'orderUnitName',
-  'orderAmount',
-  'orderBasePrice',
-  'orderBaseAmount',
-  'orderCurrencyCode',
-  'orderItemId',
-] as const
+export function itemDerived(spec: ReturnSideSpec): readonly string[] {
+  const base = [
+    'baseQty',
+    'materialCode',
+    'materialName',
+    'materialSpec',
+    'customerPartNo',
+    'unitName',
+    'orderNo',
+    'orderQty',
+    'orderBaseQty',
+    'orderUnitName',
+    'orderItemId',
+  ]
+  if (!spec.monetary) return base
+  return [
+    ...base.slice(0, 10),
+    'orderAmount',
+    'orderBasePrice',
+    'orderBaseAmount',
+    'orderCurrencyCode',
+    'orderItemId',
+  ]
+}
 
 export const RETURN_WRITE_ERRORS = [
   { code: '23505', message: '单号已存在' },
 ] as const
 
 export function buildItemSource(spec: ReturnSideSpec): RawBuilder<unknown> {
+  const reconcilableSql = spec.monetary
+    ? `, (i.base_qty - i.reconciled_qty) AS remaining_reconcilable_qty`
+    : ''
   return sql` FROM (
     SELECT i.*, h.return_no, h.return_date,
-      h.status AS return_status, h.party_type, h.party_id,
-      (i.base_qty - i.reconciled_qty) AS remaining_reconcilable_qty
+      h.status AS return_status, h.party_type, h.party_id${sql.raw(reconcilableSql)}
     FROM ${ident(spec.itemTable)} i
     JOIN ${ident(spec.headTable)} h ON h.id=i.return_id
   ) ${sql.raw(ITEM_ALIAS)}`
 }
 
-export const ITEM_SOURCE: Record<TradingSide, RawBuilder<unknown>> = {
+export const ITEM_SOURCE: Record<ReturnKind, RawBuilder<unknown>> = {
   sales: buildItemSource(returnSpec('sales')),
   purchase: buildItemSource(returnSpec('purchase')),
+  outsourced: buildItemSource(returnSpec('outsourced')),
 }
 
 export function validateHeadWire(
@@ -89,14 +99,16 @@ export function validateHeadWire(
   if (partyType === 'company' && draft.partyId && draft.companyId && draft.partyId === draft.companyId) {
     fields.partyId = ['对手不能是本公司']
   }
-  if (!draft.debitAccountId) fields.debitAccountId = ['必填']
-  if (!draft.creditAccountId) fields.creditAccountId = ['必填']
-  if (
-    draft.exchangeRate != null &&
-    draft.exchangeRate !== '' &&
-    !decimal(String(draft.exchangeRate)).gt(0)
-  ) {
-    fields.exchangeRate = ['必须大于 0']
+  if (spec.monetary) {
+    if (!draft.debitAccountId) fields.debitAccountId = ['必填']
+    if (!draft.creditAccountId) fields.creditAccountId = ['必填']
+    if (
+      draft.exchangeRate != null &&
+      draft.exchangeRate !== '' &&
+      !decimal(String(draft.exchangeRate)).gt(0)
+    ) {
+      fields.exchangeRate = ['必须大于 0']
+    }
   }
   if (draft.remarks != null && runeLen(String(draft.remarks)) > 512) {
     fields.remarks = ['最多 512 个字符']
@@ -116,8 +128,10 @@ export function validateHeadShape(spec: ReturnSideSpec, item: ReturnHead) {
   if (lowerParty(item.partyType) === 'company' && item.partyId === item.companyId) {
     fields.partyId = ['对手不能是本公司']
   }
-  if (!item.debitAccountId) fields.debitAccountId = ['必填']
-  if (!item.creditAccountId) fields.creditAccountId = ['必填']
+  if (spec.monetary) {
+    if (!item.debitAccountId) fields.debitAccountId = ['必填']
+    if (!item.creditAccountId) fields.creditAccountId = ['必填']
+  }
   if (item.remarks && runeLen(item.remarks) > 512) fields.remarks = ['最多 512 个字符']
   if (Object.keys(fields).length > 0) {
     throw ApiError.validation(`${spec.label}参数不合法`, fields)
@@ -131,10 +145,12 @@ export async function validateHeadRefs(db: DbHandle, spec: ReturnSideSpec, item:
   if (item.warehouseId) {
     await validateEnabledLeafWarehouse(db, item.companyId, item.warehouseId, '退货仓库不合法')
   }
+  if (!spec.monetary) return
   for (const [field, accountId] of [
     ['debitAccountId', item.debitAccountId],
     ['creditAccountId', item.creditAccountId],
   ] as const) {
+    if (!accountId) continue
     const acc = await db
       .selectFrom('bas_account')
       .select(['company_id', 'is_group', 'active', 'role'])
@@ -186,11 +202,14 @@ export async function loadActionItems(
   spec: ReturnSideSpec,
   headId: string,
 ): Promise<ActionItem[]> {
-  const sourceCol = spec.side === 'sales' ? 'delivery_item_id' : 'receipt_item_id'
+  // 委外纯数量单条目无 order_price/reconciled_qty 列
+  const monetaryCols = spec.monetary
+    ? `i.order_price, i.order_base_amount, i.reconciled_qty,`
+    : `NULL AS order_price, NULL AS order_base_amount, '0' AS reconciled_qty,`
   const rows = await sql<Record<string, unknown>>`
-    SELECT i.id, i.${sql.raw(sourceCol)} AS source_item_id, i.order_item_id, i.base_qty,
-      i.material_id, i.warehouse_id, i.material_code, i.material_name, i.order_price,
-      i.order_base_qty, i.order_base_amount, i.reconciled_qty,
+    SELECT i.id, i.${sql.raw(spec.sourceItemCol)} AS source_item_id, i.order_item_id, i.base_qty,
+      i.material_id, i.warehouse_id, i.material_code, i.material_name,
+      ${sql.raw(monetaryCols)} i.order_base_qty,
       m.material_type
     FROM ${ident(spec.itemTable)} i
     JOIN inv_material m ON m.id=i.material_id
@@ -284,6 +303,12 @@ export async function deriveItem(
       [spec.sourceItemApi]: [`${spec.sourceLabel}对手不一致`],
     })
   }
+  // 委外定案：源入库条目已对账数量 > 0 禁止退货（保证同批成品加工费只对账一次）
+  if (!spec.monetary && decimal(String(source.reconciled_qty ?? 0)).gt(0)) {
+    throw ApiError.validation(`${spec.itemLabel}参数不合法`, {
+      [spec.sourceItemApi]: ['源入库条目已对账,须先撤回/作废相关采购对账单'],
+    })
+  }
   if (parent.currencyId) {
     const cur = await db
       .selectFrom('bas_currency')
@@ -350,23 +375,28 @@ async function deriveManualItem(
   if (!draft.materialId) {
     throw ApiError.validation(`${spec.itemLabel}参数不合法`, { materialId: ['必填'] })
   }
-  if (draft.price == null || draft.price.lt(0)) {
-    throw ApiError.validation(`${spec.itemLabel}参数不合法`, { orderPrice: ['必填且不能小于 0'] })
+  // 价税与原币校验仅金额单（委外手工行仅物料/单位/数量/行仓）
+  if (spec.monetary) {
+    if (draft.price == null || draft.price.lt(0)) {
+      throw ApiError.validation(`${spec.itemLabel}参数不合法`, { orderPrice: ['必填且不能小于 0'] })
+    }
+    if (draft.taxRate == null || draft.taxRate.lt(0)) {
+      throw ApiError.validation(`${spec.itemLabel}参数不合法`, { orderTaxRate: ['必填且不能小于 0'] })
+    }
+    if (!parent.currencyId) {
+      throw ApiError.validation(`${spec.itemLabel}参数不合法`, {
+        currencyId: ['含手工行时单头原币必填'],
+      })
+    }
   }
-  if (draft.taxRate == null || draft.taxRate.lt(0)) {
-    throw ApiError.validation(`${spec.itemLabel}参数不合法`, { orderTaxRate: ['必填且不能小于 0'] })
-  }
-  if (!parent.currencyId) {
-    throw ApiError.validation(`${spec.itemLabel}参数不合法`, {
-      currencyId: ['含手工行时单头原币必填'],
-    })
-  }
-  const cur = await db
-    .selectFrom('bas_currency')
-    .select('iso_code')
-    .where('id', '=', parent.currencyId)
-    .executeTakeFirst()
-  if (!cur) {
+  const cur = parent.currencyId
+    ? await db
+        .selectFrom('bas_currency')
+        .select('iso_code')
+        .where('id', '=', parent.currencyId)
+        .executeTakeFirst()
+    : null
+  if (parent.currencyId && !cur) {
     throw ApiError.validation(`${spec.label}参数不合法`, { currencyId: ['币种不存在'] })
   }
   let unitId = draft.unitId
@@ -413,12 +443,12 @@ async function deriveManualItem(
     orderQty: draft.qty,
     orderBaseQty: baseQty,
     orderUnitName: snap.unitName,
-    orderPrice: price,
-    orderAmount: draft.qty.mul(price),
-    orderBasePrice: price.mul(rate),
-    orderBaseAmount: baseQty.mul(price).mul(rate),
-    orderTaxRate: draft.taxRate,
-    orderCurrencyCode: String(cur.iso_code),
+    orderPrice: price ?? decimal(0),
+    orderAmount: price ? draft.qty.mul(price) : decimal(0),
+    orderBasePrice: price ? price.mul(rate) : decimal(0),
+    orderBaseAmount: price ? baseQty.mul(price).mul(rate) : decimal(0),
+    orderTaxRate: draft.taxRate ?? decimal(0),
+    orderCurrencyCode: cur ? String(cur.iso_code) : null,
     remarks: draft.remarks,
   }
 }
@@ -440,8 +470,8 @@ export function mapHead(row: Record<string, unknown>): ReturnHead {
     updatedAt: asDateTime(row.updated_at)!,
     companyId: String(row.company_id),
     warehouseId: row.warehouse_id ? String(row.warehouse_id) : null,
-    debitAccountId: String(row.debit_account_id),
-    creditAccountId: String(row.credit_account_id),
+    debitAccountId: row.debit_account_id ? String(row.debit_account_id) : null,
+    creditAccountId: row.credit_account_id ? String(row.credit_account_id) : null,
     createdById: row.created_by_id ? String(row.created_by_id) : null,
     auditedById: row.audited_by_id ? String(row.audited_by_id) : null,
   }
@@ -503,8 +533,10 @@ export function headLikeFromDraft(
       draft.warehouseId === undefined
         ? ((before?.warehouseId as string | null | undefined) ?? null)
         : (draft.warehouseId as string | null),
-    debitAccountId: String(draft.debitAccountId ?? before?.debitAccountId ?? ''),
-    creditAccountId: String(draft.creditAccountId ?? before?.creditAccountId ?? ''),
+    debitAccountId:
+      ((draft.debitAccountId ?? before?.debitAccountId) as string | null | undefined) ?? null,
+    creditAccountId:
+      ((draft.creditAccountId ?? before?.creditAccountId) as string | null | undefined) ?? null,
     createdById: null,
     auditedById: null,
   }

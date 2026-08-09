@@ -23,7 +23,6 @@ import { loadAuthorized } from '~/db/load.ts'
 import { accountCurrencies } from '~/platform/posting/account-currency.ts'
 import { lowerParty as lowerPartyType } from '~/platform/posting/text.ts'
 import { postFulfillment, reverseFulfillment } from '../order/projection.ts'
-import type { TradingSide } from '../common.ts'
 import {
   headSnap,
   loadActionItems,
@@ -32,7 +31,7 @@ import {
   validateHeadRefs,
   validateHeadShape,
 } from './domain.ts'
-import { returnSpec, type ReturnSideSpec } from './spec.ts'
+import { returnSpec, type ReturnKind, type ReturnSideSpec } from './spec.ts'
 import { mapHeadDto } from './views.ts'
 
 /**
@@ -74,12 +73,12 @@ const PROJECTION_OPTS = { skipDemandChain: true }
 export async function runAuditHead(
   db: Kysely<Database>,
   permit: Permit,
-  side: TradingSide,
+  side: ReturnKind,
   id: string,
   deps: {
     inventory: Pick<InventoryEngine, 'post' | 'cancel'>
     gl: Pick<GlEngine, 'post' | 'cancel'>
-    headTargets: Record<TradingSide, AuthzTarget>
+    headTargets: Record<ReturnKind, AuthzTarget>
     auditFields: readonly string[]
   },
 ) {
@@ -92,6 +91,25 @@ export async function runAuditHead(
 
     const items = await loadActionItems(trx, spec, id)
     if (items.length === 0) throw new ApiError('conflict', '审核前必须至少填写一条退货条目')
+    // 委外复检：源入库条目已对账数量 > 0 禁止退货（保存期已拦，审核兜底复检）
+    if (!spec.monetary) {
+      const sourceIds = [
+        ...new Set(
+          items
+            .map((i) => i.sourceItemId)
+            .filter((v): v is string => v != null),
+        ),
+      ]
+      for (const sourceItemId of sourceIds.sort()) {
+        const r = await sql<{ reconciled_qty: string }>`
+          SELECT reconciled_qty::text FROM ${ident(spec.sourceItemTable)}
+          WHERE id=${sourceItemId}::uuid FOR UPDATE
+        `.execute(trx)
+        if (decimal(r.rows[0]?.reconciled_qty ?? 0).gt(0)) {
+          throw new ApiError('conflict', '源入库条目已对账,须先撤回/作废相关采购对账单')
+        }
+      }
+    }
 
     const stockLines: StockLine[] = items
       .filter((i) => i.materialType === 'STOCK')
@@ -111,20 +129,22 @@ export async function runAuditHead(
         }
       })
     // 金额 = Σ 源行（履约快照比例口径 orderBaseAmount × baseQty / orderBaseQty）
-    //       + Σ 手工行（手填原币含税单价 × baseQty × 单头汇率）
+    //       + Σ 手工行（手填原币含税单价 × baseQty × 单头汇率）；委外纯数量单不算金额
     const exchangeRate = decimal(before.exchangeRate ?? '1')
     let amount = decimal(0)
-    for (const item of items) {
-      if (item.sourceItemId == null) {
-        amount = amount.add(
-          decimal(item.orderPrice ?? 0).mul(decimal(item.baseQty)).mul(exchangeRate),
-        )
-      } else if (item.orderBaseQty != null && !decimal(item.orderBaseQty).isZero()) {
-        amount = amount.add(
-          decimal(item.orderBaseAmount ?? 0)
-            .mul(decimal(item.baseQty))
-            .div(decimal(item.orderBaseQty)),
-        )
+    if (spec.monetary) {
+      for (const item of items) {
+        if (item.sourceItemId == null) {
+          amount = amount.add(
+            decimal(item.orderPrice ?? 0).mul(decimal(item.baseQty)).mul(exchangeRate),
+          )
+        } else if (item.orderBaseQty != null && !decimal(item.orderBaseQty).isZero()) {
+          amount = amount.add(
+            decimal(item.orderBaseAmount ?? 0)
+              .mul(decimal(item.baseQty))
+              .div(decimal(item.orderBaseQty)),
+          )
+        }
       }
     }
 
@@ -144,21 +164,21 @@ export async function runAuditHead(
 
     const glAmount = decimal(roundAmount(amount))
     const postingDate = before.postingDate ?? before.documentDate
-    if (glAmount.gt(0)) {
+    if (spec.monetary && glAmount.gt(0)) {
       if (!postingDate) {
         throw ApiError.validation('审核参数不合法', { postingDate: ['有金额过账时必填'] })
       }
-      const currencies = await accountCurrencies(trx, before.debitAccountId, before.creditAccountId)
+      const currencies = await accountCurrencies(trx, before.debitAccountId!, before.creditAccountId!)
       // 履约反转：销售退货 = 借选定科目（不带对手）/ 贷未开票应收（带对手）；
       //           采购退货 = 借未开票应付（带对手）/ 贷选定科目
       const debit: GlEntry = {
-        accountId: before.debitAccountId,
+        accountId: before.debitAccountId!,
         currencyId: currencies.debit,
         debit: glAmount,
         credit: decimal(0),
       }
       const credit: GlEntry = {
-        accountId: before.creditAccountId,
+        accountId: before.creditAccountId!,
         currencyId: currencies.credit,
         debit: decimal(0),
         credit: glAmount,
@@ -195,21 +215,24 @@ export async function runAuditHead(
       .map((i) => ({ orderItemId: i.orderItemId!, baseQty: i.baseQty }))
     await reverseFulfillment(
       trx,
-      side,
+      spec.projectionSide,
       {
         companyId: before.companyId,
         partyType: before.partyType,
         partyId: before.partyId,
         lines: sourceLines,
+        requireOutsourced: spec.requireOutsourced,
       },
       PROJECTION_OPTS,
     )
 
     const auditedById = permit.actor.userId || null
+    // 委外纯数量单头无 posting_date 列
+    const postingSet = spec.monetary ? sql`posting_date=${postingDate}::date,` : sql``
     await sql`
       UPDATE ${ident(spec.headTable)} SET
         status='audited',
-        posting_date=${postingDate}::date,
+        ${postingSet}
         audited_at=(now() AT TIME ZONE 'utc'),
         audited_by_id=${auditedById}::uuid,
         updated_at=(now() AT TIME ZONE 'utc')
@@ -235,12 +258,12 @@ export async function runAuditHead(
 export async function runVoidHead(
   db: Kysely<Database>,
   permit: Permit,
-  side: TradingSide,
+  side: ReturnKind,
   id: string,
   deps: {
     inventory: Pick<InventoryEngine, 'post' | 'cancel'>
     gl: Pick<GlEngine, 'post' | 'cancel'>
-    headTargets: Record<TradingSide, AuthzTarget>
+    headTargets: Record<ReturnKind, AuthzTarget>
     auditFields: readonly string[]
   },
 ) {
@@ -270,12 +293,13 @@ export async function runVoidHead(
       .map((i) => ({ orderItemId: i.orderItemId!, baseQty: i.baseQty }))
     await postFulfillment(
       trx,
-      side,
+      spec.projectionSide,
       {
         companyId: before.companyId,
         partyType: before.partyType,
         partyId: before.partyId,
         lines: sourceLines,
+        requireOutsourced: spec.requireOutsourced,
       },
       PROJECTION_OPTS,
     )
@@ -307,7 +331,7 @@ async function lockHead(
   permit: Permit,
   spec: ReturnSideSpec,
   id: string,
-  headTargets: Record<TradingSide, AuthzTarget>,
+  headTargets: Record<ReturnKind, AuthzTarget>,
 ) {
   return loadAuthorized({
     db: handle,

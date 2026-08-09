@@ -38,6 +38,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'purchase.return': '采购退货单',
   'purchase.outsourced_issue': '委外发料单',
   'purchase.outsourced_receipt': '委外入库单',
+  'purchase.outsourced_return': '委外退货单',
   'purchase.reconciliation': '采购对账单',
   'hr.employee': '员工',
   'hr.attendance_punch': '打卡记录',

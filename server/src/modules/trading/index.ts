@@ -104,7 +104,7 @@ export function registerTradingResources(registry: Registry): void {
   }
   registry.register(packBoxMeta())
   registry.register(packLineMeta())
-  for (const side of ['sales', 'purchase'] as const) {
+  for (const side of ['sales', 'purchase', 'outsourced'] as const) {
     registry.register(returnHeadMeta(side))
     registry.register(returnItemMeta(side))
   }
@@ -172,6 +172,8 @@ export function tradingRouteMounts(deps: {
     salesReturnItems: returnItemRoutes({ auth, authz, returns, side: 'sales' }),
     purchaseReturns: returnHeadRoutes({ auth, authz, returns, side: 'purchase' }),
     purchaseReturnItems: returnItemRoutes({ auth, authz, returns, side: 'purchase' }),
+    purchaseOutsourcedReturns: returnHeadRoutes({ auth, authz, returns, side: 'outsourced' }),
+    purchaseOutsourcedReturnItems: returnItemRoutes({ auth, authz, returns, side: 'outsourced' }),
     outsourcedIssues: outsourcedIssueRoutes({ auth, authz, outsourced }),
     outsourcedIssueItems: outsourcedIssueItemRoutes({ auth, authz, outsourced }),
     outsourcedReceipts: outsourcedReceiptRoutes({ auth, authz, outsourced }),

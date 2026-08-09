@@ -391,6 +391,8 @@ const CASES: AggregateContractCase[] = [
   salReturnContractCase(),
   // 采购退货（源单行+手工行同构；条目锚定已审核入库条目）
   purReturnContractCase(),
+  // 委外退货（纯数量单：无科目/原币/对账列；条目锚定已审核委外入库条目）
+  purOutsourcedReturnContractCase(),
   // W3：销售/采购订单（SAMPLE/SPOT 免报价；委外子树不进合同）
   ...orderContractCases(),
   // W3：销售/采购对账（双状态机；条目聚合；invoice 接缝不进 CASES）
@@ -1243,6 +1245,156 @@ function purReturnContractCase(): AggregateContractCase {
             qty: '0',
             receiptItemId: purReturnFixture.receiptItemId,
             warehouseId: purReturnFixture.warehouseId,
+          },
+        ],
+      }
+    },
+    buildEmptyReplace: (created) => ({
+      ...noopFrom(created),
+      items: [],
+    }),
+  }
+}
+
+/** 委外退货业务资源合同夹具（独立公司 + 已审核委外订单/委外入库单两行作源单锚点） */
+const purOutsourcedReturnFixture = {
+  companyId: crypto.randomUUID(),
+  otherCompanyId: crypto.randomUUID(),
+  currencyId: crypto.randomUUID(),
+  supplierId: crypto.randomUUID(),
+  unitId: crypto.randomUUID(),
+  categoryId: crypto.randomUUID(),
+  materialId: crypto.randomUUID(),
+  material2Id: crypto.randomUUID(),
+  warehouseId: crypto.randomUUID(),
+  debitAccountId: crypto.randomUUID(),
+  creditAccountId: crypto.randomUUID(),
+  orderId: crypto.randomUUID(),
+  orderItemId: crypto.randomUUID(),
+  orderItem2Id: crypto.randomUUID(),
+  receiptId: crypto.randomUUID(),
+  receiptItemId: crypto.randomUUID(),
+  receiptItem2Id: crypto.randomUUID(),
+  ready: false,
+  service: null as ReturnsService | null,
+  registry: null as Registry | null,
+  ruleIds: [] as string[],
+}
+
+function purOutsourcedReturnContractCase(): AggregateContractCase {
+  const asAgg = (): AggregateService =>
+    purOutsourcedReturnFixture.service!._aggregateForContract('outsourced')
+  const validDraft = () => ({
+    companyId: purOutsourcedReturnFixture.companyId,
+    documentDate: '2026-08-10',
+    partyType: 'supplier',
+    partyId: purOutsourcedReturnFixture.supplierId,
+    remarks: '合同-purOutsourcedReturn',
+    warehouseId: purOutsourcedReturnFixture.warehouseId,
+    items: [
+      {
+        idx: 1,
+        qty: '2',
+        outsourcedReceiptItemId: purOutsourcedReturnFixture.receiptItemId,
+        warehouseId: purOutsourcedReturnFixture.warehouseId,
+      },
+      {
+        idx: 2,
+        qty: '3',
+        outsourcedReceiptItemId: purOutsourcedReturnFixture.receiptItem2Id,
+        warehouseId: purOutsourcedReturnFixture.warehouseId,
+      },
+    ],
+  })
+  const noopFrom = (created: Record<string, unknown>) => {
+    const items = asItems(created, 'items').map((item) => ({
+      id: item.id,
+      idx: item.idx,
+      qty: item.qty,
+      outsourcedReceiptItemId: item.outsourcedReceiptItemId,
+      unitId: item.unitId,
+      warehouseId: item.warehouseId,
+      remarks: item.remarks,
+    }))
+    return {
+      companyId: created.companyId,
+      no: created.returnNo,
+      documentDate: created.returnDate,
+      partyType: created.partyType,
+      partyId: created.partyId,
+      remarks: created.remarks,
+      warehouseId: created.warehouseId,
+      items,
+    }
+  }
+  return {
+    title: '委外退货单（purOutsourcedReturns）',
+    headResource: 'purOutsourcedReturns',
+    authzResources: ['purOutsourcedReturns', 'purOutsourcedReturnItems'],
+    headTable: 'pur_outsourced_return',
+    itemTable: 'pur_outsourced_return_item',
+    itemsKey: 'items',
+    prepare: () => ({
+      service: asAgg(),
+      registry: purOutsourcedReturnFixture.registry!,
+    }),
+    companyId: () => purOutsourcedReturnFixture.companyId,
+    otherCompanyId: () => purOutsourcedReturnFixture.otherCompanyId,
+    validDraft,
+    buildDiffReplace: (created) => {
+      const items = asItems(created, 'items')
+      const kept = items[0]!
+      const deleted = items[1]!
+      return {
+        keptItemId: String(kept.id),
+        deletedItemId: String(deleted.id),
+        input: {
+          ...noopFrom(created),
+          remarks: '合同改-purOutsourcedReturn',
+          items: [
+            {
+              id: kept.id,
+              idx: 1,
+              qty: '4',
+              outsourcedReceiptItemId: kept.outsourcedReceiptItemId,
+              unitId: kept.unitId,
+              warehouseId: kept.warehouseId,
+              remarks: '保留',
+            },
+            {
+              idx: 3,
+              qty: '1',
+              outsourcedReceiptItemId: purOutsourcedReturnFixture.receiptItem2Id,
+              warehouseId: purOutsourcedReturnFixture.warehouseId,
+            },
+          ],
+        },
+      }
+    },
+    buildNoopReplace: noopFrom,
+    buildFailReplace: (created) => {
+      const base = noopFrom(created)
+      const items = asItems(created, 'items')
+      const kept = items[0]!
+      return {
+        ...base,
+        remarks: '不应落库',
+        items: [
+          {
+            id: kept.id,
+            idx: kept.idx,
+            qty: '5',
+            outsourcedReceiptItemId: kept.outsourcedReceiptItemId,
+            unitId: kept.unitId,
+            warehouseId: kept.warehouseId,
+            remarks: kept.remarks,
+          },
+          // qty 必须 >0 → 校验失败
+          {
+            idx: 9,
+            qty: '0',
+            outsourcedReceiptItemId: purOutsourcedReturnFixture.receiptItemId,
+            warehouseId: purOutsourcedReturnFixture.warehouseId,
           },
         ],
       }
@@ -2230,6 +2382,8 @@ run('聚合草稿合同（postgres）', () => {
   )
   purReturnFixture.registry = sealed
   purReturnFixture.service = salReturnFixture.service
+  purOutsourcedReturnFixture.registry = sealed
+  purOutsourcedReturnFixture.service = salReturnFixture.service
   orderFixture.registry = sealed
   orderFixture.service = createOrderService(
     db,
@@ -2736,6 +2890,110 @@ run('聚合草稿合同（postgres）', () => {
       }
     }
     pt.ready = true
+
+    // 委外退货夹具：独立公司 + 已审核委外采购订单/委外入库单（两行）作源单锚点
+    const ot = purOutsourcedReturnFixture
+    const otTag = `OT${suffix}`
+    await sql`
+      INSERT INTO bas_currency(id,name,iso_code,symbol,active)
+      VALUES (${ot.currencyId}::uuid, ${otTag + '币'}, ${'V' + suffix.slice(0, 2)}, '¤', true)
+    `.execute(db)
+    await sql`
+      INSERT INTO bas_company(id,code,name,short_name,base_currency_id) VALUES
+        (${ot.companyId}::uuid, ${'J' + suffix}, ${otTag + '公司'}, 'OT', ${ot.currencyId}::uuid),
+        (${ot.otherCompanyId}::uuid, ${'K' + suffix}, ${otTag + '他司'}, 'OU', ${ot.currencyId}::uuid)
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_supplier(id,code,name,short_name)
+      VALUES (${ot.supplierId}::uuid, ${'OS' + suffix}, ${otTag + '协作方'}, 'OS')
+    `.execute(db)
+    await sql`
+      INSERT INTO bas_unit(id,unit_type,is_base,name,symbol,ratio)
+      VALUES (${ot.unitId}::uuid, ${'ot-' + suffix}, true, ${otTag + '件'}, ${'uo' + suffix}, 1)
+    `.execute(db)
+    await sql`
+      INSERT INTO inv_material_category(id,code,name,is_leaf,active)
+      VALUES (${ot.categoryId}::uuid, ${'OC' + suffix}, ${otTag + '分类'}, true, true)
+    `.execute(db)
+    await sql`
+      INSERT INTO inv_material(id,code,name,category_id,default_unit_id,active,material_type) VALUES
+        (${ot.materialId}::uuid, ${'OM' + suffix}, ${otTag + '物料'}, ${ot.categoryId}::uuid, ${ot.unitId}::uuid, true, 'STOCK'),
+        (${ot.material2Id}::uuid, ${'ON' + suffix}, ${otTag + '物料二'}, ${ot.categoryId}::uuid, ${ot.unitId}::uuid, true, 'STOCK')
+    `.execute(db)
+    await sql`
+      INSERT INTO inv_warehouse(id,name,code,company_id,active,is_leaf)
+      VALUES (
+        ${ot.warehouseId}::uuid, ${otTag + '仓'}, ${'OW' + suffix.slice(0, 8)},
+        ${ot.companyId}::uuid, true, true
+      )
+    `.execute(db)
+    await sql`
+      INSERT INTO bas_account(id,code,name,direction,is_group,active,company_id,currency_id,role) VALUES
+        (${ot.debitAccountId}::uuid, ${'OD' + suffix}, ${otTag + '借'}, 'debit', false, true,
+          ${ot.companyId}::uuid, ${ot.currencyId}::uuid, NULL),
+        (${ot.creditAccountId}::uuid, ${'OQ' + suffix}, ${otTag + '贷'}, 'credit', false, true,
+          ${ot.companyId}::uuid, ${ot.currencyId}::uuid, NULL)
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_order(id,order_no,order_date,party_type,party_id,status,company_id,
+        exchange_rate,currency_id,is_outsourced)
+      VALUES (${ot.orderId}::uuid, ${otTag + '-PO'}, '2026-07-20', 'supplier',
+        ${ot.supplierId}::uuid, 'audited', ${ot.companyId}::uuid, 1, ${ot.currencyId}::uuid, true)
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_order_item(
+        id,idx,qty,base_qty,price,amount,base_price,base_amount,tax_rate,
+        order_id,company_id,material_id,unit_id,material_code,material_name,unit_name
+      ) VALUES
+        (${ot.orderItemId}::uuid,1,100,100,10,1000,10,1000,0,${ot.orderId}::uuid,
+          ${ot.companyId}::uuid,${ot.materialId}::uuid,${ot.unitId}::uuid,
+          ${'OM' + suffix},${otTag + '物料'},${otTag + '件'}),
+        (${ot.orderItem2Id}::uuid,2,50,50,10,500,10,500,0,${ot.orderId}::uuid,
+          ${ot.companyId}::uuid,${ot.material2Id}::uuid,${ot.unitId}::uuid,
+          ${'ON' + suffix},${otTag + '物料二'},${otTag + '件'})
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_outsourced_receipt(id,receipt_no,receipt_date,party_type,party_id,status,company_id,
+        warehouse_id,debit_account_id,credit_account_id)
+      VALUES (${ot.receiptId}::uuid,${otTag + '-OR'},'2026-07-25','supplier',${ot.supplierId}::uuid,
+        'audited',${ot.companyId}::uuid,${ot.warehouseId}::uuid,${ot.debitAccountId}::uuid,${ot.creditAccountId}::uuid)
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_outsourced_receipt_item(
+        id,idx,qty,base_qty,material_code,material_name,unit_name,order_no,
+        order_qty,order_base_qty,order_unit_name,order_price,order_amount,
+        order_base_price,order_base_amount,order_tax_rate,order_currency_code,
+        receipt_id,company_id,order_item_id,material_id,unit_id,warehouse_id,reconciled_qty
+      ) VALUES
+        (${ot.receiptItemId}::uuid,1,100,100,${'OM' + suffix},${otTag + '物料'},${otTag + '件'},${otTag + '-PO'},
+          100,100,${otTag + '件'},10,1000,10,1000,0,${'V' + suffix.slice(0, 2)},
+          ${ot.receiptId}::uuid,${ot.companyId}::uuid,${ot.orderItemId}::uuid,${ot.materialId}::uuid,${ot.unitId}::uuid,${ot.warehouseId}::uuid,0),
+        (${ot.receiptItem2Id}::uuid,2,50,50,${'ON' + suffix},${otTag + '物料二'},${otTag + '件'},${otTag + '-PO'},
+          50,50,${otTag + '件'},10,500,10,500,0,${'V' + suffix.slice(0, 2)},
+          ${ot.receiptId}::uuid,${ot.companyId}::uuid,${ot.orderItem2Id}::uuid,${ot.material2Id}::uuid,${ot.unitId}::uuid,${ot.warehouseId}::uuid,0)
+    `.execute(db)
+    {
+      const existing = await db
+        .selectFrom('sys_numbering_rule')
+        .select('id')
+        .where('resource', '=', 'purchase.outsourced_return')
+        .where('enabled', '=', true)
+        .executeTakeFirst()
+      if (!existing) {
+        const rule = await numbering.create(permit('sysNumberingRules', 'create'), {
+          resource: 'purchase.outsourced_return',
+          name: `${otTag}退货规则`,
+          segments: [
+            { type: 'text', value: `V${suffix}-` },
+            { type: 'seq', padding: 4 },
+          ],
+          perCompany: false,
+          enabled: true,
+        })
+        ot.ruleIds.push(rule.id)
+      }
+    }
+    ot.ready = true
 
     // 订单编号规则（复用 quotation 公司/物料/对手）
     for (const [resource, mark] of [

@@ -16,9 +16,8 @@ import {
   validationHook,
 } from '~/platform/http/zod.ts'
 import { idParam } from '~/platform/standard/routes.ts'
-import type { TradingSide } from '../common.ts'
 import type { ReturnsService } from './service.ts'
-import { returnSpec } from './spec.ts'
+import { returnSpec, type ReturnKind } from './spec.ts'
 
 export interface ReturnsRouteDeps {
   auth: AuthService
@@ -42,9 +41,10 @@ const draftItemSchema = z
     id: z.string().uuid().optional(),
     idx: z.number().int(),
     qty: decimalStringSchema,
-    // 源单行锚点（销售=发货条目 / 采购=入库条目）；留空即手工行（手填物料/价税）
+    // 源单行锚点（销售=发货 / 采购=入库 / 委外=委外入库条目）；留空即手工行
     deliveryItemId: z.string().uuid().nullable().optional(),
     receiptItemId: z.string().uuid().nullable().optional(),
+    outsourcedReceiptItemId: z.string().uuid().nullable().optional(),
     materialId: z.string().uuid().nullable().optional(),
     orderPrice: decimalStringSchema.nullable().optional(),
     orderTaxRate: decimalStringSchema.nullable().optional(),
@@ -65,8 +65,8 @@ const draftFields = {
   exchangeRate: decimalStringSchema.nullable().optional(),
   remarks: z.string().nullable().optional(),
   warehouseId: z.string().uuid().nullable().optional(),
-  debitAccountId: z.string().uuid(),
-  creditAccountId: z.string().uuid(),
+  debitAccountId: z.string().uuid().nullable().optional(),
+  creditAccountId: z.string().uuid().nullable().optional(),
 }
 
 const draftCreateSchema = z
@@ -97,13 +97,13 @@ function toDraftInput(
     exchangeRate: body.exchangeRate,
     remarks: body.remarks,
     warehouseId: body.warehouseId,
-    debitAccountId: body.debitAccountId,
-    creditAccountId: body.creditAccountId,
+    debitAccountId: body.debitAccountId ?? null,
+    creditAccountId: body.creditAccountId ?? null,
     items: body.items,
   }
 }
 
-export function returnHeadRoutes(deps: ReturnsRouteDeps & { side: TradingSide }) {
+export function returnHeadRoutes(deps: ReturnsRouteDeps & { side: ReturnKind }) {
   const { auth, authz, returns, side } = deps
   const RESOURCE = returnSpec(side).headResource
   const headGuard = (action: string) => authz.guard(RESOURCE, action)
@@ -180,7 +180,7 @@ export function returnHeadRoutes(deps: ReturnsRouteDeps & { side: TradingSide })
     )
 }
 
-export function returnItemRoutes(deps: ReturnsRouteDeps & { side: TradingSide }) {
+export function returnItemRoutes(deps: ReturnsRouteDeps & { side: ReturnKind }) {
   const { auth, authz, returns, side } = deps
   // 聚合草稿的子资源只读：写由整单 PUT 承担
   const itemGuard = (action: string) => authz.guard(returnSpec(side).itemResource, action)

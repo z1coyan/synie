@@ -1527,7 +1527,9 @@ export const RESOURCE_MANIFEST: ResourceManifest = {
         "orderBaseAmount",
         "orderTaxRate",
         "reconciledQty",
-        "remainingReconcilableQty"
+        "remainingReconcilableQty",
+        "returnedQty",
+        "remainingReturnableQty"
       ],
       "date": [
         "insertedAt",
@@ -1551,6 +1553,57 @@ export const RESOURCE_MANIFEST: ResourceManifest = {
       "date": [
         "receiptDate",
         "postingDate",
+        "auditedAt",
+        "insertedAt",
+        "updatedAt"
+      ],
+      "decimalZero": []
+    }
+  },
+  "purOutsourcedReturnItems": {
+    "label": "委外退货单",
+    "lookup": {
+      "labelField": "materialCode",
+      "searchFields": [
+        "materialCode",
+        "materialName",
+        "materialSpec",
+        "customerPartNo",
+        "unitName",
+        "orderNo",
+        "orderUnitName",
+        "remarks",
+        "returnNo"
+      ]
+    },
+    "wire": {
+      "decimal": [
+        "qty",
+        "baseQty",
+        "orderQty",
+        "orderBaseQty"
+      ],
+      "date": [
+        "insertedAt",
+        "updatedAt",
+        "returnDate"
+      ],
+      "decimalZero": []
+    }
+  },
+  "purOutsourcedReturns": {
+    "label": "委外退货单",
+    "lookup": {
+      "labelField": "returnNo",
+      "searchFields": [
+        "returnNo",
+        "remarks"
+      ]
+    },
+    "wire": {
+      "decimal": [],
+      "date": [
+        "returnDate",
         "auditedAt",
         "insertedAt",
         "updatedAt"

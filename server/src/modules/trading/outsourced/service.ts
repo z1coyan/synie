@@ -524,7 +524,7 @@ export function createOutsourcedService(
     projection: {
       source: RECEIPT_ITEM_SOURCE,
       alias: RECEIPT_ITEM_ALIAS,
-      selectExtra: sql`receipt_no, receipt_date, receipt_status, party_type, party_id, remaining_reconcilable_qty`,
+      selectExtra: sql`receipt_no, receipt_date, receipt_status, party_type, party_id, remaining_reconcilable_qty, remaining_returnable_qty`,
       mapExtra: mapReceiptItemExtras,
     },
     parent: {

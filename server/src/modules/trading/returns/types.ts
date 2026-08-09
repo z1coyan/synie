@@ -15,8 +15,9 @@ export interface ReturnHead {
   updatedAt: string
   companyId: string
   warehouseId: string | null
-  debitAccountId: string
-  creditAccountId: string
+  /** 金额单草稿必填；委外纯数量单无科目列（恒 null） */
+  debitAccountId: string | null
+  creditAccountId: string | null
   createdById: string | null
   auditedById: string | null
 }
@@ -25,9 +26,10 @@ export interface ReturnDraftItemInput {
   id?: string
   idx: number
   qty: string
-  /** 源单行锚点（销售=发货条目 / 采购=入库条目）；留空即手工行（手填物料/价税） */
+  /** 源单行锚点（销售=发货条目 / 采购=入库条目 / 委外=委外入库条目）；留空即手工行 */
   deliveryItemId?: string | null
   receiptItemId?: string | null
+  outsourcedReceiptItemId?: string | null
   /** 手工行必填；源单行由来源快照覆盖 */
   materialId?: string | null
   /** 原币含税单价：手工行手填；源单行随快照 */
@@ -51,8 +53,9 @@ export interface ReturnDraftInput {
   exchangeRate?: string | null
   remarks?: string | null
   warehouseId?: string | null
-  debitAccountId: string
-  creditAccountId: string
+  /** 金额单必填；委外纯数量单无科目（传 null） */
+  debitAccountId?: string | null
+  creditAccountId?: string | null
   items: ReturnDraftItemInput[]
 }
 
@@ -82,10 +85,12 @@ export interface ReturnItemDto {
   updatedAt: string
   returnId: string
   companyId: string
-  /** 销售侧=发货条目锚点；采购侧恒 null */
+  /** 销售侧=发货条目锚点；其他侧恒 null */
   deliveryItemId: string | null
-  /** 采购侧=入库条目锚点；销售侧恒 null */
+  /** 采购侧=入库条目锚点；其他侧恒 null */
   receiptItemId: string | null
+  /** 委外侧=委外入库条目锚点；其他侧恒 null */
+  outsourcedReceiptItemId: string | null
   orderItemId: string | null
   materialId: string | null
   unitId: string | null
@@ -114,8 +119,8 @@ export interface ReturnDraftDto {
   updatedAt: string
   companyId: string
   warehouseId: string | null
-  debitAccountId: string
-  creditAccountId: string
+  debitAccountId: string | null
+  creditAccountId: string | null
   createdById: string | null
   auditedById: string | null
   items: ReturnItemDto[]

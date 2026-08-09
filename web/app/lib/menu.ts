@@ -301,6 +301,12 @@ export const menuModules: MenuModule[] = [
             path: '/purchase/outsourced-receipts',
             relatedPermissions: ['purchase.outsourced_receipt'],
           },
+          {
+            code: 'menu.purchase.outsourced-returns',
+            label: '委外退货',
+            path: '/purchase/outsourced-returns',
+            relatedPermissions: ['purchase.outsourced_return'],
+          },
         ],
       },
       {

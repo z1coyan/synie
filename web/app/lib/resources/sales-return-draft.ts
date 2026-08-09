@@ -6,6 +6,8 @@ import type { Row } from '~/components/synie-data-grid/types'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { nullableString, requiredIndex, requiredString } from './draft-fields'
 import type {
+  PurchaseOutsourcedReturnDraftInput,
+  PurchaseOutsourcedReturnDraftItemInput,
   PurchaseReturnDraftInput,
   PurchaseReturnDraftItemInput,
   SalesReturnDraftInput,
@@ -78,6 +80,42 @@ export function buildPurchaseReturnDraft(
       debitAccountId: requiredString(values.debitAccountId, '借方科目'),
       creditAccountId: requiredString(values.creditAccountId, '贷方科目'),
       items: items.map(purchaseItemInput),
+    },
+    index: {
+      itemRowIds: items.map((row) => String(row.id)),
+    },
+  }
+}
+
+/** 提交 mutation(委外):纯数量单——源单行快照由委外入库条目锁定带出,手工行仅物料/单位/数量/行仓 */
+function outsourcedItemInput(row: Row): PurchaseOutsourcedReturnDraftItemInput {
+  const manual = row.outsourcedReceiptItemId == null || row.outsourcedReceiptItemId === ''
+  return {
+    ...(!isLocalRow(row) ? { id: String(row.id) } : {}),
+    idx: requiredIndex(row.idx, '退货条目序号'),
+    outsourcedReceiptItemId: manual ? null : String(row.outsourcedReceiptItemId),
+    ...(manual ? { materialId: requiredString(row.materialId, '物料') } : {}),
+    unitId: nullableString(row.unitId),
+    qty: requiredString(row.qty, '退货数量'),
+    warehouseId: nullableString(row.warehouseId),
+    remarks: nullableString(row.remarks),
+  }
+}
+
+export function buildPurchaseOutsourcedReturnDraft(
+  values: Record<string, unknown>,
+  items: Row[],
+): { draft: PurchaseOutsourcedReturnDraftInput; index: ReturnDraftIndex } {
+  return {
+    draft: {
+      companyId: requiredString(values.companyId, '公司'),
+      returnNo: nullableString(values.returnNo),
+      returnDate: nullableString(values.returnDate),
+      partyType: requiredString(values.partyType, '对手类型'),
+      partyId: requiredString(values.partyId, '对手'),
+      remarks: nullableString(values.remarks),
+      warehouseId: nullableString(values.warehouseId),
+      items: items.map(outsourcedItemInput),
     },
     index: {
       itemRowIds: items.map((row) => String(row.id)),

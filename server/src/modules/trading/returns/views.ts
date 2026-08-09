@@ -4,11 +4,11 @@ import {
   asDate,
   asDateTime,
   asOptionalString,
-  type TradingSide,
   upperStatus,
   wireRequiredDecimal,
 } from '../common.ts'
 import { mapHead } from './domain.ts'
+import { returnSpec, type ReturnKind } from './spec.ts'
 import type { ReturnDraftDto, ReturnDraftInput, ReturnItemDto } from './types.ts'
 
 function asIso(value: unknown): string | null {
@@ -39,8 +39,8 @@ export function presentReturnHead(row: Record<string, unknown>) {
     updatedAt: asIso(row.updatedAt)!,
     companyId: String(row.companyId ?? ''),
     warehouseId: row.warehouseId == null ? null : String(row.warehouseId),
-    debitAccountId: String(row.debitAccountId ?? ''),
-    creditAccountId: String(row.creditAccountId ?? ''),
+    debitAccountId: row.debitAccountId == null ? null : String(row.debitAccountId),
+    creditAccountId: row.creditAccountId == null ? null : String(row.creditAccountId),
     createdById: row.createdById == null ? null : String(row.createdById),
     auditedById: row.auditedById == null ? null : String(row.auditedById),
   }
@@ -77,6 +77,8 @@ export function presentReturnItem(row: Record<string, unknown>): ReturnItemDto {
     companyId: String(row.companyId ?? ''),
     deliveryItemId: row.deliveryItemId == null ? null : String(row.deliveryItemId),
     receiptItemId: row.receiptItemId == null ? null : String(row.receiptItemId),
+    outsourcedReceiptItemId:
+      row.outsourcedReceiptItemId == null ? null : String(row.outsourcedReceiptItemId),
     orderItemId: row.orderItemId == null ? null : String(row.orderItemId),
     materialId: row.materialId == null ? null : String(row.materialId),
     unitId: row.unitId == null ? null : String(row.unitId),
@@ -162,22 +164,27 @@ export function returnHeadPayload(input: ReturnDraftInput): Record<string, unkno
 }
 
 export function returnDraftPayload(
-  side: TradingSide,
+  side: ReturnKind,
   input: ReturnDraftInput,
 ): Record<string, unknown> {
   const payload = returnHeadPayload(input)
-  const sourceKey = side === 'sales' ? 'deliveryItemId' : 'receiptItemId'
+  const sourceKey = returnSpec(side).sourceItemApi
   if (Array.isArray(input.items)) {
     payload.items = input.items.map((item) => ({
       ...(item.id !== undefined ? { id: item.id } : {}),
       idx: item.idx,
       qty: item.qty,
-      [sourceKey]: (side === 'sales' ? item.deliveryItemId : item.receiptItemId) ?? null,
+      [sourceKey]:
+        (side === 'sales'
+          ? item.deliveryItemId
+          : side === 'purchase'
+            ? item.receiptItemId
+            : item.outsourcedReceiptItemId) ?? null,
       materialId: item.materialId ?? null,
       orderPrice: item.orderPrice ?? null,
       orderTaxRate: item.orderTaxRate ?? null,
       unitId: item.unitId ?? null,
-      warehouseId: item.warehouseId,
+      warehouseId: item.warehouseId ?? null,
       remarks: item.remarks ?? null,
     }))
   }

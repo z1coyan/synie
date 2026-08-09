@@ -49,6 +49,10 @@ import {
   salesDeliveryPackLineClient,
 } from './fulfillment'
 import {
+  purchaseOutsourcedReturnClient,
+  purchaseOutsourcedReturnCommandAdapter,
+  purchaseOutsourcedReturnDraftAdapter,
+  purchaseOutsourcedReturnItemClient,
   purchaseReturnClient,
   purchaseReturnCommandAdapter,
   purchaseReturnDraftAdapter,
@@ -239,6 +243,8 @@ const transports: Record<string, ResourceTransport> = {
   purOutsourcedIssues: purchaseOutsourcedIssueClient,
   purOutsourcedIssueItems: purchaseOutsourcedIssueItemClient,
   purOutsourcedReceipts: purchaseOutsourcedReceiptClient,
+  purOutsourcedReturns: purchaseOutsourcedReturnClient,
+  purOutsourcedReturnItems: purchaseOutsourcedReturnItemClient,
   purOutsourcedReceiptItems: purchaseOutsourcedReceiptItemClient,
   purOutsourcedReceiptItemMaterials:
     purchaseOutsourcedReceiptItemMaterialClient,
@@ -303,6 +309,7 @@ const SEMANTIC_COMMAND_ADAPTERS: Record<string, CommandAdapter> = {
   purOrders: purchaseOrderCommandAdapter,
   purOutsourcedIssues: purchaseOutsourcedIssueCommandAdapter,
   purOutsourcedReceipts: purchaseOutsourcedReceiptCommandAdapter,
+  purOutsourcedReturns: purchaseOutsourcedReturnCommandAdapter,
   purQuotations: purchaseQuotationCommandAdapter,
   purReceipts: purchaseReceiptCommandAdapter,
   purReconciliations: purchaseReconciliationCommandAdapter,
@@ -320,6 +327,7 @@ const DRAFT_ADAPTERS = {
   purOrders: purchaseOrderDraftAdapter,
   purOutsourcedIssues: purchaseOutsourcedIssueDraftAdapter,
   purOutsourcedReceipts: purchaseOutsourcedReceiptDraftAdapter,
+  purOutsourcedReturns: purchaseOutsourcedReturnDraftAdapter,
   purQuotations: purchaseQuotationDraftAdapter,
   purReceipts: purchaseReceiptDraftAdapter,
   purReconciliations: purchaseReconciliationDraftAdapter,

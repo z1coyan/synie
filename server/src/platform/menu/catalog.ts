@@ -126,6 +126,7 @@ export const menuCatalog: MenuCatalogModule[] = [
         items: [
           { code: 'menu.purchase.outsourced-issues', label: '委外发料' },
           { code: 'menu.purchase.outsourced-receipts', label: '委外入库' },
+          { code: 'menu.purchase.outsourced-returns', label: '委外退货' },
         ],
       },
       {

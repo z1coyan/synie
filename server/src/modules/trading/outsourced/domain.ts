@@ -55,10 +55,11 @@ export const RECEIPT_ITEM_SOURCE: RawBuilder<unknown> = sql` FROM (
   SELECT i.id,i.idx,i.qty,i.base_qty,i.material_code,i.material_name,i.material_spec,
     i.customer_part_no,i.unit_name,i.order_no,i.order_qty,i.order_base_qty,i.order_unit_name,
     i.order_price,i.order_amount,i.order_base_price,i.order_base_amount,i.order_tax_rate,
-    i.order_currency_code,i.reconciled_qty,i.remarks,i.inserted_at,i.updated_at,
+    i.order_currency_code,i.reconciled_qty,i.returned_qty,i.remarks,i.inserted_at,i.updated_at,
     i.receipt_id,i.company_id,i.order_item_id,i.material_id,i.unit_id,i.warehouse_id,
     h.receipt_no,h.receipt_date,h.status AS receipt_status,h.party_type,h.party_id,
-    (i.base_qty - i.reconciled_qty) AS remaining_reconcilable_qty
+    (i.base_qty - i.reconciled_qty) AS remaining_reconcilable_qty,
+    (i.base_qty - i.returned_qty) AS remaining_returnable_qty
   FROM pur_outsourced_receipt_item i
   JOIN pur_outsourced_receipt h ON h.id=i.receipt_id
 ) receipt_items`
@@ -231,6 +232,8 @@ export type ReceiptItem = {
   orderCurrencyCode: string
   reconciledQty: string
   remainingReconcilableQty?: string
+  returnedQty?: string
+  remainingReturnableQty?: string
   remarks: string | null
   insertedAt: WireTime
   updatedAt: WireTime
@@ -332,6 +335,14 @@ export function mapReceiptItemExtras(row: Record<string, unknown>): Record<strin
         row.remaining_reconcilable_qty ??
           row.remainingReconcilableQty ??
           decimal(baseQty).sub(decimal(reconciled)),
+      ),
+    ),
+    returnedQty: wireRequiredDecimal(String(row.returned_qty ?? row.returnedQty ?? 0)),
+    remainingReturnableQty: wireRequiredDecimal(
+      String(
+        row.remaining_returnable_qty ??
+          row.remainingReturnableQty ??
+          decimal(baseQty).sub(decimal(String(row.returned_qty ?? row.returnedQty ?? 0))),
       ),
     ),
   }

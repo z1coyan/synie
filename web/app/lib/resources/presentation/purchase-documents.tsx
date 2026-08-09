@@ -35,6 +35,7 @@ export const PURCHASE_DOCUMENT_RESOURCES = [
   'purReturns',
   'purOutsourcedReceipts',
   'purOutsourcedIssues',
+  'purOutsourcedReturns',
   'purReconciliations',
 ] as const
 
@@ -213,6 +214,37 @@ const DEFINITIONS = {
         label: '贷方科目',
         hidden: true,
       },
+    },
+  },
+  purOutsourcedReturns: {
+    // 纯数量单：无金额/过账日期/表底科目/原币汇率（ADR 2026-08-09）
+    label: '委外退货单',
+    contentClassName: 'w-full lg:w-[960px]',
+    exclude: AUDIT_TRAIL_EXCLUDE,
+    fields: {
+      companyId: {
+        required: true,
+        order: -1,
+        cols: 6,
+        edit: 'createOnly',
+      },
+      returnNo: {
+        order: 0,
+        cols: 6,
+        placeholder: '保存后自动编号',
+      },
+      returnDate: { order: 1, cols: 6, required: true },
+      ...tradingPartyFields({
+        kind: 'purchase',
+        typeOrder: 3,
+        idOrder: 4,
+      }),
+      warehouseId: {
+        order: 5,
+        cols: 6,
+        label: '默认仓库(可空)',
+      },
+      remarks: { order: 6, label: '备注' },
     },
   },
   purReceipts: {
