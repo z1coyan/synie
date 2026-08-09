@@ -32,7 +32,11 @@ import type { ReturnHead } from './types.ts'
 export const ITEM_ALIAS = 'return_items'
 export const ITEM_SELECT = sql`SELECT *`
 
-/** beforeWrite 派生列（快照随发货条目带入） */
+/**
+ * beforeWrite 派生列（readonly 物理列：快照随发货条目/物料带入）。
+ * materialId/orderPrice/orderTaxRate 为 wire 可写列（手工行手填、源单行保存时覆盖），
+ * 不入本清单（writable+derived 双登记会重复写列）。
+ */
 export const ITEM_DERIVED = [
   'baseQty',
   'materialCode',
@@ -44,14 +48,11 @@ export const ITEM_DERIVED = [
   'orderQty',
   'orderBaseQty',
   'orderUnitName',
-  'orderPrice',
   'orderAmount',
   'orderBasePrice',
   'orderBaseAmount',
-  'orderTaxRate',
   'orderCurrencyCode',
   'orderItemId',
-  'materialId',
 ] as const
 
 export const RETURN_WRITE_ERRORS = [
@@ -159,23 +160,27 @@ export async function loadHead(db: DbHandle, id: string) {
 
 export interface ActionItem {
   id: string
-  deliveryItemId: string
-  orderItemId: string
+  /** 源单行锚点；手工行为 null（不动任何订单投影、不受剩余可退限制） */
+  deliveryItemId: string | null
+  orderItemId: string | null
   baseQty: string
   materialId: string
   warehouseId: string | null
   materialType: string
   materialCode: string
   materialName: string
-  orderBaseQty: string
-  orderBaseAmount: string
+  /** 原币含税单价：手工行手填值（金额=数量×价×单头汇率） */
+  orderPrice: string | null
+  orderBaseQty: string | null
+  orderBaseAmount: string | null
   reconciledQty: string
 }
 
 export async function loadActionItems(db: DbHandle, headId: string): Promise<ActionItem[]> {
   const rows = await sql<Record<string, unknown>>`
     SELECT i.id, i.delivery_item_id, i.order_item_id, i.base_qty, i.material_id, i.warehouse_id,
-      i.material_code, i.material_name, i.order_base_qty, i.order_base_amount, i.reconciled_qty,
+      i.material_code, i.material_name, i.order_price,
+      i.order_base_qty, i.order_base_amount, i.reconciled_qty,
       m.material_type
     FROM ${ident(RETURN_ITEM_TABLE)} i
     JOIN inv_material m ON m.id=i.material_id
@@ -185,34 +190,47 @@ export async function loadActionItems(db: DbHandle, headId: string): Promise<Act
   `.execute(db)
   return rows.rows.map((r) => ({
     id: String(r.id),
-    deliveryItemId: String(r.delivery_item_id),
-    orderItemId: String(r.order_item_id),
+    deliveryItemId: r.delivery_item_id ? String(r.delivery_item_id) : null,
+    orderItemId: r.order_item_id ? String(r.order_item_id) : null,
     baseQty: String(r.base_qty),
     materialId: String(r.material_id),
     warehouseId: r.warehouse_id ? String(r.warehouse_id) : null,
     materialType: String(r.material_type),
     materialCode: String(r.material_code),
     materialName: String(r.material_name),
-    orderBaseQty: String(r.order_base_qty),
-    orderBaseAmount: String(r.order_base_amount),
+    orderPrice: r.order_price != null ? String(r.order_price) : null,
+    orderBaseQty: r.order_base_qty != null ? String(r.order_base_qty) : null,
+    orderBaseAmount: r.order_base_amount != null ? String(r.order_base_amount) : null,
     reconciledQty: String(r.reconciled_qty ?? 0),
   }))
 }
 
 /**
- * 源单行派生：从发货条目带物料快照与订单快照（复用发货条目快照列）。
- * 保存时不硬卡剩余可退（审核硬校验）；发货单须已审核未作废、同公司同对手；
- * 单头原币已填时须与订单快照币种一致。
+ * 条目派生，两类行：
+ * - 源单行（deliveryItemId 非空）：从发货条目带物料快照与订单快照（复用发货条目快照列）；
+ *   保存时不硬卡剩余可退（审核硬校验）；发货单须已审核未作废、同公司同对手；
+ *   源行发货快照原币（order_currency_code）须与单头原币一致。
+ * - 手工行（deliveryItemId 空）：手填物料/单位/数量/含税单价/税率；冻结物料快照
+ *  （编号/名称/规格/客户料号/单位名），订单快照列按手填价税×单头汇率折算留痕，order_no 留空。
  */
 export async function deriveItem(
   db: DbHandle,
-  parent: { companyId: string; partyType: string; partyId: string; currencyId: string | null },
+  parent: {
+    companyId: string
+    partyType: string
+    partyId: string
+    currencyId: string | null
+    exchangeRate: string | null
+  },
   draft: {
     idx: number
     qty: ReturnType<typeof decimal>
-    deliveryItemId: string
+    deliveryItemId: string | null
+    materialId: string | null
     unitId: string | null
     warehouseId: string | null
+    price: ReturnType<typeof decimal> | null
+    taxRate: ReturnType<typeof decimal> | null
     remarks: string | null
   },
 ) {
@@ -222,6 +240,7 @@ export async function deriveItem(
   if (draft.remarks && runeLen(draft.remarks) > 512) {
     throw ApiError.validation(`${RETURN_ITEM_LABEL}参数不合法`, { remarks: ['最多 512 个字符'] })
   }
+  if (!draft.deliveryItemId) return deriveManualItem(db, parent, draft)
   const rows = await sql<Record<string, unknown>>`
     SELECT i.*, h.status AS delivery_status, h.company_id AS delivery_company_id,
       h.party_type AS delivery_party_type, h.party_id AS delivery_party_id
@@ -304,6 +323,88 @@ export async function deriveItem(
     orderBaseAmount: String(source.order_base_amount),
     orderTaxRate: String(source.order_tax_rate),
     orderCurrencyCode: String(source.order_currency_code),
+    remarks: draft.remarks,
+  }
+}
+
+/** 手工行派生：手填物料/单位/数量/价税；金额快照按单头汇率折本币留痕 */
+async function deriveManualItem(
+  db: DbHandle,
+  parent: Parameters<typeof deriveItem>[1],
+  draft: Parameters<typeof deriveItem>[2],
+) {
+  if (!draft.materialId) {
+    throw ApiError.validation(`${RETURN_ITEM_LABEL}参数不合法`, { materialId: ['必填'] })
+  }
+  if (draft.price == null || draft.price.lt(0)) {
+    throw ApiError.validation(`${RETURN_ITEM_LABEL}参数不合法`, { orderPrice: ['必填且不能小于 0'] })
+  }
+  if (draft.taxRate == null || draft.taxRate.lt(0)) {
+    throw ApiError.validation(`${RETURN_ITEM_LABEL}参数不合法`, { orderTaxRate: ['必填且不能小于 0'] })
+  }
+  if (!parent.currencyId) {
+    throw ApiError.validation(`${RETURN_ITEM_LABEL}参数不合法`, {
+      currencyId: ['含手工行时单头原币必填'],
+    })
+  }
+  const cur = await db
+    .selectFrom('bas_currency')
+    .select('iso_code')
+    .where('id', '=', parent.currencyId)
+    .executeTakeFirst()
+  if (!cur) {
+    throw ApiError.validation(`${RETURN_HEAD_LABEL}参数不合法`, { currencyId: ['币种不存在'] })
+  }
+  let unitId = draft.unitId
+  if (!unitId) {
+    const m = await db
+      .selectFrom('inv_material')
+      .select('default_unit_id')
+      .where('id', '=', draft.materialId)
+      .executeTakeFirst()
+    if (!m) {
+      throw ApiError.validation(`${RETURN_ITEM_LABEL}参数不合法`, { materialId: ['物料不存在'] })
+    }
+    unitId = m.default_unit_id
+  }
+  const snap = await loadMaterialSnap(db, draft.materialId, unitId)
+  guardMaterialType(snap, ['STOCK', 'VIRTUAL'], RETURN_ITEM_LABEL)
+  if (!draft.warehouseId) {
+    if (snap.materialType === 'STOCK') {
+      throw ApiError.validation(`${RETURN_ITEM_LABEL}参数不合法`, {
+        warehouseId: ['库存类物料必须填写行仓'],
+      })
+    }
+  } else {
+    await validateEnabledLeafWarehouse(db, parent.companyId, draft.warehouseId, '退货仓库不合法')
+  }
+  const baseQty = convertToBaseQty(draft.qty, unitId, snap)
+  const rate = decimal(parent.exchangeRate ?? '1')
+  const price = draft.price
+  return {
+    idx: draft.idx,
+    qty: draft.qty,
+    baseQty,
+    deliveryItemId: null,
+    orderItemId: null,
+    materialId: draft.materialId,
+    unitId,
+    warehouseId: draft.warehouseId,
+    materialCode: snap.code,
+    materialName: snap.name,
+    materialSpec: snap.spec,
+    customerPartNo: snap.customerPartNo,
+    unitName: snap.unitName,
+    orderNo: null,
+    orderQty: draft.qty,
+    orderBaseQty: baseQty,
+    orderUnitName: snap.unitName,
+    orderPrice: price,
+    orderAmount: draft.qty.mul(price),
+    orderBasePrice: price.mul(rate),
+    orderBaseAmount: baseQty.mul(price).mul(rate),
+    orderTaxRate: draft.taxRate,
+    orderCurrencyCode: String(cur.iso_code),
     remarks: draft.remarks,
   }
 }

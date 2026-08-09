@@ -150,11 +150,12 @@ export function returnItemMeta(): ResourceMeta {
       f('order_qty', 'orderQty', 'decimal', '订购数量(订单行单位)', { readonly: true, nullable: true, filterable: true, sortable: true }),
       f('order_base_qty', 'orderBaseQty', 'decimal', '订购数量(默认单位)', { readonly: true, nullable: true, filterable: true, sortable: true }),
       f('order_unit_name', 'orderUnitName', 'string', '订单行单位名称', { readonly: true, nullable: true, filterable: true, sortable: true }),
-      f('order_price', 'orderPrice', 'decimal', '原币含税单价', { readonly: true, nullable: true, filterable: true, sortable: true }),
+      // 含税单价/税率：源单行随发货快照带入(保存时覆盖)；手工行手填(wire 可写)
+      f('order_price', 'orderPrice', 'decimal', '原币含税单价(手工行手填)', { nullable: true, filterable: true, sortable: true }),
       f('order_amount', 'orderAmount', 'decimal', '原币含税金额', { readonly: true, nullable: true, filterable: true, sortable: true }),
       f('order_base_price', 'orderBasePrice', 'decimal', '本币含税单价', { readonly: true, nullable: true, filterable: true, sortable: true }),
       f('order_base_amount', 'orderBaseAmount', 'decimal', '本币含税金额', { readonly: true, nullable: true, filterable: true, sortable: true }),
-      f('order_tax_rate', 'orderTaxRate', 'decimal', '税率', { readonly: true, nullable: true, filterable: true, sortable: true }),
+      f('order_tax_rate', 'orderTaxRate', 'decimal', '税率(手工行手填)', { nullable: true, filterable: true, sortable: true }),
       f('order_currency_code', 'orderCurrencyCode', 'string', '订单原币代码', { readonly: true, nullable: true, filterable: true, sortable: true }),
       f('reconciled_qty', 'reconciledQty', 'decimal', '已对账数量(默认单位;由销售对账单生效/回退同步)', {
         readonly: true, filterable: true, sortable: true,
@@ -170,16 +171,17 @@ export function returnItemMeta(): ResourceMeta {
         readonly: true, filterable: true,
         ref: { resource: 'basCompanies', relation: 'company', labelField: 'name' },
       }),
-      f('delivery_item_id', 'deliveryItemId', 'fk', '发货条目', {
-        required: true, filterable: true,
+      f('delivery_item_id', 'deliveryItemId', 'fk', '发货条目(源单行锚点;手工行留空)', {
+        nullable: true, filterable: true,
         ref: { resource: 'salDeliveryItems', relation: 'deliveryItem', labelField: 'materialCode' },
       }),
       f('order_item_id', 'orderItemId', 'fk', '订单条目(随发货条目带入)', {
         readonly: true, nullable: true, filterable: true,
         ref: { resource: 'salOrderItems', relation: 'orderItem', labelField: 'materialCode' },
       }),
-      f('material_id', 'materialId', 'fk', '物料', {
-        readonly: true, nullable: true, filterable: true,
+      // 物料：手工行手填(wire 可写)；源单行随发货条目带入(保存时覆盖)
+      f('material_id', 'materialId', 'fk', '物料(手工行必填)', {
+        nullable: true, filterable: true,
         ref: { resource: 'invMaterials', relation: 'material', labelField: 'name' },
       }),
       f('unit_id', 'unitId', 'fk', '单位', {

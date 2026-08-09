@@ -134,6 +134,16 @@ export function createReturnsService(
         if (action === 'create') {
           if (!draft.returnDate) draft.returnDate = utcToday()
           else draft.returnDate = toDateOnly(String(draft.returnDate))
+          // 原币/汇率缺省代入：公司本币 + 1（手工行全单换算口径）
+          if (!draft.currencyId && draft.companyId) {
+            const company = await trx
+              .selectFrom('bas_company')
+              .select('base_currency_id')
+              .where('id', '=', String(draft.companyId))
+              .executeTakeFirst()
+            draft.currencyId = company?.base_currency_id ?? null
+          }
+          if (draft.exchangeRate == null || draft.exchangeRate === '') draft.exchangeRate = '1'
         } else if (draft.returnDate != null) {
           draft.returnDate = toDateOnly(String(draft.returnDate))
         }
@@ -152,7 +162,9 @@ export function createReturnsService(
             lowerParty(String(before.partyType))
           const partyIdChanged =
             String(draft.partyId ?? before.partyId) !== String(before.partyId)
-          if (partyTypeChanged || partyIdChanged) {
+          const currencyChanged =
+            String(draft.currencyId ?? before.currencyId) !== String(before.currencyId)
+          if (partyTypeChanged || partyIdChanged || currencyChanged) {
             const has = await sql<{ e: boolean }>`
               SELECT EXISTS(
                 SELECT 1 FROM ${sql.raw(RETURN_ITEM_TABLE)}
@@ -163,7 +175,8 @@ export function createReturnsService(
               const fields: Record<string, string[]> = {}
               if (partyTypeChanged) fields.partyType = ['已有条目时不可修改']
               if (partyIdChanged) fields.partyId = ['已有条目时不可修改']
-              throw ApiError.validation('已有条目时不可修改退货对手', fields)
+              if (currencyChanged) fields.currencyId = ['已有条目时不可修改']
+              throw ApiError.validation('已有条目时不可修改退货对手或原币', fields)
             }
           }
         }
@@ -220,10 +233,35 @@ export function createReturnsService(
         if (!decimal(String(qty)).gt(0)) {
           throw ApiError.validation(`${RETURN_ITEM_LABEL}参数不合法`, { qty: ['必须大于 0'] })
         }
-        if (!draft.deliveryItemId) {
-          throw ApiError.validation(`${RETURN_ITEM_LABEL}参数不合法`, {
-            deliveryItemId: ['必填'],
-          })
+        if (draft.deliveryItemId) {
+          // 源单行：锚点以外的物料/价税一律由发货快照覆盖，手填忽略
+        } else {
+          // 手工行：物料/含税单价/税率手填必填（单价可为 0——零金额跳过总账）
+          if (!draft.materialId) {
+            throw ApiError.validation(`${RETURN_ITEM_LABEL}参数不合法`, {
+              materialId: ['必填'],
+            })
+          }
+          if (draft.orderPrice == null || draft.orderPrice === '') {
+            throw ApiError.validation(`${RETURN_ITEM_LABEL}参数不合法`, {
+              orderPrice: ['必填'],
+            })
+          }
+          if (decimal(String(draft.orderPrice)).lt(0)) {
+            throw ApiError.validation(`${RETURN_ITEM_LABEL}参数不合法`, {
+              orderPrice: ['不能小于 0'],
+            })
+          }
+          if (draft.orderTaxRate == null || draft.orderTaxRate === '') {
+            throw ApiError.validation(`${RETURN_ITEM_LABEL}参数不合法`, {
+              orderTaxRate: ['必填'],
+            })
+          }
+          if (decimal(String(draft.orderTaxRate)).lt(0)) {
+            throw ApiError.validation(`${RETURN_ITEM_LABEL}参数不合法`, {
+              orderTaxRate: ['不能小于 0'],
+            })
+          }
         }
         if (draft.remarks != null && runeLen(String(draft.remarks)) > 512) {
           throw ApiError.validation(`${RETURN_ITEM_LABEL}参数不合法`, {
@@ -245,11 +283,19 @@ export function createReturnsService(
             partyType: String(parent.partyType),
             partyId: String(parent.partyId),
             currencyId: parent.currencyId ? String(parent.currencyId) : null,
+            exchangeRate: parent.exchangeRate != null ? String(parent.exchangeRate) : null,
           },
           {
             idx: Number(draft.idx),
             qty: decimal(String(draft.qty)),
-            deliveryItemId: String(draft.deliveryItemId),
+            deliveryItemId:
+              draft.deliveryItemId == null || draft.deliveryItemId === ''
+                ? null
+                : String(draft.deliveryItemId),
+            materialId:
+              draft.materialId == null || draft.materialId === ''
+                ? null
+                : String(draft.materialId),
             unitId: draft.unitId == null || draft.unitId === '' ? null : String(draft.unitId),
             warehouseId:
               draft.warehouseId === undefined ||
@@ -257,6 +303,14 @@ export function createReturnsService(
               draft.warehouseId === ''
                 ? null
                 : String(draft.warehouseId),
+            price:
+              draft.orderPrice == null || draft.orderPrice === ''
+                ? null
+                : decimal(String(draft.orderPrice)),
+            taxRate:
+              draft.orderTaxRate == null || draft.orderTaxRate === ''
+                ? null
+                : decimal(String(draft.orderTaxRate)),
             remarks: draft.remarks == null ? null : String(draft.remarks),
           },
         )

@@ -24,6 +24,7 @@ import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
+import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
@@ -246,6 +247,40 @@ function LockedText({ label, value }: { label: string; value: string }) {
 }
 
 /**
+ * 新建态:公司选定后按公司本币代入原币与汇率 1(含手工行时的全单换算口径)。
+ * 编辑态公司锁死,不重灌。
+ */
+function ReturnCurrencyDefaultSync({
+  mode,
+  companyId,
+  currencyId,
+  companies,
+  patchValues,
+}: {
+  mode: DrawerMode
+  companyId: string | null
+  currencyId: string | null
+  companies: Row[]
+  patchValues: (patch: Record<string, unknown>) => void
+}) {
+  useEffect(() => {
+    if (mode !== 'create' || !companyId || currencyId) return
+    const company = companies.find((c) => String(c.id) === companyId)
+    const base = company?.baseCurrencyId
+    if (base != null && base !== '') {
+      patchValues({ currencyId: String(base), exchangeRate: '1' })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, companyId, currencyId, companies])
+  return null
+}
+
+/** 行形态判别:未挂发货条目即手工行(手填物料/价税) */
+function isManualItem(vals: Record<string, unknown>): boolean {
+  return vals.deliveryItemId == null || vals.deliveryItemId === ''
+}
+
+/**
  * 头关键字段变更清行(ItemsResetGuard)的指纹字段:公司/对手类型/对手任一变则清空条目草稿。
  */
 const ITEMS_RESET_FIELDS = ['companyId', 'partyType', 'partyId'] as const
@@ -265,6 +300,8 @@ export function ReturnDrawerProvider({
 }) {
   // 发货条目缓存:选择时写入完整行,transformItem 带出快照名
   const deliveryItemsRef = useRef(new Map<string, Row>())
+  // 手工行物料缓存:选择时写入,transformItem 带出快照名
+  const manualMaterialsRef = useRef(new Map<string, Row>())
   const draftHeadRef = useRef<Record<string, unknown>>({})
   // 保存后身份切换占号:acceptSavedDraft 先写缓存再切 recordId,骨架装载直取,不双发 loadDraft
   const savedDraftsRef = useRef(new Map<string, SalesReturnSavedDraft>())
@@ -363,6 +400,32 @@ export function ReturnDrawerProvider({
         effects: () => ({ warehouseId: null, debitAccountId: null, creditAccountId: null }),
       },
       returnDate: { ...baseCfg.fields?.returnDate, defaultValue: todayLocal() },
+      // 原币:新建按公司本币代入(ReturnCurrencyDefaultSync);有行后锁改(后端同规)
+      currencyId: {
+        ...baseCfg.fields?.currencyId,
+        input: ({
+          value,
+          onChange,
+          isDisabled,
+        }: {
+          value: unknown
+          onChange: (v: unknown) => void
+          isDisabled: boolean
+        }) => (
+          <RemoteSelect
+            resource="basCurrencies"
+            label="原币(含手工行时全单换算口径;有行后锁改)"
+            value={value == null || value === '' ? null : String(value)}
+            onChange={onChange}
+            isDisabled={isDisabled || items.length > 0}
+            filterState={{ active: { kind: 'bool', eq: true } }}
+            labelField="name"
+            searchFields={['name', 'isoCode']}
+            itemSubtitleFields={['isoCode']}
+          />
+        ),
+      },
+      exchangeRate: { ...baseCfg.fields?.exchangeRate, defaultValue: '1' },
       warehouseId: {
         ...baseCfg.fields?.warehouseId,
         input: ({
@@ -416,19 +479,22 @@ export function ReturnDrawerProvider({
           const headerReady = Boolean(values.companyId && values.partyType && values.partyId)
           const diGridFilter = deliveryItemGridFilter(values)
 
-          // 条目录入:弹窗选发货条目后锁定回填物料/单位快照;用户只填数量/仓/备注
+          // 条目录入两种方式:「从发货单导入」(弹窗选发货条目,锁定回填物料/单位快照)
+          // 与「手工加行」(不选发货条目,手填物料/单位/数量/含税单价/税率)
           const itemFields: Record<string, FieldOverride> = {
             idx: { visible: () => false },
             deliveryItemId: {
               order: 0,
-              required: true,
-              label: '发货条目',
+              section: '方式一:从发货单导入(源单行)',
+              label: '发货条目(留空保存即为手工行)',
               input: ({ value, onChange, isDisabled, patchValues: patchItem }) => (
                 <RemoteDialogSelect
                   resource="salDeliveryItems"
                   label="发货条目"
                   dialogTitle="选择可退货发货条目"
-                  placeholder={diGridFilter ? '点击选择发货条目…' : '先选齐公司与对手'}
+                  placeholder={
+                    diGridFilter ? '点击选择发货条目;留空则按下方手工填写建行…' : '先选齐公司与对手'
+                  }
                   labelField="materialName"
                   fields={[
                     'materialCode',
@@ -464,7 +530,6 @@ export function ReturnDrawerProvider({
                     })
                   }}
                   isDisabled={isDisabled || diGridFilter == null}
-                  isRequired
                   gridFilter={diGridFilter ?? undefined}
                   gridColumns={[
                     'deliveryDate',
@@ -499,10 +564,88 @@ export function ReturnDrawerProvider({
                 />
               ),
             },
-            // 物料信息只读回显(不进提交手改路径;值由发货条目 patch 写入)
+            // 手工行字段组(未挂发货条目时可见):物料/单位/含税单价/税率手填
+            materialId: {
+              order: 1,
+              section: '方式二:手工加行(无源单历史退货)',
+              label: '物料',
+              required: true,
+              visible: (v) => isManualItem(v),
+              input: ({ value, onChange, isDisabled, patchValues: patchItem }) => (
+                <RemoteDialogSelect
+                  resource="invMaterials"
+                  label="物料"
+                  dialogTitle="选择物料"
+                  placeholder="点击选择物料…"
+                  labelField="name"
+                  fields={['code', 'name', 'spec', 'customerPartNo', 'defaultUnitId']}
+                  value={value == null ? null : String(value)}
+                  onChange={(id, material) => {
+                    if (id && material) manualMaterialsRef.current.set(String(id), material)
+                    onChange(id)
+                    patchItem({
+                      materialCode: material?.code ?? null,
+                      materialName: material?.name ?? null,
+                      materialSpec: material?.spec ?? null,
+                      customerPartNo: material?.customerPartNo ?? null,
+                      // 换物料重置单位(MaterialUnitSelect 会带出新默认单位)
+                      unitId: null,
+                      unitName: null,
+                    })
+                  }}
+                  isDisabled={isDisabled}
+                  isRequired
+                  gridColumns={['code', 'name', 'spec', 'customerPartNo']}
+                  gridOverrides={{
+                    code: { label: '物料编号' },
+                    name: { label: '物料名称' },
+                    spec: { label: '规格' },
+                    customerPartNo: { label: '客户料号' },
+                  }}
+                  gridFilter={{ active: { kind: 'bool', eq: true } }}
+                  dialogClassName="max-w-3xl"
+                  renderValue={(r) =>
+                    [r.materialCode ?? r.code, r.materialName ?? r.name]
+                      .filter((x) => x != null && x !== '')
+                      .join(' ') || '物料'
+                  }
+                />
+              ),
+            },
+            unitId: {
+              order: 2,
+              cols: 6,
+              required: true,
+              label: '单位',
+              visible: (v) => isManualItem(v),
+              input: ({ value, onChange, isDisabled, values: lv }) => (
+                <MaterialUnitSelect
+                  materialId={lv.materialId == null ? null : String(lv.materialId)}
+                  value={value}
+                  onChange={onChange}
+                  isDisabled={isDisabled}
+                />
+              ),
+            },
+            orderPrice: {
+              order: 3,
+              cols: 6,
+              required: true,
+              label: '含税单价(原币)',
+              visible: (v) => isManualItem(v),
+            },
+            orderTaxRate: {
+              order: 4,
+              cols: 6,
+              required: true,
+              label: '税率',
+              visible: (v) => isManualItem(v),
+            },
+            // 物料信息只读回显(源单行;不进提交手改路径;值由发货条目 patch 写入)
             materialName: {
               order: 1,
               label: '物料',
+              visible: (v) => !isManualItem(v),
               input: ({ values: iv }) => {
                 const code = iv.materialCode != null ? String(iv.materialCode) : ''
                 const name = iv.materialName != null ? String(iv.materialName) : ''
@@ -514,6 +657,7 @@ export function ReturnDrawerProvider({
               order: 2,
               cols: 6,
               label: '规格',
+              visible: (v) => !isManualItem(v),
               input: ({ values: iv }) => (
                 <LockedText
                   label="规格"
@@ -525,6 +669,7 @@ export function ReturnDrawerProvider({
               order: 3,
               cols: 6,
               label: '客户料号',
+              visible: (v) => !isManualItem(v),
               input: ({ values: iv }) => (
                 <LockedText
                   label="客户料号"
@@ -536,6 +681,7 @@ export function ReturnDrawerProvider({
               order: 4,
               cols: 6,
               label: '单位',
+              visible: (v) => !isManualItem(v),
               input: ({ values: iv }) => (
                 <LockedText
                   label="单位"
@@ -579,9 +725,7 @@ export function ReturnDrawerProvider({
               ),
             },
             remarks: { order: 8, label: '行备注' },
-            // 手改物料/单位入口彻底隐藏(值仍随发货条目写入草稿行)
-            materialId: { visible: () => false },
-            unitId: { visible: () => false },
+            // 快照载波不进表单(值随发货条目/物料选择写入草稿行)
             materialCode: { visible: () => false },
             orderItemId: { visible: () => false },
           }
@@ -598,6 +742,13 @@ export function ReturnDrawerProvider({
                 key={`acct-${rowId ?? 'create'}-${drawer.generation}`}
                 mode={mode}
                 companyId={companyId}
+                patchValues={patchValues}
+              />
+              <ReturnCurrencyDefaultSync
+                mode={mode}
+                companyId={companyId}
+                currencyId={(values.currencyId as string | null) ?? null}
+                companies={companies.data ?? []}
                 patchValues={patchValues}
               />
               {/* key 随开抽屉世代变,保证每次打开重新布防基线 */}
@@ -640,20 +791,17 @@ export function ReturnDrawerProvider({
                   'returnStatus',
                   'partyType',
                   'partyId',
-                  // 订单/价税快照不进表单(物料/单位快照名走只读字段展示)
+                  // 订单快照不进表单(物料/单位快照名走只读字段展示;价税对手工行是录入字段)
                   'orderQty',
                   'orderBaseQty',
                   'orderUnitName',
-                  'orderPrice',
                   'orderAmount',
                   'orderBasePrice',
                   'orderBaseAmount',
-                  'orderTaxRate',
                   'orderCurrencyCode',
                   'orderNo',
                   'reconciledQty',
                   'remainingReconcilableQty',
-                  // materialId/unitId 仍在 fields 里 visible:false 以保留提交值
                 ]}
                 columns={[
                   'idx',
@@ -661,17 +809,25 @@ export function ReturnDrawerProvider({
                   'materialName',
                   'unitName',
                   'qty',
+                  'orderPrice',
+                  'orderTaxRate',
                   'warehouseId',
                   'baseQty',
                   'remarks',
                 ]}
                 overrides={{
                   deliveryItemId: {
-                    // 物料另有列,此处只展示订单号
-                    label: '订单',
+                    // 物料另有列,此处只展示订单号;手工行无源单
+                    label: '来源订单',
                     render: (_v, r) =>
-                      r.orderNo != null && r.orderNo !== '' ? String(r.orderNo) : undefined,
+                      r.orderNo != null && r.orderNo !== ''
+                        ? String(r.orderNo)
+                        : r.deliveryItemId == null || r.deliveryItemId === ''
+                          ? '手工行'
+                          : undefined,
                   },
+                  orderPrice: { label: '含税单价' },
+                  orderTaxRate: { label: '税率' },
                   // 物料列:全站统一富单元格(图纸缩略图+快照四字段);行图纸挂接优先
                   materialName: {
                     label: '物料',
@@ -684,32 +840,46 @@ export function ReturnDrawerProvider({
                 }}
                 fields={itemFields}
                 validateItem={(vals, _items, editing) => {
-                  if (!vals.deliveryItemId) return '请选择发货条目'
-                  // materialId 是表单 hidden 字段,collectValues 会剥离——用缓存/编辑行判定
-                  const cached =
-                    vals.deliveryItemId != null
-                      ? deliveryItemsRef.current.get(String(vals.deliveryItemId))
-                      : undefined
-                  const materialId =
-                    cached?.materialId ?? editing?.materialId ?? vals.materialId
-                  const unitId = cached?.unitId ?? editing?.unitId ?? vals.unitId
-                  if (!materialId || !unitId) return '请重新选择发货条目以带出物料'
+                  if (isManualItem(vals)) {
+                    // 手工行:物料/单位/价税手填
+                    if (!vals.materialId) return '请选择物料'
+                    if (!vals.unitId) return '请选择单位'
+                    if (vals.orderPrice == null || vals.orderPrice === '') return '请填写含税单价'
+                    if (Number(vals.orderPrice) < 0) return '含税单价不能小于 0'
+                    if (vals.orderTaxRate == null || vals.orderTaxRate === '') return '请填写税率'
+                    if (Number(vals.orderTaxRate) < 0) return '税率不能小于 0'
+                  } else {
+                    // materialId 是表单条件字段,源单行模式下被剥离——用缓存/编辑行判定
+                    const cached = deliveryItemsRef.current.get(String(vals.deliveryItemId))
+                    const materialId =
+                      cached?.materialId ?? editing?.materialId ?? vals.materialId
+                    const unitId = cached?.unitId ?? editing?.unitId ?? vals.unitId
+                    if (!materialId || !unitId) return '请重新选择发货条目以带出物料'
+                  }
                   if (!(Number(vals.qty) > 0)) return '数量必须大于零'
                   // 行仓不再前端硬卡:虚拟行不入仓可空;库存类行缺仓由后端保存校验兜底
                 }}
                 transformItem={(vals, editing) => {
-                  const ditem =
-                    vals.deliveryItemId != null
-                      ? deliveryItemsRef.current.get(String(vals.deliveryItemId))
-                      : undefined
-                  // hidden 字段不会进 collectValues:物料/单位必须以缓存或编辑行补全
-                  const materialId = ditem?.materialId ?? editing?.materialId ?? vals.materialId
-                  const unitId = ditem?.unitId ?? editing?.unitId ?? vals.unitId
+                  const manual = isManualItem(vals)
+                  const ditem = manual
+                    ? undefined
+                    : deliveryItemsRef.current.get(String(vals.deliveryItemId))
+                  const material = manual
+                    ? (manualMaterialsRef.current.get(String(vals.materialId)) ?? undefined)
+                    : undefined
+                  // 条件字段在另一模式下被剥离:物料/单位以缓存或编辑行补全
+                  const materialId = manual
+                    ? (vals.materialId ?? editing?.materialId)
+                    : (ditem?.materialId ?? editing?.materialId ?? vals.materialId)
+                  const unitId = manual
+                    ? (vals.unitId ?? editing?.unitId)
+                    : (ditem?.unitId ?? editing?.unitId ?? vals.unitId)
                   return {
                     ...vals,
                     idx: editing
                       ? editing.idx
                       : items.reduce((max, r) => Math.max(max, Number(r.idx) || 0), 0) + 1,
+                    deliveryItemId: manual ? null : vals.deliveryItemId,
                     // 新建行预填头默认仓
                     ...(!editing && !vals.warehouseId && headWarehouse
                       ? { warehouseId: headWarehouse }
@@ -717,18 +887,31 @@ export function ReturnDrawerProvider({
                     materialId,
                     unitId,
                     materialCode:
-                      ditem?.materialCode ?? editing?.materialCode ?? vals.materialCode ?? null,
+                      (manual ? material?.code : ditem?.materialCode) ??
+                      editing?.materialCode ??
+                      vals.materialCode ??
+                      null,
                     materialName:
-                      ditem?.materialName ?? editing?.materialName ?? vals.materialName ?? null,
+                      (manual ? material?.name : ditem?.materialName) ??
+                      editing?.materialName ??
+                      vals.materialName ??
+                      null,
                     materialSpec:
-                      ditem?.materialSpec ?? editing?.materialSpec ?? vals.materialSpec ?? null,
+                      (manual ? material?.spec : ditem?.materialSpec) ??
+                      editing?.materialSpec ??
+                      vals.materialSpec ??
+                      null,
                     customerPartNo:
-                      ditem?.customerPartNo ??
+                      (manual ? material?.customerPartNo : ditem?.customerPartNo) ??
                       editing?.customerPartNo ??
                       vals.customerPartNo ??
                       null,
-                    unitName: ditem?.unitName ?? editing?.unitName ?? vals.unitName ?? null,
-                    orderNo: ditem?.orderNo ?? editing?.orderNo ?? vals.orderNo ?? null,
+                    unitName: manual
+                      ? (editing?.unitName ?? vals.unitName ?? null)
+                      : (ditem?.unitName ?? editing?.unitName ?? vals.unitName ?? null),
+                    orderNo: manual
+                      ? null
+                      : (ditem?.orderNo ?? editing?.orderNo ?? vals.orderNo ?? null),
                   }
                 }}
               />

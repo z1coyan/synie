@@ -1007,6 +1007,7 @@ function salReturnContractCase(): AggregateContractCase {
       partyType: created.partyType,
       partyId: created.partyId,
       currencyId: created.currencyId,
+      exchangeRate: created.exchangeRate,
       remarks: created.remarks,
       warehouseId: created.warehouseId,
       debitAccountId: created.debitAccountId,

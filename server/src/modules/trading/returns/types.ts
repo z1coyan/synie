@@ -25,8 +25,14 @@ export interface ReturnDraftItemInput {
   id?: string
   idx: number
   qty: string
-  /** 源单行锚点（本票必填；#57 手工行放开） */
-  deliveryItemId: string
+  /** 源单行锚点；留空即手工行（手填物料/价税） */
+  deliveryItemId?: string | null
+  /** 手工行必填；源单行由发货快照覆盖 */
+  materialId?: string | null
+  /** 原币含税单价：手工行手填；源单行随快照 */
+  orderPrice?: string | null
+  /** 税率：手工行手填；源单行随快照 */
+  orderTaxRate?: string | null
   unitId?: string | null
   /** 非库存类（VIRTUAL/ASSET）行可空；STOCK 行保存时强制必填 */
   warehouseId: string | null

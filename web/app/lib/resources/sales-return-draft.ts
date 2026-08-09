@@ -7,12 +7,20 @@ import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { nullableString, requiredIndex, requiredString } from './draft-fields'
 import type { SalesReturnDraftInput, SalesReturnDraftItemInput } from './returns'
 
-/** 提交 mutation:物料/订单快照由发货条目锁定带出,后端再快照与折算 */
+/** 提交 mutation:源单行快照由发货条目锁定带出,手工行价税手填;后端再快照与折算 */
 function itemInput(row: Row): SalesReturnDraftItemInput {
+  const manual = row.deliveryItemId == null || row.deliveryItemId === ''
   return {
     ...(!isLocalRow(row) ? { id: String(row.id) } : {}),
     idx: requiredIndex(row.idx, '退货条目序号'),
-    deliveryItemId: requiredString(row.deliveryItemId, '发货条目'),
+    deliveryItemId: manual ? null : String(row.deliveryItemId),
+    ...(manual
+      ? {
+          materialId: requiredString(row.materialId, '物料'),
+          orderPrice: requiredString(row.orderPrice, '含税单价'),
+          orderTaxRate: requiredString(row.orderTaxRate, '税率'),
+        }
+      : {}),
     unitId: nullableString(row.unitId),
     qty: requiredString(row.qty, '退货数量'),
     // 行仓可空:虚拟/资产行不入仓;库存类行缺仓由后端保存校验兜底(「库存类物料必须填写行仓」)

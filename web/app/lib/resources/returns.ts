@@ -50,8 +50,14 @@ export interface SalesReturnDraftItemInput {
   id?: string
   idx: number
   qty: string
-  /** 源单行锚点：已审核未作废且剩余可退 > 0 的发货条目 */
-  deliveryItemId: string
+  /** 源单行锚点：已审核未作废且剩余可退 > 0 的发货条目；留空即手工行 */
+  deliveryItemId?: string | null
+  /** 手工行必填(物料)；源单行由发货快照覆盖 */
+  materialId?: string | null
+  /** 原币含税单价：手工行手填；源单行随快照 */
+  orderPrice?: string | null
+  /** 税率：手工行手填；源单行随快照 */
+  orderTaxRate?: string | null
   unitId?: string | null
   /** 行仓:库存类物料必填(后端校验),虚拟行可空 */
   warehouseId: string | null

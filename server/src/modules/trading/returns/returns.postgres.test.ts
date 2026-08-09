@@ -38,12 +38,14 @@ run('PG 集成（销售退货）', () => {
   const prefix = `RT${suffix}`
 
   const currencyId = crypto.randomUUID()
+  const currency2Id = crypto.randomUUID()
   const companyId = crypto.randomUUID()
   const customerId = crypto.randomUUID()
   const unitId = crypto.randomUUID()
   const categoryId = crypto.randomUUID()
   const materialId = crypto.randomUUID()
   const material2Id = crypto.randomUUID()
+  const virtualMaterialId = crypto.randomUUID()
   const warehouseId = crypto.randomUUID()
   const debitAccountId = crypto.randomUUID()
   const creditAccountId = crypto.randomUUID()
@@ -97,9 +99,10 @@ run('PG 集成（销售退货）', () => {
 
   function draftInput(
     items: Array<{
+      id?: string
       idx: number
       qty: string
-      deliveryItemId: string
+      deliveryItemId?: string | null
       warehouseId?: string | null
       remarks?: string | null
     }>,
@@ -125,7 +128,8 @@ run('PG 集成（销售退货）', () => {
   beforeAll(async () => {
     await sql`
       INSERT INTO bas_currency(id,name,iso_code,symbol,active)
-      VALUES (${currencyId}::uuid, ${prefix + '币'}, ${'T' + suffix.slice(0, 2)}, '¤', true)
+      VALUES (${currencyId}::uuid, ${prefix + '币'}, ${'T' + suffix.slice(0, 2)}, '¤', true),
+        (${currency2Id}::uuid, ${prefix + '外币'}, ${'X' + suffix.slice(0, 2)}, 'ξ', true)
     `.execute(db)
     await sql`
       INSERT INTO bas_company(id,code,name,short_name,base_currency_id)
@@ -146,7 +150,8 @@ run('PG 集成（销售退货）', () => {
     await sql`
       INSERT INTO inv_material(id,code,name,category_id,default_unit_id,active,material_type) VALUES
         (${materialId}::uuid, ${'M' + suffix}, ${prefix + '物料'}, ${categoryId}::uuid, ${unitId}::uuid, true, 'STOCK'),
-        (${material2Id}::uuid, ${'N' + suffix}, ${prefix + '物料二'}, ${categoryId}::uuid, ${unitId}::uuid, true, 'STOCK')
+        (${material2Id}::uuid, ${'N' + suffix}, ${prefix + '物料二'}, ${categoryId}::uuid, ${unitId}::uuid, true, 'STOCK'),
+        (${virtualMaterialId}::uuid, ${'V' + suffix}, ${prefix + '虚拟'}, ${categoryId}::uuid, ${unitId}::uuid, true, 'VIRTUAL')
     `.execute(db)
     await sql`
       INSERT INTO inv_warehouse(id,name,code,company_id,active,is_leaf)
@@ -233,12 +238,12 @@ run('PG 集成（销售退货）', () => {
     await sql`DELETE FROM sal_order WHERE id=${orderId}::uuid`.execute(db)
     await sql`DELETE FROM bas_account WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM inv_warehouse WHERE id=${warehouseId}::uuid`.execute(db)
-    await sql`DELETE FROM inv_material WHERE id IN (${materialId}::uuid, ${material2Id}::uuid)`.execute(db)
+    await sql`DELETE FROM inv_material WHERE id IN (${materialId}::uuid, ${material2Id}::uuid, ${virtualMaterialId}::uuid)`.execute(db)
     await sql`DELETE FROM inv_material_category WHERE id=${categoryId}::uuid`.execute(db)
     await sql`DELETE FROM bas_unit WHERE id=${unitId}::uuid`.execute(db)
     await sql`DELETE FROM sal_customers WHERE id=${customerId}::uuid`.execute(db)
     await sql`DELETE FROM bas_company WHERE id=${companyId}::uuid`.execute(db)
-    await sql`DELETE FROM bas_currency WHERE id=${currencyId}::uuid`.execute(db)
+    await sql`DELETE FROM bas_currency WHERE id IN (${currencyId}::uuid, ${currency2Id}::uuid)`.execute(db)
     await db.destroy()
   })
 
@@ -481,6 +486,195 @@ run('PG 集成（销售退货）', () => {
       '发货单须已审核未作废',
     ])
     await sql`DELETE FROM sal_delivery WHERE id=${draftDeliveryId}::uuid`.execute(db)
+  })
+
+  test('手工行：快照随物料冻结（订单号留空），缺省头原币/汇率按公司代入', async () => {
+    const input = draftInput([{ idx: 1, qty: '4', deliveryItemId: null }])
+    // 手工行：手填物料/价税；头不传原币与汇率 → 服务端按公司本币 + 1 代入
+    const { currencyId: _omit, ...headNoCurrency } = input
+    const draft = await returns.createDraft(p('salReturns', 'create'), {
+      ...headNoCurrency,
+      items: [
+        {
+          idx: 1,
+          qty: '4',
+          deliveryItemId: null,
+          materialId,
+          orderPrice: '12.5',
+          orderTaxRate: '0.13',
+          warehouseId,
+        },
+      ],
+    })
+    expect(draft.currencyId).toBe(currencyId)
+    expect(draft.exchangeRate).toBe('1')
+    const item = draft.items[0]!
+    expect(item.deliveryItemId).toBe('')
+    expect(item.materialCode).toBe('M' + suffix)
+    expect(item.materialName).toBe(prefix + '物料')
+    expect(item.unitName).toBe(prefix + '件')
+    expect(item.orderNo).toBeNull()
+    expect(item.orderItemId).toBeNull()
+    expect(item.orderPrice).toBe('12.5')
+    expect(item.orderTaxRate).toBe('0.13')
+    expect(item.orderCurrencyCode).toBe('T' + suffix.slice(0, 2))
+    // 剩余可对账口径对手工行 = 自身 base_qty − 已对账
+    expect(item.baseQty).toBe('4')
+    expect(item.reconciledQty).toBe('0')
+    expect(item.remainingReconcilableQty).toBe('4')
+  })
+
+  test('手工行审核：库存回库 + GL 含手工行口径（价×汇率），不动任何订单投影', async () => {
+    // 混合行：源单行（行二，余可退 30）退 5 → 5×500/50=50；手工行 4×12.5×汇率 2=100；合计 150
+    const draft = await returns.createDraft(p('salReturns', 'create'), {
+      ...draftInput([]),
+      exchangeRate: '2',
+      items: [
+        { idx: 1, qty: '5', deliveryItemId: deliveryItem2Id, warehouseId },
+        {
+          idx: 2,
+          qty: '4',
+          deliveryItemId: null,
+          materialId,
+          orderPrice: '12.5',
+          orderTaxRate: '0.13',
+          warehouseId,
+        },
+      ],
+    })
+    const shippedBefore = await orderItemShipped(orderItem2Id)
+    const returnedBefore = (await deliveryItemRow(deliveryItem2Id)).returned_qty
+
+    const audited = await returns.auditHead(p('salReturns', 'audit'), draft.id)
+    expect(audited.status).toBe('AUDITED')
+
+    // 库存：两行（含手工行）正向回库
+    const stock = await stockEntries(draft.id)
+    expect(stock).toHaveLength(2)
+    expect(stock.map((s) => Number(s.quantity)).sort((a, b) => a - b)).toEqual([4, 5])
+
+    // GL：50 + 100 = 150
+    const gl = await glEntries(draft.id)
+    expect(gl).toHaveLength(2)
+    expect(Number(gl[0]!.debit)).toBe(150)
+    expect(Number(gl[1]!.credit)).toBe(150)
+
+    // 源单行投影动；手工行无锚点不额外动（本单源行退 5）
+    expect(await orderItemShipped(orderItem2Id)).toBe(String(Number(shippedBefore) - 5))
+    expect((await deliveryItemRow(deliveryItem2Id)).returned_qty).toBe(
+      String(Number(returnedBefore) + 5),
+    )
+    // 订单行一（本单未涉）保持
+    expect(await orderItemShipped(orderItemId)).toBe('90')
+
+    // 作废：手工行只回滚库存/总账，源单行投影还原
+    await returns.voidHead(p('salReturns', 'void'), draft.id)
+    expect(await orderItemShipped(orderItem2Id)).toBe(shippedBefore)
+    expect((await deliveryItemRow(deliveryItem2Id)).returned_qty).toBe(returnedBefore)
+    const cancelledStock = await stockEntries(draft.id)
+    expect(cancelledStock.every((s) => s.is_cancelled)).toBe(true)
+  })
+
+  test('混合行一致性：源行发货快照原币与单头原币不一致即拒绝', async () => {
+    const err = await returns
+      .createDraft(p('salReturns', 'create'), {
+        ...draftInput([]),
+        currencyId: currency2Id,
+        items: [
+          { idx: 1, qty: '1', deliveryItemId, warehouseId },
+          {
+            idx: 2,
+            qty: '1',
+            deliveryItemId: null,
+            materialId,
+            orderPrice: '10',
+            orderTaxRate: '0',
+            warehouseId,
+          },
+        ],
+      })
+      .catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).fields?.['items[0].deliveryItemId']).toEqual([
+      '发货条目原币与单头原币不一致',
+    ])
+  })
+
+  test('手工行校验：缺物料/价/税拒绝；库存类缺行仓拒绝；虚拟物料行仓可空不写库存', async () => {
+    const noMaterial = await returns
+      .createDraft(p('salReturns', 'create'), {
+        ...draftInput([]),
+        items: [
+          {
+            idx: 1,
+            qty: '1',
+            deliveryItemId: null,
+            orderPrice: '10',
+            orderTaxRate: '0',
+            warehouseId,
+          },
+        ],
+      })
+      .catch((e: unknown) => e)
+    expect((noMaterial as ApiError).fields?.['items[0].materialId']).toEqual(['必填'])
+
+    const noWarehouse = await returns
+      .createDraft(p('salReturns', 'create'), {
+        ...draftInput([]),
+        items: [
+          {
+            idx: 1,
+            qty: '1',
+            deliveryItemId: null,
+            materialId,
+            orderPrice: '10',
+            orderTaxRate: '0',
+            warehouseId: null,
+          },
+        ],
+      })
+      .catch((e: unknown) => e)
+    expect((noWarehouse as ApiError).fields?.['items[0].warehouseId']).toEqual([
+      '库存类物料必须填写行仓',
+    ])
+
+    // 虚拟物料：行仓可空，审核不写库存分录但过总账
+    const draft = await returns.createDraft(p('salReturns', 'create'), {
+      ...draftInput([]),
+      items: [
+        {
+          idx: 1,
+          qty: '2',
+          deliveryItemId: null,
+          materialId: virtualMaterialId,
+          orderPrice: '30',
+          orderTaxRate: '0',
+          warehouseId: null,
+        },
+      ],
+    })
+    await returns.auditHead(p('salReturns', 'audit'), draft.id)
+    expect(await stockEntries(draft.id)).toHaveLength(0)
+    const gl = await glEntries(draft.id)
+    expect(gl).toHaveLength(2)
+    expect(Number(gl[0]!.debit)).toBe(60)
+    await returns.voidHead(p('salReturns', 'void'), draft.id)
+  })
+
+  test('已有条目时不可修改单头原币', async () => {
+    const draft = await returns.createDraft(
+      p('salReturns', 'create'),
+      draftInput([{ idx: 1, qty: '1', deliveryItemId }]),
+    )
+    const err = await returns
+      .replaceDraft(p('salReturns', 'update'), draft.id, {
+        ...draftInput([{ idx: 1, qty: '1', deliveryItemId, id: draft.items[0]!.id }]),
+        no: draft.returnNo,
+        currencyId: currency2Id,
+      })
+      .catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).fields?.['header.currencyId']).toEqual(['已有条目时不可修改'])
   })
 
   test('HTTP：整单三连与条目只读面、无权限 fail-closed', async () => {

@@ -41,7 +41,11 @@ const draftItemSchema = z
     id: z.string().uuid().optional(),
     idx: z.number().int(),
     qty: decimalStringSchema,
-    deliveryItemId: z.string().uuid(),
+    // 源单行锚点；留空即手工行（手填物料/价税）
+    deliveryItemId: z.string().uuid().nullable().optional(),
+    materialId: z.string().uuid().nullable().optional(),
+    orderPrice: decimalStringSchema.nullable().optional(),
+    orderTaxRate: decimalStringSchema.nullable().optional(),
     unitId: z.string().uuid().nullable().optional(),
     warehouseId: z.string().uuid().nullable(),
     remarks: z.string().nullable().optional(),

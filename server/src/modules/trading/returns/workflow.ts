@@ -106,12 +106,18 @@ export async function runAuditHead(
           remarks: before.remarks,
         }
       })
-    // 源单行金额 = 发货条目快照口径：orderBaseAmount × baseQty / orderBaseQty
+    // 金额 = Σ 源行（发货快照比例口径 orderBaseAmount × baseQty / orderBaseQty）
+    //       + Σ 手工行（手填原币含税单价 × baseQty × 单头汇率）
+    const exchangeRate = decimal(before.exchangeRate ?? '1')
     let amount = decimal(0)
     for (const item of items) {
-      if (!decimal(item.orderBaseQty).isZero()) {
+      if (item.deliveryItemId == null) {
         amount = amount.add(
-          decimal(item.orderBaseAmount)
+          decimal(item.orderPrice ?? 0).mul(decimal(item.baseQty)).mul(exchangeRate),
+        )
+      } else if (item.orderBaseQty != null && !decimal(item.orderBaseQty).isZero()) {
+        amount = amount.add(
+          decimal(item.orderBaseAmount ?? 0)
             .mul(decimal(item.baseQty))
             .div(decimal(item.orderBaseQty)),
         )
@@ -167,13 +173,20 @@ export async function runAuditHead(
       )
     }
 
-    // 投影：发货条目已退数量累加 + 订单条目已发数量回减
-    await adjustReturnedQty(trx, items, 1)
+    // 投影：发货条目已退数量累加 + 订单条目已发数量回减（仅源单行；手工行无锚点不动投影）
+    await adjustReturnedQty(
+      trx,
+      items.filter((i): i is typeof i & { deliveryItemId: string } => i.deliveryItemId != null),
+      1,
+    )
+    const sourceLines = items
+      .filter((i) => i.orderItemId != null)
+      .map((i) => ({ orderItemId: i.orderItemId!, baseQty: i.baseQty }))
     await reverseFulfillment(trx, 'sales', {
       companyId: before.companyId,
       partyType: before.partyType,
       partyId: before.partyId,
-      lines: items.map((i) => ({ orderItemId: i.orderItemId, baseQty: i.baseQty })),
+      lines: sourceLines,
     })
 
     const auditedById = permit.actor.userId || null
@@ -227,13 +240,20 @@ export async function runVoidHead(
       }
     }
 
-    // 回滚：已退数量（守卫 ≥0）→ 已发数量加回 → 库存/总账分录作废
-    await adjustReturnedQty(trx, items, -1)
+    // 回滚：已退数量（守卫 ≥0）→ 已发数量加回 → 库存/总账分录作废（仅源单行）
+    await adjustReturnedQty(
+      trx,
+      items.filter((i): i is typeof i & { deliveryItemId: string } => i.deliveryItemId != null),
+      -1,
+    )
+    const sourceLines = items
+      .filter((i) => i.orderItemId != null)
+      .map((i) => ({ orderItemId: i.orderItemId!, baseQty: i.baseQty }))
     await postFulfillment(trx, 'sales', {
       companyId: before.companyId,
       partyType: before.partyType,
       partyId: before.partyId,
-      lines: items.map((i) => ({ orderItemId: i.orderItemId, baseQty: i.baseQty })),
+      lines: sourceLines,
     })
     await deps.inventory.cancel(trx, { type: RETURN_VOUCHER_TYPE, id: before.id })
     await deps.gl.cancel(trx, { type: RETURN_VOUCHER_TYPE, id: before.id })
