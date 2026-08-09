@@ -174,7 +174,7 @@ HEROUI_AUTH_TOKEN=xxx node node_modules/@heroui-pro/react/dist/postinstall/index
 
 ## 生产环境提示
 
-生产部署目标是 **Dokploy（Docker）**；数据库（PostgreSQL）与对象存储为独立阿里云服务，不在容器编排内。部署工件：
+生产部署目标是 **Dokploy（Docker）**；`compose.deploy.yaml` 不含数据库，`DATABASE_URL` 指向外部 PG（托管或云实例均可）。当前生产实例（erp.tzjingtai.com）的拓扑、端口与运维要点见 [docs/部署/生产环境.md](docs/部署/生产环境.md)。部署工件：
 
 - `server/Dockerfile`：API 镜像（非 root 运行，HEALTHCHECK 打 `/api/v1/healthz`）。
 - `web/Dockerfile`：前端镜像（多阶段构建；`HEROUI_AUTH_TOKEN` 经 BuildKit secret 注入，仅构建期用于下载 HeroUI Pro 组件码，不进镜像层与构建日志）。前端生产运行形态：`vite build` 产出 `web/dist/client` + `web/dist/server/server.js`，由 `web/serve.ts`（`bun serve.ts`）提供静态资源 + SSR，监听 `PORT`（默认 3000）。
@@ -192,7 +192,7 @@ Dokploy 部署要点：
 
 ### 备份与恢复
 
-数据库是独立阿里云 PG，**不在容器编排内，平台不会替你备份**；备份 artifact 在 `scripts/`（pg_dump/pg_restore，需 PostgreSQL 17 客户端）：
+数据库在 compose 编排之外（外部 DSN 注入），**平台不会替你备份**；备份 artifact 在 `scripts/`（pg_dump/pg_restore，需 PostgreSQL 17 客户端）：
 
 - `scripts/backup-db.sh`：自定义格式（`-Fc`）全量备份到 `BACKUP_DIR`（默认 `./backups`），文件名带 UTC 时间戳（`synie-<时间戳>.dump`）；按 `BACKUP_RETENTION`（默认 14 份）滚动保留；连接用 `DATABASE_URL` 或 `PG*` 分件（与 server 同风格）；失败非零退出并清理不完整文件。
 - `scripts/restore-db.sh`：`pg_restore --clean --if-exists --no-owner` 恢复，**覆盖目标库数据**，须显式 `RESTORE_CONFIRM=yes` 才执行；恢复后跑 `bun db/migrate.ts` 补齐备份之后的迁移。
