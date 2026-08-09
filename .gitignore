@@ -4,3 +4,10 @@ dist/
 *.log
 .turbo/
 server/.baseline/
+# 本地上传文件（真实业务数据，生产经命名卷持久化；.dockerignore 同例排除）
+server/uploads/
+# AI/工具本地产物
+.scratch/
+.playwright-mcp/
+# 一次性迁移编排脚本（aggregate-kernel 计划见 docs/migration/，脚本留本地复跑）
+.grok/workflows/aggregate-kernel*.rhai
