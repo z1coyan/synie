@@ -206,6 +206,9 @@ export function createVatInvoiceService(
                 postingDate: String(input.postingDate),
               },
               entries,
+              // 负票（负合计对账单关联）：分录金额随符号取负，仅此时放行负金额；
+              // 正票保持「每行恰一边大于零」原校验强度
+              { allowNegative: decimal(invoice.grossTotal ?? 0).isNegative() },
             )
           },
           after: async (trx, { permit, before }) => {
@@ -504,22 +507,34 @@ async function validateReferences(
       invoice: ['开票日期与发票号码必填'],
     })
   }
-  const net = parseOptionalDecimal(input.netTotal, 'netTotal', false, true)
-  const tax = parseOptionalDecimal(input.taxTotal, 'taxTotal', false, true)
-  const gross = parseOptionalDecimal(input.grossTotal, 'grossTotal', true, false)
+  // 金额口径（ADR 2026-08-09 允许负合计：纯退货月份可单独成单开票，价税合计相应为负）：
+  // 三者必填；不含税+税额=价税合计恒等式不变；价税合计不为零；税额符号随票向
+  const net = parseOptionalDecimal(input.netTotal, 'netTotal', false, false)
+  const tax = parseOptionalDecimal(input.taxTotal, 'taxTotal', false, false)
+  const gross = parseOptionalDecimal(input.grossTotal, 'grossTotal', false, false)
   if (!net) {
     throw ApiError.validation('发票审核条件不完整', {
-      netTotal: ['必填且不能为负数'],
+      netTotal: ['必填'],
     })
   }
   if (!tax) {
     throw ApiError.validation('发票审核条件不完整', {
-      taxTotal: ['必填且不能为负数'],
+      taxTotal: ['必填'],
     })
   }
-  if (!gross || !net.add(tax).eq(gross)) {
+  if (!gross || gross.isZero() || !net.add(tax).eq(gross)) {
     throw ApiError.validation('发票审核条件不完整', {
-      grossTotal: ['必须大于零且不含税金额+税额=价税合计'],
+      grossTotal: ['必须不为零且不含税金额+税额=价税合计'],
+    })
+  }
+  if (gross.gt(0) && tax.isNegative()) {
+    throw ApiError.validation('发票审核条件不完整', {
+      taxTotal: ['正票税额不能为负'],
+    })
+  }
+  if (gross.isNegative() && tax.gt(0)) {
+    throw ApiError.validation('发票审核条件不完整', {
+      taxTotal: ['负票税额不能为正'],
     })
   }
   if (!input.partyAccountId || !input.amountAccountId) {
@@ -527,7 +542,7 @@ async function validateReferences(
       accounts: ['往来科目与金额科目必填'],
     })
   }
-  if (tax.gt(0) && !input.taxAccountId) {
+  if (!tax.isZero() && !input.taxAccountId) {
     throw ApiError.validation('发票审核条件不完整', {
       taxAccountId: ['有税额时必填'],
     })
@@ -554,6 +569,7 @@ function invoiceGLEntries(invoice: VatInvoice): GlEntry[] {
   const gross = decimal(invoice.grossTotal!)
   const partyType = lower(invoice.partyType)
   const entries: GlEntry[] = []
+  // 负票：各行金额随符号取负、借贷方向不变（负合计对账单冲回组同理），由 gl.post allowNegative 放行
   if (invoice.direction === 'OUTBOUND') {
     entries.push(
       {
@@ -569,7 +585,7 @@ function invoiceGLEntries(invoice: VatInvoice): GlEntry[] {
         credit: net,
       },
     )
-    if (tax.gt(0)) {
+    if (!tax.isZero()) {
       entries.push({
         accountId: invoice.taxAccountId!,
         debit: '0',
@@ -582,7 +598,7 @@ function invoiceGLEntries(invoice: VatInvoice): GlEntry[] {
       debit: net,
       credit: '0',
     })
-    if (tax.gt(0)) {
+    if (!tax.isZero()) {
       entries.push({
         accountId: invoice.taxAccountId!,
         debit: tax,

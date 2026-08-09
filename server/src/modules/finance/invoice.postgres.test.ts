@@ -63,6 +63,20 @@ run('PG 集成（增值税发票）', () => {
   const reconId = crypto.randomUUID()
   const reconItemId = crypto.randomUUID()
   const userId = crypto.randomUUID()
+  // 负合计链路夹具：销售退货 + 负合计销售对账单；采购入库 + 负合计采购对账单
+  const salesReturnId = crypto.randomUUID()
+  const salesReturnItemId = crypto.randomUUID()
+  const negReconId = crypto.randomUUID()
+  const negReconItemId = crypto.randomUUID()
+  const supplierId = crypto.randomUUID()
+  const purOrderId = crypto.randomUUID()
+  const purOrderItemId = crypto.randomUUID()
+  const purReceiptId = crypto.randomUUID()
+  const purReceiptItemId = crypto.randomUUID()
+  const purReconId = crypto.randomUUID()
+  const purReconItemId = crypto.randomUUID()
+  const purDebitId = crypto.randomUUID()
+  const purCreditId = crypto.randomUUID()
 
   const actor: Actor = testActor({
     userId,
@@ -216,6 +230,108 @@ run('PG 集成（增值税发票）', () => {
         (now() AT TIME ZONE 'utc'), ${companyId}::uuid, ${userId}::uuid
       )
     `.execute(db)
+
+    // 负合计销售对账单（confirmed）：来源为退货条目（金额取负）
+    await sql`
+      INSERT INTO sal_return(id,return_no,return_date,party_type,party_id,status,company_id,
+        warehouse_id,debit_account_id,credit_account_id,currency_id,exchange_rate)
+      VALUES (${salesReturnId}::uuid,${prefix + '-ST'},${today}::date,'customer',${customerId}::uuid,
+        'audited',${companyId}::uuid,${warehouseId}::uuid,${salesDebitId}::uuid,${salesCreditId}::uuid,
+        ${currencyId}::uuid,1)
+    `.execute(db)
+    await sql`
+      INSERT INTO sal_return_item(
+        id,idx,qty,base_qty,material_code,material_name,unit_name,
+        order_price,order_amount,order_base_price,order_base_amount,order_tax_rate,order_currency_code,
+        return_id,company_id,material_id,unit_id,warehouse_id,reconciled_qty
+      ) VALUES (
+        ${salesReturnItemId}::uuid,1,4,4,${'M' + suffix},${prefix + '料'},${prefix + '件'},
+        10,40,10,40,0,${'I' + suffix.slice(0, 2)},
+        ${salesReturnId}::uuid,${companyId}::uuid,
+        ${materialId}::uuid,${unitId}::uuid,${warehouseId}::uuid,0
+      )
+    `.execute(db)
+    await sql`
+      INSERT INTO sal_reconciliation(
+        id, reconciliation_no, reconciliation_type, status,
+        company_id, party_type, party_id, debit_account_id, credit_account_id
+      ) VALUES (
+        ${negReconId}::uuid, ${prefix + 'SRN'}, 'regular', 'confirmed',
+        ${companyId}::uuid, 'customer', ${customerId}::uuid,
+        ${salesDebitId}::uuid, ${salesCreditId}::uuid
+      )
+    `.execute(db)
+    await sql`
+      INSERT INTO sal_reconciliation_item(
+        id, idx, qty, base_qty, amount, base_amount, reconciliation_id, company_id,
+        return_item_id
+      ) VALUES (
+        ${negReconItemId}::uuid, 1, 4, 4, -40, -40, ${negReconId}::uuid, ${companyId}::uuid,
+        ${salesReturnItemId}::uuid
+      )
+    `.execute(db)
+
+    // 负合计采购对账单（confirmed）：采购退货条目未落地(#61)，负金额行直接种子
+    await sql`
+      INSERT INTO pur_supplier(id,code,name,short_name)
+      VALUES (${supplierId}::uuid, ${'SU' + suffix}, ${prefix + '供应商'}, 'SU')
+    `.execute(db)
+    await sql`
+      INSERT INTO bas_account(id,code,name,direction,is_group,active,company_id,currency_id,role) VALUES
+        (${purDebitId}::uuid, ${'PD' + suffix}, ${prefix + '未开应付'}, 'debit', false, true,
+          ${companyId}::uuid, ${currencyId}::uuid, 'unbilled_payable'),
+        (${purCreditId}::uuid, ${'PC' + suffix}, ${prefix + '采贷'}, 'credit', false, true,
+          ${companyId}::uuid, ${currencyId}::uuid, NULL)
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_order(id,order_no,order_date,party_type,party_id,status,company_id,exchange_rate,currency_id,is_outsourced)
+      VALUES (${purOrderId}::uuid,${prefix + '-PO'},${today}::date,'supplier',${supplierId}::uuid,
+        'audited',${companyId}::uuid,1,${currencyId}::uuid,false)
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_order_item(id,idx,qty,base_qty,price,amount,order_id,company_id,material_id,unit_id,
+        material_code,material_name,unit_name)
+      VALUES (${purOrderItemId}::uuid,1,3,3,10,30,${purOrderId}::uuid,${companyId}::uuid,
+        ${materialId}::uuid,${unitId}::uuid,${'M' + suffix},${prefix + '料'},${prefix + '件'})
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_receipt(id,receipt_no,receipt_date,party_type,party_id,status,company_id,
+        warehouse_id,debit_account_id,credit_account_id)
+      VALUES (${purReceiptId}::uuid,${prefix + '-PR'},${today}::date,'supplier',${supplierId}::uuid,
+        'audited',${companyId}::uuid,${warehouseId}::uuid,${purCreditId}::uuid,${purDebitId}::uuid)
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_receipt_item(
+        id,idx,qty,base_qty,material_code,material_name,unit_name,order_no,
+        order_qty,order_base_qty,order_unit_name,order_price,order_amount,
+        order_base_price,order_base_amount,order_tax_rate,order_currency_code,
+        receipt_id,company_id,order_item_id,material_id,unit_id,warehouse_id,reconciled_qty
+      ) VALUES (
+        ${purReceiptItemId}::uuid,1,3,3,${'M' + suffix},${prefix + '料'},${prefix + '件'},${prefix + '-PO'},
+        3,3,${prefix + '件'},10,30,10,30,0,${'I' + suffix.slice(0, 2)},
+        ${purReceiptId}::uuid,${companyId}::uuid,${purOrderItemId}::uuid,
+        ${materialId}::uuid,${unitId}::uuid,${warehouseId}::uuid,0
+      )
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_reconciliation(
+        id, reconciliation_no, reconciliation_type, status,
+        company_id, party_type, party_id, debit_account_id, credit_account_id
+      ) VALUES (
+        ${purReconId}::uuid, ${prefix + 'PRN'}, 'regular', 'confirmed',
+        ${companyId}::uuid, 'supplier', ${supplierId}::uuid,
+        ${purDebitId}::uuid, ${purCreditId}::uuid
+      )
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_reconciliation_item(
+        id, idx, qty, base_qty, amount, base_amount, reconciliation_id, company_id,
+        receipt_item_id
+      ) VALUES (
+        ${purReconItemId}::uuid, 1, 3, 3, -30, -30, ${purReconId}::uuid, ${companyId}::uuid,
+        ${purReceiptItemId}::uuid
+      )
+    `.execute(db)
   })
 
   afterAll(async () => {
@@ -228,6 +344,15 @@ run('PG 集成（增值税发票）', () => {
     await sql`DELETE FROM acc_vat_invoice WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sal_reconciliation_item WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sal_reconciliation WHERE company_id=${companyId}::uuid`.execute(db)
+    await sql`DELETE FROM pur_reconciliation_item WHERE company_id=${companyId}::uuid`.execute(db)
+    await sql`DELETE FROM pur_reconciliation WHERE company_id=${companyId}::uuid`.execute(db)
+    await sql`DELETE FROM sal_return_item WHERE company_id=${companyId}::uuid`.execute(db)
+    await sql`DELETE FROM sal_return WHERE company_id=${companyId}::uuid`.execute(db)
+    await sql`DELETE FROM pur_receipt_item WHERE company_id=${companyId}::uuid`.execute(db)
+    await sql`DELETE FROM pur_receipt WHERE company_id=${companyId}::uuid`.execute(db)
+    await sql`DELETE FROM pur_order_item WHERE company_id=${companyId}::uuid`.execute(db)
+    await sql`DELETE FROM pur_order WHERE company_id=${companyId}::uuid`.execute(db)
+    await sql`DELETE FROM pur_supplier WHERE id=${supplierId}::uuid`.execute(db)
     await sql`DELETE FROM sal_delivery_item WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sal_delivery WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sal_order_item WHERE company_id=${companyId}::uuid`.execute(db)
@@ -412,6 +537,207 @@ run('PG 集成（增值税发票）', () => {
         invoiceKind: 'NORMAL',
       }),
     ).rejects.toBeInstanceOf(ApiError)
+  })
+
+  test('负合计销售对账单全链路：负数相等关联 → 审核 → 分录金额为负且冲回方向正确', async () => {
+    const inv = await svc.create(permit(), {
+      companyId,
+      direction: 'OUTBOUND',
+      invoiceDate: today,
+      partyType: 'CUSTOMER',
+      partyId: customerId,
+      invoiceKind: 'NORMAL',
+      invoiceCode: `${prefix}NC`,
+      invoiceNo: `${prefix}NN`,
+      items: [],
+      netTotal: '-40',
+      taxTotal: '0',
+      grossTotal: '-40',
+      partyAccountId: salesCreditId,
+      amountAccountId: salesDebitId,
+      salReconciliationId: negReconId,
+    })
+    const audited = await svc.audit(permit(), inv.id, today)
+    expect(audited.status).toBe('AUDITED')
+
+    // 负数相等：对账单结单
+    const head = await sql<{ status: string }>`
+      SELECT status FROM sal_reconciliation WHERE id=${negReconId}::uuid
+    `.execute(db)
+    expect(head.rows[0]!.status).toBe('closed')
+
+    // 主票 2 行 + 对账冲回 2 行 = 4，全部金额为负、借贷方向不变
+    const gl = await sql<{
+      account_id: string
+      debit: string
+      credit: string
+      party_id: string | null
+    }>`
+      SELECT account_id::text, debit::text, credit::text, party_id::text
+      FROM acc_gl_entry
+      WHERE voucher_type='acc.vat_invoice' AND voucher_id=${inv.id}::uuid
+        AND is_cancelled=false AND is_reversal=false
+      ORDER BY seq
+    `.execute(db)
+    expect(gl.rows).toHaveLength(4)
+    const sum = (key: 'debit' | 'credit') =>
+      gl.rows.reduce((acc, r) => acc + Number(r[key]), 0)
+    expect(sum('debit')).toBe(-80)
+    expect(sum('credit')).toBe(-80)
+    // 往来（应收）发票行：借 −40 带对手——应收余额被冲减
+    const partyLine = gl.rows.find((r) => r.account_id === salesCreditId && r.party_id != null)
+    expect(Number(partyLine!.debit)).toBe(-40)
+    // 未开票应收冲回行（对账组贷方=未开票应收角色科目）：贷 −40 带对手
+    const reconCredit = gl.rows.filter((r) => r.account_id === salesCreditId)
+    expect(reconCredit).toHaveLength(2)
+    expect(Number(reconCredit.find((r) => r.party_id != null && Number(r.credit) !== 0)!.credit)).toBe(-40)
+
+    // 红冲负票：取负后回正，allowNegative 既有覆盖
+    const reversed = await svc.reverse(permit(), inv.id, {
+      postingDate: today,
+      redInvoiceNo: `${prefix}NRED`,
+    })
+    expect(reversed.status).toBe('REVERSED')
+    const rev = await sql<{ debit: string; credit: string }>`
+      SELECT COALESCE(sum(debit),0)::text AS debit, COALESCE(sum(credit),0)::text AS credit
+      FROM acc_gl_entry
+      WHERE voucher_type='acc.vat_invoice' AND voucher_id=${inv.id}::uuid AND is_reversal=true
+    `.execute(db)
+    expect(Number(rev.rows[0]!.debit)).toBe(80)
+    expect(Number(rev.rows[0]!.credit)).toBe(80)
+    // 红冲后对账单重开
+    const reopened = await sql<{ status: string }>`
+      SELECT status FROM sal_reconciliation WHERE id=${negReconId}::uuid
+    `.execute(db)
+    expect(reopened.rows[0]!.status).toBe('confirmed')
+  })
+
+  test('负合计采购对账单 + 负的开入发票同口径', async () => {
+    const inv = await svc.create(permit(), {
+      companyId,
+      direction: 'INBOUND',
+      invoiceDate: today,
+      partyType: 'SUPPLIER',
+      partyId: supplierId,
+      invoiceKind: 'NORMAL',
+      invoiceCode: `${prefix}PC`,
+      invoiceNo: `${prefix}PN`,
+      items: [],
+      netTotal: '-30',
+      taxTotal: '0',
+      grossTotal: '-30',
+      partyAccountId,
+      amountAccountId,
+      purReconciliationId: purReconId,
+    })
+    const audited = await svc.audit(permit(), inv.id, today)
+    expect(audited.status).toBe('AUDITED')
+
+    const head = await sql<{ status: string }>`
+      SELECT status FROM pur_reconciliation WHERE id=${purReconId}::uuid
+    `.execute(db)
+    expect(head.rows[0]!.status).toBe('closed')
+
+    const gl = await sql<{ debit: string; credit: string; c: string }>`
+      SELECT COALESCE(sum(debit),0)::text AS debit, COALESCE(sum(credit),0)::text AS credit,
+        count(*)::text AS c
+      FROM acc_gl_entry
+      WHERE voucher_type='acc.vat_invoice' AND voucher_id=${inv.id}::uuid
+        AND is_cancelled=false AND is_reversal=false
+    `.execute(db)
+    expect(Number(gl.rows[0]!.c)).toBe(4)
+    expect(Number(gl.rows[0]!.debit)).toBe(-60)
+    expect(Number(gl.rows[0]!.credit)).toBe(-60)
+
+    // 作废负票照常（与符号无关）
+    const voided = await svc.void(permit(), inv.id)
+    expect(voided.status).toBe('VOIDED')
+  })
+
+  test('负票校验口径：价税合计不为零、税额符号随票向、税额科目按 tax≠0 必填', async () => {
+    const base = {
+      companyId,
+      direction: 'INBOUND' as const,
+      invoiceDate: today,
+      partyType: 'EMPLOYEE' as const,
+      partyId: employeeId,
+      invoiceKind: 'NORMAL',
+      partyAccountId,
+      amountAccountId,
+    }
+    // 价税合计为零：拒
+    const zero = await svc
+      .create(permit(), {
+        ...base,
+        invoiceCode: `${prefix}Z1`,
+        invoiceNo: `${prefix}Z1N`,
+        netTotal: '0',
+        taxTotal: '0',
+        grossTotal: '0',
+      })
+      .then((inv) => svc.audit(permit(), inv.id, today))
+      .catch((e: unknown) => e)
+    expect((zero as ApiError).fields?.['grossTotal']).toEqual([
+      '必须不为零且不含税金额+税额=价税合计',
+    ])
+    // 负票正税额：拒
+    const badTax = await svc
+      .create(permit(), {
+        ...base,
+        invoiceCode: `${prefix}Z2`,
+        invoiceNo: `${prefix}Z2N`,
+        netTotal: '-50',
+        taxTotal: '10',
+        grossTotal: '-40',
+        taxAccountId,
+      })
+      .then((inv) => svc.audit(permit(), inv.id, today))
+      .catch((e: unknown) => e)
+    expect((badTax as ApiError).fields?.['taxTotal']).toEqual(['负票税额不能为正'])
+    // 正票负税额：拒
+    const badTax2 = await svc
+      .create(permit(), {
+        ...base,
+        invoiceCode: `${prefix}Z3`,
+        invoiceNo: `${prefix}Z3N`,
+        netTotal: '50',
+        taxTotal: '-10',
+        grossTotal: '40',
+        taxAccountId,
+      })
+      .then((inv) => svc.audit(permit(), inv.id, today))
+      .catch((e: unknown) => e)
+    expect((badTax2 as ApiError).fields?.['taxTotal']).toEqual(['正票税额不能为负'])
+    // 负税额（tax≠0）缺税额科目：拒
+    const noTaxAccount = await svc
+      .create(permit(), {
+        ...base,
+        invoiceCode: `${prefix}Z4`,
+        invoiceNo: `${prefix}Z4N`,
+        netTotal: '-35',
+        taxTotal: '-5',
+        grossTotal: '-40',
+      })
+      .then((inv) => svc.audit(permit(), inv.id, today))
+      .catch((e: unknown) => e)
+    expect((noTaxAccount as ApiError).fields?.['taxAccountId']).toEqual(['有税额时必填'])
+    // 负税额带税额科目：放行，税额行金额为负
+    const ok = await svc.create(permit(), {
+      ...base,
+      invoiceCode: `${prefix}Z5`,
+      invoiceNo: `${prefix}Z5N`,
+      netTotal: '-35',
+      taxTotal: '-5',
+      grossTotal: '-40',
+      taxAccountId,
+    })
+    await svc.audit(permit(), ok.id, today)
+    const gl = await sql<{ c: string }>`
+      SELECT count(*)::text AS c FROM acc_gl_entry
+      WHERE voucher_type='acc.vat_invoice' AND voucher_id=${ok.id}::uuid
+        AND is_cancelled=false AND is_reversal=false
+    `.execute(db)
+    expect(Number(gl.rows[0]!.c)).toBe(3)
   })
 
   test('closeFromInvoice / reopenFromInvoice 接缝在 withTx 内可调用', async () => {
