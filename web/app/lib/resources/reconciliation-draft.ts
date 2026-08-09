@@ -10,8 +10,9 @@ export interface ReconciliationDraftItem {
   id?: string
   idx: number
   qty: string
-  /** 销售侧来源：发货条目 */
+  /** 销售侧来源（二选一）：发货条目 / 销售退货条目（退货行金额取负） */
   deliveryItemId?: string | null
+  returnItemId?: string | null
   /** 采购侧来源（二选一）：采购入库条目 / 委外入库条目 */
   receiptItemId?: string | null
   outsourcedReceiptItemId?: string | null
@@ -62,13 +63,12 @@ export function buildReconciliationDraft(
         remarks: nullableString(row.remarks),
       }
       if (side === 'sales') {
-        return {
-          ...base,
-          deliveryItemId: requiredString(
-            row.deliveryItemId,
-            `第${String(idx)}行发货条目`,
-          ),
+        const deliveryItemId = nullableString(row.deliveryItemId)
+        const returnItemId = nullableString(row.returnItemId)
+        if ((deliveryItemId == null) === (returnItemId == null)) {
+          throw new Error(`第${String(idx)}行来源条目必须二选一(发货/销售退货)`)
         }
+        return { ...base, deliveryItemId, returnItemId }
       }
       const receiptItemId = nullableString(row.receiptItemId)
       const outsourcedReceiptItemId = nullableString(row.outsourcedReceiptItemId)

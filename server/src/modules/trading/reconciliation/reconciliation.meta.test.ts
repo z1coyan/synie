@@ -71,6 +71,7 @@ describe('对账 Meta 表面', () => {
       'reconciliationId',
       'companyId',
       'deliveryItemId',
+      'returnItemId',
       'reconciliationNo',
       'reconciliationStatus',
       'deliveryNo',

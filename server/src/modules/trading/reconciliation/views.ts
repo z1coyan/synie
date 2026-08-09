@@ -44,16 +44,23 @@ export function headExtras(row: Record<string, unknown>): Record<string, unknown
 
 export function itemSource(spec: ReconciliationSideSpec): RawBuilder<unknown> {
   if (spec.side === 'sales') {
+    // 双来源同池（发货条目/销售退货条目恰一）：来源单号/日期与快照列 COALESCE 投影
     return sql` FROM (
       SELECT ri.id,ri.idx,ri.qty,ri.base_qty,ri.amount,ri.base_amount,ri.remarks,
         ri.inserted_at,ri.updated_at,ri.reconciliation_id,ri.company_id,
-        ri.delivery_item_id,r.reconciliation_no,
-        r.status AS reconciliation_status,h.delivery_no,h.delivery_date,
-        i.material_name,i.unit_name,i.order_currency_code
+        ri.delivery_item_id,ri.return_item_id,r.reconciliation_no,
+        r.status AS reconciliation_status,
+        COALESCE(h.delivery_no,th.return_no) AS delivery_no,
+        COALESCE(h.delivery_date,th.return_date) AS delivery_date,
+        COALESCE(i.material_name,ti.material_name) AS material_name,
+        COALESCE(i.unit_name,ti.unit_name) AS unit_name,
+        COALESCE(i.order_currency_code,ti.order_currency_code) AS order_currency_code
       FROM sal_reconciliation_item ri
       JOIN sal_reconciliation r ON r.id=ri.reconciliation_id
-      JOIN sal_delivery_item i ON i.id=ri.delivery_item_id
-      JOIN sal_delivery h ON h.id=i.delivery_id
+      LEFT JOIN sal_delivery_item i ON i.id=ri.delivery_item_id
+      LEFT JOIN sal_delivery h ON h.id=i.delivery_id
+      LEFT JOIN sal_return_item ti ON ti.id=ri.return_item_id
+      LEFT JOIN sal_return th ON th.id=ti.return_id
     ) ${sql.raw(ITEM_ALIAS)}`
   }
   return sql` FROM (
@@ -143,6 +150,12 @@ export function presentItem(
       side === 'sales'
         ? row.deliveryItemId != null
           ? String(row.deliveryItemId)
+          : null
+        : null,
+    returnItemId:
+      side === 'sales'
+        ? row.returnItemId != null
+          ? String(row.returnItemId)
           : null
         : null,
     receiptItemId:

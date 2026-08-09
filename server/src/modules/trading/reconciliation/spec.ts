@@ -226,9 +226,15 @@ export function reconciliationItemMeta(side: TradingSide): ResourceMeta {
   ]
   const sourceFields: ResourceMeta['fields'] = sales
     ? [
-        f('delivery_item_id', 'deliveryItemId', 'fk', '发货条目', {
+        f('delivery_item_id', 'deliveryItemId', 'fk', '发货条目(与销售退货条目恰挂其一)', {
+          nullable: true,
           filterable: true,
           ref: { resource: 'salDeliveryItems', relation: 'deliveryItem', labelField: 'materialCode' },
+        }),
+        f('return_item_id', 'returnItemId', 'fk', '销售退货条目(与发货条目恰挂其一;行金额取负)', {
+          nullable: true,
+          filterable: true,
+          ref: { resource: 'salReturnItems', relation: 'returnItem', labelField: 'materialCode' },
         }),
       ]
     : [
@@ -262,7 +268,7 @@ export function reconciliationItemMeta(side: TradingSide): ResourceMeta {
         ),
       ]
   const sourceNo = sales
-    ? f('delivery_no', 'deliveryNo', 'string', '发货单号', {
+    ? f('delivery_no', 'deliveryNo', 'string', '来源单号(发货/退货)', {
         filterable: true,
         sortable: true,
       })
@@ -271,7 +277,7 @@ export function reconciliationItemMeta(side: TradingSide): ResourceMeta {
         sortable: true,
       })
   const sourceDate = sales
-    ? f('delivery_date', 'deliveryDate', 'date', '发货日期', {
+    ? f('delivery_date', 'deliveryDate', 'date', '来源日期(发货/退货)', {
         filterable: true,
         sortable: true,
       })
@@ -293,7 +299,7 @@ export function reconciliationItemMeta(side: TradingSide): ResourceMeta {
         'qty',
         'qty',
         'decimal',
-        sales ? '对账数量(发货条目行单位)' : '对账数量(入库条目行单位)',
+        sales ? '对账数量(来源条目行单位)' : '对账数量(入库条目行单位)',
         { required: true, filterable: true, sortable: true },
       ),
       f('base_qty', 'baseQty', 'decimal', '折算数量(物料默认单位,6 位;与已对账数量同口径)', {

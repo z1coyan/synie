@@ -17,6 +17,7 @@ import {
 import { formatAmount, formatQty } from '~/lib/amount'
 import { resourceLabel } from '~/lib/resources/catalog'
 import { salesDeliveryItemClient } from '~/lib/resources/fulfillment'
+import { salesReturnItemClient } from '~/lib/resources/returns'
 import { salesReconciliationItemClient } from '~/lib/resources/reconciliations'
 import {
   buildReconciliationDraft,
@@ -302,6 +303,76 @@ function deliveryItemDisplay(r: Row): string {
   return [material || '发货条目', rem, deliveryNo].filter(Boolean).join(' · ')
 }
 
+/**
+ * 可勾销售退货条目固定筛选：口径与发货条目一致
+ * （已审核未作废/同公司同对手/剩余可对账 > 0/单内同币种/常规单禁零金额行——
+ *  对退货行的含义=禁快照价为零的退货行）。
+ */
+function returnItemGridFilter(
+  values: Record<string, unknown>,
+  items: Row[],
+): FilterState | null {
+  const { companyId, partyType, partyId } = values
+  if (!companyId || !partyType || !partyId) return null
+  const currency = items.find(
+    (r) => r.orderCurrencyCode != null && r.orderCurrencyCode !== '',
+  )?.orderCurrencyCode
+  return {
+    returnStatus: { kind: 'enum', values: ['AUDITED'] },
+    companyId: {
+      kind: 'fk',
+      op: 'in',
+      values: [String(companyId)],
+      labels: [],
+    },
+    partyType: { kind: 'enum', values: [String(partyType)] },
+    partyId: {
+      kind: 'polyFk',
+      op: 'in',
+      variant: String(partyType),
+      values: [String(partyId)],
+      labels: [],
+    },
+    remainingReconcilableQty: { kind: 'number', op: 'gt', value: '0' },
+    ...(currency
+      ? {
+          orderCurrencyCode: {
+            kind: 'text' as const,
+            op: 'eq' as const,
+            value: String(currency),
+          },
+        }
+      : {}),
+    ...(values.reconciliationType !== 'GIFT_SAMPLE'
+      ? {
+          orderPrice: {
+            kind: 'number' as const,
+            op: 'gt' as const,
+            value: '0',
+          },
+        }
+      : {}),
+  }
+}
+
+function returnItemDisplay(r: Row): string {
+  const code = r.materialCode != null ? String(r.materialCode) : ''
+  const name = r.materialName != null ? String(r.materialName) : ''
+  const material = [code, name].filter(Boolean).join(' ')
+  const remaining =
+    r.remainingReconcilableQty != null
+      ? String(r.remainingReconcilableQty)
+      : null
+  const unit = r.unitName != null ? String(r.unitName) : ''
+  const rem =
+    remaining != null
+      ? `剩余可对账${remaining}${unit ? `(默认单位折算,行单位${unit})` : ''}`
+      : ''
+  const returnNo =
+    r.returnNo != null && r.returnNo !== '' ? String(r.returnNo) : null
+  return [material || '退货条目', rem, returnNo].filter(Boolean).join(' · ')
+}
+
 /** 只读文本字段(物料/单位/币种快照回显) */
 function LockedText({ label, value }: { label: string; value: string }) {
   return (
@@ -341,9 +412,10 @@ function previewAmount(qty: unknown, price: unknown): number | null {
   return Math.round(q * p * 100) / 100
 }
 
-/** 对账整单草稿 + 发货条目预热缓存(骨架 loadDraft 的返回形) */
+/** 对账整单草稿 + 发货/退货条目预热缓存(骨架 loadDraft 的返回形) */
 type ReconciliationDrawerDraft = ReconciliationSavedDraft & {
   deliveryItems: Map<string, Row>
+  returnItems: Map<string, Row>
 }
 
 /**
@@ -364,11 +436,11 @@ export function ReconciliationDrawerProvider({
     resource: 'salReconciliations',
     urlSync,
     loadDraft: async (reconciliationId) => {
-      // 整单草稿:头+对账条目一次一致读快照;发货条目预热缓存装进 draft 返回
+      // 整单草稿:头+对账条目一次一致读快照;发货/退货条目预热缓存装进 draft 返回
       const draft = await salesReconciliationDraft.loadDraft(reconciliationId)
       const rows = draft.items
-      // 编辑态预热缓存:按行上发货条目 id 取剩余可对账量/快照价/币种
-      const ids = [
+      // 编辑态预热缓存:按行上来源条目 id 取剩余可对账量/快照价/币种(双来源各自拉取)
+      const deliveryIds = [
         ...new Set(
           rows
             .map((r) =>
@@ -377,34 +449,51 @@ export function ReconciliationDrawerProvider({
             .filter((v): v is string => v != null),
         ),
       ]
+      const returnIds = [
+        ...new Set(
+          rows
+            .map((r) =>
+              r.returnItemId == null ? null : String(r.returnItemId),
+            )
+            .filter((v): v is string => v != null),
+        ),
+      ]
       const deliveryItems = new Map<string, Row>()
-      if (ids.length > 0) {
-        try {
-          const data = await Promise.all(
-            ids.map((id) => salesDeliveryItemClient.get(id)),
-          )
-          for (const di of data.filter((row): row is Row => row != null)) {
-            deliveryItems.set(String(di.id), di)
-          }
-        } catch {
-          /* 预热失败不挡开单:行仍可看,剩余量校验由后端兜底 */
+      const returnItems = new Map<string, Row>()
+      try {
+        const [deliveries, returns] = await Promise.all([
+          deliveryIds.length > 0
+            ? Promise.all(deliveryIds.map((id) => salesDeliveryItemClient.get(id)))
+            : Promise.resolve([] as Row[]),
+          returnIds.length > 0
+            ? Promise.all(returnIds.map((id) => salesReturnItemClient.get(id)))
+            : Promise.resolve([] as Row[]),
+        ])
+        for (const di of deliveries.filter((row): row is Row => row != null)) {
+          deliveryItems.set(String(di.id), di)
         }
+        for (const ri of returns.filter((row): row is Row => row != null)) {
+          returnItems.set(String(ri.id), ri)
+        }
+      } catch {
+        /* 预热失败不挡开单:行仍可看,剩余量校验由后端兜底 */
       }
       // 行上缺的物料编号/规格/客户料号从预热缓存补齐(表格多行展示用)
       const items = rows.map((r) => {
-        const di =
-          r.deliveryItemId != null
-            ? deliveryItems.get(String(r.deliveryItemId))
+        const refId = r.deliveryItemId ?? r.returnItemId
+        const source =
+          refId != null
+            ? (deliveryItems.get(String(refId)) ?? returnItems.get(String(refId)))
             : undefined
-        if (!di) return r
+        if (!source) return r
         return {
           ...r,
-          materialCode: r.materialCode ?? di.materialCode ?? null,
-          materialSpec: r.materialSpec ?? di.materialSpec ?? null,
-          customerPartNo: r.customerPartNo ?? di.customerPartNo ?? null,
+          materialCode: r.materialCode ?? source.materialCode ?? null,
+          materialSpec: r.materialSpec ?? source.materialSpec ?? null,
+          customerPartNo: r.customerPartNo ?? source.customerPartNo ?? null,
         }
       })
-      return { ...draft, items, deliveryItems }
+      return { ...draft, items, deliveryItems, returnItems }
     },
   })
   const { isOpen, mode, rowId } = drawer
@@ -412,8 +501,9 @@ export function ReconciliationDrawerProvider({
   const [items, setItems] = useState<Row[]>([])
   const [importing, setImporting] = useState(false)
   const [filters] = useState<FilterState>({})
-  // 发货条目缓存:选择时写入完整行,validateItem/transformItem 带剩余量与快照价
+  // 发货/退货条目缓存:选择时写入完整行,validateItem/transformItem 带剩余量与快照价
   const deliveryItemsRef = useRef(new Map<string, Row>())
+  const returnItemsRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
   const draftHeadRef = useRef<Row | null>(null)
 
@@ -426,10 +516,11 @@ export function ReconciliationDrawerProvider({
     [],
   )
 
-  // 草稿 → 条目状态派生:draft 变化(含关闭/新建清空为 null)时初始化条目、写 draftHeadRef 并重建发货条目缓存
+  // 草稿 → 条目状态派生:draft 变化(含关闭/新建清空为 null)时初始化条目、写 draftHeadRef 并重建来源条目缓存
   useEffect(() => {
     draftHeadRef.current = drawer.draft
     deliveryItemsRef.current = drawer.draft?.deliveryItems ?? new Map()
+    returnItemsRef.current = drawer.draft?.returnItems ?? new Map()
     setItems(drawer.draft?.items ?? [])
   }, [drawer.draft, drawer.generation]) // generation 覆盖 create/关闭的 null→null(draft 引用不变也需重置)
 
@@ -474,48 +565,70 @@ export function ReconciliationDrawerProvider({
             values.companyId && values.partyType && values.partyId,
           )
           const diGridFilter = deliveryItemGridFilter(values, items)
+          const tiGridFilter = returnItemGridFilter(values, items)
           const docCurrency =
             items.find(
               (r) => r.orderCurrencyCode != null && r.orderCurrencyCode !== '',
             )?.orderCurrencyCode ?? null
 
-          // 「导入所有未对账」:按选择弹窗同口径(diGridFilter)拉全部候选,
-          // 跳过已在清单的发货条目,数量默认=剩余可对账量(折行单位)
+          // 「导入所有未对账」:按选择弹窗同口径拉全部候选(发货+退货两池),
+          // 跳过已在清单的条目,数量默认=剩余可对账量(折行单位);退货行金额预览取负
           const importAllUnreconciled = async () => {
-            if (!diGridFilter) return
+            if (!diGridFilter || !tiGridFilter) return
             setImporting(true)
             try {
-              const candidates: Row[] = []
-              let offset = 0
-              for (;;) {
-                const page = await salesDeliveryItemClient.query({
-                  limit: 200,
-                  offset,
-                  sort: { column: 'deliveryDate', direction: 'ascending' },
-                  filter: diGridFilter,
-                })
-                candidates.push(...page.results)
-                // 按实际返回行数推进:limit 可能被 max_page_size 钳制(同 fetchAllRows 纪律)
-                offset += page.results.length
-                if (
-                  candidates.length >= page.count ||
-                  page.results.length === 0
-                )
-                  break
+              const fetchPool = async (
+                client:
+                  | typeof salesDeliveryItemClient
+                  | typeof salesReturnItemClient,
+                sortColumn: 'deliveryDate' | 'returnDate',
+                filter: FilterState,
+              ): Promise<Row[]> => {
+                const candidates: Row[] = []
+                let offset = 0
+                for (;;) {
+                  const page = await client.query({
+                    limit: 200,
+                    offset,
+                    sort: { column: sortColumn, direction: 'ascending' },
+                    filter,
+                  })
+                  candidates.push(...page.results)
+                  // 按实际返回行数推进:limit 可能被 max_page_size 钳制(同 fetchAllRows 纪律)
+                  offset += page.results.length
+                  if (
+                    candidates.length >= page.count ||
+                    page.results.length === 0
+                  )
+                    break
+                }
+                return candidates
               }
-              const listed = new Set(items.map((r) => String(r.deliveryItemId)))
-              const fresh = candidates.filter(
-                (di) => !listed.has(String(di.id)),
+              const [deliveries, returns] = await Promise.all([
+                fetchPool(salesDeliveryItemClient, 'deliveryDate', diGridFilter),
+                fetchPool(salesReturnItemClient, 'returnDate', tiGridFilter),
+              ])
+              const listed = new Set(
+                items.flatMap((r) =>
+                  [r.deliveryItemId, r.returnItemId]
+                    .filter((v) => v != null)
+                    .map((v) => String(v)),
+                ),
               )
+              const fresh: { source: Row; kind: 'delivery' | 'return' }[] = [
+                ...deliveries.map((di) => ({ source: di, kind: 'delivery' as const })),
+                ...returns.map((ri) => ({ source: ri, kind: 'return' as const })),
+              ].filter(({ source }) => !listed.has(String(source.id)))
               if (fresh.length === 0) {
-                toast.warning('没有可导入的未对账发货条目')
+                toast.warning('没有可导入的未对账发货/退货条目')
                 return
               }
               // 清单为空时 filter 未钉币种:候选跨币种则无法保证单内同币种,先手工选一行钉住
               if (
                 items.length === 0 &&
-                new Set(fresh.map((di) => String(di.orderCurrencyCode ?? '')))
-                  .size > 1
+                new Set(
+                  fresh.map(({ source }) => String(source.orderCurrencyCode ?? '')),
+                ).size > 1
               ) {
                 toast.warning(
                   '未对账条目存在多个币种,请先手工新增一行钉住币种后再导入',
@@ -526,34 +639,41 @@ export function ReconciliationDrawerProvider({
                 (m, r) => Math.max(m, Number(r.idx) || 0),
                 0,
               )
-              const imported = fresh.map((di) => {
-                deliveryItemsRef.current.set(String(di.id), di)
-                const remaining = Number(di.remainingReconcilableQty)
+              const imported = fresh.map(({ source, kind }) => {
+                const isReturn = kind === 'return'
+                if (isReturn) returnItemsRef.current.set(String(source.id), source)
+                else deliveryItemsRef.current.set(String(source.id), source)
+                const remaining = Number(source.remainingReconcilableQty)
                 const ratio =
-                  Number(di.baseQty) > 0
-                    ? Number(di.qty) / Number(di.baseQty)
+                  Number(source.baseQty) > 0
+                    ? Number(source.qty) / Number(source.baseQty)
                     : 1
                 // 数量默认=剩余可对账量(折行单位,6 位去尾差);金额按金额链 2 位预览,落库以后端为准
                 const qty = Math.round(remaining * ratio * 1e6) / 1e6
+                const amount = previewAmount(qty, source.orderPrice)
+                const baseAmount = previewAmount(qty, source.orderBasePrice)
                 return {
                   id: localRowId(),
                   idx: ++maxIdx,
-                  deliveryItemId: di.id,
+                  deliveryItemId: isReturn ? null : source.id,
+                  returnItemId: isReturn ? source.id : null,
                   qty,
                   remarks: null,
-                  materialCode: di.materialCode ?? null,
-                  materialName: di.materialName ?? null,
-                  materialSpec: di.materialSpec ?? null,
-                  customerPartNo: di.customerPartNo ?? null,
-                  unitName: di.unitName ?? null,
-                  deliveryNo: di.deliveryNo ?? null,
-                  orderCurrencyCode: di.orderCurrencyCode ?? null,
-                  amount: previewAmount(qty, di.orderPrice),
-                  baseAmount: previewAmount(qty, di.orderBasePrice),
+                  materialCode: source.materialCode ?? null,
+                  materialName: source.materialName ?? null,
+                  materialSpec: source.materialSpec ?? null,
+                  customerPartNo: source.customerPartNo ?? null,
+                  unitName: source.unitName ?? null,
+                  deliveryNo: isReturn
+                    ? (source.returnNo ?? null)
+                    : (source.deliveryNo ?? null),
+                  orderCurrencyCode: source.orderCurrencyCode ?? null,
+                  amount: isReturn && amount != null ? -amount : amount,
+                  baseAmount: isReturn && baseAmount != null ? -baseAmount : baseAmount,
                 }
               })
               setItems((cur) => [...cur, ...imported])
-              toast.success(`已导入 ${imported.length} 条未对账发货条目`)
+              toast.success(`已导入 ${imported.length} 条未对账发货/退货条目`)
             } catch (e) {
               toastError('导入未对账条目失败')(e)
             } finally {
@@ -561,25 +681,33 @@ export function ReconciliationDrawerProvider({
             }
           }
 
-          // 条目录入:弹窗选发货条目后锁定回填物料/单位/币种快照;用户只填数量/行备注
-          const itemFields: Record<string, FieldOverride> = {
-            idx: { visible: () => false },
-            deliveryItemId: {
-              order: 0,
-              required: true,
-              label: '发货条目',
-              input: ({
-                value,
-                onChange,
-                isDisabled,
-                patchValues: patchItem,
-              }) => (
+          // 条目录入:弹窗选来源条目后锁定回填物料/单位/币种快照;用户只填数量/行备注。
+          // 来源双来源恰一(发货条目/销售退货条目):两个 picker 互斥,选一个清空另一个
+          const makeItemPicker = (
+            field: 'deliveryItemId' | 'returnItemId',
+            otherField: 'deliveryItemId' | 'returnItemId',
+            isReturn: boolean,
+            label: string,
+          ) =>
+            function ItemPickerInput({
+              value,
+              onChange,
+              isDisabled,
+              patchValues: patchItem,
+            }: {
+              value: unknown
+              onChange: (v: unknown) => void
+              isDisabled: boolean
+              patchValues: (patch: Record<string, unknown>) => void
+            }) {
+              const gridFilter = isReturn ? tiGridFilter : diGridFilter
+              return (
                 <RemoteDialogSelect
-                  resource="salDeliveryItems"
-                  label="发货条目"
-                  dialogTitle="选择可对账发货条目"
+                  resource={isReturn ? 'salReturnItems' : 'salDeliveryItems'}
+                  label={label}
+                  dialogTitle={`选择可对账${label}`}
                   placeholder={
-                    diGridFilter ? '点击选择发货条目…' : '先选齐公司与对手'
+                    gridFilter ? `点击选择${label}…` : '先选齐公司与对手'
                   }
                   labelField="materialName"
                   fields={[
@@ -596,31 +724,37 @@ export function ReconciliationDrawerProvider({
                     'orderPrice',
                     'orderBasePrice',
                     'orderCurrencyCode',
-                    'deliveryNo',
+                    isReturn ? 'returnNo' : 'deliveryNo',
                   ]}
                   value={value == null ? null : String(value)}
-                  onChange={(id, ditem) => {
-                    if (id && ditem)
-                      deliveryItemsRef.current.set(String(id), ditem)
+                  onChange={(id, source) => {
+                    if (id && source) {
+                      ;(isReturn ? returnItemsRef : deliveryItemsRef).current.set(
+                        String(id),
+                        source,
+                      )
+                    }
                     onChange(id)
-                    // 物料/单位/币种随发货条目锁定带出;collectValues 会丢 hidden 字段,
-                    // 真正落行靠 transformItem 读 deliveryItemsRef
+                    // 物料/单位/币种随来源条目锁定带出;collectValues 会丢 hidden 字段,
+                    // 真正落行靠 transformItem 读缓存。双来源互斥:选一个清空另一个
                     patchItem({
-                      materialCode: ditem?.materialCode ?? null,
-                      materialName: ditem?.materialName ?? null,
-                      materialSpec: ditem?.materialSpec ?? null,
-                      customerPartNo: ditem?.customerPartNo ?? null,
-                      unitName: ditem?.unitName ?? null,
-                      orderCurrencyCode: ditem?.orderCurrencyCode ?? null,
-                      deliveryNo: ditem?.deliveryNo ?? null,
+                      [otherField]: null,
+                      materialCode: source?.materialCode ?? null,
+                      materialName: source?.materialName ?? null,
+                      materialSpec: source?.materialSpec ?? null,
+                      customerPartNo: source?.customerPartNo ?? null,
+                      unitName: source?.unitName ?? null,
+                      orderCurrencyCode: source?.orderCurrencyCode ?? null,
+                      deliveryNo: isReturn
+                        ? (source?.returnNo ?? null)
+                        : (source?.deliveryNo ?? null),
                     })
                   }}
-                  isDisabled={isDisabled || diGridFilter == null}
-                  isRequired
-                  gridFilter={diGridFilter ?? undefined}
+                  isDisabled={isDisabled || gridFilter == null}
+                  gridFilter={gridFilter ?? undefined}
                   gridColumns={[
-                    'deliveryDate',
-                    'deliveryNo',
+                    isReturn ? 'returnDate' : 'deliveryDate',
+                    isReturn ? 'returnNo' : 'deliveryNo',
                     'orderNo',
                     'materialCode',
                     'materialName',
@@ -635,13 +769,15 @@ export function ReconciliationDrawerProvider({
                   gridOverrides={{
                     deliveryDate: { label: '发货日期' },
                     deliveryNo: { label: '发货单号' },
+                    returnDate: { label: '退货日期' },
+                    returnNo: { label: '退货单号' },
                     orderNo: { label: '订单号' },
                     materialCode: { label: '物料编号' },
                     materialName: { label: '物料名称' },
                     customerPartNo: { label: '客户料号' },
                     unitName: { label: '单位' },
                     qty: {
-                      label: '发货数量',
+                      label: isReturn ? '退货数量' : '发货数量',
                       render: (v: unknown) => formatQty(v) || undefined,
                     },
                     reconciledQty: {
@@ -656,7 +792,7 @@ export function ReconciliationDrawerProvider({
                     orderCurrencyCode: { label: '币种' },
                   }}
                   gridDefaultSort={{
-                    column: 'deliveryDate',
+                    column: isReturn ? 'returnDate' : 'deliveryDate',
                     direction: 'descending',
                   }}
                   gridExtraFields={[
@@ -667,9 +803,26 @@ export function ReconciliationDrawerProvider({
                     'remainingReconcilableQty',
                   ]}
                   dialogClassName="max-w-6xl"
-                  renderValue={(r) => deliveryItemDisplay(r)}
+                  renderValue={(r) =>
+                    isReturn ? returnItemDisplay(r) : deliveryItemDisplay(r)
+                  }
                 />
-              ),
+              )
+            }
+
+          const itemFields: Record<string, FieldOverride> = {
+            idx: { visible: () => false },
+            deliveryItemId: {
+              order: 0,
+              cols: 6,
+              label: '发货条目',
+              input: makeItemPicker('deliveryItemId', 'returnItemId', false, '发货条目'),
+            },
+            returnItemId: {
+              order: 0,
+              cols: 6,
+              label: '销售退货条目(金额取负)',
+              input: makeItemPicker('returnItemId', 'deliveryItemId', true, '销售退货条目'),
             },
             // 物料/单位/币种只读回显(值由发货条目 patch 写入)
             materialName: {
@@ -730,17 +883,26 @@ export function ReconciliationDrawerProvider({
               cols: 6,
               label: '金额(原币含税)',
               input: ({ value, values: iv }) => {
-                const ditem =
-                  iv.deliveryItemId != null
-                    ? deliveryItemsRef.current.get(String(iv.deliveryItemId))
+                const isReturn = iv.returnItemId != null && iv.returnItemId !== ''
+                const refId = iv.deliveryItemId ?? iv.returnItemId
+                const source =
+                  refId != null
+                    ? (deliveryItemsRef.current.get(String(refId)) ??
+                      returnItemsRef.current.get(String(refId)))
                     : undefined
-                const preview =
+                const raw =
                   value != null && value !== ''
                     ? value
-                    : previewAmount(iv.qty, ditem?.orderPrice)
+                    : previewAmount(iv.qty, source?.orderPrice)
+                const preview =
+                  isReturn && raw != null && raw !== '' ? -Number(raw) : raw
                 return (
                   <LockedNumber
-                    label="金额(原币含税,数量×快照单价)"
+                    label={
+                      isReturn
+                        ? '金额(原币含税,退货取负)'
+                        : '金额(原币含税,数量×快照单价)'
+                    }
                     value={preview}
                   />
                 )
@@ -751,15 +913,25 @@ export function ReconciliationDrawerProvider({
               cols: 6,
               label: '本币金额',
               input: ({ value, values: iv }) => {
-                const ditem =
-                  iv.deliveryItemId != null
-                    ? deliveryItemsRef.current.get(String(iv.deliveryItemId))
+                const isReturn = iv.returnItemId != null && iv.returnItemId !== ''
+                const refId = iv.deliveryItemId ?? iv.returnItemId
+                const source =
+                  refId != null
+                    ? (deliveryItemsRef.current.get(String(refId)) ??
+                      returnItemsRef.current.get(String(refId)))
                     : undefined
-                const preview =
+                const raw =
                   value != null && value !== ''
                     ? value
-                    : previewAmount(iv.qty, ditem?.orderBasePrice)
-                return <LockedNumber label="本币金额(含税)" value={preview} />
+                    : previewAmount(iv.qty, source?.orderBasePrice)
+                const preview =
+                  isReturn && raw != null && raw !== '' ? -Number(raw) : raw
+                return (
+                  <LockedNumber
+                    label={isReturn ? '本币金额(含税,退货取负)' : '本币金额(含税)'}
+                    value={preview}
+                  />
+                )
               },
             },
             remarks: { order: 8, label: '行备注' },
@@ -855,7 +1027,7 @@ export function ReconciliationDrawerProvider({
                   'remarks',
                 ]}
                 overrides={{
-                  deliveryNo: { label: '发货单号' },
+                  deliveryNo: { label: '来源单号(发货/退货)' },
                   // 物料列:全站统一富单元格(编号/名称/规格/客户料号随受控行在表上)。
                   // 对账行 meta 无 materialId 也无图纸挂接:编号退纯文本、缩略图显占位
                   materialName: {
@@ -881,24 +1053,28 @@ export function ReconciliationDrawerProvider({
                 }}
                 fields={itemFields}
                 validateItem={(vals, curItems, editing) => {
-                  if (!vals.deliveryItemId) return '请选择发货条目'
+                  const refId = vals.deliveryItemId ?? vals.returnItemId
+                  if (!refId) return '请选择来源条目(发货或销售退货,二选一)'
+                  if (vals.deliveryItemId && vals.returnItemId)
+                    return '来源条目只能二选一'
                   if (
                     curItems.some(
                       (r) =>
                         r.id !== editing?.id &&
-                        r.deliveryItemId != null &&
-                        String(r.deliveryItemId) ===
-                          String(vals.deliveryItemId),
+                        [r.deliveryItemId, r.returnItemId]
+                          .filter((v) => v != null)
+                          .map(String)
+                          .includes(String(refId)),
                     )
                   )
-                    return '该发货条目已在清单中'
+                    return '该来源条目已在清单中'
                   if (!(Number(vals.qty) > 0)) return '对账数量必须大于零'
                   // 单内同币种:以首个他行币种为基准(弹窗已过滤,这里双保险)
-                  const ditem = deliveryItemsRef.current.get(
-                    String(vals.deliveryItemId),
-                  )
+                  const source =
+                    deliveryItemsRef.current.get(String(refId)) ??
+                    returnItemsRef.current.get(String(refId))
                   const rowCurrency =
-                    ditem?.orderCurrencyCode ??
+                    source?.orderCurrencyCode ??
                     vals.orderCurrencyCode ??
                     editing?.orderCurrencyCode
                   const other = curItems.find(
@@ -913,33 +1089,43 @@ export function ReconciliationDrawerProvider({
                     String(other.orderCurrencyCode) !== String(rowCurrency)
                   )
                     return `同一对账单内订单原币必须一致(已选 ${String(other.orderCurrencyCode)})`
-                  // 常规单禁零金额行(样品来源弹窗已滤,金额这里双保险;后端均强校验)
-                  if (!isGift && ditem && !(Number(ditem.orderPrice) > 0))
+                  // 常规单禁零金额行(对退货行=禁快照价为零;弹窗已滤,这里双保险;后端强校验)
+                  if (!isGift && source && !(Number(source.orderPrice) > 0))
                     return '常规对账单不可勾选零金额条目'
                   // 对账数量 ≤ 剩余可对账量(剩余是默认单位口径,按行单位比例折算比较;后端权威校验)
-                  if (ditem?.remainingReconcilableQty != null) {
-                    const remaining = Number(ditem.remainingReconcilableQty)
+                  if (source?.remainingReconcilableQty != null) {
+                    const remaining = Number(source.remainingReconcilableQty)
                     const ratio =
-                      Number(ditem.baseQty) > 0
-                        ? Number(ditem.qty) / Number(ditem.baseQty)
+                      Number(source.baseQty) > 0
+                        ? Number(source.qty) / Number(source.baseQty)
                         : 1
                     const remainingRow = remaining * ratio
                     if (Number(vals.qty) > remainingRow + 1e-9)
-                      return `超出剩余可对账量(按行单位约 ${remainingRow.toFixed(4)} ${String(ditem.unitName ?? '')})`
+                      return `超出剩余可对账量(按行单位约 ${remainingRow.toFixed(4)} ${String(source.unitName ?? '')})`
                   }
                 }}
                 transformItem={(vals, editing) => {
-                  const ditem =
-                    vals.deliveryItemId != null
-                      ? deliveryItemsRef.current.get(
-                          String(vals.deliveryItemId),
-                        )
+                  const isReturn =
+                    vals.returnItemId != null && vals.returnItemId !== ''
+                  const refId = vals.deliveryItemId ?? vals.returnItemId
+                  const source =
+                    refId != null
+                      ? (deliveryItemsRef.current.get(String(refId)) ??
+                        returnItemsRef.current.get(String(refId)))
                       : undefined
                   const pick = (key: string) =>
-                    ditem?.[key] ?? editing?.[key] ?? vals[key] ?? null
+                    source?.[key] ?? editing?.[key] ?? vals[key] ?? null
                   const qty = vals.qty
+                  const sameSource =
+                    editing &&
+                    String(editing.deliveryItemId ?? '') ===
+                      String(vals.deliveryItemId ?? '') &&
+                    String(editing.returnItemId ?? '') ===
+                      String(vals.returnItemId ?? '')
+                  const amountPreview = previewAmount(qty, source?.orderPrice)
+                  const basePreview = previewAmount(qty, source?.orderBasePrice)
                   // hidden 字段不会进 collectValues:快照以缓存或编辑行补全;
-                  // 金额按金额链预算 2 位预览(保存时后端重算为准)
+                  // 金额按金额链预算 2 位预览(保存时后端重算为准);退货来源取负
                   return {
                     ...vals,
                     idx: editing
@@ -948,27 +1134,25 @@ export function ReconciliationDrawerProvider({
                           (max, r) => Math.max(max, Number(r.idx) || 0),
                           0,
                         ) + 1,
+                    deliveryItemId: isReturn ? null : vals.deliveryItemId,
+                    returnItemId: isReturn ? vals.returnItemId : null,
                     materialCode: pick('materialCode'),
                     materialName: pick('materialName'),
                     materialSpec: pick('materialSpec'),
                     customerPartNo: pick('customerPartNo'),
                     unitName: pick('unitName'),
-                    deliveryNo: pick('deliveryNo'),
+                    deliveryNo: isReturn
+                      ? (source?.returnNo ?? editing?.deliveryNo ?? null)
+                      : pick('deliveryNo'),
                     orderCurrencyCode: pick('orderCurrencyCode'),
                     amount:
-                      previewAmount(qty, ditem?.orderPrice) ??
-                      (editing &&
-                      String(editing.deliveryItemId) ===
-                        String(vals.deliveryItemId)
-                        ? editing.amount
-                        : null),
+                      (isReturn && amountPreview != null
+                        ? -amountPreview
+                        : amountPreview) ??
+                      (sameSource ? (editing?.amount ?? null) : null),
                     baseAmount:
-                      previewAmount(qty, ditem?.orderBasePrice) ??
-                      (editing &&
-                      String(editing.deliveryItemId) ===
-                        String(vals.deliveryItemId)
-                        ? editing.baseAmount
-                        : null),
+                      (isReturn && basePreview != null ? -basePreview : basePreview) ??
+                      (sameSource ? (editing?.baseAmount ?? null) : null),
                   }
                 }}
               />

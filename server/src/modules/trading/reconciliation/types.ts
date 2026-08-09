@@ -32,6 +32,8 @@ export interface ReconciliationItem {
   reconciliationId: string
   companyId: string
   deliveryItemId: string | null
+  /** 销售退货条目来源（与 deliveryItemId 恰一；行金额取负） */
+  returnItemId: string | null
   receiptItemId: string | null
   outsourcedReceiptItemId: string | null
   reconciliationNo: string

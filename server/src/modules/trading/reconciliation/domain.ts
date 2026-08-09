@@ -47,6 +47,8 @@ export interface SourceItem {
   orderType: string
   orderId: string
   outsourced: boolean
+  /** 销售退货条目来源：行金额/本币金额取负（数量仍为正，同池净额） */
+  isReturn: boolean
 }
 
 export function parseKind(value: string): ReconciliationKind {
@@ -172,6 +174,7 @@ export function validateItemShape(
     reconciliationId?: string
     qty: string
     deliveryItemId?: string | null
+    returnItemId?: string | null
     receiptItemId?: string | null
     outsourcedReceiptItemId?: string | null
     remarks?: string | null
@@ -187,9 +190,14 @@ export function validateItemShape(
     fields.remarks = ['最多 512 个字符']
   }
   if (side === 'sales') {
-    if (!input.deliveryItemId) fields.deliveryItemId = ['必填']
+    let count = 0
+    if (input.deliveryItemId) count++
+    if (input.returnItemId) count++
+    if (count !== 1) {
+      fields.source = ['发货条目与销售退货条目必须恰选一个']
+    }
     if (input.receiptItemId || input.outsourcedReceiptItemId) {
-      fields.source = ['销售对账只允许发货条目来源']
+      fields.source = ['销售对账不允许入库条目来源']
     }
   } else {
     let count = 0
@@ -212,6 +220,7 @@ export async function loadSource(
   side: TradingSide,
   input: {
     deliveryItemId?: string | null
+    returnItemId?: string | null
     receiptItemId?: string | null
     outsourcedReceiptItemId?: string | null
   },
@@ -219,7 +228,23 @@ export async function loadSource(
 ): Promise<SourceItem> {
   const lockSql = lock ? sql` FOR UPDATE OF i` : sql``
   let rows: { rows: Record<string, unknown>[] }
-  if (side === 'sales') {
+  if (side === 'sales' && input.returnItemId) {
+    // 销售退货条目：价税口径沿用退货条目快照（源单行=发货快照，手工行=手填价×单头汇率）；
+    // 汇率：源单行取源订单汇率（经 order_item_id 桥接），手工行取退货单头汇率
+    rows = await sql<Record<string, unknown>>`
+      SELECT i.id::text, h.company_id::text, h.party_type, h.party_id::text, h.status,
+        h.return_no AS no, h.return_date AS source_date, i.material_name, i.unit_name,
+        i.order_currency_code AS currency_code, i.qty::text, i.base_qty::text,
+        i.reconciled_qty::text, i.order_price::text,
+        COALESCE(o.exchange_rate, h.exchange_rate, 1)::text AS exchange_rate,
+        o.order_type, o.id::text AS order_id
+      FROM sal_return_item i
+      JOIN sal_return h ON h.id=i.return_id
+      LEFT JOIN sal_order_item oi ON oi.id=i.order_item_id
+      LEFT JOIN sal_order o ON o.id=oi.order_id
+      WHERE i.id=${input.returnItemId}::uuid${lockSql}
+    `.execute(db)
+  } else if (side === 'sales') {
     rows = await sql<Record<string, unknown>>`
       SELECT i.id::text, h.company_id::text, h.party_type, h.party_id::text, h.status,
         h.delivery_no AS no, h.delivery_date AS source_date, i.material_name, i.unit_name,
@@ -273,15 +298,16 @@ export async function loadSource(
     sourceDate: asDate(row.source_date),
     materialName: String(row.material_name),
     unitName: String(row.unit_name),
-    currencyCode: String(row.currency_code),
+    currencyCode: row.currency_code != null ? String(row.currency_code) : '',
     qty: decimal(String(row.qty)),
     baseQty: decimal(String(row.base_qty)),
     reconciledQty: decimal(String(row.reconciled_qty)),
-    price: decimal(String(row.order_price)),
-    exchangeRate: decimal(String(row.exchange_rate)),
-    orderType: String(row.order_type),
-    orderId: String(row.order_id),
+    price: decimal(row.order_price != null ? String(row.order_price) : '0'),
+    exchangeRate: decimal(String(row.exchange_rate ?? 1)),
+    orderType: row.order_type != null ? String(row.order_type) : '',
+    orderId: row.order_id != null ? String(row.order_id) : '',
     outsourced: side === 'purchase' && Boolean(input.outsourcedReceiptItemId),
+    isReturn: side === 'sales' && Boolean(input.returnItemId),
   }
 }
 
@@ -315,8 +341,10 @@ export async function validateSource(
   const sibling = await sql<{ currency: string | null }>`
     SELECT CASE ${spec.side}::text
       WHEN 'sales' THEN (
-        SELECT di.order_currency_code FROM sal_reconciliation_item ri
-        JOIN sal_delivery_item di ON di.id=ri.delivery_item_id
+        SELECT COALESCE(di.order_currency_code, ti.order_currency_code)
+        FROM sal_reconciliation_item ri
+        LEFT JOIN sal_delivery_item di ON di.id=ri.delivery_item_id
+        LEFT JOIN sal_return_item ti ON ti.id=ri.return_item_id
         WHERE ri.reconciliation_id=${headId}::uuid
           AND (${selfId}::uuid IS NULL OR ri.id<>${selfId}::uuid)
         LIMIT 1
@@ -364,10 +392,12 @@ export function snapshotAmounts(qty: ReturnType<typeof decimal>, source: SourceI
   }
   const amount = qty.mul(source.price)
   const baseAmount = decimal(roundAmount(amount)).mul(source.exchangeRate)
+  // 退货来源：行金额/本币金额取负（数量与折算数量仍为正），同池净额由头 SUM 自然得出
+  const sign = source.isReturn ? decimal(-1) : decimal(1)
   return {
     baseQty: roundBaseQty(baseQty),
-    amount: roundAmount(amount),
-    baseAmount: roundAmount(baseAmount),
+    amount: roundAmount(amount.mul(sign)),
+    baseAmount: roundAmount(baseAmount.mul(sign)),
   }
 }
 

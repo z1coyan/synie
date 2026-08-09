@@ -99,6 +99,8 @@ export async function wipePartialSample(db: Kysely<Database>): Promise<void> {
         pur_quotation,
         sal_reconciliation_item,
         sal_reconciliation,
+        sal_return_item,
+        sal_return,
         sal_delivery_item,
         sal_delivery,
         sal_order_item,

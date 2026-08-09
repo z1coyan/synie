@@ -127,6 +127,7 @@ function itemCreatePayload(
     idx: number
     qty: string
     deliveryItemId?: string | null
+    returnItemId?: string | null
     receiptItemId?: string | null
     outsourcedReceiptItemId?: string | null
     remarks?: string | null
@@ -138,8 +139,10 @@ function itemCreatePayload(
     qty: input.qty,
     remarks: input.remarks ?? null,
   }
-  if (side === 'sales') payload.deliveryItemId = input.deliveryItemId ?? null
-  else {
+  if (side === 'sales') {
+    payload.deliveryItemId = input.deliveryItemId ?? null
+    payload.returnItemId = input.returnItemId ?? null
+  } else {
     payload.receiptItemId = input.receiptItemId ?? null
     payload.outsourcedReceiptItemId = input.outsourcedReceiptItemId ?? null
   }
@@ -153,6 +156,8 @@ function itemUpdatePatch(
     qty?: string
     deliveryItemId?: string | null
     deliveryItemIdPresent?: boolean
+    returnItemId?: string | null
+    returnItemIdPresent?: boolean
     receiptItemId?: string | null
     receiptItemIdPresent?: boolean
     outsourcedReceiptItemId?: string | null
@@ -164,8 +169,9 @@ function itemUpdatePatch(
   const patch: Record<string, unknown> = {}
   if (input.idx !== undefined) patch.idx = input.idx
   if (input.qty !== undefined) patch.qty = input.qty
-  if (side === 'sales' && input.deliveryItemIdPresent) {
-    patch.deliveryItemId = input.deliveryItemId ?? null
+  if (side === 'sales') {
+    if (input.deliveryItemIdPresent) patch.deliveryItemId = input.deliveryItemId ?? null
+    if (input.returnItemIdPresent) patch.returnItemId = input.returnItemId ?? null
   }
   if (side === 'purchase') {
     if (input.receiptItemIdPresent) patch.receiptItemId = input.receiptItemId ?? null
@@ -184,8 +190,10 @@ function draftItemPayload(side: TradingSide, item: Record<string, unknown>): Rec
     remarks: item.remarks ?? null,
   }
   if (item.id !== undefined) payload.id = item.id
-  if (side === 'sales') payload.deliveryItemId = item.deliveryItemId ?? null
-  else {
+  if (side === 'sales') {
+    payload.deliveryItemId = item.deliveryItemId ?? null
+    payload.returnItemId = item.returnItemId ?? null
+  } else {
     payload.receiptItemId = item.receiptItemId ?? null
     payload.outsourcedReceiptItemId = item.outsourcedReceiptItemId ?? null
   }
@@ -490,6 +498,12 @@ export function createReconciliationService(
                 : draft.deliveryItemId == null
                   ? null
                   : String(draft.deliveryItemId),
+            returnItemId:
+              draft.returnItemId === undefined
+                ? undefined
+                : draft.returnItemId == null
+                  ? null
+                  : String(draft.returnItemId),
             receiptItemId:
               draft.receiptItemId === undefined
                 ? undefined
@@ -507,7 +521,18 @@ export function createReconciliationService(
         },
         beforeWrite: async (trx, { action, draft, parent, before }) => {
           const sourceInput = {
-            deliveryItemId: side === 'sales' ? String(draft.deliveryItemId ?? '') : null,
+            deliveryItemId:
+              side === 'sales'
+                ? draft.deliveryItemId == null || draft.deliveryItemId === ''
+                  ? null
+                  : String(draft.deliveryItemId)
+                : null,
+            returnItemId:
+              side === 'sales'
+                ? draft.returnItemId == null || draft.returnItemId === ''
+                  ? null
+                  : String(draft.returnItemId)
+                : null,
             receiptItemId:
               side === 'purchase'
                 ? draft.receiptItemId == null || draft.receiptItemId === ''
@@ -537,7 +562,16 @@ export function createReconciliationService(
           draft.amount = amounts.amount
           draft.baseAmount = amounts.baseAmount
           draft.remarks = draft.remarks == null ? null : String(draft.remarks)
-          if (side === 'sales') draft.deliveryItemId = source.id
+          // 双来源恰一：按来源落对应外键并清空另一臂
+          if (side === 'sales') {
+            if (source.isReturn) {
+              draft.returnItemId = source.id
+              draft.deliveryItemId = null
+            } else {
+              draft.deliveryItemId = source.id
+              draft.returnItemId = null
+            }
+          }
         },
       },
     })

@@ -1626,13 +1626,14 @@ export interface SalReconciliationItem {
   base_amount: Generated<Numeric>;
   base_qty: Generated<Numeric>;
   company_id: string;
-  delivery_item_id: string;
+  delivery_item_id: string | null;
   id: Generated<string>;
   idx: Int8;
   inserted_at: Generated<Timestamp>;
   qty: Numeric;
   reconciliation_id: string;
   remarks: string | null;
+  return_item_id: string | null;
   updated_at: Generated<Timestamp>;
 }
 

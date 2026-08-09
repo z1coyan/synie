@@ -24,6 +24,7 @@ import { buildNumberingCatalog, createNumberingService } from '~/platform/number
 import type { TradingSide } from '../common.ts'
 import { createFulfillmentService } from '../fulfillment/service.ts'
 import { createOrderService } from '../order/service.ts'
+import { createReturnsService } from '../returns/service.ts'
 import { createQuotationService } from '../quotation/service.ts'
 import { reconciliationHeadRoutes, reconciliationItemRoutes } from './routes.ts'
 import { createReconciliationService } from './service.ts'
@@ -64,6 +65,7 @@ run('PG 集成（销售/采购对账）', () => {
   const quotations = createQuotationService(db, numbering, registry)
   const orders = createOrderService(db, numbering, quotations, registry)
   const fulfillment = createFulfillmentService(db, numbering, engines, registry)
+  const returns = createReturnsService(db, numbering, engines, registry)
   const svc = createReconciliationService(db, numbering, gl, registry)
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `REC${suffix}`
@@ -86,6 +88,8 @@ run('PG 集成（销售/采购对账）', () => {
   const salesOrderItemId = crypto.randomUUID()
   const salesDeliveryId = crypto.randomUUID()
   const salesDeliveryItemId = crypto.randomUUID()
+  const salesReturnId = crypto.randomUUID()
+  const salesReturnItemId = crypto.randomUUID()
   const purchaseOrderId = crypto.randomUUID()
   const purchaseOrderItemId = crypto.randomUUID()
   const purchaseReceiptId = crypto.randomUUID()
@@ -249,6 +253,26 @@ run('PG 集成（销售/采购对账）', () => {
         ${materialId}::uuid,${unitId}::uuid,${warehouseId}::uuid,0
       )
     `.execute(db)
+    // 已审核销售退货单（手工行口径：无源单锚点；快照价 10、币种与发货一致、汇率随单头 1.2）
+    await sql`
+      INSERT INTO sal_return(id,return_no,return_date,party_type,party_id,status,company_id,
+        warehouse_id,debit_account_id,credit_account_id,currency_id,exchange_rate)
+      VALUES (${salesReturnId}::uuid,${prefix + '-ST'},'2026-07-26','customer',${customerId}::uuid,
+        'audited',${companyId}::uuid,${warehouseId}::uuid,${salesDebitId}::uuid,${salesCreditId}::uuid,
+        ${currencyId}::uuid,1.2)
+    `.execute(db)
+    await sql`
+      INSERT INTO sal_return_item(
+        id,idx,qty,base_qty,material_code,material_name,unit_name,
+        order_price,order_amount,order_base_price,order_base_amount,order_tax_rate,order_currency_code,
+        return_id,company_id,material_id,unit_id,warehouse_id,reconciled_qty
+      ) VALUES (
+        ${salesReturnItemId}::uuid,1,4,4,${'M' + suffix},${prefix + '物料'},${prefix + '件'},
+        10,40,12,48,0.13,${'R' + suffix.slice(0, 6)},
+        ${salesReturnId}::uuid,${companyId}::uuid,
+        ${materialId}::uuid,${unitId}::uuid,${warehouseId}::uuid,0
+      )
+    `.execute(db)
     await sql`
       INSERT INTO pur_order(id,order_no,order_date,party_type,party_id,status,company_id,exchange_rate,currency_id,is_outsourced)
       VALUES (${purchaseOrderId}::uuid,${prefix + '-PO'},'2026-07-20','supplier',${supplierId}::uuid,
@@ -316,6 +340,7 @@ run('PG 集成（销售/采购对账）', () => {
     await sql`DELETE FROM acc_gl_entry WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sal_reconciliation WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM pur_reconciliation WHERE company_id=${companyId}::uuid`.execute(db)
+    await sql`DELETE FROM sal_return WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sal_company_account_default WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sal_delivery WHERE id=${salesDeliveryId}::uuid`.execute(db)
     await sql`DELETE FROM pur_receipt WHERE id=${purchaseReceiptId}::uuid`.execute(db)
@@ -836,6 +861,160 @@ run('PG 集成（销售/采购对账）', () => {
 
     await svc.unconfirm(headPermit('sales', 'unconfirm'), 'sales', head.id)
     await svc.deleteHead(headPermit('sales', 'delete'), 'sales', head.id)
+  })
+
+  test('退货条目同池混勾：行金额取负、头合计为净额', async () => {
+    const draft = await svc.createDraft(headPermit('sales', 'create'), 'sales', {
+      companyId,
+      reconciliationType: 'REGULAR',
+      partyType: 'CUSTOMER',
+      partyId: customerId,
+      items: [
+        // 发货行：5 行单位 ×10 = 50（base 10，×汇率 1.2 = 60）
+        { idx: 1, qty: '5', deliveryItemId: salesDeliveryItemId },
+        // 退货行：2 行单位 ×10 = 20 取负（base 2，×1.2 = 24 取负）
+        { idx: 2, qty: '2', returnItemId: salesReturnItemId },
+      ],
+    })
+    const deliveryLine = draft.items.find((i) => i.deliveryItemId != null)!
+    const returnLine = draft.items.find((i) => i.returnItemId != null)!
+    expect(decimal(deliveryLine.amount).equals(decimal('50'))).toBe(true)
+    expect(decimal(deliveryLine.baseAmount).equals(decimal('60'))).toBe(true)
+    expect(decimal(returnLine.amount).equals(decimal('-20'))).toBe(true)
+    expect(decimal(returnLine.baseAmount).equals(decimal('-24'))).toBe(true)
+    // 退货行数量/折算数量仍为正（占量口径）
+    expect(decimal(returnLine.qty).equals(decimal('2'))).toBe(true)
+    expect(decimal(returnLine.baseQty).equals(decimal('2'))).toBe(true)
+    // 头合计 = 同池净额
+    expect(decimal(draft.grossTotal).equals(decimal('30'))).toBe(true)
+    expect(decimal(draft.baseGrossTotal).equals(decimal('36'))).toBe(true)
+    // 来源单号/日期 COALESCE 投影：退货行回退货单号
+    expect(returnLine.deliveryNo).toBe(prefix + '-ST')
+    expect(returnLine.deliveryDate).toBe('2026-07-26')
+
+    await svc.deleteHead(headPermit('sales', 'delete'), 'sales', draft.id)
+  })
+
+  test('恰一校验：发货条目与退货条目必须恰选一个', async () => {
+    const head = await svc.createHead(headPermit('sales', 'create'), 'sales', {
+      companyId,
+      kind: 'REGULAR',
+      partyType: 'CUSTOMER',
+      partyId: customerId,
+      debitAccountId: salesDebitId,
+      creditAccountId: salesCreditId,
+    })
+    const neither = await svc
+      .createItem(itemPermit('sales', 'create'), 'sales', {
+        reconciliationId: head.id,
+        idx: 1,
+        qty: '1',
+      })
+      .catch((e: unknown) => e)
+    expect((neither as ApiError).fields?.['source']).toEqual([
+      '发货条目与销售退货条目必须恰选一个',
+    ])
+    const both = await svc
+      .createItem(itemPermit('sales', 'create'), 'sales', {
+        reconciliationId: head.id,
+        idx: 1,
+        qty: '1',
+        deliveryItemId: salesDeliveryItemId,
+        returnItemId: salesReturnItemId,
+      })
+      .catch((e: unknown) => e)
+    expect((both as ApiError).fields?.['source']).toEqual([
+      '发货条目与销售退货条目必须恰选一个',
+    ])
+    await svc.deleteHead(headPermit('sales', 'delete'), 'sales', head.id)
+  })
+
+  test('退货条目已对账数量随确认/撤回增减；超剩余可对账拦截', async () => {
+    const head = await svc.createHead(headPermit('sales', 'create'), 'sales', {
+      companyId,
+      kind: 'REGULAR',
+      partyType: 'CUSTOMER',
+      partyId: customerId,
+      debitAccountId: salesDebitId,
+      creditAccountId: salesCreditId,
+    })
+    const item = await svc.createItem(itemPermit('sales', 'create'), 'sales', {
+      reconciliationId: head.id,
+      idx: 1,
+      qty: '3',
+      returnItemId: salesReturnItemId,
+    })
+    // 保存期软校验：3 ≤ 剩余可对账 4
+    expect(decimal(item.baseQty).equals(decimal('3'))).toBe(true)
+
+    await svc.confirm(headPermit('sales', 'confirm'), 'sales', head.id)
+    const recon = await sql<{ r: string }>`
+      SELECT reconciled_qty::text AS r FROM sal_return_item WHERE id=${salesReturnItemId}::uuid
+    `.execute(db)
+    expect(decimal(recon.rows[0]!.r).equals(decimal('3'))).toBe(true)
+
+    // 剩余可对账 = 4 − 3 = 1：再对 2 即拦截
+    const head2 = await svc.createHead(headPermit('sales', 'create'), 'sales', {
+      companyId,
+      kind: 'REGULAR',
+      partyType: 'CUSTOMER',
+      partyId: customerId,
+      debitAccountId: salesDebitId,
+      creditAccountId: salesCreditId,
+    })
+    await expectApiError(
+      () =>
+        svc.createItem(itemPermit('sales', 'create'), 'sales', {
+          reconciliationId: head2.id,
+          idx: 1,
+          qty: '2',
+          returnItemId: salesReturnItemId,
+        }),
+      'conflict',
+    )
+
+    await svc.deleteHead(headPermit('sales', 'delete'), 'sales', head2.id)
+    await svc.unconfirm(headPermit('sales', 'unconfirm'), 'sales', head.id)
+    const recon2 = await sql<{ r: string }>`
+      SELECT reconciled_qty::text AS r FROM sal_return_item WHERE id=${salesReturnItemId}::uuid
+    `.execute(db)
+    expect(decimal(recon2.rows[0]!.r).equals(decimal(0))).toBe(true)
+    await svc.deleteItem(itemPermit('sales', 'delete'), 'sales', item.id)
+    await svc.deleteHead(headPermit('sales', 'delete'), 'sales', head.id)
+  })
+
+  test('有已对账数量时退货不可作废（须先撤回/作废相关对账单）', async () => {
+    const head = await svc.createHead(headPermit('sales', 'create'), 'sales', {
+      companyId,
+      kind: 'REGULAR',
+      partyType: 'CUSTOMER',
+      partyId: customerId,
+      debitAccountId: salesDebitId,
+      creditAccountId: salesCreditId,
+    })
+    await svc.createItem(itemPermit('sales', 'create'), 'sales', {
+      reconciliationId: head.id,
+      idx: 1,
+      qty: '1',
+      returnItemId: salesReturnItemId,
+    })
+    await svc.confirm(headPermit('sales', 'confirm'), 'sales', head.id)
+
+    let voidErr: unknown
+    try {
+      await returns.voidHead(permitFor(actor, 'salReturns', 'void'), salesReturnId)
+    } catch (e) {
+      voidErr = e
+    }
+    expect(voidErr).toBeInstanceOf(ApiError)
+    expect((voidErr as ApiError).code).toBe('conflict')
+    expect((voidErr as ApiError).message).toContain('存在已对账退货条目,不可作废')
+
+    // 撤回对账释放占用后，退货单照常识作废（本夹具退货为手工行口径：无库存/总账分录，幂等空转）
+    await svc.unconfirm(headPermit('sales', 'unconfirm'), 'sales', head.id)
+    await svc.deleteHead(headPermit('sales', 'delete'), 'sales', head.id)
+    const voided = await returns.voidHead(permitFor(actor, 'salReturns', 'void'), salesReturnId)
+    expect(voided.status).toBe('VOIDED')
   })
 
   test('发票结单/重开接缝：状态与待办关闭/复活', async () => {
