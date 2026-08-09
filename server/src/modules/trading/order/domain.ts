@@ -579,7 +579,7 @@ export async function loadOrderHistory(
         JOIN sal_order_item oi ON oi.id=i.order_item_id
         WHERE oi.order_id=${orderId}::uuid
       ) flows
-      ORDER BY flows.document_date DESC, flows.idx, flows.id
+      ORDER BY flows.document_date DESC, flows.flow_type, flows.idx, flows.id
     `.execute(db)
     return {
       results: rows.rows.map((r) => ({
@@ -627,7 +627,7 @@ export async function loadOrderHistory(
       JOIN pur_order_item oi ON oi.id=i.order_item_id
       WHERE oi.order_id=${orderId}::uuid
     ) flows
-    ORDER BY flows.document_date DESC, flows.idx, flows.id
+    ORDER BY flows.document_date DESC, flows.flow_type, flows.idx, flows.id
   `.execute(db)
   return {
     results: rows.rows.map((r) => ({
