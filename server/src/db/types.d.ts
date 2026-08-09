@@ -1473,6 +1473,7 @@ export interface SalDeliveryItem {
   qty: Numeric;
   reconciled_qty: Generated<Numeric>;
   remarks: string | null;
+  returned_qty: Generated<Numeric>;
   unit_id: string;
   unit_name: string;
   updated_at: Generated<Timestamp>;
@@ -1633,6 +1634,61 @@ export interface SalReconciliationItem {
   reconciliation_id: string;
   remarks: string | null;
   updated_at: Generated<Timestamp>;
+}
+
+export interface SalReturn {
+  audited_at: Timestamp | null;
+  audited_by_id: string | null;
+  company_id: string;
+  created_by_id: string | null;
+  credit_account_id: string;
+  currency_id: string | null;
+  debit_account_id: string;
+  exchange_rate: Generated<Numeric | null>;
+  id: Generated<string>;
+  inserted_at: Generated<Timestamp>;
+  party_id: string;
+  party_type: string;
+  posting_date: Timestamp | null;
+  remarks: string | null;
+  return_date: Generated<Timestamp>;
+  return_no: string;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  warehouse_id: string | null;
+}
+
+export interface SalReturnItem {
+  base_qty: Generated<Numeric>;
+  company_id: string;
+  customer_part_no: string | null;
+  delivery_item_id: string | null;
+  id: Generated<string>;
+  idx: Int8;
+  inserted_at: Generated<Timestamp>;
+  material_code: string | null;
+  material_id: string | null;
+  material_name: string | null;
+  material_spec: string | null;
+  order_amount: Numeric | null;
+  order_base_amount: Numeric | null;
+  order_base_price: Numeric | null;
+  order_base_qty: Numeric | null;
+  order_currency_code: string | null;
+  order_item_id: string | null;
+  order_no: string | null;
+  order_price: Numeric | null;
+  order_qty: Numeric | null;
+  order_tax_rate: Numeric | null;
+  order_unit_name: string | null;
+  qty: Numeric;
+  reconciled_qty: Generated<Numeric>;
+  remarks: string | null;
+  return_id: string;
+  unit_id: string | null;
+  unit_name: string | null;
+  updated_at: Generated<Timestamp>;
+  warehouse_id: string | null;
 }
 
 export interface SalSetting {
@@ -1972,6 +2028,8 @@ export interface DB {
   sal_quotation_tier: SalQuotationTier;
   sal_reconciliation: SalReconciliation;
   sal_reconciliation_item: SalReconciliationItem;
+  sal_return: SalReturn;
+  sal_return_item: SalReturnItem;
   sal_setting: SalSetting;
   scm_order_flow_item: ScmOrderFlowItem;
   synie_schema_migration: SynieSchemaMigration;

@@ -97,6 +97,7 @@ export const menuCatalog: MenuCatalogModule[] = [
           { code: 'menu.sales.quotations', label: '销售报价' },
           { code: 'menu.sales.orders', label: '销售订单' },
           { code: 'menu.sales.deliveries', label: '销售发货' },
+          { code: 'menu.sales.returns', label: '销售退货' },
           { code: 'menu.sales.reconciliations', label: '销售对账' },
         ],
       },

@@ -32,6 +32,7 @@ const EXPECTED_RESOURCES = [
   'salOrders',
   'salQuotations',
   'salReconciliations',
+  'salReturns',
   'sysRoles',
 ]
 
@@ -47,7 +48,7 @@ const EXPECTED_PREVIEWS = [
 ]
 
 describe('Presentation Extension 薄 registry interface', () => {
-  test('21 个实际调用资源均由业务 module 构造', () => {
+  test('22 个实际调用资源均由业务 module 构造', () => {
     expect(listPresentationResources()).toEqual(EXPECTED_RESOURCES)
     expect(listDrawerConfigKeys()).toEqual(EXPECTED_RESOURCES)
 

@@ -48,6 +48,12 @@ import {
   salesDeliveryPackBoxClient,
   salesDeliveryPackLineClient,
 } from './fulfillment'
+import {
+  salesReturnClient,
+  salesReturnCommandAdapter,
+  salesReturnDraftAdapter,
+  salesReturnItemClient,
+} from './returns'
 import { purchaseReceiptDraftAdapter } from './purchase-receipt-draft'
 import {
   purchaseReconciliationDraftAdapter,
@@ -250,6 +256,8 @@ const transports: Record<string, ResourceTransport> = {
   salDeliveryPackLines: salesDeliveryPackLineClient,
   salReconciliations: salesReconciliationClient,
   salReconciliationItems: salesReconciliationItemClient,
+  salReturns: salesReturnClient,
+  salReturnItems: salesReturnItemClient,
   salCompanyAccountDefaults: companyAccountDefaultClient,
   salQuotations: salesQuotationClient,
   salQuotationItems: salesQuotationItemClient,
@@ -296,6 +304,7 @@ const SEMANTIC_COMMAND_ADAPTERS: Record<string, CommandAdapter> = {
   salOrders: salesOrderCommandAdapter,
   salQuotations: salesQuotationCommandAdapter,
   salReconciliations: salesReconciliationCommandAdapter,
+  salReturns: salesReturnCommandAdapter,
   sysPrintTemplates: printTemplateCommandAdapter,
   sysStorages: storageCommandAdapter,
 }
@@ -311,6 +320,7 @@ const DRAFT_ADAPTERS = {
   salOrders: salesOrderDraftAdapter,
   salQuotations: salesQuotationDraftAdapter,
   salReconciliations: salesReconciliationDraftAdapter,
+  salReturns: salesReturnDraftAdapter,
 } satisfies Record<string, AggregateDraftAdapter<unknown, unknown>>
 
 type AggregateDraftResource = keyof typeof DRAFT_ADAPTERS

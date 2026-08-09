@@ -450,6 +450,12 @@ async function seedNumberingRules(trx: DbHandle): Promise<void> {
       mid: { field: 'delivery_date', label: '发货日期', dateFormat: 'YYYYMMDD' },
     },
     {
+      resource: 'sales.return',
+      name: '销售退货编号',
+      prefix: 'S(T)',
+      mid: { field: 'return_date', label: '退货日期', dateFormat: 'YYYYMMDD' },
+    },
+    {
       resource: 'sales.reconciliation',
       name: '销售对账编号',
       prefix: 'S(R)',
@@ -661,6 +667,13 @@ export const SALES_ROLE_PERMISSIONS: ReadonlyArray<string> = [
   'sales.delivery:print',
   'sales.delivery:export',
   'sales.delivery:batch_print',
+  // 销售退货单：完整权限
+  'sales.return:create',
+  'sales.return:read',
+  'sales.return:update',
+  'sales.return:delete',
+  'sales.return:audit',
+  'sales.return:void',
   // 销售对账单：完整权限
   'sales.reconciliation:create',
   'sales.reconciliation:read',
@@ -732,6 +745,7 @@ export const SALES_ROLE_MENUS: ReadonlyArray<string> = [
   'menu.sales.quotations',
   'menu.sales.orders',
   'menu.sales.deliveries',
+  'menu.sales.returns',
   'menu.sales.reconciliations',
   // 库存管理：库存只读视图
   'menu.inv.balance',

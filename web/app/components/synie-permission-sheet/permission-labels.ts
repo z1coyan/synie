@@ -27,6 +27,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'base.customer': '客户',
   'sales.order': '销售订单',
   'sales.delivery': '销售发货单',
+  'sales.return': '销售退货单',
   'sales.reconciliation': '销售对账单',
   'sales.quotation': '销售报价单',
   'sales.setting': '供应链设置',

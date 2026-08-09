@@ -63,6 +63,9 @@ import {
   outsourcedReceiptMaterialRoutes,
   outsourcedReceiptRoutes,
 } from './outsourced/routes.ts'
+import { createReturnsService } from './returns/service.ts'
+import { returnHeadMeta, returnItemMeta } from './returns/spec.ts'
+import { salesReturnHeadRoutes, salesReturnItemRoutes } from './returns/routes.ts'
 import { createReconciliationService } from './reconciliation/service.ts'
 import {
   reconciliationHeadMeta,
@@ -101,6 +104,8 @@ export function registerTradingResources(registry: Registry): void {
   }
   registry.register(packBoxMeta())
   registry.register(packLineMeta())
+  registry.register(returnHeadMeta())
+  registry.register(returnItemMeta())
   registry.register(orderMaterialMeta())
   registry.register(orderByproductMeta())
   registry.register(outsourcedIssueMeta())
@@ -124,8 +129,9 @@ export function createTradingServices(
   const orders = createOrderService(db, numbering, quotations, registry, outsourcedConfig.draft)
   const fulfillment = createFulfillmentService(db, numbering, engines, registry)
   const outsourced = createOutsourcedService(db, numbering, engines, registry)
+  const returns = createReturnsService(db, numbering, engines, registry)
   const reconciliations = createReconciliationService(db, numbering, gl, registry)
-  return { quotations, orders, outsourcedConfig, fulfillment, outsourced, reconciliations }
+  return { quotations, orders, outsourcedConfig, fulfillment, outsourced, returns, reconciliations }
 }
 
 export type TradingServices = ReturnType<typeof createTradingServices>
@@ -136,7 +142,7 @@ export function tradingRouteMounts(deps: {
   trading: TradingServices
 }) {
   const { auth, authz, trading } = deps
-  const { quotations, orders, outsourcedConfig, fulfillment, outsourced, reconciliations } =
+  const { quotations, orders, outsourcedConfig, fulfillment, outsourced, returns, reconciliations } =
     trading
   const purchaseExtra = purchaseOrderExtraRoutes({ auth, authz, outsourcedConfig })
   return {
@@ -160,6 +166,8 @@ export function tradingRouteMounts(deps: {
     salesDeliveryPackLines: packLineRoutes({ auth, authz, fulfillment }),
     purchaseReceipts: purchaseFulfillmentHeadRoutes({ auth, authz, fulfillment }),
     purchaseReceiptItems: purchaseFulfillmentItemRoutes({ auth, authz, fulfillment }),
+    salesReturns: salesReturnHeadRoutes({ auth, authz, returns }),
+    salesReturnItems: salesReturnItemRoutes({ auth, authz, returns }),
     outsourcedIssues: outsourcedIssueRoutes({ auth, authz, outsourced }),
     outsourcedIssueItems: outsourcedIssueItemRoutes({ auth, authz, outsourced }),
     outsourcedReceipts: outsourcedReceiptRoutes({ auth, authz, outsourced }),
@@ -197,6 +205,7 @@ export type { QuotationService } from './quotation/service.ts'
 export type { OrderService } from './order/service.ts'
 export type { OutsourcedConfigService } from './order/outsourced-config.ts'
 export type { FulfillmentService } from './fulfillment/service.ts'
+export type { ReturnsService } from './returns/service.ts'
 export type { ReconciliationService } from './reconciliation/service.ts'
 export {
   createSalesOrderDocBuilder,

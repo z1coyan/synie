@@ -217,6 +217,12 @@ export const menuModules: MenuModule[] = [
             relatedPermissions: ['sales.delivery'],
           },
           {
+            code: 'menu.sales.returns',
+            label: '销售退货',
+            path: '/sales/returns',
+            relatedPermissions: ['sales.return'],
+          },
+          {
             code: 'menu.sales.reconciliations',
             label: '销售对账',
             path: '/sales/reconciliations',

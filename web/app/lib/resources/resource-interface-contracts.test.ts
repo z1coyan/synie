@@ -24,6 +24,7 @@ const READ_ONLY_RESOURCES = [
   'salDeliveryItems',
   'salDeliveryPackBoxes',
   'salDeliveryPackLines',
+  'salReturnItems',
   'scmOrderFlowItems',
   'sysAuditLogs',
 ] as const
