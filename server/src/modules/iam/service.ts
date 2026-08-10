@@ -58,6 +58,14 @@ export interface IamRole {
   updatedAt: Date
 }
 
+/**
+ * 系统保护角色判定：仅 admin（持全域通配 * 授权的内置角色）不可改/不可删、授权与菜单只读；
+ * 其余内置（预置）角色只是一次性种子，初始化后与普通角色同权可编辑、可删除
+ * （ADR 2026-08-10 预置角色放开编辑）。
+ */
+const isProtectedRole = (r: { builtin: boolean; code: string }) =>
+  r.builtin && r.code === 'admin'
+
 export interface AccessItem {
   id: string
   name: string
@@ -519,7 +527,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
         notFoundMessage: '角色不存在',
       })
       const before = mapRole(locked as never)
-      if (before.builtin) throw new ApiError('conflict', '内置角色不可修改或删除')
+      if (isProtectedRole(before)) throw new ApiError('conflict', '系统管理员角色不可修改或删除')
       let name = before.name
       if (input.name !== undefined) {
         name = input.name.trim()
@@ -562,7 +570,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
         notFoundMessage: '角色不存在',
       })
       const item = mapRole(locked as never)
-      if (item.builtin) throw new ApiError('conflict', '内置角色不可修改或删除')
+      if (isProtectedRole(item)) throw new ApiError('conflict', '系统管理员角色不可修改或删除')
       try {
         await trx.deleteFrom('sys_role_permission').where('role_id', '=', id).execute()
         await trx.deleteFrom('sys_role_menu').where('role_id', '=', id).execute()
@@ -659,7 +667,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
           notFoundMessage: '角色不存在',
         }),
       )
-      if (locked.builtin) throw new ApiError('conflict', '内置角色的授权不可增删')
+      if (isProtectedRole(locked)) throw new ApiError('conflict', '系统管理员角色的授权不可增删')
       const existing = await trx
         .selectFrom('sys_role_permission')
         .select(['id', 'permission', 'scope'])
@@ -757,7 +765,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
           notFoundMessage: '角色不存在',
         }),
       )
-      if (locked.builtin) throw new ApiError('conflict', '内置角色的菜单授权不可增删')
+      if (isProtectedRole(locked)) throw new ApiError('conflict', '系统管理员角色的菜单授权不可增删')
       const existing = await trx
         .selectFrom('sys_role_menu')
         .select('menu_code')

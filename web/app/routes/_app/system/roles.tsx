@@ -23,8 +23,10 @@ export const Route = createFileRoute('/_app/system/roles')({
   component: RolesPage,
 })
 
-// 内置角色(迁移种子的 admin,持全域通配 * 授权):后端强制不可改/不可删,前端对应禁用入口
-const notBuiltin = (row: Row) => row.builtin !== true
+// 系统保护角色(初始化种子的 admin,持全域通配 * 授权):后端强制不可改/不可删,前端对应禁用入口;
+// 其余内置(预置)角色只是一次性种子,可改可删(ADR 2026-08-10)
+const isProtected = (row: Row) => row.builtin === true && row.code === 'admin'
+const notProtected = (row: Row) => !isProtected(row)
 
 // 模块级稳定引用:内联对象会让 SynieDataGrid 的列 memo 每次渲染失效
 const GRID_OVERRIDES: Record<string, ColumnOverride> = {
@@ -56,10 +58,10 @@ function RolesPage() {
   const canViewMenus = roleMenuCaps.readable
   const canWriteMenus = roleMenuCaps.has('update')
 
-  // 关闭动画期间冻结 builtin:accessRole 置空后不能当场翻回 false(同 lastOpenRef 模式)
-  const builtinRef = useRef(false)
-  if (accessRole) builtinRef.current = accessRole.builtin === true
-  const accessBuiltin = accessRole ? accessRole.builtin === true : builtinRef.current
+  // 关闭动画期间冻结保护标记:accessRole 置空后不能当场翻回 false(同 lastOpenRef 模式)
+  const protectedRef = useRef(false)
+  if (accessRole) protectedRef.current = isProtected(accessRole)
+  const accessProtected = accessRole ? isProtected(accessRole) : protectedRef.current
 
   return (
     <>
@@ -72,10 +74,10 @@ function RolesPage() {
           overrides={GRID_OVERRIDES}
           // 内置角色:禁用编辑/启停开关与删除(后端另有强制校验兜底);「权限与菜单」保留入口但两区只读
           actionVisible={{
-            edit: notBuiltin,
-            delete: notBuiltin,
-            statusEnable: notBuiltin,
-            statusDisable: notBuiltin,
+            edit: notProtected,
+            delete: notProtected,
+            statusEnable: notProtected,
+            statusDisable: notProtected,
           }}
           onView={(row) => open('view', String(row.id))}
           onCreate={() => open('create')}
@@ -102,9 +104,9 @@ function RolesPage() {
         isOpen={drawer !== null}
         onOpenChange={(isOpen) => !isOpen && close()}
         rowId={drawer?.recordId ?? undefined}
-        // 内置角色详情页不提供「编辑」入口(行内编辑入口已被 actionVisible 隐藏,这里是第二处)
+        // 系统保护角色详情页不提供「编辑」入口(行内编辑入口已被 actionVisible 隐藏,这里是第二处)
         onEdit={
-          drawerRow?.builtin === true ? undefined : () => setMode('edit')
+          drawerRow && isProtected(drawerRow) ? undefined : () => setMode('edit')
         }
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
@@ -120,7 +122,7 @@ function RolesPage() {
       <SynieRoleAccessSheet
         roleId={accessRole?.id ?? ''}
         roleName={String(accessRole?.name ?? '')}
-        builtin={accessBuiltin}
+        builtin={accessProtected}
         isOpen={accessRole !== null}
         onOpenChange={(isOpen) => !isOpen && setAccessRole(null)}
         perms={{ canView: canViewPerms, canWrite: canWritePerms }}

@@ -90,19 +90,49 @@ run('PG 集成（IAM）', () => {
     const access = await iam.userAccess(permit(USER_RESOURCE, 'read'), created.user.id)
     expect(access.roles.map((r) => r.id)).toContain(role.id)
 
-    // 内置角色
-    const builtin = (
-      await iam.listRoles(permit(ROLE_RESOURCE, 'read'), {
-        limit: 50,
-        offset: 0,
-        filter: { builtin: { kind: 'bool', eq: true } },
-      })
-    ).results[0]
-    if (builtin) {
-      await expect(iam.updateRole(permit(ROLE_RESOURCE, 'update'), builtin.id, { name: 'hack' })).rejects.toMatchObject({
-        code: 'conflict',
-      })
-      await expect(iam.deleteRole(permit(ROLE_RESOURCE, 'delete'), builtin.id)).rejects.toMatchObject({ code: 'conflict' })
+    // 预置（builtin 非 admin）角色：编辑/授权/删除与普通角色同权（ADR 2026-08-10）
+    const preset = await iam.createRole(permit(ROLE_RESOURCE, 'create'), {
+      code: `bi${suffix}`,
+      name: `预置-${suffix}`,
+    })
+    await db.updateTable('sys_role').set({ builtin: true }).where('id', '=', preset.id).execute()
+    const renamed = await iam.updateRole(permit(ROLE_RESOURCE, 'update'), preset.id, {
+      name: `预置改-${suffix}`,
+    })
+    expect(renamed.name).toBe(`预置改-${suffix}`)
+    await iam.syncRolePermissions(permit(ROLE_RESOURCE, 'update'), preset.id, [
+      { permission: 'sys.user:read', scope: 'all' },
+    ])
+    await iam.deleteRole(permit(ROLE_RESOURCE, 'delete'), preset.id)
+
+    // 系统保护角色（admin）：不可改/删、授权只读
+    const adminRow = await db
+      .selectFrom('sys_role')
+      .select('id')
+      .where('code', '=', 'admin')
+      .executeTakeFirst()
+    let adminId = adminRow?.id
+    let adminOwnedByTest = false
+    if (!adminId) {
+      const inserted = await db
+        .insertInto('sys_role')
+        .values({ code: 'admin', name: '系统管理员', builtin: true })
+        .returning('id')
+        .executeTakeFirstOrThrow()
+      adminId = inserted.id
+      adminOwnedByTest = true
+    }
+    await expect(
+      iam.updateRole(permit(ROLE_RESOURCE, 'update'), adminId!, { name: 'hack' }),
+    ).rejects.toMatchObject({ code: 'conflict' })
+    await expect(iam.deleteRole(permit(ROLE_RESOURCE, 'delete'), adminId!)).rejects.toMatchObject({
+      code: 'conflict',
+    })
+    await expect(
+      iam.syncRolePermissions(permit(ROLE_RESOURCE, 'update'), adminId!, []),
+    ).rejects.toMatchObject({ code: 'conflict' })
+    if (adminOwnedByTest) {
+      await db.deleteFrom('sys_role').where('id', '=', adminId!).execute()
     }
 
     await iam.deleteUser(permit(USER_RESOURCE, 'delete'), created.user.id)

@@ -126,11 +126,35 @@ run('PG 集成（角色菜单白名单）', () => {
     expect(await iam.roleMenus(permit(ROLE_MENU_RESOURCE, 'read'), roleId)).toEqual([])
   })
 
-  test('内置角色 sync 抛冲突；删角色级联清白名单行', async () => {
-    const builtinId = await mkRole('menus-builtin', true)
-    await expect(iam.syncRoleMenus(permit(ROLE_MENU_RESOURCE, 'update'), builtinId, [menuA])).rejects.toMatchObject({
-      code: 'conflict',
-    })
+  test('系统保护角色 sync 抛冲突；预置角色可 sync；删角色级联清白名单行', async () => {
+    // admin（系统保护）：菜单授权不可增删
+    const adminRow = await db
+      .selectFrom('sys_role')
+      .select('id')
+      .where('code', '=', 'admin')
+      .executeTakeFirst()
+    let adminId = adminRow?.id
+    let adminOwnedByTest = false
+    if (!adminId) {
+      const inserted = await db
+        .insertInto('sys_role')
+        .values({ code: 'admin', name: '系统管理员', builtin: true })
+        .returning('id')
+        .executeTakeFirstOrThrow()
+      adminId = inserted.id
+      adminOwnedByTest = true
+    }
+    await expect(
+      iam.syncRoleMenus(permit(ROLE_MENU_RESOURCE, 'update'), adminId!, [menuA]),
+    ).rejects.toMatchObject({ code: 'conflict' })
+    if (adminOwnedByTest) {
+      await db.deleteFrom('sys_role').where('id', '=', adminId!).execute()
+    }
+
+    // 预置（builtin 非 admin）角色：菜单白名单可正常 sync（ADR 2026-08-10）
+    const presetId = await mkRole('menus-preset', true)
+    await iam.syncRoleMenus(permit(ROLE_MENU_RESOURCE, 'update'), presetId, [menuA])
+    expect(await iam.roleMenus(permit(ROLE_MENU_RESOURCE, 'read'), presetId)).toEqual([menuA])
 
     const roleId = await mkRole('menus-cascade')
     await iam.syncRoleMenus(permit(ROLE_MENU_RESOURCE, 'update'), roleId, [menuA, menuC])

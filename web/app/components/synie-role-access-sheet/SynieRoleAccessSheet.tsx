@@ -27,14 +27,14 @@ import { PermissionSection } from './permission-section'
 export interface AccessGates {
   /** 查看（sys.role_permission:read / sys.role_menu:read）：无则本区渲染占位、不拉数据 */
   canView: boolean
-  /** 编辑（权限区 create+delete / 菜单区 update；内置角色另由 builtin 压只读） */
+  /** 编辑（权限区 create+delete / 菜单区 update；系统保护角色另由 builtin 压只读） */
   canWrite: boolean
 }
 
 export interface SynieRoleAccessSheetProps {
   roleId: string
   roleName: string
-  /** 内置角色：两区均只读（后端另有强制校验兜底） */
+  /** 系统保护角色（admin）：两区均只读（后端另有强制校验兜底）；调用方按 builtin && code==='admin' 传入 */
   builtin: boolean
   isOpen: boolean
   onOpenChange: (open: boolean) => void
