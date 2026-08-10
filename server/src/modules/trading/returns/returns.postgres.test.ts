@@ -44,6 +44,8 @@ run('PG 集成（销售退货）', () => {
   const companyId = crypto.randomUUID()
   const customerId = crypto.randomUUID()
   const unitId = crypto.randomUUID()
+  // 转换单位夹具：1 件 = 0.1 箱（factor=0.1，base=qty÷factor）
+  const boxUnitId = crypto.randomUUID()
   const categoryId = crypto.randomUUID()
   const materialId = crypto.randomUUID()
   const material2Id = crypto.randomUUID()
@@ -156,6 +158,10 @@ run('PG 集成（销售退货）', () => {
       VALUES (${unitId}::uuid, ${'rt-' + suffix}, true, ${prefix + '件'}, 'u', 1)
     `.execute(db)
     await sql`
+      INSERT INTO bas_unit(id,unit_type,is_base,name,symbol,ratio)
+      VALUES (${boxUnitId}::uuid, ${'rt-' + suffix}, false, ${prefix + '箱'}, 'box', 10)
+    `.execute(db)
+    await sql`
       INSERT INTO inv_material_category(id,code,name,is_leaf,active)
       VALUES (${categoryId}::uuid, ${'MC' + suffix}, ${prefix + '分类'}, true, true)
     `.execute(db)
@@ -164,6 +170,11 @@ run('PG 集成（销售退货）', () => {
         (${materialId}::uuid, ${'M' + suffix}, ${prefix + '物料'}, ${categoryId}::uuid, ${unitId}::uuid, true, 'STOCK'),
         (${material2Id}::uuid, ${'N' + suffix}, ${prefix + '物料二'}, ${categoryId}::uuid, ${unitId}::uuid, true, 'STOCK'),
         (${virtualMaterialId}::uuid, ${'V' + suffix}, ${prefix + '虚拟'}, ${categoryId}::uuid, ${unitId}::uuid, true, 'VIRTUAL')
+    `.execute(db)
+    // 转换单位：1 件 = 0.1 箱（factor=0.1，base=qty÷factor）
+    await sql`
+      INSERT INTO inv_material_unit(id,material_id,unit_id,factor)
+      VALUES (gen_random_uuid(), ${materialId}::uuid, ${boxUnitId}::uuid, 0.1)
     `.execute(db)
     await sql`
       INSERT INTO inv_warehouse(id,name,code,company_id,active,is_leaf)
@@ -334,9 +345,10 @@ run('PG 集成（销售退货）', () => {
     await sql`DELETE FROM sal_order WHERE id IN (${orderId}::uuid, ${order3Id}::uuid, ${order4Id}::uuid)`.execute(db)
     await sql`DELETE FROM bas_account WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM inv_warehouse WHERE id=${warehouseId}::uuid`.execute(db)
+    await sql`DELETE FROM inv_material_unit WHERE material_id=${materialId}::uuid`.execute(db)
     await sql`DELETE FROM inv_material WHERE id IN (${materialId}::uuid, ${material2Id}::uuid, ${virtualMaterialId}::uuid)`.execute(db)
     await sql`DELETE FROM inv_material_category WHERE id=${categoryId}::uuid`.execute(db)
-    await sql`DELETE FROM bas_unit WHERE id=${unitId}::uuid`.execute(db)
+    await sql`DELETE FROM bas_unit WHERE id IN (${unitId}::uuid, ${boxUnitId}::uuid)`.execute(db)
     await sql`DELETE FROM sal_customers WHERE id=${customerId}::uuid`.execute(db)
     await sql`DELETE FROM bas_company WHERE id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM bas_currency WHERE id IN (${currencyId}::uuid, ${currency2Id}::uuid)`.execute(db)
@@ -676,6 +688,92 @@ run('PG 集成（销售退货）', () => {
     expect((await deliveryItemRow(deliveryItem2Id)).returned_qty).toBe(returnedBefore)
     const cancelledStock = await stockEntries(draft.id)
     expect(cancelledStock.every((s) => s.is_cancelled)).toBe(true)
+  })
+
+  test('手工行转换单位：金额按行单位计（价×qty×汇率），不被换算系数放大', async () => {
+    // 1 件 = 0.1 箱；2 箱 × 100 元/箱 × 汇率 1 = 200（若误用 baseQty 20 件 × 100 则算成 2000）
+    const draft = await returns.createDraft(p('salReturns', 'create'), 'sales', {
+      ...draftInput([]),
+      items: [
+        {
+          idx: 1,
+          qty: '2',
+          deliveryItemId: null,
+          materialId,
+          unitId: boxUnitId,
+          orderPrice: '100',
+          orderTaxRate: '0.13',
+          warehouseId,
+        },
+      ],
+    })
+    expect(draft.items[0]!.baseQty).toBe('20') // 2 箱 ÷ 0.1 = 20 件（默认单位）
+    const audited = await returns.auditHead(p('salReturns', 'audit'), 'sales', draft.id)
+    expect(audited.status).toBe('AUDITED')
+    const gl = await glEntries(draft.id)
+    expect(gl).toHaveLength(2)
+    expect(Number(gl[0]!.debit)).toBe(200)
+    const stock = await stockEntries(draft.id)
+    expect(stock).toHaveLength(1)
+    expect(Number(stock[0]!.quantity)).toBe(20)
+    await returns.voidHead(p('salReturns', 'void'), 'sales', draft.id)
+  })
+
+  test('作废加回不重验订单状态：订单已关闭仍可作废退货单', async () => {
+    const draft = await returns.createDraft(p('salReturns', 'create'), 'sales', {
+      ...draftInput([]),
+      items: [{ idx: 1, qty: '3', deliveryItemId, warehouseId }],
+    })
+    await returns.auditHead(p('salReturns', 'audit'), 'sales', draft.id)
+    const shipped = await orderItemShipped(orderItemId)
+    await sql`UPDATE sal_order SET status='closed' WHERE id=${orderId}::uuid`.execute(db)
+    try {
+      // 若加回走 verify=true，会被「仅已审核订单可履约」拦截
+      const voided = await returns.voidHead(p('salReturns', 'void'), 'sales', draft.id)
+      expect(voided.status).toBe('VOIDED')
+      expect(await orderItemShipped(orderItemId)).toBe(String(Number(shipped) + 3))
+    } finally {
+      await sql`UPDATE sal_order SET status='audited' WHERE id=${orderId}::uuid`.execute(db)
+    }
+  })
+
+  test('补货需求行折默认单位（转换单位退货行→默认单位数量），行备注留来源线索', async () => {
+    const draft = await returns.createDraft(p('salReturns', 'create'), 'sales', {
+      ...draftInput([]),
+      items: [
+        {
+          idx: 1,
+          qty: '2',
+          deliveryItemId: null,
+          materialId,
+          unitId: boxUnitId,
+          orderPrice: '100',
+          orderTaxRate: '0.13',
+          warehouseId,
+        },
+      ],
+    })
+    await returns.auditHead(p('salReturns', 'audit'), 'sales', draft.id)
+    const gen = await returns.generateReplenishment(
+      p('salReturns', 'generate_replenishment'),
+      draft.id,
+    )
+    const rows = await sql<{
+      qty: string
+      base_qty: string
+      unit_id: string
+      unit_name: string
+      remarks: string | null
+    }>`
+      SELECT qty::text, base_qty::text, unit_id::text, unit_name, remarks
+      FROM mfg_demand_item WHERE demand_id=${gen.demandId}::uuid
+    `.execute(db)
+    expect(rows.rows).toHaveLength(1)
+    // 2 箱 → 默认单位 20 件（不是行单位 2 箱）
+    expect(rows.rows[0]!.qty).toBe('20')
+    expect(rows.rows[0]!.base_qty).toBe('20')
+    expect(rows.rows[0]!.unit_id).toBe(unitId)
+    expect(rows.rows[0]!.remarks).toBe(`退货补货:${draft.returnNo}`)
   })
 
   test('混合行一致性：源行发货快照原币与单头原币不一致即拒绝', async () => {

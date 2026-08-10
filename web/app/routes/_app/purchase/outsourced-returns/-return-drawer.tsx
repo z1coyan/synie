@@ -11,7 +11,7 @@ import {
   headerFieldErrors,
   rowErrors,
 } from '~/lib/resources/sales-delivery-draft'
-import { buildPurchaseOutsourcedReturnDraft, type ReturnDraftIndex } from '~/lib/resources/sales-return-draft'
+import { buildPurchaseOutsourcedReturnDraft, type ReturnDraftIndex } from '~/lib/resources/return-draft'
 import { APIError } from '~/lib/api/client'
 import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
 import {

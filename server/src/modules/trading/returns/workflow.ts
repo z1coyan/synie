@@ -131,14 +131,15 @@ export async function runAuditHead(
         }
       })
     // 金额 = Σ 源行（履约快照比例口径 orderBaseAmount × baseQty / orderBaseQty）
-    //       + Σ 手工行（手填原币含税单价 × baseQty × 单头汇率）；委外纯数量单不算金额
+    //       + Σ 手工行（手填原币含税单价 × 行单位数量 qty × 单头汇率——单价按行单位计，
+    //         用 baseQty 会被单位换算系数放大）；委外纯数量单不算金额
     const exchangeRate = decimal(before.exchangeRate ?? '1')
     let amount = decimal(0)
     if (spec.monetary) {
       for (const item of items) {
         if (item.sourceItemId == null) {
           amount = amount.add(
-            decimal(item.orderPrice ?? 0).mul(decimal(item.baseQty)).mul(exchangeRate),
+            decimal(item.orderPrice ?? 0).mul(decimal(item.qty)).mul(exchangeRate),
           )
         } else if (item.orderBaseQty != null && !decimal(item.orderBaseQty).isZero()) {
           amount = amount.add(
@@ -293,6 +294,7 @@ export async function runVoidHead(
     const sourceLines = items
       .filter((i) => i.orderItemId != null)
       .map((i) => ({ orderItemId: i.orderItemId!, baseQty: i.baseQty }))
+    // 加回不重验订单状态与超发/超收上限（verify:false）——订单可能已关闭、缺口可能已被重发填满
     await postFulfillment(
       trx,
       spec.projectionSide,
@@ -303,7 +305,7 @@ export async function runVoidHead(
         lines: sourceLines,
         requireOutsourced: spec.requireOutsourced,
       },
-      PROJECTION_OPTS,
+      { ...PROJECTION_OPTS, verify: false },
     )
     await deps.inventory.cancel(trx, { type: spec.voucherType, id: before.id })
     await deps.gl.cancel(trx, { type: spec.voucherType, id: before.id })
@@ -364,6 +366,17 @@ export async function runGenerateReplenishment(
       resource: 'mfg.demand',
       values: { company_id: before.companyId, demand_date: before.documentDate },
     })
+    // 需求行口径 = 物料默认单位（销售退货.md：数量折默认单位）；退货行可能是转换单位
+    const materialIds = [...new Set(rows.rows.map((r) => String(r.material_id)))]
+    const defaults = await trx
+      .selectFrom('inv_material as m')
+      .innerJoin('bas_unit as u', 'u.id', 'm.default_unit_id')
+      .select(['m.id as id', 'm.default_unit_id as unitId', 'u.name as unitName'])
+      .where('m.id', 'in', materialIds)
+      .execute()
+    const defaultUnit = new Map(
+      defaults.map((d) => [String(d.id), { unitId: String(d.unitId), unitName: String(d.unitName) }]),
+    )
     // 指派类型默认 stock（现货补发是退货补货最常见形态；纯意图层路由声明，计划员可在草稿改派）
     const created = await insertDerivedDemand(trx, permit.actor, {
       companyId: before.companyId,
@@ -376,8 +389,8 @@ export async function runGenerateReplenishment(
       lines: rows.rows.map((r) => ({
         idx: Number(r.idx),
         materialId: String(r.material_id),
-        unitId: String(r.unit_id),
-        qty: String(r.qty),
+        unitId: defaultUnit.get(String(r.material_id))!.unitId,
+        qty: String(r.base_qty),
         baseQty: String(r.base_qty),
         needDate: before.documentDate,
         sourceWorkOrderId: null,
@@ -385,7 +398,8 @@ export async function runGenerateReplenishment(
         materialCode: String(r.material_code),
         materialName: String(r.material_name),
         materialSpec: r.material_spec == null ? null : String(r.material_spec),
-        unitName: String(r.unit_name),
+        unitName: defaultUnit.get(String(r.material_id))!.unitName,
+        remarks: `退货补货:${before.no}`,
       })),
     })
     await writeAudit(trx, permit.actor, {

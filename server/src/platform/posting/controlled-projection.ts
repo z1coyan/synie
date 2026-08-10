@@ -84,6 +84,11 @@ export interface ControlledProjectionOptions {
    * 只动订单条目 received_qty 投影；见 ADR 2026-08-09）。
    */
   skipDemandChain?: boolean
+  /**
+   * 覆盖 verify 默认（post=true/reverse=false）：退货作废加回已发/已收时传 false——
+   * 加回不重验「订单已审核」与超发/超收上限（订单可能已关闭、缺口可能已被重发填满）。
+   */
+  verify?: boolean
 }
 
 const ORDER_FULFILLMENT: Record<
@@ -115,7 +120,7 @@ export async function postFulfillment(
   input: FulfillmentInput,
   options?: ControlledProjectionOptions,
 ): Promise<void> {
-  return adjustFulfillment(db, side, input, decimal(1), true, options)
+  return adjustFulfillment(db, side, input, decimal(1), options?.verify ?? true, options)
 }
 
 export async function reverseFulfillment(

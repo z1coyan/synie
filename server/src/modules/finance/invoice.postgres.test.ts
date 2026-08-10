@@ -708,6 +708,34 @@ run('PG 集成（增值税发票）', () => {
       .then((inv) => svc.audit(permit(), inv.id, today))
       .catch((e: unknown) => e)
     expect((badTax2 as ApiError).fields?.['taxTotal']).toEqual(['正票税额不能为负'])
+    // 正票负净额：拒（恒等式只锁合计，不锁单边）
+    const badNet = await svc
+      .create(permit(), {
+        ...base,
+        invoiceCode: `${prefix}Z3A`,
+        invoiceNo: `${prefix}Z3AN`,
+        netTotal: '-50',
+        taxTotal: '90',
+        grossTotal: '40',
+        taxAccountId,
+      })
+      .then((inv) => svc.audit(permit(), inv.id, today))
+      .catch((e: unknown) => e)
+    expect((badNet as ApiError).fields?.['netTotal']).toEqual(['正票不含税金额不能为负'])
+    // 负票正净额：拒
+    const badNet2 = await svc
+      .create(permit(), {
+        ...base,
+        invoiceCode: `${prefix}Z3B`,
+        invoiceNo: `${prefix}Z3BN`,
+        netTotal: '50',
+        taxTotal: '-90',
+        grossTotal: '-40',
+        taxAccountId,
+      })
+      .then((inv) => svc.audit(permit(), inv.id, today))
+      .catch((e: unknown) => e)
+    expect((badNet2 as ApiError).fields?.['netTotal']).toEqual(['负票不含税金额不能为正'])
     // 负税额（tax≠0）缺税额科目：拒
     const noTaxAccount = await svc
       .create(permit(), {

@@ -184,6 +184,8 @@ export interface ActionItem {
   /** 源单行锚点（发货/入库条目 id）；手工行为 null（不动任何订单投影、不受剩余可退限制） */
   sourceItemId: string | null
   orderItemId: string | null
+  /** 行单位录入数量（手工行金额=qty×价×汇率，不能用 baseQty） */
+  qty: string
   baseQty: string
   materialId: string
   warehouseId: string | null
@@ -207,7 +209,7 @@ export async function loadActionItems(
     ? `i.order_price, i.order_base_amount, i.reconciled_qty,`
     : `NULL AS order_price, NULL AS order_base_amount, '0' AS reconciled_qty,`
   const rows = await sql<Record<string, unknown>>`
-    SELECT i.id, i.${sql.raw(spec.sourceItemCol)} AS source_item_id, i.order_item_id, i.base_qty,
+    SELECT i.id, i.${sql.raw(spec.sourceItemCol)} AS source_item_id, i.order_item_id, i.qty, i.base_qty,
       i.material_id, i.warehouse_id, i.material_code, i.material_name,
       ${sql.raw(monetaryCols)} i.order_base_qty,
       m.material_type
@@ -221,6 +223,7 @@ export async function loadActionItems(
     id: String(r.id),
     sourceItemId: r.source_item_id ? String(r.source_item_id) : null,
     orderItemId: r.order_item_id ? String(r.order_item_id) : null,
+    qty: String(r.qty),
     baseQty: String(r.base_qty),
     materialId: String(r.material_id),
     warehouseId: r.warehouse_id ? String(r.warehouse_id) : null,
@@ -446,7 +449,8 @@ async function deriveManualItem(
     orderPrice: price ?? decimal(0),
     orderAmount: price ? draft.qty.mul(price) : decimal(0),
     orderBasePrice: price ? price.mul(rate) : decimal(0),
-    orderBaseAmount: price ? baseQty.mul(price).mul(rate) : decimal(0),
+    // 本币金额 = 行单位金额 × 汇率（qty 口径；单价按行单位计，与订单金额链一致，不用 baseQty）
+    orderBaseAmount: price ? draft.qty.mul(price).mul(rate) : decimal(0),
     orderTaxRate: draft.taxRate ?? decimal(0),
     orderCurrencyCode: cur ? String(cur.iso_code) : null,
     remarks: draft.remarks,

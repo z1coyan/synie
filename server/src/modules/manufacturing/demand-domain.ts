@@ -386,6 +386,8 @@ export interface DerivedDemandLine {
   materialName: string
   materialSpec: string | null
   unitName: string
+  /** 行备注（退货补货派生写来源线索；工单派生为空） */
+  remarks?: string | null
 }
 
 /**
@@ -453,7 +455,7 @@ export async function insertDerivedDemand(
           material_name: line.materialName,
           material_spec: line.materialSpec,
           unit_name: line.unitName,
-          remarks: null,
+          remarks: line.remarks ?? null,
           ordered_qty: '0',
           received_qty: '0',
           arranged_qty: '0',

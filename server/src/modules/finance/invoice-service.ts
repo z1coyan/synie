@@ -537,6 +537,17 @@ async function validateReferences(
       taxTotal: ['负票税额不能为正'],
     })
   }
+  // 净额符号同样随票向（恒等式只锁 net+tax=gross，不锁单边——正票 net<0 / 负票 net>0 均为口径错误）
+  if (gross.gt(0) && net.isNegative()) {
+    throw ApiError.validation('发票审核条件不完整', {
+      netTotal: ['正票不含税金额不能为负'],
+    })
+  }
+  if (gross.isNegative() && net.gt(0)) {
+    throw ApiError.validation('发票审核条件不完整', {
+      netTotal: ['负票不含税金额不能为正'],
+    })
+  }
   if (!input.partyAccountId || !input.amountAccountId) {
     throw ApiError.validation('发票审核条件不完整', {
       accounts: ['往来科目与金额科目必填'],

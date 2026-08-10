@@ -41,12 +41,13 @@ const demandOpts: ControlledProjectionOptions = { afterAdjust: afterDemandReceiv
 /**
  * `skipDemandChain`：采购退货回减/回滚已收数量时传 true——
  * 需求行已完成/已收不随退货反转（ADR 2026-08-09），只动订单条目投影。
+ * `verify`：退货作废加回已发/已收时传 false——不重验订单状态与超发/超收上限。
  */
 export async function postFulfillment(
   db: DbHandle,
   side: TradingSide,
   input: FulfillmentInput,
-  opts?: { skipDemandChain?: boolean },
+  opts?: { skipDemandChain?: boolean; verify?: boolean },
 ): Promise<void> {
   return postFulfillmentCore(db, side, input, { ...demandOpts, ...opts })
 }
@@ -55,7 +56,7 @@ export async function reverseFulfillment(
   db: DbHandle,
   side: TradingSide,
   input: FulfillmentInput,
-  opts?: { skipDemandChain?: boolean },
+  opts?: { skipDemandChain?: boolean; verify?: boolean },
 ): Promise<void> {
   return reverseFulfillmentCore(db, side, input, { ...demandOpts, ...opts })
 }
