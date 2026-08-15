@@ -8,6 +8,8 @@ server/.baseline/
 server/uploads/
 # AI/工具本地产物
 .scratch/
+# 简道云原始快照（业务数据，不入库；附件在 OSS，见 data/jdy-source/README.md）
+/data/
 .playwright-mcp/
 # 一次性迁移编排脚本（aggregate-kernel 计划见 docs/migration/，脚本留本地复跑）
 .grok/workflows/aggregate-kernel*.rhai
