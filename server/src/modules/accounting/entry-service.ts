@@ -17,6 +17,7 @@ import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import { listAuthorized } from '~/db/list.ts'
 import { companyInPermitScope, loadAuthorized } from '~/db/load.ts'
+import { mapRow } from '~/platform/standard/fields.ts'
 import { GL_ENTRY_RESOURCE_NAME, glEntryResourceMeta } from './meta.ts'
 
 export { GL_ENTRY_RESOURCE_NAME } from './meta.ts'
@@ -233,7 +234,7 @@ account_id, currency_id, is_reversed, is_reversal`,
         netPayable: decimal(0).toFixed(),
       }
       if (!key.nil) {
-        row.partyType = key.kind
+        row.partyType = key.kind ? key.kind.toUpperCase() : null
         row.partyId = key.id
         const label = labels.get(keyOf(key))
         if (label) row.partyLabel = label
@@ -261,54 +262,9 @@ account_id, currency_id, is_reversed, is_reversal`,
   return { get, list, report }
 }
 
-function mapEntry(row: {
-  id: string
-  seq: string | number | bigint
-  posting_date: Date | string
-  debit: unknown
-  credit: unknown
-  party_type: string | null
-  party_id: string | null
-  voucher_type: string
-  voucher_id: string
-  voucher_no: string
-  is_cancelled: boolean
-  is_reversed: boolean
-  is_reversal: boolean
-  remarks: string | null
-  inserted_at: Date | string
-  company_id: string
-  account_id: string
-  currency_id: string | null
-}): GlEntry {
-  return {
-    id: row.id,
-    seq: Number(row.seq),
-    postingDate: dateOnly(row.posting_date),
-    debit: decimal(String(row.debit)).toFixed(),
-    credit: decimal(String(row.credit)).toFixed(),
-    partyType: row.party_type,
-    partyId: row.party_id,
-    voucherType: row.voucher_type,
-    voucherId: row.voucher_id,
-    voucherNo: row.voucher_no,
-    isCancelled: row.is_cancelled,
-    isReversed: row.is_reversed,
-    isReversal: row.is_reversal,
-    remarks: row.remarks,
-    insertedAt: row.inserted_at instanceof Date ? row.inserted_at : new Date(String(row.inserted_at)),
-    companyId: row.company_id,
-    accountId: row.account_id,
-    currencyId: row.currency_id,
-  }
-}
-
-function dateOnly(value: Date | string): string {
-  if (typeof value === 'string') return value.trim().slice(0, 10)
-  const y = value.getUTCFullYear()
-  const m = String(value.getUTCMonth() + 1).padStart(2, '0')
-  const d = String(value.getUTCDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
+/** db 行 → wire。枚举经平台 mapRow（库内小写、wire 大写），供 list/get 与回归测试共用。 */
+export function mapEntry(row: Record<string, unknown>): GlEntry {
+  return mapRow(glEntryResourceMeta(), row) as unknown as GlEntry
 }
 
 function camelRole(role: string): string {

@@ -255,6 +255,8 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
       expect(e.isReversed).toBe(false)
       expect(e.isReversal).toBe(false)
     }
+    const partyEntry = entryList.results.find((e) => e.partyId === fx.customerId)
+    expect(partyEntry?.partyType).toBe('CUSTOMER')
     expect(entryList.results[0]!.seq).toBeLessThan(entryList.results[1]!.seq)
 
     const report = await entries.report(entryPermit(), { companyId: fx.companyId, asOf: '2026-07-31' })
@@ -262,6 +264,7 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
     expect(report.roleAccounts.receivable?.some((a) => a.id === fx.receivableId)).toBe(true)
     const row = report.rows.find((r) => r.partyId === fx.customerId)
     expect(row).toBeDefined()
+    expect(row!.partyType).toBe('CUSTOMER')
     expect(Number(row!.balances.receivable)).toBe(125.5)
     expect(Number(row!.netReceivable)).toBe(125.5)
     expect(typeof row!.balances.receivable).toBe('string')
