@@ -323,4 +323,42 @@ export function accountingRoutes(deps: {
         return c.json(result)
       },
     )
+    .get(
+      '/ar-ap-party-ledger',
+      entryGuard('read'),
+      async (c) => {
+        const companyId = c.req.query('companyId')
+        const asOf = c.req.query('asOf')
+        const side = c.req.query('side')
+        const partyType = c.req.query('partyType')
+        const partyId = c.req.query('partyId')
+        const partyNil = c.req.query('partyNil')
+        const fields: Record<string, string[]> = {}
+        if (!companyId || companyId.trim() === '') fields.companyId = ['必填']
+        else if (!/^[0-9a-f-]{36}$/i.test(companyId.trim())) fields.companyId = ['必须是 UUID']
+        if (!asOf || asOf.trim() === '') fields.asOf = ['必填']
+        else if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf.trim())) {
+          fields.asOf = ['必须是 YYYY-MM-DD 日期']
+        }
+        if (side !== 'ar' && side !== 'ap') fields.side = ['必须是 ar 或 ap']
+        const nil = partyNil === 'true' || partyNil === '1'
+        if (!nil) {
+          if (!partyType || partyType.trim() === '') fields.partyType = ['必填']
+          if (!partyId || partyId.trim() === '') fields.partyId = ['必填']
+          else if (!/^[0-9a-f-]{36}$/i.test(partyId.trim())) fields.partyId = ['必须是 UUID']
+        }
+        if (Object.keys(fields).length > 0) {
+          throw ApiError.validation('往来明细参数不合法', fields)
+        }
+        const result = await entries.partyLedger(permitOf(c), {
+          companyId: companyId!.trim(),
+          asOf: asOf!.trim(),
+          side: side as 'ar' | 'ap',
+          partyType: nil ? null : partyType!.trim(),
+          partyId: nil ? null : partyId!.trim(),
+          partyNil: nil,
+        })
+        return c.json(result)
+      },
+    )
 }

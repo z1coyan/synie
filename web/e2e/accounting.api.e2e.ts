@@ -446,11 +446,20 @@ test("财务三页面以 Go REST 完成两行凭证审核、报表下钻与取�
     const reportRow = page.getByRole("row").filter({ hasText: customerName });
     await expect(reportRow).toBeVisible();
     await expect(reportRow).toContainText("125.50");
-    await reportRow.getByRole("link").last().click();
-    await expect(page).toHaveURL(/\/finance\/entries/);
-    await expect(
-      page.getByRole("row").filter({ hasText: voucherNo }),
-    ).toBeVisible();
+    await clickRowActionMenu(page, reportRow, "查看");
+    const ledger = page.getByRole("dialog", { name: /往来明细/ });
+    await expect(ledger).toBeVisible();
+    await expect(ledger).toContainText("手工凭证");
+    await expect(ledger).toContainText("125.50");
+    await expect
+      .poll(() =>
+        restRequests.some((entry) =>
+          entry.startsWith("GET /api/v1/accounting/ar-ap-party-ledger"),
+        ),
+      )
+      .toBe(true);
+    await ledger.getByRole("button", { name: "关闭", exact: true }).click();
+    await expect(ledger).toBeHidden();
 
     await gotoJournalsViaSidebar(page);
     await expect(
@@ -499,6 +508,7 @@ test("财务三页面以 Go REST 完成两行凭证审核、报表下钻与取�
         "GET /api/v1/meta/resources/accGlEntries",
         "POST /api/v1/accounting/gl-entries/query",
         "GET /api/v1/accounting/ar-ap-report",
+        "GET /api/v1/accounting/ar-ap-party-ledger",
         `POST /api/v1/accounting/gl-journals/${journal.id}/cancel`,
       ]),
     );

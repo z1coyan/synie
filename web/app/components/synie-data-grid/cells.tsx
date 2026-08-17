@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Chip, Popover } from '@heroui/react'
 import { FkLink } from '../synie-record-drawer/fk-preview'
 import type { MobileRole } from './card-fields'
+import { dateOnlyText } from './format'
 import type { EnumChipColor, GridColumnMeta, Row } from './types'
 
 export interface GridImageOverride {
@@ -82,6 +83,8 @@ export function defaultCell(
   switch (col.type) {
     case 'boolean':
       return <Chip size="sm" color={value ? 'success' : 'default'}>{value ? '是' : '否'}</Chip>
+    case 'date':
+      return dateOnlyText(value) || String(value)
     case 'datetime':
       // 日期短且已全表 nowrap,不进 ClampCell,永不截断
       return new Date(String(value)).toLocaleString('zh-CN', { hour12: false })

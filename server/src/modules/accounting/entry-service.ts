@@ -19,6 +19,7 @@ import { listAuthorized } from '~/db/list.ts'
 import { companyInPermitScope, loadAuthorized } from '~/db/load.ts'
 import { mapRow } from '~/platform/standard/fields.ts'
 import { GL_ENTRY_RESOURCE_NAME, glEntryResourceMeta } from './meta.ts'
+import { loadPartyLedger, type PartyLedger, type PartyLedgerQuery } from './party-ledger.ts'
 
 export { GL_ENTRY_RESOURCE_NAME } from './meta.ts'
 
@@ -259,7 +260,11 @@ account_id, currency_id, is_reversed, is_reversal`,
     return result
   }
 
-  return { get, list, report }
+  async function partyLedger(permit: Permit, query: PartyLedgerQuery): Promise<PartyLedger> {
+    return loadPartyLedger(db, permit, query)
+  }
+
+  return { get, list, report, partyLedger }
 }
 
 /** db 行 → wire。枚举经平台 mapRow（库内小写、wire 大写），供 list/get 与回归测试共用。 */

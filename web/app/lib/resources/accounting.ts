@@ -90,3 +90,54 @@ export function fetchARAPReport(companyId: string, asOf: string): Promise<ARAPRe
       query: { companyId, asOf }}),
   )
 }
+
+export type ARAPLedgerSide = 'ar' | 'ap'
+
+export interface ARAPPartyLedgerRow {
+  id: string
+  postingDate: string
+  seq: number
+  voucherType: string
+  voucherTypeLabel: string
+  voucherId: string
+  voucherNo: string
+  voucherResource: string | null
+  isReversal: boolean
+  itemId: string | null
+  materialLabel: string | null
+  qty: string | null
+  unitLabel: string | null
+  amount: string
+  balances: Record<string, string>
+  remarks: string | null
+}
+
+export interface ARAPPartyLedger {
+  asOf: string
+  side: ARAPLedgerSide
+  partyType: string | null
+  partyId: string | null
+  rows: ARAPPartyLedgerRow[]
+}
+
+export function fetchARAPPartyLedger(query: {
+  companyId: string
+  asOf: string
+  side: ARAPLedgerSide
+  partyType?: string | null
+  partyId?: string | null
+  partyNil?: boolean
+}): Promise<ARAPPartyLedger> {
+  return apiData(
+    api.accounting['ar-ap-party-ledger'].$get({
+      query: {
+        companyId: query.companyId,
+        asOf: query.asOf,
+        side: query.side,
+        partyType: query.partyNil ? undefined : (query.partyType ?? undefined),
+        partyId: query.partyNil ? undefined : (query.partyId ?? undefined),
+        partyNil: query.partyNil ? 'true' : undefined,
+      },
+    }),
+  )
+}

@@ -269,6 +269,20 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
     expect(Number(row!.netReceivable)).toBe(125.5)
     expect(typeof row!.balances.receivable).toBe('string')
 
+    const ledger = await entries.partyLedger(entryPermit(), {
+      companyId: fx.companyId,
+      asOf: '2026-07-31',
+      side: 'ar',
+      partyType: 'CUSTOMER',
+      partyId: fx.customerId,
+    })
+    expect(ledger.rows).toHaveLength(1)
+    expect(ledger.rows[0]!.voucherTypeLabel).toBe('手工凭证')
+    expect(Number(ledger.rows[0]!.amount)).toBe(125.5)
+    expect(Number(ledger.rows[0]!.balances.receivable)).toBe(125.5)
+    expect(ledger.rows[0]!.voucherId).toBe(journal.id)
+    expect(ledger.rows[0]!.remarks).toBe(`${prefix}已更新`)
+
     // 已审核不可再改头/行
     await expect(
       journals.update(journalPermit(), journal.id, { remarks: 'x', remarksPresent: true }),
@@ -437,5 +451,20 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
       expect(Number(row.balances.receivable)).toBe(0)
       expect(Number(row.netReceivable)).toBe(0)
     }
+
+    const ledger = await entries.partyLedger(entryPermit(), {
+      companyId: fx.companyId,
+      asOf: '2026-07-31',
+      side: 'ar',
+      partyType: 'CUSTOMER',
+      partyId: fx.customerId,
+    })
+    expect(ledger.rows).toHaveLength(2)
+    expect(ledger.rows[0]!.isReversal).toBe(true)
+    expect(ledger.rows[0]!.voucherTypeLabel).toBe('手工凭证（红冲）')
+    expect(Number(ledger.rows[0]!.amount)).toBe(-125.5)
+    expect(Number(ledger.rows[0]!.balances.receivable)).toBe(0)
+    expect(ledger.rows[1]!.isReversal).toBe(false)
+    expect(Number(ledger.rows[1]!.balances.receivable)).toBe(125.5)
   })
 })

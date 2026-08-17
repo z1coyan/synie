@@ -2,49 +2,63 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { parseDate, today, getLocalTimeZone } from '@internationalized/date'
-import { Calendar, DateField, DatePicker, Label, Spinner, Table, Tabs } from '@heroui/react'
+import {
+  Button,
+  Calendar,
+  Checkbox,
+  DateField,
+  DatePicker,
+  Dropdown,
+  Label,
+  SearchField,
+  Spinner,
+  Table,
+  Tabs,
+  type SortDescriptor,
+} from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
 import { formatAmount } from '~/lib/amount'
 import {
   fetchARAPReport,
+  type ARAPLedgerSide,
   type ARAPReportRow as ReportRow,
-  type ARAPRoleAccount as RoleAccount,
 } from '~/lib/resources/accounting'
 import { companyClient } from '~/lib/resources/companies'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { Row } from '~/components/synie-data-grid/types'
+import { PartyLedgerDrawer } from './-party-ledger-drawer'
 
 export const Route = createFileRoute('/_app/finance/ar-ap')({
   component: ArApPage,
 })
 
 const PARTY_TYPE_LABEL: Record<string, string> = {
-  customer: '客户',
-  supplier: '供应商',
-  company: '内部公司',
-  employee: '员工',
+  CUSTOMER: '客户',
+  SUPPLIER: '供应商',
+  COMPANY: '内部公司',
+  EMPLOYEE: '员工',
 }
 
-// 两 tab 各三角色+净额(列序即角色自然流转:未开票→挂账→预收/预付抵减)
+const PARTY_TYPE_FILTERS = ['CUSTOMER', 'SUPPLIER', 'COMPANY', 'EMPLOYEE'] as const
+
 const TABS = [
   {
-    id: 'ar',
+    id: 'ar' as const,
     label: '应收',
     net: { key: 'netReceivable', label: '净应收' },
     cols: [
       { key: 'unbilledReceivable', label: '未开票应收' },
       { key: 'receivable', label: '应收账款' },
-      { key: 'advanceReceived', label: '预收账款(抵减)' },
     ],
   },
   {
-    id: 'ap',
+    id: 'ap' as const,
     label: '应付',
     net: { key: 'netPayable', label: '净应付' },
     cols: [
       { key: 'unbilledPayable', label: '未开票应付' },
       { key: 'payable', label: '应付账款' },
-      { key: 'advancePaid', label: '预付账款(抵减)' },
+      { key: 'otherPayable', label: '其他应付款' },
     ],
   },
 ] as const
@@ -57,9 +71,13 @@ function netOf(row: ReportRow, tab: TabConfig): string {
   return tab.id === 'ar' ? row.netReceivable : row.netPayable
 }
 
-// 本 tab 有数的行(三角色或净额任一非零);全零对手后端已滤,这里再按侧分流
 function tabRows(rows: ReportRow[], tab: TabConfig): ReportRow[] {
   return rows.filter((r) => tab.cols.some((c) => nonZero(r.balances[c.key])) || nonZero(netOf(r, tab)))
+}
+
+function amountCell(value: string | undefined) {
+  if (!nonZero(value)) return <span className="text-muted">—</span>
+  return formatAmount(value!)
 }
 
 function ArApPage() {
@@ -67,8 +85,11 @@ function ArApPage() {
   const [companyRow, setCompanyRow] = useState<Row | null>(null)
   const [asOf, setAsOf] = useState(() => today(getLocalTimeZone()).toString())
   const [tab, setTab] = useState<string>('ar')
+  const [q, setQ] = useState('')
+  const [partyTypes, setPartyTypes] = useState<Set<string>>(new Set())
+  const [sort, setSort] = useState<SortDescriptor>({ column: 'net', direction: 'descending' })
+  const [viewing, setViewing] = useState<ReportRow | null>(null)
 
-  // 公司列表:默认第一家(照科目表页)
   const companies = useQuery({
     queryKey: ['arApCompanies'],
     queryFn: () =>
@@ -96,56 +117,53 @@ function ArApPage() {
   const data = report.data
   const hasRoles = data != null && Object.keys(data.roleAccounts).length > 0
   const activeTab = TABS.find((t) => t.id === tab) ?? TABS[0]
-  const rows = useMemo(() => (data ? tabRows(data.rows, activeTab) : []), [data, activeTab])
+  const sideRows = useMemo(() => (data ? tabRows(data.rows, activeTab) : []), [data, activeTab])
 
-  // 下钻公共参数:与报表同口径(公司+截至日+角色科目集),普通列筛选用户可再调整
-  const drillSearch = (row: ReportRow, accounts: RoleAccount[]) => ({
-    companyId: companyId!,
-    companyLabel: (companyRow?.name as string) ?? undefined,
-    asOf,
-    accountIds: accounts.map((a) => a.id),
-    accountLabels: accounts.map((a) => `${a.code} ${a.name}`),
-    ...(row.partyId == null
-      ? { partyNil: true }
-      : {
-          partyType: row.partyType?.toUpperCase(),
-          partyId: row.partyId,
-          partyLabel: row.partyLabel,
-        }),
-  })
-
-  const roleAccounts = (key: string) => data?.roleAccounts[key] ?? []
-  const netAccounts = (t: TabConfig) => t.cols.flatMap((c) => roleAccounts(c.key))
+  const visibleRows = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    const filtered = sideRows.filter((r) => {
+      if (needle && !r.partyLabel.toLowerCase().includes(needle)) return false
+      if (partyTypes.size > 0) {
+        if (r.partyType == null) return false
+        if (!partyTypes.has(r.partyType.toUpperCase())) return false
+      }
+      return true
+    })
+    const col = String(sort.column)
+    const dir = sort.direction === 'ascending' ? 1 : -1
+    const valueOf = (row: ReportRow) => {
+      if (col === 'party') return row.partyLabel
+      if (col === 'partyType') return row.partyType ? (PARTY_TYPE_LABEL[row.partyType] ?? row.partyType) : ''
+      if (col === 'net') return Number(netOf(row, activeTab) || 0)
+      return Number(row.balances[col] || 0)
+    }
+    return [...filtered].sort((a, b) => {
+      const aNil = a.partyId == null
+      const bNil = b.partyId == null
+      if (aNil !== bNil) return aNil ? 1 : -1
+      const av = valueOf(a)
+      const bv = valueOf(b)
+      if (typeof av === 'string' && typeof bv === 'string') {
+        return av.localeCompare(bv, 'zh') * dir
+      }
+      return (Number(av) - Number(bv)) * dir
+    })
+  }, [sideRows, q, partyTypes, sort, activeTab])
 
   const totals = useMemo(() => {
     const sum = (pick: (r: ReportRow) => string | undefined) =>
-      rows.reduce((acc, r) => acc + Number(pick(r) || 0), 0)
+      visibleRows.reduce((acc, r) => acc + Number(pick(r) || 0), 0)
     return {
       cols: activeTab.cols.map((c) => sum((r) => r.balances[c.key])),
       net: sum((r) => netOf(r, activeTab)),
     }
-  }, [rows, activeTab])
-
-  // 金额单元格:非零可点下钻(跳总账分录带预置筛选),零显示占位
-  const amountCell = (row: ReportRow, value: string | undefined, accounts: RoleAccount[]) => {
-    if (!nonZero(value)) return <span className="text-muted">—</span>
-    if (accounts.length === 0) return formatAmount(value!)
-    return (
-      <Link
-        to="/finance/entries"
-        search={drillSearch(row, accounts)}
-        className="text-accent hover:underline"
-      >
-        {formatAmount(value!)}
-      </Link>
-    )
-  }
+  }, [visibleRows, activeTab])
 
   return (
     <>
       <h1 className="font-brand text-3xl tracking-wide">应收应付</h1>
       <p className="mt-2 text-sm text-ink-500">
-        截至日按对手轧差的往来余额,口径为总账分录(未过账不统计);科目范围由科目表的「科目角色」圈定,点金额可下钻分录明细。
+        截至日按对手轧差的往来余额，口径为总账分录（未过账不统计）。行尾查看打开该对手往来明细。
       </p>
 
       <div className="mt-6 flex flex-col gap-3 lg:flex-row lg:items-end">
@@ -199,6 +217,38 @@ function ArApPage() {
             </Calendar>
           </DatePicker.Popover>
         </DatePicker>
+        <SearchField aria-label="搜索" value={q} onChange={setQ} className="w-full lg:w-64">
+          <SearchField.Group>
+            <SearchField.SearchIcon />
+            <SearchField.Input placeholder="搜索对手…" />
+            <SearchField.ClearButton />
+          </SearchField.Group>
+        </SearchField>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <span className="text-sm text-muted">对手类型</span>
+        {PARTY_TYPE_FILTERS.map((key) => (
+          <Checkbox
+            key={key}
+            isSelected={partyTypes.has(key)}
+            onChange={(selected) => {
+              setPartyTypes((prev) => {
+                const next = new Set(prev)
+                if (selected) next.add(key)
+                else next.delete(key)
+                return next
+              })
+            }}
+          >
+            <Checkbox.Content>
+              <Checkbox.Control>
+                <Checkbox.Indicator />
+              </Checkbox.Control>
+              {PARTY_TYPE_LABEL[key]}
+            </Checkbox.Content>
+          </Checkbox>
+        ))}
       </div>
 
       <div className="mt-6">
@@ -235,9 +285,15 @@ function ArApPage() {
             </EmptyState.Content>
           </EmptyState>
         ) : (
-          <Tabs variant="secondary" selectedKey={tab} onSelectionChange={(k) => setTab(String(k))}>
+          <Tabs
+            variant="secondary"
+            selectedKey={tab}
+            onSelectionChange={(k) => {
+              setTab(String(k))
+              setViewing(null)
+            }}
+          >
             <Tabs.ListContainer>
-              {/* 默认 min-w-full + tab w-full 满宽平分;收紧为内容宽靠左(照承兑页) */}
               <Tabs.List aria-label="应收应付视图" className="w-fit min-w-0 *:w-auto">
                 {TABS.map((t) => (
                   <Tabs.Tab key={t.id} id={t.id}>
@@ -248,29 +304,62 @@ function ArApPage() {
               </Tabs.List>
             </Tabs.ListContainer>
             <Tabs.Panel id={tab} className="pt-4">
-              {rows.length === 0 ? (
+              {sideRows.length === 0 ? (
                 <EmptyState size="md" className="h-48 justify-center">
                   <EmptyState.Header>
                     <EmptyState.Title>截至该日无{activeTab.label}余额</EmptyState.Title>
+                  </EmptyState.Header>
+                </EmptyState>
+              ) : visibleRows.length === 0 ? (
+                <EmptyState size="md" className="h-48 justify-center">
+                  <EmptyState.Header>
+                    <EmptyState.Title>没有符合条件的对手</EmptyState.Title>
                   </EmptyState.Header>
                 </EmptyState>
               ) : (
                 <>
                   <Table>
                     <Table.ScrollContainer>
-                      <Table.Content aria-label={`${activeTab.label}余额`}>
+                      <Table.Content
+                        aria-label={`${activeTab.label}余额`}
+                        sortDescriptor={sort}
+                        onSortChange={setSort}
+                      >
                         <Table.Header>
-                          <Table.Column isRowHeader>对手</Table.Column>
-                          <Table.Column>类型</Table.Column>
+                          <Table.Column allowsSorting isRowHeader id="party">
+                            {({ sortDirection }) => (
+                              <Table.SortableColumnHeader sortDirection={sortDirection}>
+                                对手
+                              </Table.SortableColumnHeader>
+                            )}
+                          </Table.Column>
+                          <Table.Column allowsSorting id="partyType">
+                            {({ sortDirection }) => (
+                              <Table.SortableColumnHeader sortDirection={sortDirection}>
+                                类型
+                              </Table.SortableColumnHeader>
+                            )}
+                          </Table.Column>
                           {activeTab.cols.map((c) => (
-                            <Table.Column key={c.key} className="text-end">
-                              {c.label}
+                            <Table.Column key={c.key} allowsSorting id={c.key} className="text-end">
+                              {({ sortDirection }) => (
+                                <Table.SortableColumnHeader sortDirection={sortDirection}>
+                                  {c.label}
+                                </Table.SortableColumnHeader>
+                              )}
                             </Table.Column>
                           ))}
-                          <Table.Column className="text-end">{activeTab.net.label}</Table.Column>
+                          <Table.Column allowsSorting id="net" className="text-end">
+                            {({ sortDirection }) => (
+                              <Table.SortableColumnHeader sortDirection={sortDirection}>
+                                {activeTab.net.label}
+                              </Table.SortableColumnHeader>
+                            )}
+                          </Table.Column>
+                          <Table.Column>操作</Table.Column>
                         </Table.Header>
                         <Table.Body>
-                          {rows.map((r) => (
+                          {visibleRows.map((r) => (
                             <Table.Row key={`${r.partyType ?? 'nil'}-${r.partyId ?? 'nil'}`}>
                               <Table.Cell>{r.partyLabel}</Table.Cell>
                               <Table.Cell className="text-muted">
@@ -278,11 +367,25 @@ function ArApPage() {
                               </Table.Cell>
                               {activeTab.cols.map((c) => (
                                 <Table.Cell key={c.key} className="text-end">
-                                  {amountCell(r, r.balances[c.key], roleAccounts(c.key))}
+                                  {amountCell(r.balances[c.key])}
                                 </Table.Cell>
                               ))}
                               <Table.Cell className="text-end font-medium">
-                                {amountCell(r, netOf(r, activeTab), netAccounts(activeTab))}
+                                {amountCell(netOf(r, activeTab))}
+                              </Table.Cell>
+                              <Table.Cell>
+                                <Dropdown>
+                                  <Button isIconOnly size="sm" variant="ghost" aria-label="行操作">
+                                    <EllipsisIcon />
+                                  </Button>
+                                  <Dropdown.Popover placement="bottom end">
+                                    <Dropdown.Menu onAction={() => setViewing(r)}>
+                                      <Dropdown.Item id="view" textValue="查看">
+                                        <Label>查看</Label>
+                                      </Dropdown.Item>
+                                    </Dropdown.Menu>
+                                  </Dropdown.Popover>
+                                </Dropdown>
                               </Table.Cell>
                             </Table.Row>
                           ))}
@@ -290,9 +393,8 @@ function ArApPage() {
                       </Table.Content>
                     </Table.ScrollContainer>
                   </Table>
-                  {/* 合计条(Table.Footer 是 div 容器装不了 Row,照借款台账形态另起一行) */}
                   <div className="flex flex-wrap gap-x-6 gap-y-1 px-4 py-2 text-sm text-muted">
-                    <span className="font-medium">合计 {rows.length} 个对手</span>
+                    <span className="font-medium">合计 {visibleRows.length} 个对手</span>
                     {activeTab.cols.map((c, i) => (
                       <span key={c.key}>
                         {c.label} {formatAmount(String(totals.cols[i]))}
@@ -308,6 +410,31 @@ function ArApPage() {
           </Tabs>
         )}
       </div>
+
+      {companyId != null && viewing != null && (
+        <PartyLedgerDrawer
+          isOpen
+          onOpenChange={(open) => {
+            if (!open) setViewing(null)
+          }}
+          companyId={companyId}
+          asOf={asOf}
+          side={activeTab.id as ARAPLedgerSide}
+          partyType={viewing.partyType}
+          partyId={viewing.partyId}
+          partyLabel={viewing.partyLabel}
+        />
+      )}
     </>
+  )
+}
+
+function EllipsisIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="currentColor" aria-hidden>
+      <circle cx="8" cy="3" r="1.5" />
+      <circle cx="8" cy="8" r="1.5" />
+      <circle cx="8" cy="13" r="1.5" />
+    </svg>
   )
 }

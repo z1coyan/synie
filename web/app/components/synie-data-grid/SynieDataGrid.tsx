@@ -23,7 +23,19 @@ import { mergePick } from './pick'
 import { useGridMeta } from './meta'
 import { printRows } from './print'
 import { nextSort } from './query'
-import type { ActionContext, BulkAction, ColumnFilter, EnumChipColor, FilterState, GridColumnMeta, Row, RowAction, SortState } from './types'
+import type {
+  ActionContext,
+  BulkAction,
+  ColumnFilter,
+  EnumChipColor,
+  FilterState,
+  GridColumnMeta,
+  GridMeta,
+  LocalGridMeta,
+  Row,
+  RowAction,
+  SortState,
+} from './types'
 import type { ResolvedAction } from './use-grid-actions'
 import { QueryState } from '../synie-query-state/QueryState'
 import { FkLink } from '../synie-record-drawer/fk-preview'
@@ -73,9 +85,14 @@ export interface SynieDataGridProps {
   /** 与后端 GridMeta 白名单同名,如 "sysRoles" */
   resource: string
   /**
+   * 本地列定义。与 client 一起传入时不走 Catalog / ResourceBinding，
+   * 供报表下钻等无独立资源的内存读模型接入同一套搜索/筛选/排序。
+   */
+  meta?: LocalGridMeta
+  /**
    * @deprecated 生产调用只传 resource。仅保留给显式测试/本地 Adapter；
    * 缺省直接使用 ResourceBinding.reader。
-   * Meta 始终从 Catalog 拉取，不经 client.meta。
+   * Meta 始终从 Catalog 拉取，不经 client.meta（除非同时传入本地 meta）。
    */
   client?: ResourceTransport
   /** 显示列及其顺序(有序白名单);缺省 = meta 全列。与 exclude 二选一即可 */
@@ -193,9 +210,23 @@ export function selectedRows(selection: Selection, rows: Row[]): Row[] {
   return rows.filter((r) => selection.has(r.id))
 }
 
+function localGridMeta(columns: GridColumnMeta[]): GridMeta {
+  return { columns, capabilities: [], canDelete: false, extendedActions: [] }
+}
+
 export function SynieDataGrid(props: SynieDataGridProps) {
   const { resource, exclude = EMPTY_EXCLUDE, overrides = EMPTY_OVERRIDES } = props
-  const binding = resourceBindingFor(resource)
+  const localMode = props.meta != null && props.client != null
+  const binding = localMode
+    ? {
+        resource,
+        reader: props.client!,
+        cache: createResourceQueryCache(resource, props.client!.id),
+        loadDocument: async () => {
+          throw new Error(`局部网格「${resource}」无 ResourceDocument`)
+        },
+      }
+    : resourceBindingFor(resource)
   // 显式 client 只服务测试/本地 Adapter 这一真实第二 Adapter；即使覆盖 Reader，
   // 缓存身份仍在本模块内构造，调用者不需要知道 key 中包含 Adapter id。
   const reader = props.client ?? binding.reader
@@ -203,7 +234,16 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     ? createResourceQueryCache(resource, props.client.id)
     : binding.cache
 
-  const meta = useGridMeta(resource, true)
+  const catalogMeta = useGridMeta(resource, !localMode)
+  const meta = localMode
+    ? {
+        data: localGridMeta(props.meta!.columns),
+        isPending: false,
+        isError: false,
+        error: null,
+        refetch: async () => catalogMeta.refetch(),
+      }
+    : catalogMeta
   const pickMode = props.pick != null
   // 卡片模式:<lg 视口全资源生效;树形资源在卡片模式常驻平铺(treeActive 恒 false)
   const isMobile = useMediaQuery(CARD_MODE_QUERY)
