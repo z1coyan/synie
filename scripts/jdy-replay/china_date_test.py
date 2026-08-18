@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import os
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -25,6 +27,26 @@ def test_other_aware_uses_cst_calendar() -> None:
     assert jdyChinaDate("2019-12-31T16:00:00+00:00") == "2020-01-01"
     # 已是中国次日 0 点
     assert jdyChinaDate("2020-01-01T00:00:00.000+08:00") == "2020-01-01"
+
+
+def test_naive_iso_treated_as_utc() -> None:
+    """T without offset/Z is UTC, not host local. Same under UTC / CST / US TZ."""
+    prev = os.environ.get("TZ")
+    try:
+        for tz in ("UTC", "Asia/Shanghai", "America/New_York"):
+            os.environ["TZ"] = tz
+            time.tzset()
+            assert jdyChinaDate("2020-01-01T20:00:00") == "2020-01-02", tz
+            assert jdyChinaDate("2019-12-31T16:00:00") == "2020-01-01", tz
+            assert jdyChinaDate("2020-01-01T20:00:00") == jdyChinaDate(
+                "2020-01-01T20:00:00Z"
+            )
+    finally:
+        if prev is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = prev
+        time.tzset()
 
 
 def test_already_ymd_unchanged() -> None:
@@ -64,6 +86,7 @@ def test_matches_iso_cn_semantics() -> None:
 if __name__ == "__main__":
     test_t16_zulu_is_china_next_midnight()
     test_other_aware_uses_cst_calendar()
+    test_naive_iso_treated_as_utc()
     test_already_ymd_unchanged()
     test_empty_is_none()
     test_invalid_with_t_raises()
