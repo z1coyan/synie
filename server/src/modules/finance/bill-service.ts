@@ -602,48 +602,6 @@ export function createBillService(
     }
   }
 
-  function billTxEntries(value: BillTransaction): GlEntry[] {
-    const amount = decimal(value.amount)
-    const partyType = value.partyType ? lower(value.partyType) : ''
-    switch (value.transactionType) {
-      case 'RECEIVE':
-        return [
-          { accountId: value.billAccountId!, debit: amount, credit: '0' },
-          {
-            accountId: value.settleAccountId!, debit: '0', credit: amount,
-            partyType, partyId: value.partyId,
-          },
-        ]
-      case 'ENDORSE':
-        return [
-          {
-            accountId: value.settleAccountId!, debit: amount, credit: '0',
-            partyType, partyId: value.partyId,
-          },
-          { accountId: value.billAccountId!, debit: '0', credit: amount },
-        ]
-      case 'SETTLE':
-        return [
-          { accountId: value.settleAccountId!, debit: amount, credit: '0' },
-          { accountId: value.billAccountId!, debit: '0', credit: amount },
-        ]
-      case 'DISCOUNT': {
-        const net = decimal(value.netAmount!)
-        const interestAmt = decimal(value.interest!)
-        const result: GlEntry[] = [
-          { accountId: value.settleAccountId!, debit: net, credit: '0' },
-        ]
-        if (interestAmt.gt(0)) {
-          result.push({ accountId: value.interestAccountId!, debit: interestAmt, credit: '0' })
-        }
-        result.push({ accountId: value.billAccountId!, debit: '0', credit: amount })
-        return result
-      }
-      default:
-        throw conflict('调拨交易不生成总账分录')
-    }
-  }
-
   function validateBillAuditDate(tx: BillTransaction, bill: Bill) {
     if (tx.transactionType === 'SETTLE' && tx.occurredOn < bill.dueDate) {
       throw conflict('兑付发生日期不能早于票据到期日')
@@ -895,6 +853,43 @@ export function createBillService(
     return transactions.transition(permit, id, 'audit', { postingDate: postingDate ?? null })
   }
 
+  /**
+   * 已审核交易补写审核本该落下的分录。不改状态、不跑 replayBill / 审核 after。
+   * 未作废分录已存在则幂等返回；仅有已作废旧行仍允许补过一组。
+   */
+  async function backfillPostedGL(permit: Permit, id: string): Promise<BillTransaction> {
+    return withTx(db, async (trx) => {
+      const row = await loadAuthorized({
+        db: trx, permit, target: billTxTarget, table: BILL_TX_TABLE, id, forUpdate: true,
+        notFoundMessage: '承兑交易不存在',
+      })
+      const tx = mapRow(TX_META, row) as BillTransaction
+      if (tx.status !== 'AUDITED') {
+        throw conflict('仅已审核承兑交易可补过账')
+      }
+      if (tx.transactionType === 'REALLOCATE') {
+        throw conflict('调拨交易不生成总账分录')
+      }
+      const live = await sql<{ c: string }>`
+        SELECT count(*)::text AS c FROM acc_gl_entry
+        WHERE voucher_type=${VOUCHER} AND voucher_id=${tx.id}::uuid AND is_cancelled=false
+      `.execute(trx)
+      if (Number(live.rows[0]!.c) > 0) return tx
+      await gl.post(
+        trx,
+        {
+          type: VOUCHER,
+          id: tx.id,
+          no: txLabel(tx),
+          companyId: tx.companyId,
+          postingDate: tx.postingDate ?? tx.occurredOn,
+        },
+        billTxEntries(tx),
+      )
+      return tx
+    })
+  }
+
   async function listHoldings(permit: Permit, query: Partial<ListQuery>) {
     return listAuthorized({
       db, permit, target: holdingTarget, alias: BILL_HOLDING_TABLE,
@@ -932,8 +927,52 @@ export function createBillService(
       transactions.update(permit, id, patch),
     deleteTransaction: (permit: Permit, id: string) => transactions.remove(permit, id),
     auditTransaction,
+    backfillPostedGL,
     voidTransaction: (permit: Permit, id: string) => transactions.transition(permit, id, 'void'),
     listHoldings, getHolding, ocrBill,
+  }
+}
+
+/** 承兑交易 → GL 分录（审核与补过账共用；调拨抛 conflict） */
+export function billTxEntries(value: BillTransaction): GlEntry[] {
+  const amount = decimal(value.amount)
+  const partyType = value.partyType ? lower(value.partyType) : ''
+  switch (value.transactionType) {
+    case 'RECEIVE':
+      return [
+        { accountId: value.billAccountId!, debit: amount, credit: '0' },
+        {
+          accountId: value.settleAccountId!, debit: '0', credit: amount,
+          partyType, partyId: value.partyId,
+        },
+      ]
+    case 'ENDORSE':
+      return [
+        {
+          accountId: value.settleAccountId!, debit: amount, credit: '0',
+          partyType, partyId: value.partyId,
+        },
+        { accountId: value.billAccountId!, debit: '0', credit: amount },
+      ]
+    case 'SETTLE':
+      return [
+        { accountId: value.settleAccountId!, debit: amount, credit: '0' },
+        { accountId: value.billAccountId!, debit: '0', credit: amount },
+      ]
+    case 'DISCOUNT': {
+      const net = decimal(value.netAmount!)
+      const interestAmt = decimal(value.interest!)
+      const result: GlEntry[] = [
+        { accountId: value.settleAccountId!, debit: net, credit: '0' },
+      ]
+      if (interestAmt.gt(0)) {
+        result.push({ accountId: value.interestAccountId!, debit: interestAmt, credit: '0' })
+      }
+      result.push({ accountId: value.billAccountId!, debit: '0', credit: amount })
+      return result
+    }
+    default:
+      throw conflict('调拨交易不生成总账分录')
   }
 }
 
