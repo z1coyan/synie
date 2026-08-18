@@ -20,6 +20,7 @@ import { registerFinanceSettingResources } from './settings.ts'
 
 export {
   createVatInvoiceService,
+  invoiceGLEntries,
   VAT_INVOICE_RESOURCE_NAME,
   type VatInvoiceService,
 } from './invoice-service.ts'

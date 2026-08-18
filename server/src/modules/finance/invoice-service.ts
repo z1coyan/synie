@@ -14,7 +14,8 @@
 import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import type { DbHandle, TrxHandle } from '~/db/tx.ts'
+import { loadAuthorized } from '~/db/load.ts'
+import { withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import type { GlEngine, GlEntry } from '~/engines/gl/index.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
@@ -24,6 +25,7 @@ import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import type { ReconciliationService } from '~/modules/trading/reconciliation/service.ts'
 import type { TradingSide } from '~/modules/trading/common.ts'
+import { mapRow } from '~/platform/standard/fields.ts'
 import { auditStamp, createStandardService } from '~/platform/standard/service.ts'
 import { VAT_INVOICE_RESOURCE_NAME } from './meta.ts'
 import { recognizeVatInvoice, type OcrDeps, type OcrPrefill } from './ocr.ts'
@@ -151,6 +153,10 @@ export function createVatInvoiceService(
   const gl = deps.gl
   const reconciliations = deps.reconciliations
   const files = deps.files ?? null
+  const foundMeta = deps.registry.get(VAT_INVOICE_RESOURCE_NAME)
+  if (!foundMeta) throw new Error('增值税发票资源未注册')
+  const invoiceMeta = foundMeta
+  const invoiceTarget = deps.registry.authzTarget(VAT_INVOICE_RESOURCE_NAME)
 
   const base = createStandardService<VatInvoice>({
     db,
@@ -316,6 +322,59 @@ export function createVatInvoiceService(
     return recognizeVatInvoice(db, file, content, deps.ocr)
   }
 
+  /** 已审核无对账单发票补写往来分录；不改状态、不结单、不写冲回组。 */
+  async function backfillPostedGL(permit: Permit, id: string): Promise<VatInvoice> {
+    return withTx(db, async (trx) => {
+      const raw = await loadAuthorized({
+        db: trx,
+        permit,
+        target: invoiceTarget,
+        table: 'acc_vat_invoice',
+        id,
+        forUpdate: true,
+        notFoundMessage: '增值税发票不存在',
+      })
+      const invoice = mapRow(invoiceMeta, raw) as VatInvoice
+      if (invoice.status !== 'AUDITED') {
+        throw new ApiError('conflict', '仅已审核发票可补过账')
+      }
+      if (invoice.salReconciliationId || invoice.purReconciliationId) {
+        throw new ApiError('conflict', '已关联对账单的发票请走正规审核')
+      }
+      const live = await sql<{ c: string }>`
+        SELECT count(*)::text AS c
+        FROM acc_gl_entry
+        WHERE voucher_type = ${VOUCHER_TYPE}
+          AND voucher_id = ${id}::uuid
+          AND is_cancelled = false
+      `.execute(trx)
+      if (Number(live.rows[0]!.c) > 0) {
+        return invoice
+      }
+      await validateReferences(trx, reconciliations, auditInputFromPersisted(invoice), id, true)
+      const postingDate = invoice.postingDate ?? invoice.invoiceDate
+      if (!postingDate) {
+        throw ApiError.validation('发票审核条件不完整', {
+          invoice: ['开票日期与发票号码必填'],
+        })
+      }
+      const gross = decimal(invoice.grossTotal ?? 0)
+      await gl.post(
+        trx,
+        {
+          type: VOUCHER_TYPE,
+          id: invoice.id,
+          no: invoiceLabel(invoice),
+          companyId: invoice.companyId,
+          postingDate,
+        },
+        invoiceGLEntries(invoice),
+        { allowNegative: gross.isNegative() },
+      )
+      return invoice
+    })
+  }
+
   return {
     list: (permit: Permit, query: Partial<ListQuery>) => base.list(permit, query),
     get: (permit: Permit, id: string) => base.get(permit, id),
@@ -326,6 +385,7 @@ export function createVatInvoiceService(
     void: voidInvoice,
     reverse,
     ocr,
+    backfillPostedGL,
   }
 }
 
@@ -365,7 +425,7 @@ interface NormalizedInput {
   purReconciliationId: string | null
 }
 
-function normalizeInput(input: VatInvoiceInput): NormalizedInput {
+export function normalizeInput(input: VatInvoiceInput): NormalizedInput {
   const direction = upper(String(input.direction ?? '')) as InvoiceDirection
   const partyType = upper(String(input.partyType ?? '')) as InvoicePartyType
   const invoiceKind = upper(String(input.invoiceKind ?? ''))
@@ -434,8 +494,45 @@ function normalizeInput(input: VatInvoiceInput): NormalizedInput {
 }
 
 /** 已落库单据 → 审核校验入参（wire 形与 NormalizedInput 同键） */
-function toInput(value: VatInvoice): NormalizedInput {
+export function toInput(value: VatInvoice): NormalizedInput {
   return normalizeInput(value as unknown as VatInvoiceInput)
+}
+
+/** 从已落库字段组审核校验入参。无对账单历史票不能走组合规则，否则 400。 */
+export function auditInputFromPersisted(invoice: VatInvoice): NormalizedInput {
+  return {
+    companyId: invoice.companyId,
+    docNo: invoice.docNo,
+    direction: invoice.direction,
+    invoiceDate: invoice.invoiceDate,
+    partyType: invoice.partyType,
+    partyId: invoice.partyId,
+    invoiceKind: invoice.invoiceKind,
+    invoiceCode: invoice.invoiceCode,
+    invoiceNo: invoice.invoiceNo,
+    sellerName: invoice.sellerName,
+    sellerTaxNo: invoice.sellerTaxNo,
+    sellerAddressPhone: invoice.sellerAddressPhone,
+    sellerBankAccount: invoice.sellerBankAccount,
+    buyerName: invoice.buyerName,
+    buyerTaxNo: invoice.buyerTaxNo,
+    buyerAddressPhone: invoice.buyerAddressPhone,
+    buyerBankAccount: invoice.buyerBankAccount,
+    items: Array.isArray(invoice.items) ? invoice.items : [],
+    netTotal: invoice.netTotal,
+    taxTotal: invoice.taxTotal,
+    grossTotal: invoice.grossTotal,
+    issuer: invoice.issuer,
+    reviewer: invoice.reviewer,
+    payee: invoice.payee,
+    remarks: invoice.remarks,
+    partyAccountId: invoice.partyAccountId,
+    amountAccountId: invoice.amountAccountId,
+    taxAccountId: invoice.taxAccountId,
+    mirrorInvoiceId: invoice.mirrorInvoiceId,
+    salReconciliationId: invoice.salReconciliationId,
+    purReconciliationId: invoice.purReconciliationId,
+  }
 }
 
 type ReconSeam = Pick<
@@ -574,7 +671,7 @@ async function assertNotClaimedByExpense(db: DbHandle, id: string): Promise<void
   }
 }
 
-function invoiceGLEntries(invoice: VatInvoice): GlEntry[] {
+export function invoiceGLEntries(invoice: VatInvoice): GlEntry[] {
   const net = decimal(invoice.netTotal!)
   const tax = decimal(invoice.taxTotal!)
   const gross = decimal(invoice.grossTotal!)
