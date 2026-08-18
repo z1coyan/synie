@@ -30,7 +30,8 @@ export interface BackfillCliArgs {
 
 export interface BackfillDocResult {
   id: string
-  status: 'ok' | 'dry-run'
+  status: 'ok' | 'dry-run' | 'error'
+  error?: string
 }
 
 /** 发票/承兑逐 id 失败：已提交的 docs 保留，当前 id 写入 JSON，不并成一个大事务 */
@@ -150,10 +151,13 @@ export async function backfillEachDoc(
     console.log(JSON.stringify({ level: 'info', msg: 'backfill_item', kind, id }))
     try {
       await runOne(id)
+      docs.push({ id, status: 'ok' })
     } catch (err) {
-      throw new BackfillItemError(id, err, docs)
+      const detail =
+        err instanceof ApiError || err instanceof Error ? err.message : String(err)
+      console.log(JSON.stringify({ level: 'error', msg: 'backfill_item_failed', kind, id, error: detail }))
+      docs.push({ id, status: 'error', error: detail })
     }
-    docs.push({ id, status: 'ok' })
   }
   return docs
 }
@@ -178,7 +182,9 @@ export async function main(argv: string[]): Promise<void> {
     const args = parseBackfillCliArgs(argv)
     db = createDb(resolveBackfillDatabaseUrl())
     const result = await runBackfill(db, args)
-    console.log(JSON.stringify({ level: 'info', msg: 'backfill_done', ...result }))
+    const failed = (result.docs ?? []).filter((d) => d.status === 'error')
+    console.log(JSON.stringify({ level: 'info', msg: 'backfill_done', failed: failed.length, ...result }))
+    if (failed.length > 0) process.exitCode = 1
   } catch (err) {
     console.error(JSON.stringify(formatBackfillFailure(err)))
     process.exitCode = 1

@@ -2,13 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  BackfillItemError,
-  backfillEachDoc,
-  formatBackfillFailure,
-  parseBackfillCliArgs,
-  resolveBackfillDatabaseUrl,
-} from './backfill-cli.ts'
+import { backfillEachDoc, parseBackfillCliArgs, resolveBackfillDatabaseUrl } from './backfill-cli.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'backfill-cli-'))
 const idsPath = join(dir, 'ids.txt')
@@ -66,22 +60,16 @@ describe('backfillEachDoc', () => {
       logs.push(String(args[0] ?? ''))
     }
     try {
-      const err = await backfillEachDoc('invoice', [a, b], async (id) => {
+      const docs = await backfillEachDoc('invoice', [a, b, a], async (id) => {
         if (id === b) throw new Error('票失败')
-      }).catch((e: unknown) => e)
-      expect(err).toBeInstanceOf(BackfillItemError)
-      expect((err as BackfillItemError).id).toBe(b)
-      expect((err as BackfillItemError).message).toBe('票失败')
-      expect((err as BackfillItemError).docs).toEqual([{ id: a, status: 'ok' }])
-      expect(logs.some((line) => line.includes(a))).toBe(true)
-      expect(logs.some((line) => line.includes(b))).toBe(true)
-      expect(formatBackfillFailure(err)).toEqual({
-        level: 'error',
-        msg: 'backfill_failed',
-        id: b,
-        error: '票失败',
-        docs: [{ id: a, status: 'ok' }],
       })
+      expect(docs).toEqual([
+        { id: a, status: 'ok' },
+        { id: b, status: 'error', error: '票失败' },
+        { id: a, status: 'ok' },
+      ])
+      expect(logs.some((line) => line.includes(a))).toBe(true)
+      expect(logs.some((line) => line.includes('backfill_item_failed'))).toBe(true)
     } finally {
       console.log = orig
     }

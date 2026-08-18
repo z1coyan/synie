@@ -84,7 +84,8 @@ FROM tgt t
 FULL OUTER JOIN live l
   ON l.party_code = t.party_code AND l.company = t.company
 WHERE (SELECT count(*) FROM replay_targets) > 0
-  AND COALESCE(t.party_code, l.party_code) NOT IN (SELECT party_code FROM exceptions)
+  AND t.party_code IS NOT NULL
+  AND t.party_code NOT IN (SELECT party_code FROM exceptions)
   AND ABS(COALESCE(l.amt, 0) - COALESCE(t.amount, 0)) > 0.01
 ORDER BY ABS(COALESCE(l.amt, 0) - COALESCE(t.amount, 0)) DESC,
          party_code, company;

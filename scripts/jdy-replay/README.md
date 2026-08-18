@@ -15,6 +15,20 @@
 | v2_carry synie 补档 | `8044` `8046` `8047` `8052` `8053` `8059` `8062` `8065` `8081` `8084` `8086` |
 
 不要用全库 1122 FULL OUTER 直接判绿。USD 户 200/12/155/159 在仪表盘内，**留在主集**。
+`verify_today` / `verify_asof` 只比对目标表里出现的户（`t.party_code IS NOT NULL`），live 多出来的非仪表盘 80xx（8006/8030/8037 等）不进闸。
+
+## W4 承兑 1122 对齐
+
+W4 把「不过账」历史 exit 全量补过账后，客户 ENDORSE 会误借 1122，且 `bills.json` 客户收入有一批在 synie 记成供应商接收（贷 2202）。冻结夜在 `backfill --kind bill` 之后跑：
+
+```bash
+python3 scripts/jdy-replay/build_w4_align_plan.py -o .scratch/replay/w4_align_plan.json
+# 默认 dry-run
+bun scripts/jdy-replay/w4_align_customer_bills.ts --plan .scratch/replay/w4_align_plan.json
+bun scripts/jdy-replay/w4_align_customer_bills.ts --plan .scratch/replay/w4_align_plan.json --apply
+```
+
+做的事：非 K16 客户 ENDORSE 改结算 3104 再补过；1:1 供应商接收改挂客户 1122；同票拆段 / 主集 1123 回款 / 未落地客户支出走有日期的改挂凭证。禁止 `replayBill`。
 
 ## formula_asof.py
 
