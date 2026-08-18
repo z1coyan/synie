@@ -1,13 +1,16 @@
 -- 截日 1122（posting_date<=T）vs formula_asof.py 输出。只读。
 -- 主集 |diff|>0.01 应为 0 行。
 --
--- 1) 重算公式（仓库根）：
---    python3 scripts/jdy-replay/formula_asof.py --as-of 2023-12-31 -o /tmp/formula_asof.csv
--- 2) 载入并比对：
---    psql -v ON_ERROR_STOP=1 -v as_of=2023-12-31
---    \i scripts/jdy-replay/verify_asof.sql
---    \copy replay_formula_asof (company, party_code, amount) FROM '/tmp/formula_asof.csv' CSV HEADER
---    -- 再从 WITH tgt 起重跑；或先 \copy 再 \i
+-- 主集 = 仪表盘户，排除 8038 / 538 / v2_carry 80xx
+--   （8044/8046/8047/8052/8053/8059/8062/8065/8081/8084/8086）。
+-- formula_asof 不含这些留档户；FULL OUTER 若不排除，8038 等会永远非 0 行。
+--
+-- 用法（必须按序）：
+--   python3 scripts/jdy-replay/formula_asof.py --as-of 2023-12-31 -o /tmp/formula_asof.csv
+--   psql -v ON_ERROR_STOP=1 -v as_of=2023-12-31
+--   \i scripts/jdy-replay/verify_asof.sql            -- 建空表；空表时跳过比对
+--   \copy replay_formula_asof (company, party_code, amount) FROM '/tmp/formula_asof.csv' CSV HEADER
+--   \i scripts/jdy-replay/verify_asof.sql            -- 有行才比对
 --
 -- 三个历史日：2023-12-31、2024-12-31、2025-12-31。
 
@@ -22,9 +25,23 @@ CREATE TEMP TABLE IF NOT EXISTS replay_formula_asof (
   amount numeric NOT NULL
 );
 
-\echo '===== verify_asof: posting_date<=' :as_of '1122 vs formula_asof ====='
+SELECT CASE
+         WHEN count(*) = 0
+           THEN 'WARNING: replay_formula_asof 为空，已跳过比对（先 \\copy 再 \\i）'
+         ELSE 'formula_asof=' || count(*)::text
+       END AS replay_formula_asof_status
+FROM replay_formula_asof;
 
-WITH tgt AS (
+\echo '===== verify_asof: posting_date<=' :as_of '1122 vs formula_asof 主集 ====='
+
+WITH exceptions(party_code) AS (
+  VALUES
+    ('8038'),
+    ('538'),
+    ('8044'), ('8046'), ('8047'), ('8052'), ('8053'),
+    ('8059'), ('8062'), ('8065'), ('8081'), ('8084'), ('8086')
+),
+tgt AS (
   SELECT
     CASE
       WHEN t.company IN ('京泰', 'JT') THEN '京泰'
@@ -63,6 +80,8 @@ SELECT
 FROM tgt t
 FULL OUTER JOIN live l
   ON l.party_code = t.party_code AND l.company = t.company
-WHERE ABS(COALESCE(l.amt, 0) - COALESCE(t.amount, 0)) > 0.01
+WHERE (SELECT count(*) FROM replay_formula_asof) > 0
+  AND COALESCE(t.party_code, l.party_code) NOT IN (SELECT party_code FROM exceptions)
+  AND ABS(COALESCE(l.amt, 0) - COALESCE(t.amount, 0)) > 0.01
 ORDER BY ABS(COALESCE(l.amt, 0) - COALESCE(t.amount, 0)) DESC,
          party_code, company;

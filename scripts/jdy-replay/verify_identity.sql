@@ -1,18 +1,16 @@
 -- W6 删 0004–0007 之前的预演恒等式（只读，不删）。
 -- 主集逐户逐公司（容差 0.01）：
 --   Σ(0004..0007 未作废 1122, 借−贷)
---     == Σ(acc.vat_invoice 1122)
---      + Σ(W4 新过账的接收 1122)          -- 通常为贷
---      + Σ(客户退回 ENDORSE 1122)         -- 借
---      + Σ(0001N 七行负数 1122)           -- 贷
---      + known_gaps                       -- 默认 0
+--     == Σ(窗口内 acc.vat_invoice 1122)
+--      + Σ(窗口内 新过账接收 1122)          -- 通常为贷
+--      + Σ(窗口内 客户退回 ENDORSE 1122)     -- 借
+--      + Σ(0001N 七行负数 1122)             -- 贷
+--      + known_gaps                         -- 默认 0
 --
--- 「新过账接收」= acc.bill_transaction RECEIVE 的 1122，且
---   entry.inserted_at >= :window_start
--- 433 笔迁移期已过账接收的 inserted_at 早于冻结夜，不会进右边。
---
--- W6 用法：
---   psql -v ON_ERROR_STOP=1 -v window_start='2026-08-18 16:00:00' \
+-- inserted_at 是 timestamp without time zone，存 UTC 墙钟
+-- （DEFAULT now() AT TIME ZONE 'utc'）。比较时先 AT TIME ZONE 'UTC'，
+-- window_start 必须带时区，中国冻结夜用 +08：
+--   psql -v ON_ERROR_STOP=1 -v window_start='2026-08-18 16:00:00+08' \
 --        -f scripts/jdy-replay/verify_identity.sql
 -- 对不上：停，不删找平。
 --
@@ -22,12 +20,13 @@
 
 \if :{?window_start}
 \else
-\set window_start '2099-01-01 00:00:00'
+\set window_start '2099-01-01 00:00:00+08'
 \endif
 
 \echo '===== verify_identity: 0004-0007 1122 vs 新过账 1122 ====='
 \echo 'window_start=' :window_start
-\echo '未传 -v window_start 时默认 2099，新接收侧为空，仅用于看找平贡献。'
+\echo '未传 -v window_start 时默认 2099-01-01+08，新过账侧为空，仅用于看找平贡献。'
+\echo 'window_start 须带时区（中国 16:00 → 2026-08-18 16:00:00+08）。'
 
 WITH plug AS (
   SELECT
@@ -73,6 +72,7 @@ inv AS (
     AND NOT e.is_cancelled
     AND a.code = '1122'
     AND e.voucher_type = 'acc.vat_invoice'
+    AND (e.inserted_at AT TIME ZONE 'UTC') >= :'window_start'::timestamptz
   GROUP BY 1, 2
 ),
 new_recv AS (
@@ -94,7 +94,7 @@ new_recv AS (
     AND a.code = '1122'
     AND e.voucher_type = 'acc.bill_transaction'
     AND upper(t.transaction_type) = 'RECEIVE'
-    AND e.inserted_at >= :'window_start'::timestamp
+    AND (e.inserted_at AT TIME ZONE 'UTC') >= :'window_start'::timestamptz
   GROUP BY 1, 2
 ),
 ret AS (
@@ -117,6 +117,7 @@ ret AS (
     AND e.voucher_type = 'acc.bill_transaction'
     AND upper(t.transaction_type) = 'ENDORSE'
     AND lower(t.party_type) = 'customer'
+    AND (e.inserted_at AT TIME ZONE 'UTC') >= :'window_start'::timestamptz
   GROUP BY 1, 2
 ),
 n1 AS (
@@ -190,6 +191,7 @@ FROM acc_gl_entry e
 JOIN bas_account a ON a.id = e.account_id
 WHERE NOT e.is_cancelled AND a.code = '1122'
   AND e.voucher_type = 'acc.vat_invoice'
+  AND (e.inserted_at AT TIME ZONE 'UTC') >= :'window_start'::timestamptz
 UNION ALL
 SELECT 'new RECEIVE', ROUND(SUM(e.debit - e.credit), 2)
 FROM acc_gl_entry e
@@ -198,7 +200,7 @@ JOIN acc_bill_transaction t ON t.id = e.voucher_id
 WHERE NOT e.is_cancelled AND a.code = '1122'
   AND e.voucher_type = 'acc.bill_transaction'
   AND upper(t.transaction_type) = 'RECEIVE'
-  AND e.inserted_at >= :'window_start'::timestamp
+  AND (e.inserted_at AT TIME ZONE 'UTC') >= :'window_start'::timestamptz
 UNION ALL
 SELECT 'customer ENDORSE', ROUND(SUM(e.debit - e.credit), 2)
 FROM acc_gl_entry e
@@ -208,6 +210,7 @@ WHERE NOT e.is_cancelled AND a.code = '1122'
   AND e.voucher_type = 'acc.bill_transaction'
   AND upper(t.transaction_type) = 'ENDORSE'
   AND lower(t.party_type) = 'customer'
+  AND (e.inserted_at AT TIME ZONE 'UTC') >= :'window_start'::timestamptz
 UNION ALL
 SELECT '0001N', ROUND(SUM(e.debit - e.credit), 2)
 FROM acc_gl_entry e
