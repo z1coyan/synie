@@ -44,18 +44,22 @@ run('PG 集成（发货剩余补过账）', () => {
     reconciled: string
     price: string
     date?: string
+    partyType?: string
+    status?: string
     fullGl: boolean
   }): Promise<string> {
     const id = crypto.randomUUID()
     const date = opts.date ?? '2026-07-25'
     const no = `${prefix}-${id.slice(0, 8)}`
+    const partyType = opts.partyType ?? 'customer'
+    const status = opts.status ?? 'audited'
     await sql`
       INSERT INTO sal_delivery (
         id, delivery_no, delivery_date, posting_date, party_type, party_id, remarks,
         status, company_id, warehouse_id, debit_account_id, credit_account_id
       ) VALUES (
-        ${id}::uuid, ${no}, ${date}::date, ${date}::date, 'customer', ${customerId}::uuid,
-        ${opts.remarks}, 'audited', ${companyId}::uuid, ${warehouseId}::uuid,
+        ${id}::uuid, ${no}, ${date}::date, ${date}::date, ${partyType}, ${customerId}::uuid,
+        ${opts.remarks}, ${status}, ${companyId}::uuid, ${warehouseId}::uuid,
         ${debitAccountId}::uuid, ${creditAccountId}::uuid
       )
     `.execute(db)
@@ -160,6 +164,24 @@ run('PG 集成（发货剩余补过账）', () => {
     return Number(rows.rows[0]!.c) > 0
   }
 
+  async function deleteDeliveries(ids: string[]) {
+    if (ids.length === 0) return
+    await sql`
+      DELETE FROM acc_gl_entry
+      WHERE voucher_type = 'sales.delivery' AND voucher_id = ANY(${ids}::uuid[])
+    `.execute(db)
+    await sql`DELETE FROM sal_delivery WHERE id = ANY(${ids}::uuid[])`.execute(db)
+  }
+
+  async function deletePlugJournals(journalIds: string[]) {
+    if (journalIds.length === 0) return
+    await sql`DELETE FROM acc_bank_reconciliation WHERE voucher_id = ANY(${journalIds}::uuid[])`.execute(db)
+    await sql`DELETE FROM acc_gl_entry WHERE voucher_id = ANY(${journalIds}::uuid[])`.execute(db)
+    await sql`DELETE FROM acc_gl_journal_line WHERE journal_id = ANY(${journalIds}::uuid[])`.execute(db)
+    await sql`DELETE FROM sys_audit_log WHERE record_id = ANY(${journalIds}::uuid[])`.execute(db)
+    await sql`DELETE FROM acc_gl_journal WHERE id = ANY(${journalIds}::uuid[])`.execute(db)
+  }
+
   beforeAll(async () => {
     await sql`
       INSERT INTO bas_currency(id,name,iso_code,symbol,active)
@@ -246,172 +268,255 @@ run('PG 集成（发货剩余补过账）', () => {
   })
 
   test('apply：旧组作废、新组两行=剩余、两公司 0008 删除', async () => {
-    const id = await insertDelivery({
-      remarks: '简道云出库:FO-1',
-      qty: '10',
-      reconciled: '4',
-      price: '10',
-      fullGl: true,
-    })
-    const j1 = await insertPlug0008(companyId, debitAccountId, creditAccountId)
-    const j2 = await insertPlug0008(company2Id, debit2Id, credit2Id)
+    const created: string[] = []
+    const journals: string[] = []
+    try {
+      const id = await insertDelivery({
+        remarks: '简道云出库:FO-1',
+        qty: '10',
+        reconciled: '4',
+        price: '10',
+        fullGl: true,
+      })
+      created.push(id)
+      const j1 = await insertPlug0008(companyId, debitAccountId, creditAccountId)
+      const j2 = await insertPlug0008(company2Id, debit2Id, credit2Id)
+      journals.push(j1, j2)
 
-    const result = await runDeliveryRemainBackfill(db, permit(), { ids: [id], apply: true })
-    expect(result.apply).toBe(true)
-    expect(result.cancelled).toEqual([id])
-    expect(result.posted).toEqual([{ id, amount: '60.00' }])
-    expect(result.deletedJournals.sort()).toEqual([j1, j2].sort())
+      const result = await runDeliveryRemainBackfill(db, permit(), { ids: [id], apply: true })
+      expect(result.apply).toBe(true)
+      expect(result.cancelled).toEqual([id])
+      expect(result.posted).toEqual([{ id, amount: '60.00' }])
+      expect(result.deletedJournals.sort()).toEqual([j1, j2].sort())
 
-    const rows = await deliveryGl(id)
-    const live = rows.rows.filter((r) => !r.is_cancelled)
-    const cancelled = rows.rows.filter((r) => r.is_cancelled)
-    expect(cancelled).toHaveLength(2)
-    expect(live).toHaveLength(2)
-    const debit = live.find((r) => r.account_id === debitAccountId)
-    expect(Number(debit?.debit)).toBe(60)
-    expect(Number(debit?.credit)).toBe(0)
-    expect(await plugExists()).toBe(false)
-    const leftoverEntry = await sql<{ c: string }>`
-      SELECT count(*)::text AS c FROM acc_gl_entry
-      WHERE voucher_type='acc.gl_journal' AND voucher_id IN (${j1}::uuid, ${j2}::uuid)
-    `.execute(db)
-    expect(leftoverEntry.rows[0]?.c).toBe('0')
-    const leftoverLine = await sql<{ c: string }>`
-      SELECT count(*)::text AS c FROM acc_gl_journal_line
-      WHERE journal_id IN (${j1}::uuid, ${j2}::uuid)
-    `.execute(db)
-    expect(leftoverLine.rows[0]?.c).toBe('0')
+      const rows = await deliveryGl(id)
+      const live = rows.rows.filter((r) => !r.is_cancelled)
+      const cancelled = rows.rows.filter((r) => r.is_cancelled)
+      expect(cancelled).toHaveLength(2)
+      expect(live).toHaveLength(2)
+      const debit = live.find((r) => r.account_id === debitAccountId)
+      expect(Number(debit?.debit)).toBe(60)
+      expect(Number(debit?.credit)).toBe(0)
+      expect(await plugExists()).toBe(false)
+      const leftoverEntry = await sql<{ c: string }>`
+        SELECT count(*)::text AS c FROM acc_gl_entry
+        WHERE voucher_type='acc.gl_journal' AND voucher_id IN (${j1}::uuid, ${j2}::uuid)
+      `.execute(db)
+      expect(leftoverEntry.rows[0]?.c).toBe('0')
+      const leftoverLine = await sql<{ c: string }>`
+        SELECT count(*)::text AS c FROM acc_gl_journal_line
+        WHERE journal_id IN (${j1}::uuid, ${j2}::uuid)
+      `.execute(db)
+      expect(leftoverLine.rows[0]?.c).toBe('0')
+    } finally {
+      await deleteDeliveries(created)
+      await deletePlugJournals(journals)
+    }
   })
 
   test('同户两头：最后一头吸收 verify6 尾差', async () => {
-    const a = await insertDelivery({
-      remarks: '简道云出库:FO-tail-a',
-      qty: '1',
-      reconciled: '0',
-      price: '10.004',
-      date: '2026-07-20',
-      fullGl: true,
-    })
-    const b = await insertDelivery({
-      remarks: '简道云出库:FO-tail-b',
-      qty: '1',
-      reconciled: '0',
-      price: '10.004',
-      date: '2026-07-21',
-      fullGl: true,
-    })
-    await insertPlug0008(companyId, debitAccountId, creditAccountId)
+    const created: string[] = []
+    const journals: string[] = []
+    try {
+      const a = await insertDelivery({
+        remarks: '简道云出库:FO-tail-a',
+        qty: '1',
+        reconciled: '0',
+        price: '10.004',
+        date: '2026-07-20',
+        fullGl: true,
+      })
+      const b = await insertDelivery({
+        remarks: '简道云出库:FO-tail-b',
+        qty: '1',
+        reconciled: '0',
+        price: '10.004',
+        date: '2026-07-21',
+        fullGl: true,
+      })
+      created.push(a, b)
+      journals.push(await insertPlug0008(companyId, debitAccountId, creditAccountId))
 
-    const result = await runDeliveryRemainBackfill(db, permit(), { ids: [a, b], apply: true })
-    const byId = new Map(result.posted.map((p) => [p.id, p.amount]))
-    expect(byId.get(a)).toBe('10.00')
-    expect(byId.get(b)).toBe('10.01')
+      const result = await runDeliveryRemainBackfill(db, permit(), { ids: [a, b], apply: true })
+      const byId = new Map(result.posted.map((p) => [p.id, p.amount]))
+      expect(byId.get(a)).toBe('10.00')
+      expect(byId.get(b)).toBe('10.01')
+    } finally {
+      await deleteDeliveries(created)
+      await deletePlugJournals(journals)
+    }
+  })
+
+  test('导入大写 party_type/status 仍按同一对手重过', async () => {
+    const created: string[] = []
+    const journals: string[] = []
+    try {
+      const id = await insertDelivery({
+        remarks: '简道云出库:FO-case',
+        qty: '10',
+        reconciled: '4',
+        price: '10',
+        partyType: 'CUSTOMER',
+        status: 'AUDITED',
+        fullGl: true,
+      })
+      created.push(id)
+      journals.push(await insertPlug0008(companyId, debitAccountId, creditAccountId))
+      const result = await runDeliveryRemainBackfill(db, permit(), { ids: [id], apply: true })
+      expect(result.posted).toEqual([{ id, amount: '60.00' }])
+    } finally {
+      await deleteDeliveries(created)
+      await deletePlugJournals(journals)
+    }
   })
 
   test('非简道云备注却有未作废分录 → 整事务回滚', async () => {
-    const id = await insertDelivery({
-      remarks: '简道云出库:FO-gate',
-      qty: '10',
-      reconciled: '3',
-      price: '10',
-      fullGl: true,
-    })
-    const leak = await insertDelivery({
-      remarks: '正规发货',
-      qty: '2',
-      reconciled: '0',
-      price: '10',
-      fullGl: true,
-    })
-    const journalId = await insertPlug0008(companyId, debitAccountId, creditAccountId)
+    const created: string[] = []
+    const journals: string[] = []
+    try {
+      const id = await insertDelivery({
+        remarks: '简道云出库:FO-gate',
+        qty: '10',
+        reconciled: '3',
+        price: '10',
+        fullGl: true,
+      })
+      const leak = await insertDelivery({
+        remarks: '正规发货',
+        qty: '2',
+        reconciled: '0',
+        price: '10',
+        fullGl: true,
+      })
+      created.push(id, leak)
+      const journalId = await insertPlug0008(companyId, debitAccountId, creditAccountId)
+      journals.push(journalId)
 
-    const err = await runDeliveryRemainBackfill(db, permit(), { ids: [id], apply: true }).catch(
-      (e: unknown) => e,
-    )
-    expect(err).toBeInstanceOf(ApiError)
-    expect((err as ApiError).code).toBe('conflict')
+      const err = await runDeliveryRemainBackfill(db, permit(), { ids: [id], apply: true }).catch(
+        (e: unknown) => e,
+      )
+      expect(err).toBeInstanceOf(ApiError)
+      expect((err as ApiError).code).toBe('conflict')
 
-    const rows = await deliveryGl(id)
-    expect(rows.rows.every((r) => !r.is_cancelled)).toBe(true)
-    expect(await plugExists()).toBe(true)
-
-    await sql`DELETE FROM acc_gl_entry WHERE voucher_id=${leak}::uuid`.execute(db)
-    await sql`DELETE FROM sal_delivery WHERE id=${leak}::uuid`.execute(db)
-    await sql`DELETE FROM acc_gl_entry WHERE voucher_id=${journalId}::uuid`.execute(db)
-    await sql`DELETE FROM acc_gl_journal_line WHERE journal_id=${journalId}::uuid`.execute(db)
-    await sql`DELETE FROM sys_audit_log WHERE record_id=${journalId}::uuid`.execute(db)
-    await sql`DELETE FROM acc_gl_journal WHERE id=${journalId}::uuid`.execute(db)
+      const rows = await deliveryGl(id)
+      expect(rows.rows.every((r) => !r.is_cancelled)).toBe(true)
+      expect(await plugExists()).toBe(true)
+    } finally {
+      await deleteDeliveries(created)
+      await deletePlugJournals(journals)
+    }
   })
 
   test('0008 被银行对账引用 → 整事务回滚', async () => {
-    const id = await insertDelivery({
-      remarks: '简道云出库:FO-recon',
-      qty: '10',
-      reconciled: '2',
-      price: '10',
-      fullGl: true,
-    })
-    const journalId = await insertPlug0008(companyId, debitAccountId, creditAccountId)
+    const created: string[] = []
+    const journals: string[] = []
     const bankAccountId = crypto.randomUUID()
     const txnId = crypto.randomUUID()
-    const reconId = crypto.randomUUID()
-    await sql`
-      INSERT INTO acc_bank_account (id, alias, bank_name, holder_name, account_no, company_id, currency_id)
-      VALUES (${bankAccountId}::uuid, ${prefix + '户'}, '测试银行', '持有人', ${'BA' + suffix},
-        ${companyId}::uuid, ${currencyId}::uuid)
-    `.execute(db)
-    await sql`
-      INSERT INTO acc_bank_transaction (
-        id, occurred_at, income, company_id, bank_account_id
-      ) VALUES (
-        ${txnId}::uuid, '2020-01-02 00:00:00', 100, ${companyId}::uuid, ${bankAccountId}::uuid
+    try {
+      const id = await insertDelivery({
+        remarks: '简道云出库:FO-recon',
+        qty: '10',
+        reconciled: '2',
+        price: '10',
+        fullGl: true,
+      })
+      created.push(id)
+      const journalId = await insertPlug0008(companyId, debitAccountId, creditAccountId)
+      journals.push(journalId)
+      const reconId = crypto.randomUUID()
+      await sql`
+        INSERT INTO acc_bank_account (id, alias, bank_name, holder_name, account_no, company_id, currency_id)
+        VALUES (${bankAccountId}::uuid, ${prefix + '户'}, '测试银行', '持有人', ${'BA' + suffix},
+          ${companyId}::uuid, ${currencyId}::uuid)
+      `.execute(db)
+      await sql`
+        INSERT INTO acc_bank_transaction (
+          id, occurred_at, income, company_id, bank_account_id
+        ) VALUES (
+          ${txnId}::uuid, '2020-01-02 00:00:00', 100, ${companyId}::uuid, ${bankAccountId}::uuid
+        )
+      `.execute(db)
+      await sql`
+        INSERT INTO acc_bank_reconciliation (
+          id, amount, company_id, bank_transaction_id, voucher_type, voucher_id, voucher_no
+        ) VALUES (
+          ${reconId}::uuid, 100, ${companyId}::uuid, ${txnId}::uuid,
+          'acc.gl_journal', ${journalId}::uuid, ${PLUG_0008_VOUCHER_NO}
+        )
+      `.execute(db)
+
+      const err = await runDeliveryRemainBackfill(db, permit(), { ids: [id], apply: true }).catch(
+        (e: unknown) => e,
       )
-    `.execute(db)
-    await sql`
-      INSERT INTO acc_bank_reconciliation (
-        id, amount, company_id, bank_transaction_id, voucher_type, voucher_id, voucher_no
-      ) VALUES (
-        ${reconId}::uuid, 100, ${companyId}::uuid, ${txnId}::uuid,
-        'acc.gl_journal', ${journalId}::uuid, ${PLUG_0008_VOUCHER_NO}
-      )
-    `.execute(db)
+      expect(err).toBeInstanceOf(ApiError)
+      expect((err as ApiError).message).toMatch(/银行对账/)
 
-    const err = await runDeliveryRemainBackfill(db, permit(), { ids: [id], apply: true }).catch(
-      (e: unknown) => e,
-    )
-    expect(err).toBeInstanceOf(ApiError)
-    expect((err as ApiError).message).toMatch(/银行对账/)
-
-    const rows = await deliveryGl(id)
-    expect(rows.rows.filter((r) => !r.is_cancelled)).toHaveLength(2)
-    expect(await plugExists()).toBe(true)
-
-    await sql`DELETE FROM acc_bank_reconciliation WHERE id=${reconId}::uuid`.execute(db)
-    await sql`DELETE FROM acc_bank_transaction WHERE id=${txnId}::uuid`.execute(db)
-    await sql`DELETE FROM acc_bank_account WHERE id=${bankAccountId}::uuid`.execute(db)
+      const rows = await deliveryGl(id)
+      expect(rows.rows.filter((r) => !r.is_cancelled)).toHaveLength(2)
+      expect(await plugExists()).toBe(true)
+    } finally {
+      await sql`DELETE FROM acc_bank_reconciliation WHERE bank_transaction_id=${txnId}::uuid`.execute(db)
+      await sql`DELETE FROM acc_bank_transaction WHERE id=${txnId}::uuid`.execute(db)
+      await sql`DELETE FROM acc_bank_account WHERE id=${bankAccountId}::uuid`.execute(db)
+      await deleteDeliveries(created)
+      await deletePlugJournals(journals)
+    }
   })
 
-  test('空 ids 不 cancel/post；dry-run 不写', async () => {
-    const id = await insertDelivery({
-      remarks: '简道云出库:FO-dry',
-      qty: '5',
-      reconciled: '1',
-      price: '10',
-      fullGl: true,
-    })
-    await insertPlug0008(companyId, debitAccountId, creditAccountId)
+  test('空 ids + apply 拒绝且不删 0008', async () => {
+    const journals: string[] = []
+    try {
+      journals.push(await insertPlug0008(companyId, debitAccountId, creditAccountId))
+      const err = await runDeliveryRemainBackfill(db, permit(), { ids: [], apply: true }).catch(
+        (e: unknown) => e,
+      )
+      expect(err).toBeInstanceOf(ApiError)
+      expect((err as ApiError).message).toMatch(/不会删除 0008/)
+      expect(await plugExists()).toBe(true)
+    } finally {
+      await deletePlugJournals(journals)
+    }
+  })
 
-    const preview = await runDeliveryRemainBackfill(db, permit(), { ids: [id], apply: false })
-    expect(preview.apply).toBe(false)
-    expect(preview.cancelled).toEqual([id])
-    expect(preview.posted[0]?.amount).toBe('40.00')
-    const before = await deliveryGl(id)
-    expect(before.rows.every((r) => !r.is_cancelled)).toBe(true)
-    expect(await plugExists()).toBe(true)
+  test('空 ids dry-run 不写；0008 已不在时 dry-run 仍列出取消/重过集', async () => {
+    const created: string[] = []
+    const journals: string[] = []
+    try {
+      const id = await insertDelivery({
+        remarks: '简道云出库:FO-dry',
+        qty: '5',
+        reconciled: '1',
+        price: '10',
+        fullGl: true,
+      })
+      created.push(id)
+      journals.push(await insertPlug0008(companyId, debitAccountId, creditAccountId))
 
-    const empty = await runDeliveryRemainBackfill(db, permit(), { ids: [], apply: false })
-    expect(empty.cancelled).toEqual([])
-    expect(empty.posted).toEqual([])
-    expect(await plugExists()).toBe(true)
+      const preview = await runDeliveryRemainBackfill(db, permit(), { ids: [id], apply: false })
+      expect(preview.apply).toBe(false)
+      expect(preview.cancelled).toEqual([id])
+      expect(preview.posted[0]?.amount).toBe('40.00')
+      expect(preview.warning).toBeUndefined()
+      const before = await deliveryGl(id)
+      expect(before.rows.every((r) => !r.is_cancelled)).toBe(true)
+      expect(await plugExists()).toBe(true)
+
+      const empty = await runDeliveryRemainBackfill(db, permit(), { ids: [], apply: false })
+      expect(empty.cancelled).toEqual([])
+      expect(empty.posted).toEqual([])
+      expect(await plugExists()).toBe(true)
+
+      await deletePlugJournals(journals)
+      journals.length = 0
+      const gone = await runDeliveryRemainBackfill(db, permit(), { ids: [id], apply: false })
+      expect(gone.cancelled).toEqual([id])
+      expect(gone.posted[0]?.amount).toBe('40.00')
+      expect(gone.deletedJournals).toEqual([])
+      expect(gone.warning).toMatch(/已不存在/)
+      expect((await deliveryGl(id)).rows.every((r) => !r.is_cancelled)).toBe(true)
+    } finally {
+      await deleteDeliveries(created)
+      await deletePlugJournals(journals)
+    }
   })
 })

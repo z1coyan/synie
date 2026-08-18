@@ -33,6 +33,22 @@ export interface BackfillDocResult {
   status: 'ok' | 'dry-run'
 }
 
+/** 发票/承兑逐 id 失败：已提交的 docs 保留，当前 id 写入 JSON，不并成一个大事务 */
+export class BackfillItemError extends Error {
+  readonly id: string
+  readonly docs: BackfillDocResult[]
+
+  constructor(id: string, cause: unknown, docs: BackfillDocResult[]) {
+    const detail =
+      cause instanceof ApiError || cause instanceof Error ? cause.message : String(cause)
+    super(detail)
+    this.name = 'BackfillItemError'
+    this.id = id
+    this.docs = docs
+    this.cause = cause
+  }
+}
+
 export interface BackfillCliResult {
   kind: BackfillKind
   apply: boolean
@@ -106,11 +122,7 @@ export async function runBackfill(
     }
     const reconciliations = createReconciliationService(db, numbering, gl, registry)
     const invoices = createVatInvoiceService(db, numbering, { gl, reconciliations, registry })
-    const docs: BackfillDocResult[] = []
-    for (const id of args.ids) {
-      await invoices.backfillPostedGL(permit, id)
-      docs.push({ id, status: 'ok' })
-    }
+    const docs = await backfillEachDoc(args.kind, args.ids, (id) => invoices.backfillPostedGL(permit, id))
     return { kind: args.kind, apply: true, ids: args.ids.length, docs }
   }
 
@@ -124,12 +136,26 @@ export async function runBackfill(
     }
   }
   const bills = createBillService(db, numbering, { gl, registry })
+  const docs = await backfillEachDoc(args.kind, args.ids, (id) => bills.backfillPostedGL(permit, id))
+  return { kind: args.kind, apply: true, ids: args.ids.length, docs }
+}
+
+export async function backfillEachDoc(
+  kind: 'invoice' | 'bill',
+  ids: string[],
+  runOne: (id: string) => Promise<unknown>,
+): Promise<BackfillDocResult[]> {
   const docs: BackfillDocResult[] = []
-  for (const id of args.ids) {
-    await bills.backfillPostedGL(permit, id)
+  for (const id of ids) {
+    console.log(JSON.stringify({ level: 'info', msg: 'backfill_item', kind, id }))
+    try {
+      await runOne(id)
+    } catch (err) {
+      throw new BackfillItemError(id, err, docs)
+    }
     docs.push({ id, status: 'ok' })
   }
-  return { kind: args.kind, apply: true, ids: args.ids.length, docs }
+  return docs
 }
 
 export function resolveBackfillDatabaseUrl(env: NodeJS.ProcessEnv = process.env): string {
@@ -154,17 +180,30 @@ export async function main(argv: string[]): Promise<void> {
     const result = await runBackfill(db, args)
     console.log(JSON.stringify({ level: 'info', msg: 'backfill_done', ...result }))
   } catch (err) {
-    const message =
-      err instanceof ApiError
-        ? err.message
-        : err instanceof Error
-          ? err.message
-          : String(err)
-    console.error(JSON.stringify({ level: 'error', msg: 'backfill_failed', error: message }))
+    console.error(JSON.stringify(formatBackfillFailure(err)))
     process.exitCode = 1
   } finally {
     if (db) await db.destroy()
   }
+}
+
+export function formatBackfillFailure(err: unknown): Record<string, unknown> {
+  if (err instanceof BackfillItemError) {
+    return {
+      level: 'error',
+      msg: 'backfill_failed',
+      id: err.id,
+      error: err.message,
+      docs: err.docs,
+    }
+  }
+  const message =
+    err instanceof ApiError
+      ? err.message
+      : err instanceof Error
+        ? err.message
+        : String(err)
+  return { level: 'error', msg: 'backfill_failed', error: message }
 }
 
 function needValue(argv: string[], index: number, flag: string): string {

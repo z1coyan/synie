@@ -40,6 +40,7 @@ export interface DeliveryRemainResult {
   cancelled: string[]
   posted: DeliveryRemainPosted[]
   deletedJournals: string[]
+  warning?: string
 }
 
 interface RepostHead {
@@ -57,10 +58,17 @@ interface RepostHead {
 
 export async function runDeliveryRemainBackfill(
   db: Kysely<Database>,
-  _permit: Permit,
+  permit: Permit,
   opts: DeliveryRemainOpts,
 ): Promise<DeliveryRemainResult> {
+  if (permit.resource !== 'salDeliveries' || permit.action !== 'audit') {
+    throw new ApiError('forbidden', '发货剩余补过账需要 salDeliveries:audit')
+  }
   const ids = [...new Set(opts.ids)]
+  // 空列表不得进 withTx：否则会只删 0008、留下旧全额 1124
+  if (opts.apply && ids.length === 0) {
+    throw new ApiError('conflict', '空 --ids-file 拒绝 --apply，不会删除 0008')
+  }
   if (!opts.apply) {
     return previewDeliveryRemain(db, ids)
   }
@@ -84,12 +92,14 @@ async function previewDeliveryRemain(
     amount: row.amount,
   }))
   const journals = await loadPlug0008(db)
+  let warning: string | undefined
   if (journals.length === 0) {
-    throw new ApiError('conflict', `找不到白名单凭证 ${PLUG_0008_VOUCHER_NO}`)
-  }
-  const recon = await countPlugRecon(db, journals)
-  if (recon > 0) {
-    throw new ApiError('conflict', `${PLUG_0008_VOUCHER_NO} 仍被银行对账引用`)
+    warning = `${PLUG_0008_VOUCHER_NO} 已不存在，dry-run 仅列出取消/重过集`
+  } else {
+    const recon = await countPlugRecon(db, journals)
+    if (recon > 0) {
+      throw new ApiError('conflict', `${PLUG_0008_VOUCHER_NO} 仍被银行对账引用`)
+    }
   }
   return {
     apply: false,
@@ -97,6 +107,7 @@ async function previewDeliveryRemain(
     cancelled,
     posted,
     deletedJournals: journals,
+    warning,
   }
 }
 
@@ -186,7 +197,7 @@ async function loadRepostHeads(db: Kysely<Database> | TrxHandle, ids: string[]):
   }>`
     SELECT d.id::text AS id,
            d.company_id::text AS company_id,
-           d.party_type,
+           lower(d.party_type) AS party_type,
            d.party_id::text AS party_id,
            d.debit_account_id::text AS debit_account_id,
            d.credit_account_id::text AS credit_account_id,
@@ -196,7 +207,7 @@ async function loadRepostHeads(db: Kysely<Database> | TrxHandle, ids: string[]):
            SUM((i.qty - i.reconciled_qty) * i.order_price)::text AS raw_amt
     FROM sal_delivery d
     JOIN sal_delivery_item i ON i.delivery_id = d.id
-    WHERE d.status = 'audited'
+    WHERE lower(d.status) = 'audited'
       AND d.remarks LIKE ${JDY_DELIVERY_REMARKS}
       AND d.id = ANY(${ids}::uuid[])
     GROUP BY d.id
@@ -207,7 +218,7 @@ async function loadRepostHeads(db: Kysely<Database> | TrxHandle, ids: string[]):
     return {
       id: r.id,
       companyId: r.company_id,
-      partyType: r.party_type,
+      partyType: lowerParty(r.party_type),
       partyId: r.party_id,
       debitAccountId: r.debit_account_id,
       creditAccountId: r.credit_account_id,
@@ -222,7 +233,7 @@ async function loadRepostHeads(db: Kysely<Database> | TrxHandle, ids: string[]):
 function planRepost(heads: RepostHead[]): Array<RepostHead & { amount: string }> {
   const groups = new Map<string, RepostHead[]>()
   for (const head of heads) {
-    const key = `${head.companyId}\0${head.partyType}\0${head.partyId}`
+    const key = `${head.companyId}\0${lowerParty(head.partyType)}\0${head.partyId}`
     const list = groups.get(key)
     if (list) list.push(head)
     else groups.set(key, [head])
@@ -437,16 +448,16 @@ async function assertW5EndGates(trx: TrxHandle, snap: NonJdy1124Row[]): Promise<
 
   const mismatch = await sql<{ c: string }>`
     WITH remain AS (
-      SELECT d.company_id, d.party_type, d.party_id,
+      SELECT d.company_id, lower(d.party_type) AS party_type, d.party_id,
              ROUND(SUM((i.qty - i.reconciled_qty) * i.order_price), 2) AS amt
       FROM sal_delivery d
       JOIN sal_delivery_item i ON i.delivery_id = d.id
-      WHERE d.status = 'audited'
+      WHERE lower(d.status) = 'audited'
         AND d.remarks LIKE ${JDY_DELIVERY_REMARKS}
-      GROUP BY d.company_id, d.party_type, d.party_id
+      GROUP BY d.company_id, lower(d.party_type), d.party_id
     ),
     posted AS (
-      SELECT e.company_id, e.party_type, e.party_id,
+      SELECT e.company_id, lower(e.party_type) AS party_type, e.party_id,
              SUM(e.debit - e.credit) AS amt
       FROM acc_gl_entry e
       JOIN bas_account a ON a.id = e.account_id
@@ -455,7 +466,7 @@ async function assertW5EndGates(trx: TrxHandle, snap: NonJdy1124Row[]): Promise<
         AND NOT e.is_cancelled
         AND a.code = '1124'
         AND d.remarks LIKE ${JDY_DELIVERY_REMARKS}
-      GROUP BY e.company_id, e.party_type, e.party_id
+      GROUP BY e.company_id, lower(e.party_type), e.party_id
     )
     SELECT count(*)::text AS c
     FROM remain r
