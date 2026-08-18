@@ -46,7 +46,7 @@ python3 scripts/jdy-replay/formula_asof.py --as-of 2023-12-31 -o /tmp/formula_as
 | `verify_asof.sql` | W8 截日 | `formula_asof.py --as-of T`，`\i` → `\copy replay_formula_asof` → `\i`，`-v as_of=T` | `posting_date<=T` 1122 vs 公式，**主集** 0 超差 |
 | `verify_1124.sql` | W5 后 | 第 2 段要 W5 前表 `replay_1124_non_jdy_snap` | JDY 备注头 = remain+remarks；非 JDY 有 GL = 0；非 JDY vs 快照 |
 | `verify_1121.sql` | W4/W8 | 白名单填 2217.64 那张 `voucher_no` | 科目 vs `acc_bill_holding` 按公司。**不对 AR/AP 报表** |
-| `verify_no_plug.sql` | W5+W6 后 | 直接 `-f` | `A(J)-20200101-0004`..`0008` 三表 + 审计（含 journal 已删的 record_label 孤儿）= 0 |
+| `verify_no_plug.sql` | W5+W6 后 | 直接 `-f`；W6 删前同一会话先 `\i` 一次（或写入 `replay_plug_journal_ids`） | `A(J)-20200101-0004`..`0008` 三表 + 头/行审计 = 0。行审计按 `changes.journal_id`，不按凭证号 |
 
 `window_start` 必须带时区。`acc_gl_entry.inserted_at` 是 UTC 墙钟（无 tz）；脚本用 `inserted_at AT TIME ZONE 'UTC'` 再和 timestamptz 比。中国冻结夜 16:00 = `2026-08-18 16:00:00+08`（不要传无偏移的 `16:00:00`，那会被当成 UTC 墙钟，当晚新过账会漏）。
 
