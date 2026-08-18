@@ -173,13 +173,14 @@ function createFixture(): Fixture {
         '${prefix}J1','2098-07-26','2098-07-26',
         '${prefix}已审核凭证','audited',company.id
       FROM company
-      RETURNING id,company_id
+      RETURNING id,company_id,voucher_no
     ),
     reconciliation AS (
       INSERT INTO acc_bank_reconciliation(
-        amount,company_id,bank_transaction_id,journal_id
+        amount,company_id,bank_transaction_id,voucher_type,voucher_id,voucher_no
       )
-      SELECT 25,bank_transaction.company_id,bank_transaction.id,journal.id
+      SELECT 25,bank_transaction.company_id,bank_transaction.id,
+        'acc.gl_journal',journal.id,journal.voucher_no
       FROM bank_transaction,journal
       RETURNING id
     ),

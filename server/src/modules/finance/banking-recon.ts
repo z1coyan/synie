@@ -1,8 +1,8 @@
 /**
  * 银行对账 + 快速对账凭证。
  *
- * 授权全由平台承担：路由挂 `guard(资源, 动作)`（对账命令码 `acc.bank_transaction:reconcile`
- * 声明在银行流水资源上），本服务只收 Permit，行级判定走 listAuthorized / loadAuthorized。
+ * 对账对象是总账来源单据（voucher_type + voucher_id），容量取未作废分录上
+ * 银行科目对应方向的合计。快速对账仍建手工凭证再挂同一套多态引用。
  */
 import { decimal, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -29,10 +29,20 @@ import { bankReconciliationResourceMeta } from './meta.ts'
 
 export const BANK_RECONCILIATION_RESOURCE = 'accBankReconciliations'
 const RECON_TABLE = 'acc_bank_reconciliation'
+export const JOURNAL_VOUCHER = 'acc.gl_journal'
+export const BILL_TX_VOUCHER = 'acc.bill_transaction'
 
 export interface BankReconciliation {
   id: string; amount: string; insertedAt: string; updatedAt: string
-  companyId: string; bankTransactionId: string; journalId: string
+  companyId: string; bankTransactionId: string
+  voucherType: string; voucherId: string; voucherNo: string
+  /** 来源为手工凭证时等于 voucherId，便于旧调用方；否则 null */
+  journalId: string | null
+}
+
+export interface SourceVoucher {
+  type: string
+  id: string
 }
 
 const RECON_AUDIT = auditFieldsOf(bankReconciliationResourceMeta())
@@ -42,24 +52,33 @@ const WRITE_MAP = [
 ] as const
 
 function mapRecon(row: Record<string, unknown>): BankReconciliation {
+  const voucherType = String(row.voucher_type)
+  const voucherId = String(row.voucher_id)
   return {
     id: String(row.id), amount: wireDecRequired(row.amount),
     insertedAt: asIso(row.inserted_at), updatedAt: asIso(row.updated_at),
     companyId: String(row.company_id), bankTransactionId: String(row.bank_transaction_id),
-    journalId: String(row.journal_id),
+    voucherType, voucherId, voucherNo: String(row.voucher_no),
+    journalId: voucherType === JOURNAL_VOUCHER ? voucherId : null,
   }
 }
 
 function reconSnap(r: BankReconciliation): Record<string, unknown> {
   return {
     amount: r.amount, company_id: r.companyId,
-    bank_transaction_id: r.bankTransactionId, journal_id: r.journalId,
+    bank_transaction_id: r.bankTransactionId,
+    voucher_type: r.voucherType, voucher_id: r.voucherId, voucher_no: r.voucherNo,
   }
 }
 
+const RECON_SELECT = sql`
+  SELECT id,amount,inserted_at,updated_at,company_id,bank_transaction_id,
+    voucher_type,voucher_id,voucher_no
+`
+
 async function loadRecon(db: DbHandle, id: string, lock: boolean): Promise<BankReconciliation> {
   const rows = await sql<Record<string, unknown>>`
-    SELECT id,amount,inserted_at,updated_at,company_id,bank_transaction_id,journal_id
+    ${RECON_SELECT}
     FROM acc_bank_reconciliation WHERE id=${id}::uuid ${lock ? sql`FOR UPDATE` : sql``}
   `.execute(db)
   if (!rows.rows[0]) throw notFound('银行对账记录')
@@ -94,25 +113,31 @@ async function reconciledTotal(db: DbHandle, transactionId: string) {
   return reconciledTotalForTransaction(db, transactionId)
 }
 
-async function journalCapacity(
-  db: DbHandle, journalId: string, ledgerAccountId: string, income: boolean,
-): Promise<{ total: ReturnType<typeof decimal>; used: ReturnType<typeof decimal> }> {
+async function voucherCapacity(
+  db: DbHandle, voucher: SourceVoucher, ledgerAccountId: string, income: boolean,
+): Promise<{ total: ReturnType<typeof decimal>; used: ReturnType<typeof decimal>; voucherNo: string; companyId: string }> {
   const column = income ? 'debit' : 'credit'
-  const totalRows = await sql<{ s: string }>`
-    SELECT COALESCE(sum(${sql.raw(column)}),0)::text AS s
-    FROM acc_gl_journal_line WHERE journal_id=${journalId}::uuid AND account_id=${ledgerAccountId}::uuid
+  const totalRows = await sql<{ s: string; voucher_no: string; company_id: string }>`
+    SELECT COALESCE(sum(${sql.raw(column)}),0)::text AS s,
+           min(voucher_no) AS voucher_no, min(company_id::text) AS company_id
+    FROM acc_gl_entry
+    WHERE voucher_type=${voucher.type} AND voucher_id=${voucher.id}::uuid
+      AND account_id=${ledgerAccountId}::uuid AND is_cancelled=false
   `.execute(db)
   const usedRows = await sql<{ s: string }>`
     SELECT COALESCE(sum(r.amount),0)::text AS s
     FROM acc_bank_reconciliation r
     JOIN acc_bank_transaction t ON t.id=r.bank_transaction_id
     JOIN acc_bank_account b ON b.id=t.bank_account_id
-    WHERE r.journal_id=${journalId}::uuid AND b.account_id=${ledgerAccountId}::uuid
+    WHERE r.voucher_type=${voucher.type} AND r.voucher_id=${voucher.id}::uuid
+      AND b.account_id=${ledgerAccountId}::uuid
       AND ((${income} AND t.income IS NOT NULL) OR (NOT ${income} AND t.expense IS NOT NULL))
   `.execute(db)
   return {
     total: decimal(totalRows.rows[0]?.s ?? '0'),
     used: decimal(usedRows.rows[0]?.s ?? '0'),
+    voucherNo: totalRows.rows[0]?.voucher_no ?? '',
+    companyId: totalRows.rows[0]?.company_id ?? '',
   }
 }
 
@@ -132,17 +157,22 @@ async function refreshBankTransaction(db: DbHandle, transaction: BankTransaction
   }
 }
 
-/**
- * 会计凭证取消前只读接缝：是否已被银行对账引用。
- * 游离函数便于组合根注入 journal service，避免 accounting→finance 运行时环。
- */
 export async function isJournalLinkedToBankRecon(
   db: DbHandle,
   journalId: string,
 ): Promise<boolean> {
+  return isVoucherLinkedToBankRecon(db, JOURNAL_VOUCHER, journalId)
+}
+
+export async function isVoucherLinkedToBankRecon(
+  db: DbHandle,
+  voucherType: string,
+  voucherId: string,
+): Promise<boolean> {
   const used = await sql<{ e: boolean }>`
     SELECT EXISTS(
-      SELECT 1 FROM acc_bank_reconciliation WHERE journal_id=${journalId}::uuid
+      SELECT 1 FROM acc_bank_reconciliation
+      WHERE voucher_type=${voucherType} AND voucher_id=${voucherId}::uuid
     ) AS e
   `.execute(db)
   return Boolean(used.rows[0]?.e)
@@ -176,6 +206,20 @@ export async function hasReconForBankAccount(
   return Boolean(used.rows[0]?.e)
 }
 
+export function resolveSourceVoucher(input: {
+  journalId?: string | null
+  voucherType?: string | null
+  voucherId?: string | null
+}): SourceVoucher {
+  if (input.voucherId?.trim()) {
+    return { type: (input.voucherType?.trim() || JOURNAL_VOUCHER), id: input.voucherId.trim() }
+  }
+  if (input.journalId?.trim()) {
+    return { type: JOURNAL_VOUCHER, id: input.journalId.trim() }
+  }
+  throw validation('银行对账', { voucherId: ['须指定来源单据'] })
+}
+
 export function createReconOps(
   db: Kysely<Database>,
   registry: Registry,
@@ -195,7 +239,8 @@ export function createReconOps(
       db, permit, target: reconTarget, alias: RECON_TABLE,
       resource: bankReconciliationResourceMeta(),
       source: sql` FROM acc_bank_reconciliation`,
-      select: sql`SELECT id,amount,inserted_at,updated_at,company_id,bank_transaction_id,journal_id`,
+      select: sql`SELECT id,amount,inserted_at,updated_at,company_id,bank_transaction_id,
+        voucher_type,voucher_id,voucher_no`,
       defaultOrder: sql`"id"`, query, mapRow: mapRecon,
     })
   }
@@ -208,42 +253,61 @@ export function createReconOps(
     return mapRecon(row)
   }
 
+  async function lockSource(trx: DbHandle, voucher: SourceVoucher): Promise<void> {
+    if (voucher.type === JOURNAL_VOUCHER) {
+      const rows = await sql<{ id: string; status: string }>`
+        SELECT id,status FROM acc_gl_journal WHERE id=${voucher.id}::uuid FOR UPDATE
+      `.execute(trx)
+      const journal = rows.rows[0]
+      if (!journal) throw validation('银行对账', { voucherId: ['会计凭证不存在'] })
+      if (journal.status !== 'audited') {
+        throw validation('银行对账', { voucherId: ['仅已审核凭证可用于对账'] })
+      }
+      return
+    }
+    if (voucher.type === BILL_TX_VOUCHER) {
+      const rows = await sql<{ id: string; status: string }>`
+        SELECT id,status FROM acc_bill_transaction WHERE id=${voucher.id}::uuid FOR UPDATE
+      `.execute(trx)
+      const tx = rows.rows[0]
+      if (!tx) throw validation('银行对账', { voucherId: ['承兑交易不存在'] })
+      if (tx.status !== 'audited') {
+        throw validation('银行对账', { voucherId: ['仅已审核承兑交易可用于对账'] })
+      }
+    }
+  }
+
   async function createReconciliationLocked(
-    trx: DbHandle, permit: Permit, transaction: BankTransaction, journalId: string, amountStr: string,
+    trx: DbHandle, permit: Permit, transaction: BankTransaction,
+    voucher: SourceVoucher, amountStr: string,
   ): Promise<BankReconciliation> {
     const actor = permit.actor
     const ledgerAccountId = await bankLedgerAccount(trx, transaction, true)
-    const journalRows = await sql<{ id: string; status: string; company_id: string }>`
-      SELECT id,status,company_id FROM acc_gl_journal WHERE id=${journalId}::uuid FOR UPDATE
-    `.execute(trx)
-    const journal = journalRows.rows[0]
-    if (!journal) throw validation('银行对账', { journalId: ['会计凭证不存在'] })
+    await lockSource(trx, voucher)
     const amount = decimal(amountStr)
     if (!amount.gt(0)) throw validation('银行对账', { amount: ['对账金额必须大于零'] })
-    if (journal.company_id !== transaction.companyId) {
-      throw validation('银行对账', { journalId: ['凭证与流水必须属于同一公司'] })
-    }
-    if (journal.status !== 'audited') {
-      throw validation('银行对账', { journalId: ['仅已审核凭证可用于对账'] })
-    }
-    const txnUsed = await reconciledTotal(trx, transaction.id)
     const income = transaction.income != null
-    const { total: lineTotal, used: journalUsed } = await journalCapacity(
-      trx, journal.id, ledgerAccountId, income,
-    )
+    const cap = await voucherCapacity(trx, voucher, ledgerAccountId, income)
+    if (!cap.companyId) {
+      throw validation('银行对账', { voucherId: ['来源单据不存在或尚未过账'] })
+    }
+    if (cap.companyId !== transaction.companyId) {
+      throw validation('银行对账', { voucherId: ['凭证与流水必须属于同一公司'] })
+    }
     const sideLabel = income ? '借方' : '贷方'
-    if (!lineTotal.gt(0)) {
+    if (!cap.total.gt(0)) {
       throw validation('银行对账', {
-        journalId: [`凭证不含该银行科目的${sideLabel}分录行,方向不匹配`],
+        voucherId: [`凭证不含该银行科目的${sideLabel}分录行,方向不匹配`],
       })
     }
+    const txnUsed = await reconciledTotal(trx, transaction.id)
     const txnRemaining = txnAmount(transaction.income, transaction.expense).sub(txnUsed)
     if (amount.gt(txnRemaining)) {
       throw validation('银行对账', {
         amount: [`超过流水未对账金额(剩余 ${txnRemaining.toFixed()})`],
       })
     }
-    const journalRemaining = lineTotal.sub(journalUsed)
+    const journalRemaining = cap.total.sub(cap.used)
     if (amount.gt(journalRemaining)) {
       throw validation('银行对账', {
         amount: [`超过凭证可对账余额(该科目${sideLabel}剩余 ${journalRemaining.toFixed()})`],
@@ -251,15 +315,18 @@ export function createReconOps(
     }
     try {
       const ins = await sql<{ id: string }>`
-        INSERT INTO acc_bank_reconciliation(amount,company_id,bank_transaction_id,journal_id)
-        VALUES (${amount.toFixed()},${transaction.companyId}::uuid,${transaction.id}::uuid,${journal.id}::uuid)
+        INSERT INTO acc_bank_reconciliation(
+          amount,company_id,bank_transaction_id,voucher_type,voucher_id,voucher_no)
+        VALUES (
+          ${amount.toFixed()},${transaction.companyId}::uuid,${transaction.id}::uuid,
+          ${voucher.type},${voucher.id}::uuid,${cap.voucherNo})
         RETURNING id
       `.execute(trx)
       await refreshBankTransaction(trx, transaction)
       const item = await loadRecon(trx, ins.rows[0]!.id, false)
       await writeAudit(trx, actor, {
         resource: 'acc_bank_reconciliation', recordId: item.id,
-        recordLabel: `${item.bankTransactionId}/${item.journalId}`,
+        recordLabel: `${item.bankTransactionId}/${item.voucherNo}`,
         companyId: item.companyId, actionType: 'create', actionName: 'create',
         changes: auditCreated(reconSnap(item), RECON_AUDIT),
       })
@@ -271,29 +338,30 @@ export function createReconOps(
   }
 
   async function createReconciliation(permit: Permit, input: {
-    bankTransactionId: string; journalId: string; amount: string
+    bankTransactionId: string; amount: string
+    journalId?: string | null
+    voucherType?: string | null
+    voucherId?: string | null
   }) {
     return withTx(db, async (trx) => {
       const transaction = await authorizedTransaction(trx, permit, input.bankTransactionId, true)
-      return createReconciliationLocked(trx, permit, transaction, input.journalId, input.amount)
+      return createReconciliationLocked(
+        trx, permit, transaction, resolveSourceVoucher(input), input.amount,
+      )
     })
   }
 
-  async function remaining(permit: Permit, bankTransactionId: string, journalId: string) {
+  async function remaining(permit: Permit, bankTransactionId: string, voucher: SourceVoucher) {
     const transaction = await authorizedTransaction(db, permit, bankTransactionId, false)
-    const journalRows = await sql<{ id: string; company_id: string }>`
-      SELECT id,company_id FROM acc_gl_journal WHERE id=${journalId}::uuid
-    `.execute(db)
-    const journal = journalRows.rows[0]
-    if (!journal || journal.company_id !== transaction.companyId) {
-      throw notFound('银行流水或凭证')
-    }
     const ledgerAccountId = await bankLedgerAccount(db, transaction, false)
     const txnUsed = await reconciledTotal(db, transaction.id)
-    const { total: lineTotal, used: journalUsed } = await journalCapacity(
-      db, journal.id, ledgerAccountId, transaction.income != null,
+    const cap = await voucherCapacity(
+      db, voucher, ledgerAccountId, transaction.income != null,
     )
-    let journalRemaining = lineTotal.sub(journalUsed)
+    if (cap.companyId && cap.companyId !== transaction.companyId) {
+      throw notFound('银行流水或凭证')
+    }
+    let journalRemaining = cap.total.sub(cap.used)
     if (journalRemaining.isNegative()) journalRemaining = decimal(0)
     const txnRemaining = txnAmount(transaction.income, transaction.expense).sub(txnUsed)
     const result = txnRemaining.lt(journalRemaining) ? txnRemaining : journalRemaining
@@ -332,7 +400,6 @@ export function createReconOps(
     return journal.id
   }
 
-  // 业务能力码：快速对账在银行语境下隐含创建+审核凭证；不要求 gl_journal 双码
   async function quickCreate(permit: Permit, input: {
     bankTransactionId: string; counterAccountId: string; amount: string
     summary?: string | null; postingDate: string
@@ -369,14 +436,15 @@ export function createReconOps(
         income: transaction.income != null,
         amount, summary: input.summary ?? null, postingDate: input.postingDate,
       })
-      return createReconciliationLocked(trx, permit, transaction, journalId, amount.toFixed())
+      return createReconciliationLocked(
+        trx, permit, transaction, { type: JOURNAL_VOUCHER, id: journalId }, amount.toFixed(),
+      )
     })
   }
 
   async function deleteReconciliation(permit: Permit, id: string) {
     const actor = permit.actor
     return withTx(db, async (trx) => {
-      // 加锁顺序：母行（流水）先行，再锁对账行
       const seed = await loadRecon(trx, id, false)
       const transaction = await authorizedTransaction(trx, permit, seed.bankTransactionId, true)
       const item = await loadRecon(trx, id, true)
@@ -386,7 +454,7 @@ export function createReconOps(
         await refreshBankTransaction(trx, transaction)
         await writeAudit(trx, actor, {
           resource: 'acc_bank_reconciliation', recordId: id,
-          recordLabel: `${item.bankTransactionId}/${item.journalId}`,
+          recordLabel: `${item.bankTransactionId}/${item.voucherNo}`,
           companyId: item.companyId, actionType: 'destroy', actionName: 'destroy',
           changes: auditDestroyed(reconSnap(item), RECON_AUDIT),
         })

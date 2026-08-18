@@ -782,6 +782,15 @@ export function createBillService(
           effect: async (trx, { before }) => {
             const tx = before as BillTransaction
             await loadBill(trx, tx.billId, true)
+            const linked = await sql<{ e: boolean }>`
+              SELECT EXISTS(
+                SELECT 1 FROM acc_bank_reconciliation
+                WHERE voucher_type=${VOUCHER} AND voucher_id=${tx.id}::uuid
+              ) AS e
+            `.execute(trx)
+            if (linked.rows[0]?.e) {
+              throw conflict('承兑交易已用于银行对账,请先解除对账')
+            }
             if (tx.transactionType !== 'REALLOCATE') {
               await gl.cancel(trx, { type: VOUCHER, id: tx.id })
             }

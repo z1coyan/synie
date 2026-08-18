@@ -385,7 +385,8 @@ run('PG 集成（扫荡 12：finance/accounting/hr 授权语义）', () => {
       .insertInto('acc_bank_reconciliation')
       .values({
         id: reconA, amount: '1000', company_id: companyA,
-        bank_transaction_id: txnA, journal_id: journalA,
+        bank_transaction_id: txnA,
+        voucher_type: 'acc.gl_journal', voucher_id: journalA, voucher_no: 'JA' + suffix,
       })
       .execute()
 

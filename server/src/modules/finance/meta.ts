@@ -674,9 +674,18 @@ export function bankReconciliationResourceMeta(): ResourceMeta {
         filterable: true, sortable: true,
         ref: { resource: 'accBankTransactions', relation: 'bankTransaction', labelField: 'summary' },
       }),
-      field('journal_id', 'journalId', 'fk', '凭证', {
+      field('voucher_type', 'voucherType', 'enum', '来源类型', {
         filterable: true, sortable: true,
-        ref: { resource: 'accGlJournals', relation: 'journal', labelField: 'voucherNo' },
+        enumOptions: [
+          { value: 'acc.gl_journal', label: '手工凭证' },
+          { value: 'acc.bill_transaction', label: '承兑交易' },
+        ],
+      }),
+      field('voucher_id', 'voucherId', 'uuid', '来源单据', {
+        filterable: true, sortable: true,
+      }),
+      field('voucher_no', 'voucherNo', 'string', '凭证号', {
+        filterable: true, sortable: true,
       }),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],

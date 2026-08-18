@@ -126,7 +126,7 @@ function FinanceReconcileSection({
       </div>
       <SynieDataGrid
         resource="accBankReconciliations"
-        columns={['journalId', 'amount', 'insertedAt']}
+        columns={['voucherNo', 'voucherType', 'amount', 'insertedAt']}
         // 内嵌于对账抽屉：禁止写 URL，避免污染宿主流水列表
         urlState={false}
         fixedFilter={{
@@ -212,16 +212,30 @@ function LinkJournalModal({
   txn: Row
   onChanged: () => void
 }) {
+  const [kind, setKind] = useState<'journal' | 'bill'>('journal')
   const [picked, setPicked] = useState<Row[]>([])
   const [amount, setAmount] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const queryClient = useQueryClient()
-  const journal = picked[0]
+  const pickedRow = picked[0]
+  const voucherType = kind === 'journal' ? 'acc.gl_journal' : 'acc.bill_transaction'
 
   const close = () => {
     setPicked([])
     setAmount(null)
     onOpenChange(false)
+  }
+
+  const pick = (rows: Row[]) => {
+    setPicked(rows)
+    const id = rows[0]?.id
+    if (!id) {
+      setAmount(null)
+      return
+    }
+    void fetchBankReconciliationRemaining(txn.id, { voucherType, voucherId: String(id) })
+      .then((value) => setAmount(Number(value)))
+      .catch(toastError('剩余额度查询失败'))
   }
 
   return (
@@ -232,40 +246,81 @@ function LinkJournalModal({
             <Modal.Heading>关联已有凭证</Modal.Heading>
           </Modal.Header>
           <Modal.Body>
-            <SynieDataGrid
-              resource="accGlJournals"
-              columns={[
-                'voucherNo',
-                'date',
-                'postingDate',
-                'remarks',
-                'debitTotal',
-                'creditTotal',
-              ]}
-              // pick 默认已关 URL；显式 false 作为契约文档
-              urlState={false}
-              fixedFilter={{
-                companyId: {
-                  kind: 'fk',
-                  values: [String(txn.companyId)],
-                  labels: [String(txn.companyId)],
-                },
-                status: { kind: 'enum', values: ['AUDITED'] },
-              }}
-              pick="single"
-              pickedRows={picked}
-              onPickChange={(rows) => {
-                setPicked(rows)
-                const id = rows[0]?.id
-                if (!id) {
+            <div className="mb-3 flex gap-2">
+              <Button
+                size="sm"
+                variant={kind === 'journal' ? undefined : 'secondary'}
+                onPress={() => {
+                  setKind('journal')
+                  setPicked([])
                   setAmount(null)
-                  return
-                }
-                void fetchBankReconciliationRemaining(txn.id, id)
-                  .then((value) => setAmount(Number(value)))
-                  .catch(toastError('剩余额度查询失败'))
-              }}
-            />
+                }}
+              >
+                手工凭证
+              </Button>
+              <Button
+                size="sm"
+                variant={kind === 'bill' ? undefined : 'secondary'}
+                onPress={() => {
+                  setKind('bill')
+                  setPicked([])
+                  setAmount(null)
+                }}
+              >
+                承兑贴现/兑付
+              </Button>
+            </div>
+            {kind === 'journal' ? (
+              <SynieDataGrid
+                resource="accGlJournals"
+                columns={[
+                  'voucherNo',
+                  'date',
+                  'postingDate',
+                  'remarks',
+                  'debitTotal',
+                  'creditTotal',
+                ]}
+                urlState={false}
+                fixedFilter={{
+                  companyId: {
+                    kind: 'fk',
+                    values: [String(txn.companyId)],
+                    labels: [String(txn.companyId)],
+                  },
+                  status: { kind: 'enum', values: ['AUDITED'] },
+                }}
+                pick="single"
+                pickedRows={picked}
+                onPickChange={pick}
+              />
+            ) : (
+              <SynieDataGrid
+                resource="accBillTransactions"
+                columns={[
+                  'docNo',
+                  'transactionType',
+                  'occurredOn',
+                  'amount',
+                  'interest',
+                  'netAmount',
+                  'remarks',
+                ]}
+                urlState={false}
+                fixedFilter={{
+                  companyId: {
+                    kind: 'fk',
+                    values: [String(txn.companyId)],
+                    labels: [String(txn.companyId)],
+                  },
+                  status: { kind: 'enum', values: ['AUDITED'] },
+                  transactionType: { kind: 'enum', values: ['DISCOUNT', 'SETTLE'] },
+                }}
+                pick="single"
+                pickedRows={picked}
+                onPickChange={pick}
+              />
+            )}
           </Modal.Body>
           <Modal.Footer>
             <NumberField
@@ -284,19 +339,19 @@ function LinkJournalModal({
               取消
             </Button>
             <Button
-              isDisabled={!journal || amount == null || amount <= 0}
+              isDisabled={!pickedRow || amount == null || amount <= 0}
               isPending={submitting}
               onPress={async () => {
-                if (!journal || amount == null) return
+                if (!pickedRow || amount == null) return
                 setSubmitting(true)
                 try {
-                  // 语义 command reconcile：row target + transport 仅在 CommandAdapter
                   await executeCommandWithInvalidation(
                     resourceBindingFor('accBankTransactions'),
                     'reconcile',
                     {
                       id: String(txn.id),
-                      journalId: String(journal.id),
+                      voucherType,
+                      voucherId: String(pickedRow.id),
                       amount: String(amount),
                     },
                     queryClient,

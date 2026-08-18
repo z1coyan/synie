@@ -103,9 +103,9 @@ export const RESOURCE_MANIFEST: ResourceManifest = {
   "accBankReconciliations": {
     "label": "银行流水",
     "lookup": {
-      "labelField": "id",
+      "labelField": "voucherNo",
       "searchFields": [
-        "id"
+        "voucherNo"
       ]
     },
     "wire": {

@@ -224,8 +224,18 @@ run('PG 集成（财务运营 12）', () => {
         (1, 1000, 0, ${journalId}::uuid, ${companyId}::uuid, ${accountBank}::uuid),
         (2, 0, 1000, ${journalId}::uuid, ${companyId}::uuid, ${accountCounter}::uuid)
     `.execute(db)
+    await sql`
+      INSERT INTO acc_gl_entry(posting_date,debit,credit,voucher_type,voucher_id,voucher_no,
+        company_id,account_id) VALUES
+        (${today}::date, 1000, 0, 'acc.gl_journal', ${journalId}::uuid, ${prefix + 'J1'},
+          ${companyId}::uuid, ${accountBank}::uuid),
+        (${today}::date, 0, 1000, 'acc.gl_journal', ${journalId}::uuid, ${prefix + 'J1'},
+          ${companyId}::uuid, ${accountCounter}::uuid)
+    `.execute(db)
 
-    const remaining = await banking.remaining(permit('accBankReconciliations'), txn.id, journalId)
+    const remaining = await banking.remaining(permit('accBankReconciliations'), txn.id, {
+      type: 'acc.gl_journal', id: journalId,
+    })
     expect(remaining.amount).toBe('1000')
 
     const recon = await banking.createReconciliation(permit('accBankReconciliations'), {
@@ -403,5 +413,84 @@ run('PG 集成（财务运营 12）', () => {
 
     // 作废接收应失败（后续已动）
     await expect(bills.voidTransaction(permit('accBillTransactions'), receive.id)).rejects.toThrow()
+  })
+
+  test('贴现过账后流水对到承兑交易', async () => {
+    const bankAcct = await bankAccounts.create(permit('accBankAccounts'), {
+      alias: prefix + '贴户',
+      bankName: '贴现银行',
+      holderName: '持有人',
+      accountNo: '6444' + suffix.slice(0, 8),
+      companyId,
+      currencyId,
+      accountId: accountBank,
+    })
+    const receive = await bills.createTransaction(permit('accBillTransactions'), {
+      transactionType: 'RECEIVE',
+      occurredOn: today,
+      subStart: 1,
+      subEnd: 100000,
+      amount: '1000',
+      partyType: 'CUSTOMER',
+      partyId: customerId,
+      companyId,
+      bankAccountId: bankAcct.id,
+      billAccountId: accountBill,
+      settleAccountId: accountSettle,
+      billAttrs: {
+        billNo: prefix + 'DISC',
+        billKind: 'BANK_ACCEPTANCE',
+        dueDate: due,
+        faceAmount: '1000',
+        transferable: true,
+      },
+    })
+    await bills.auditTransaction(permit('accBillTransactions'), receive.id, today)
+    const discount = await bills.createTransaction(permit('accBillTransactions'), {
+      transactionType: 'DISCOUNT',
+      occurredOn: today,
+      subStart: 1,
+      subEnd: 100000,
+      amount: '1000',
+      discountOrg: '宁波银行',
+      discountRate: '1.2',
+      interest: '10',
+      netAmount: '990',
+      companyId,
+      bankAccountId: bankAcct.id,
+      billId: receive.billId,
+      billAccountId: accountBill,
+      settleAccountId: accountBank,
+      interestAccountId: accountInterest,
+    })
+    await bills.auditTransaction(permit('accBillTransactions'), discount.id, today)
+
+    const inflow = await banking.createTransaction(permit('accBankTransactions'), {
+      occurredAt: new Date('2099-06-15T12:00:00Z').toISOString(),
+      income: '990',
+      companyId,
+      bankAccountId: bankAcct.id,
+      summary: '贴现收入',
+    })
+    const left = await banking.remaining(permit('accBankReconciliations'), inflow.id, {
+      type: 'acc.bill_transaction', id: discount.id,
+    })
+    expect(left.amount).toBe('990')
+
+    const recon = await banking.createReconciliation(permit('accBankReconciliations'), {
+      bankTransactionId: inflow.id,
+      voucherType: 'acc.bill_transaction',
+      voucherId: discount.id,
+      amount: '990',
+    })
+    expect(recon.voucherType).toBe('acc.bill_transaction')
+    expect(recon.voucherId).toBe(discount.id)
+    expect(recon.journalId).toBeNull()
+    const done = await banking.getTransaction(permit('accBankTransactions'), inflow.id)
+    expect(done.reconcileStatus).toBe('RECONCILED')
+
+    await expect(
+      bills.voidTransaction(permit('accBillTransactions'), discount.id),
+    ).rejects.toThrow(/银行对账/)
   })
 })

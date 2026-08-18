@@ -90,11 +90,14 @@ export const bankReconciliationClient = restTransport(
 
 export async function fetchBankReconciliationRemaining(
   bankTransactionId: string,
-  journalId: string,
+  voucher: { voucherType?: string; voucherId: string } | string,
 ) {
+  const source = typeof voucher === 'string'
+    ? { journalId: voucher }
+    : { voucherType: voucher.voucherType, voucherId: voucher.voucherId, journalId: voucher.voucherId }
   const result = await apiData(
     api.finance['bank-reconciliations'].remaining.$get({
-      query: { bankTransactionId, journalId },
+      query: { bankTransactionId, ...source },
     }),
   )
   return result.amount
@@ -115,13 +118,15 @@ export function quickCreateBankReconciliation(
 
 export type BankReconcileCommandInput = {
   id: string
-  journalId: string
+  journalId?: string
+  voucherType?: string
+  voucherId?: string
   amount: string | number
 }
 
 /**
  * accBankTransactions 语义命令：reconcile（非 export）。
- * row target：将流水与已审凭证对账；transport / payload 规范化仅在本 Adapter。
+ * row target：将流水与已过账来源单据对账；transport / payload 规范化仅在本 Adapter。
  * 快速新建凭证并对账仍走 quickCreateBankReconciliation（复合 UI 流程）。
  */
 export const bankTransactionCommandAdapter = createCommandAdapter({
@@ -133,17 +138,20 @@ export const bankTransactionCommandAdapter = createCommandAdapter({
       }
       const raw = input as Record<string, unknown>
       const id = decodeRowTarget({ id: raw.id })
-      const journalId = raw.journalId
-      if (typeof journalId !== 'string' || journalId.trim() === '') {
-        throw new Error('reconcile 需要 journalId')
+      const voucherId = typeof raw.voucherId === 'string' ? raw.voucherId.trim() : ''
+      const journalId = typeof raw.journalId === 'string' ? raw.journalId.trim() : ''
+      if (!voucherId && !journalId) {
+        throw new Error('reconcile 需要 voucherId')
       }
       if (raw.amount === undefined || raw.amount === null || raw.amount === '') {
         throw new Error('reconcile 需要 amount')
       }
       return bankReconciliationClient.create({
         bankTransactionId: id,
-        journalId,
         amount: String(raw.amount),
+        ...(voucherId
+          ? { voucherType: String(raw.voucherType ?? 'acc.gl_journal'), voucherId }
+          : { journalId }),
       })
     },
     { affectedResources: ['accBankReconciliations'] },

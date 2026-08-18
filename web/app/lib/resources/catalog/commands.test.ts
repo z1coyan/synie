@@ -155,7 +155,7 @@ describe('已迁移语义 CommandAdapter 契约', () => {
     ).rejects.toThrow()
     await expect(
       bankTransactionCommandAdapter.execute('reconcile', { id: 'a' } as never),
-    ).rejects.toThrow(/journalId/)
+    ).rejects.toThrow(/voucherId/)
   })
 
   test('createCommandAdapter 未知 key 失败', async () => {

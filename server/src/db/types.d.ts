@@ -115,8 +115,10 @@ export interface AccBankReconciliation {
   company_id: string;
   id: Generated<string>;
   inserted_at: Generated<Timestamp>;
-  journal_id: string;
   updated_at: Generated<Timestamp>;
+  voucher_id: string;
+  voucher_no: string;
+  voucher_type: string;
 }
 
 export interface AccBankTransaction {

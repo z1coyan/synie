@@ -33,6 +33,7 @@ import {
   BANK_TRANSACTION_RESOURCE,
   type BankingService,
 } from './banking-service.ts'
+import { resolveSourceVoucher } from './banking-recon.ts'
 import {
   EXPENSE_REPORT_ITEM_RESOURCE,
   EXPENSE_REPORT_RESOURCE,
@@ -327,16 +328,23 @@ export function bankReconciliationRoutes(deps: {
     .get('/remaining', authz.guard(BANK_RECONCILIATION_RESOURCE, 'read', {
         allOf: [codeOf(JOURNAL_RESOURCE_NAME, 'read')],
       }), zValidator('query', z.object({
-        bankTransactionId: z.string().uuid(), journalId: z.string().uuid(),
+        bankTransactionId: z.string().uuid(),
+        journalId: z.string().uuid().optional(),
+        voucherType: z.string().optional(),
+        voucherId: z.string().uuid().optional(),
       }).strict(), validationHook), async (c) => {
       const q = c.req.valid('query')
-      return c.json(await banking.remaining(permitOf(c), q.bankTransactionId, q.journalId))
+      const voucher = resolveSourceVoucher(q)
+      return c.json(await banking.remaining(permitOf(c), q.bankTransactionId, voucher))
     })
     .get('/:id', reconGuard('read'), zValidator('param', idParam, validationHook), async (c) => {
       return c.json(await banking.getReconciliation(permitOf(c), c.req.valid('param').id))
     })
     .post('/', commandGuard(), zValidator('json', z.object({
-      bankTransactionId: z.string().uuid(), journalId: z.string().uuid(), amount: z.string(),
+      bankTransactionId: z.string().uuid(), amount: z.string(),
+      journalId: z.string().uuid().optional(),
+      voucherType: z.string().optional(),
+      voucherId: z.string().uuid().optional(),
     }).strict(), validationHook), async (c) => {
       const item = await banking.createReconciliation(permitOf(c), c.req.valid('json'))
       return c.json(item, 201)
