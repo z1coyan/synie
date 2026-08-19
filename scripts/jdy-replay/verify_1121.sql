@@ -9,13 +9,13 @@
 
 \echo '===== verify_1121: 科目 vs 持有（按公司）。不对 AR/AP 报表 ====='
 
--- W4 把 voucher_no 换成实号；金额 2217.64 先按金额认
+-- 白名单实号 A(J)-20260514-0030；金额 2217.64 同时按金额认
 CREATE TEMP TABLE IF NOT EXISTS replay_1121_whitelist (
   voucher_no text,
   amount numeric NOT NULL
 );
 INSERT INTO replay_1121_whitelist (voucher_no, amount)
-SELECT NULL, 2217.64
+SELECT 'A(J)-20260514-0030', 2217.64
 WHERE NOT EXISTS (SELECT 1 FROM replay_1121_whitelist);
 
 WITH gl AS (

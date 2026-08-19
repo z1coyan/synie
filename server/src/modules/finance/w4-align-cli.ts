@@ -513,8 +513,9 @@ export async function main(argv: string[]): Promise<void> {
     }
     seq = 0
     for (const item of plan.expense_journals) {
-      const tail = item.ticket.replace(/\D/g, '').slice(-6) || String(++seq).padStart(4, '0')
-      const voucherNo = `A(J)-${ymd(item.date)}-W4X${item.customer_code}-${tail}`
+      const tail = (item.ticket ?? '').replace(/\D/g, '').slice(-6) || String(++seq).padStart(4, '0')
+      const voucherNo =
+        item.voucher_no ?? `A(J)-${ymd(item.date)}-W4X${item.customer_code}-${tail}`
       await postOne('expense', voucherNo, {
         voucherNo,
         date: item.date,

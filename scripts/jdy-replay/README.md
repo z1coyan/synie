@@ -35,8 +35,19 @@ bun scripts/jdy-replay/w4_align_customer_bills.ts --plan .scratch/replay/w4_alig
 ```bash
 bun scripts/jdy-replay/w4j_journals.ts --apply   # YHDZ/科目错挂
 bun scripts/jdy-replay/w4m_mixed.ts --apply      # 混合户 13 行
-bun scripts/jdy-replay/w4_1121_reclass.ts --apply # 剩余 YHDZ 1121→3104
+bun scripts/jdy-replay/w4_1121_reclass.ts --apply # 剩余 YHDZ 1121→3104（会留 R21B 双挂；终态用 nail）
 ```
+
+钉 1121（K13：白名单外 journal 1121 = 0，科目 = 持有 ± 2217.64）。`w4_1121_reclass` 的 R21B 对冲**不** cancel 原 YHDZ，不能当终态。生产必须 `--allow-prod`，且先 dump、等人点头：
+
+```bash
+# 默认 dry-run；只许 synie_replay_check，或 --allow-prod 对生产
+bun scripts/jdy-replay/w4_1121_nail.ts
+bun scripts/jdy-replay/w4_1121_nail.ts --apply
+bun scripts/jdy-replay/w4_1121_nail.ts --apply --allow-prod
+```
+
+做的事：YHDZ 1121 贷方改挂 3104（正泰智能 `A(J)-20201130-0002` 改挂 1122 再 `journals.cancel` W4J23，1122 净额不变）；`journals.cancel` 全部 R21/R21B；票据补记两张 1121 借方改挂 3104（保留 贷1122，禁止 cancel）；票 `630252103816920251209101186411` 两张洗分录接收贷方 1121→3104。禁止 `replayBill` / void 持有 / `INSERT acc_gl_entry`。闸：持有 31 张金额不变；客户 1122 行数与合计不变。
 
 接收过账日按简道云收入日改（任意时点）：`.scratch/replay/w4_fix_receive_dates.sql`（127 笔）。
 
