@@ -19,18 +19,40 @@ const ACTOR = '99e3e4f6-e208-4bb9-904c-72299808a8e7'
 const BILL_VOUCHER = 'acc.bill_transaction'
 const gl = createGlEngine()
 
+interface ReceiveUntarget {
+  tx_id: string
+  settle: '2202' | '3104'
+  party_type?: 'supplier' | 'company' | 'customer'
+  supplier_code?: string
+  party_id?: string
+  ticket?: string
+  amount?: string
+}
+
+interface JournalItem {
+  date: string
+  company: string
+  customer_code: string
+  amount: string
+  ticket?: string
+  src_voucher_no?: string
+  voucher_no?: string
+}
+
 interface Plan {
   endorse_reclass: string[]
-  endorse_restore?: string[]
+  endorse_restore: string[]
   receive_retarget: { tx_id: string; customer_code: string; company: string; ticket: string; amount: string }[]
-  split_journals: { date: string; company: string; customer_code: string; amount: string; ticket: string }[]
-  ar_reclass_1123: { date: string; company: string; customer_code: string; amount: string; src_voucher_no: string }[]
-  expense_journals: { date: string; company: string; customer_code: string; amount: string; ticket: string }[]
+  receive_untarget: ReceiveUntarget[]
+  split_journals: JournalItem[]
+  ar_reclass_1123: JournalItem[]
+  expense_journals: JournalItem[]
 }
 
 interface Counts {
   endorse: { ok: number; skip: number; error: number }
   retarget: { ok: number; skip: number; error: number }
+  untarget: { ok: number; skip: number; error: number }
   journals: { ok: number; skip: number; error: number }
 }
 
@@ -51,8 +73,16 @@ function parseArgs(argv: string[]): { planPath: string; apply: boolean } {
 }
 
 function loadPlan(path: string): Plan {
-  const raw = JSON.parse(readFileSync(path, 'utf8')) as Plan
-  return raw
+  const raw = JSON.parse(readFileSync(path, 'utf8')) as Partial<Plan>
+  return {
+    endorse_reclass: raw.endorse_reclass ?? [],
+    endorse_restore: raw.endorse_restore ?? [],
+    receive_retarget: raw.receive_retarget ?? [],
+    receive_untarget: raw.receive_untarget ?? [],
+    split_journals: raw.split_journals ?? [],
+    ar_reclass_1123: raw.ar_reclass_1123 ?? [],
+    expense_journals: raw.expense_journals ?? [],
+  }
 }
 
 // kysely / withTx 句柄都能跑 sql`` 与 gl.post
@@ -74,6 +104,15 @@ async function customerId(db: Db, code: string): Promise<string> {
   `.execute(db)
   const id = row.rows[0]?.id
   if (!id) throw new Error(`找不到客户 ${code}`)
+  return id
+}
+
+async function supplierId(db: Db, code: string): Promise<string> {
+  const row = await sql<{ id: string }>`
+    SELECT id FROM pur_supplier WHERE code = ${code} LIMIT 1
+  `.execute(db)
+  const id = row.rows[0]?.id
+  if (!id) throw new Error(`找不到供应商 ${code}`)
   return id
 }
 
@@ -185,6 +224,7 @@ export async function main(argv: string[]): Promise<void> {
   const counts: Counts = {
     endorse: { ok: 0, skip: 0, error: 0 },
     retarget: { ok: 0, skip: 0, error: 0 },
+    untarget: { ok: 0, skip: 0, error: 0 },
     journals: { ok: 0, skip: 0, error: 0 },
   }
   console.log(
@@ -193,8 +233,9 @@ export async function main(argv: string[]): Promise<void> {
       msg: 'w4_align_start',
       apply,
       endorse: plan.endorse_reclass.length,
-      restore: plan.endorse_restore?.length ?? 0,
+      restore: plan.endorse_restore.length,
       retarget: plan.receive_retarget.length,
+      untarget: plan.receive_untarget.length,
       split: plan.split_journals.length,
       ar1123: plan.ar_reclass_1123.length,
       expense: plan.expense_journals.length,
@@ -264,7 +305,7 @@ export async function main(argv: string[]): Promise<void> {
       }
     }
 
-    for (const id of plan.endorse_restore ?? []) {
+    for (const id of plan.endorse_restore) {
       try {
         const action = await withTx(db, async (trx) => {
           const row = await sql<{ settle: string }>`
@@ -356,6 +397,68 @@ export async function main(argv: string[]): Promise<void> {
       }
     }
 
+    for (const item of plan.receive_untarget) {
+      try {
+        await withTx(db, async (trx) => {
+          const row = await sql<{ ptyp: string; settle: string; party: string }>`
+            SELECT lower(coalesce(t.party_type,'')) AS ptyp, sa.code AS settle,
+                   coalesce(t.party_id::text,'') AS party
+            FROM acc_bill_transaction t
+            JOIN bas_account sa ON sa.id = t.settle_account_id
+            WHERE t.id = ${item.tx_id}::uuid
+          `.execute(trx)
+          const cur = row.rows[0]
+          if (!cur) throw new Error('交易不存在')
+          let nextPartyType = item.party_type ?? cur.ptyp
+          let nextPartyId = item.party_id ?? (cur.party || null)
+          if (item.party_type === 'supplier') {
+            if (!item.supplier_code) throw new Error('receive_untarget supplier 需要 supplier_code')
+            nextPartyId = await supplierId(trx, item.supplier_code)
+          } else if (item.party_type === 'company') {
+            if (!item.party_id) throw new Error('receive_untarget company 需要 party_id')
+            nextPartyId = item.party_id
+          } else if (item.party_type === 'customer') {
+            if (!item.party_id) throw new Error('receive_untarget customer 需要 party_id')
+            nextPartyId = item.party_id
+          }
+          const sameParty =
+            nextPartyType === cur.ptyp && (nextPartyId ?? '') === cur.party
+          if (cur.settle === item.settle && sameParty) {
+            counts.untarget.skip++
+            return
+          }
+          const remarkSuffix = ` W4撤销改挂${item.settle}`
+          await gl.cancel(trx, { type: BILL_VOUCHER, id: item.tx_id })
+          await sql`
+            UPDATE acc_bill_transaction t
+            SET party_type = ${nextPartyType},
+                party_id = ${nextPartyId}::uuid,
+                settle_account_id = a.id,
+                remarks = left(coalesce(t.remarks,'') || ${remarkSuffix}, 500),
+                updated_at = (now() AT TIME ZONE 'utc')
+            FROM bas_account a
+            WHERE t.id = ${item.tx_id}::uuid
+              AND a.company_id = t.company_id AND a.code = ${item.settle}
+          `.execute(trx)
+          await sql`
+            INSERT INTO sys_audit_log (resource, record_id, action_type, action_name, actor_id, company_id, changes)
+            SELECT 'accBillTransactions', t.id, 'update', 'w4_align_receive_untarget', ${ACTOR}::uuid,
+                   t.company_id, jsonb_build_object(
+                     'settle', ${item.settle}::text,
+                     'party_type', ${nextPartyType}::text
+                   )
+            FROM acc_bill_transaction t WHERE t.id = ${item.tx_id}::uuid
+          `.execute(trx)
+        })
+        await bills.backfillPostedGL(permit, item.tx_id)
+        counts.untarget.ok++
+      } catch (err) {
+        counts.untarget.error++
+        const detail = err instanceof Error ? err.message : String(err)
+        console.log(JSON.stringify({ level: 'error', msg: 'untarget_failed', id: item.tx_id, error: detail }))
+      }
+    }
+
     let seq = 0
     const postOne = async (
       kind: string,
@@ -375,7 +478,9 @@ export async function main(argv: string[]): Promise<void> {
 
     for (const item of plan.split_journals) {
       seq++
-      const voucherNo = `A(J)-${ymd(item.date)}-W4S${String(seq).padStart(4, '0')}`
+      const tail = (item.ticket ?? '').replace(/\D/g, '').slice(-6) || String(seq).padStart(4, '0')
+      const voucherNo =
+        item.voucher_no ?? `A(J)-${ymd(item.date)}-W4B${item.customer_code}-${tail}`
       await postOne('split', voucherNo, {
         voucherNo,
         date: item.date,
@@ -425,7 +530,9 @@ export async function main(argv: string[]): Promise<void> {
     }
 
     console.log(JSON.stringify({ level: 'info', msg: 'w4_align_done', ...counts }))
-    if (counts.endorse.error + counts.retarget.error + counts.journals.error > 0) {
+    if (
+      counts.endorse.error + counts.retarget.error + counts.untarget.error + counts.journals.error > 0
+    ) {
       process.exitCode = 1
     }
   } finally {

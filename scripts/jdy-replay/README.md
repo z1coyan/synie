@@ -28,7 +28,14 @@ bun scripts/jdy-replay/w4_align_customer_bills.ts --plan .scratch/replay/w4_alig
 bun scripts/jdy-replay/w4_align_customer_bills.ts --plan .scratch/replay/w4_align_plan.json --apply
 ```
 
-做的事：非 K16 客户 ENDORSE 改结算 3104 再补过；1:1 供应商接收改挂客户 1122；同票拆段 / 主集 1123 回款 / 未落地客户支出走有日期的改挂凭证。禁止 `replayBill`。
+做的事：非 K16 客户 ENDORSE 改结算 3104 再补过；1:1 供应商接收改挂客户 1122；`receive_untarget` 撤销误贷；同票拆段 / 主集 1123 回款 / 未落地客户支出走有日期的改挂凭证。禁止 `replayBill`。
+
+彩排收口一次性脚本（同样 `--apply` 才写）：
+
+```bash
+bun scripts/jdy-replay/w4j_journals.ts --apply   # YHDZ/科目错挂
+bun scripts/jdy-replay/w4m_mixed.ts --apply      # 混合户 13 行
+```
 
 ## formula_asof.py
 
