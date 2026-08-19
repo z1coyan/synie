@@ -35,7 +35,10 @@ bun scripts/jdy-replay/w4_align_customer_bills.ts --plan .scratch/replay/w4_alig
 ```bash
 bun scripts/jdy-replay/w4j_journals.ts --apply   # YHDZ/科目错挂
 bun scripts/jdy-replay/w4m_mixed.ts --apply      # 混合户 13 行
+bun scripts/jdy-replay/w4_1121_reclass.ts --apply # 剩余 YHDZ 1121→3104
 ```
+
+接收过账日按简道云收入日改（任意时点）：`.scratch/replay/w4_fix_receive_dates.sql`（127 笔）。
 
 ## formula_asof.py
 
