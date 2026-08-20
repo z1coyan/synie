@@ -228,7 +228,11 @@ test("行情 Grid、Drawer、图表与远程选择器全程使用 Go REST", asyn
     const filterQueriesBefore = restRequests.filter(
       (entry) => entry === "POST /api/v1/base/market-instruments/query",
     ).length;
-    await priceGrid.getByRole("button", { name: "筛选 行情品种" }).click();
+    await page.getByRole("button", { name: "筛选", exact: true }).click();
+    await page
+      .getByRole("listbox", { name: "可筛选字段" })
+      .getByRole("option", { name: "行情品种", exact: true })
+      .click();
     const filterDialog = page.getByRole("dialog", { name: "行情品种" });
     await expect(filterDialog).toBeVisible();
     const filterPicker = filterDialog.getByRole("group");
