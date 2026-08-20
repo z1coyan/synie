@@ -128,8 +128,8 @@ describe('声明校验 fail-closed', () => {
 
 describe('supportedScopes 投影', () => {
   test('无 owner/dept 声明的资源只支持 all', () => {
-    expect(supportedScopesOf(metaOf('salOrders'))).toEqual(['all'])
     expect(supportedScopesOf(metaOf('basCurrencies'))).toEqual(['all'])
+    expect(supportedScopesOf(metaOf('invWarehouses'))).toEqual(['all'])
   })
 
   test('via 资源不拥有自己的范围（判定递归宿主）', () => {
@@ -147,21 +147,40 @@ describe('supportedScopes 投影', () => {
         ...base,
         authz: { kind: 'company', owner: {}, dept: { mode: 'stamped' } },
       }),
-    ).toEqual(['all', 'deptTree', 'dept', 'self'])
+    ).toEqual(['all', 'deptTree', 'self'])
   })
 
-  test('权限目录携带 supportedScopes；声明了 owner/dept 的前缀才多出 self / dept 维度', () => {
-    // sys.file 绑 owner=上传者；mfg.demand 指派部门、mfg.work_order 归属部门（工单 07 试点）
-    const expected: Record<string, DataScope[]> = {
-      'sys.file': ['all', 'self'],
-      'mfg.demand': ['all', 'deptTree', 'dept'],
-      'mfg.work_order': ['all', 'deptTree', 'dept'],
-    }
+  test('权限目录携带 supportedScopes；有 dept 出 deptTree、有 owner 出 self，不再广告 dept', () => {
     const groups = registry.permissionCatalog()
     expect(groups.length).toBeGreaterThan(0)
-    for (const group of groups) {
-      expect(group.supportedScopes).toEqual(expected[group.prefix] ?? ['all'])
+    const byPrefix = new Map<string, DataScope[]>()
+    for (const meta of all) {
+      const own = supportedScopesOf(meta)
+      if (own.length === 0) continue
+      const prev = byPrefix.get(meta.permissionPrefix)
+      byPrefix.set(
+        meta.permissionPrefix,
+        prev ? prev.filter((scope) => own.includes(scope)) : own,
+      )
     }
+    for (const group of groups) {
+      expect(group.supportedScopes.includes('dept'), `${group.prefix} 不得广告 leftover dept`).toBe(
+        false,
+      )
+      expect(group.supportedScopes).toEqual(byPrefix.get(group.prefix) ?? ['all'])
+    }
+    expect(groups.find((g) => g.prefix === 'sys.file')?.supportedScopes).toEqual(['all', 'self'])
+    expect(groups.find((g) => g.prefix === 'mfg.demand')?.supportedScopes).toEqual([
+      'all',
+      'deptTree',
+      'self',
+    ])
+    expect(groups.find((g) => g.prefix === 'mfg.work_order')?.supportedScopes).toEqual([
+      'all',
+      'deptTree',
+      'self',
+    ])
+    expect(groups.find((g) => g.prefix === 'sales.order')?.supportedScopes).toEqual(['all', 'self'])
   })
 
   test('assigned/stamped 两形态都开放 dept 维度，绑定列各归各的声明', () => {
@@ -177,12 +196,13 @@ describe('supportedScopes 投影', () => {
     expect(supportedScopesOf(metaOf('mfgDemandItems'))).toEqual([])
   })
 
-  test('库存三单据与分录只出 all（无 owner/dept 绑定，矩阵不得授出行级范围）', () => {
-    for (const name of ['invStockDocs', 'invStockTransfers', 'invStockCounts', 'invStockEntries']) {
-      expect([name, supportedScopesOf(metaOf(name))]).toEqual([name, ['all']])
-      const binding = resolveAuthzBinding(metaOf(name))
-      expect([name, binding.owner, binding.dept]).toEqual([name, undefined, undefined])
+  test('库存三单据开放 self（有 createdBy）；分录仍只出 all', () => {
+    for (const name of ['invStockDocs', 'invStockTransfers', 'invStockCounts']) {
+      expect([name, supportedScopesOf(metaOf(name))]).toEqual([name, ['all', 'self']])
+      expect(resolveAuthzBinding(metaOf(name)).owner).toEqual({ column: DEFAULT_OWNER_COLUMN })
     }
+    expect(supportedScopesOf(metaOf('invStockEntries'))).toEqual(['all'])
+    expect(resolveAuthzBinding(metaOf('invStockEntries')).owner).toBeUndefined()
     // 单据行随母单（via），自身不拥有范围
     for (const name of ['invStockDocItems', 'invStockTransferItems', 'invStockCountItems']) {
       expect([name, supportedScopesOf(metaOf(name))]).toEqual([name, []])
@@ -218,6 +238,13 @@ describe('supportedScopes 投影', () => {
     ]) {
       expect([name, supportedScopesOf(metaOf(name))]).toEqual([name, []])
     }
+  })
+
+  test('发票目录不授出 reverse 第九动作；红冲折进 create', () => {
+    const group = registry.permissionCatalog().find((g) => g.prefix === 'acc.vat_invoice')
+    expect(group).toBeDefined()
+    expect(group!.actions).not.toContain('reverse')
+    expect(group!.actions).toEqual(expect.arrayContaining(['create', 'void']))
   })
 
   test('via 的挂接资源与文件同前缀，不新增权限码', () => {

@@ -200,14 +200,14 @@ export function orderHeadMeta(side: TradingSide): ResourceMeta {
     { key: 'update', label: '编辑', scope: 'row' },
     { key: 'delete', label: '删除', scope: 'row', isDanger: true },
     { key: 'audit', label: '审核', scope: 'row'},
-    { key: 'close', label: '关闭', scope: 'row'},
+    { key: 'close', label: '关闭', scope: 'row', permissionAction: 'audit' },
     { key: 'void', label: '作废', scope: 'row', isDanger: true },
   ]
   if (side === 'sales') {
     actions.push(
       { key: 'print', label: '打印', scope: 'row' },
       { key: 'export', label: '导出', scope: 'both' },
-      { key: 'batch_print', label: '批量打印', scope: 'bulk' },
+      { key: 'batch_print', label: '批量打印', scope: 'bulk', permissionAction: 'print' },
     )
   }
   return {
@@ -217,7 +217,7 @@ export function orderHeadMeta(side: TradingSide): ResourceMeta {
     numbering: true,
     permissionLabel: spec.label,
     table: spec.headTable,
-    authz: { kind: 'company' },
+    authz: { kind: 'company', owner: {} },
     fields,
     actions,
     print: side === 'sales',

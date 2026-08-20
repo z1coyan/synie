@@ -468,7 +468,7 @@ run('PG 集成（扫荡 10：trading 销/采全链与 scm orderflow 授权语义
     expect(noCodeGet.status).toBe(403)
   })
 
-  test('矩阵可授范围：trading 前缀均无 owner/dept 绑定，supportedScopes 只有 all', async () => {
+  test('矩阵可授范围：trading 单据有 createdBy，supportedScopes 为 all+self', async () => {
     const res = await get('/meta/permission-catalog', traderHeaders)
     expect(res.status).toBe(200)
     const body = (await res.json()) as {
@@ -480,7 +480,10 @@ run('PG 集成（扫荡 10：trading 销/采全链与 scm orderflow 授权语义
     )
     expect(tradingPrefixes.length).toBeGreaterThan(0)
     for (const group of tradingPrefixes) {
-      expect([group.prefix, group.supportedScopes ?? ['all']]).toEqual([group.prefix, ['all']])
+      expect([group.prefix, group.supportedScopes ?? ['all']]).toEqual([
+        group.prefix,
+        ['all', 'self'],
+      ])
     }
   })
 })

@@ -5,7 +5,7 @@ export const HR_ATTENDANCE_DAY = {
   prefix: 'hr.attendance_day',
   read: 'hr.attendance_day:read',
   /** 按区间重算（collection command） */
-  recalc: 'hr.attendance_day:recalc',
+  recalc: 'hr.attendance_day:update',
 } as const
 
 export type HrAttendanceDayPermission =

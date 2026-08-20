@@ -186,7 +186,9 @@ export function salesReturnHeadRoutes(deps: ReturnsRouteDeps) {
   const RESOURCE = returnSpec('sales').headResource
   return returnHeadRoutes({ ...deps, side: 'sales' }).post(
     '/:id/generate-replenishment',
-    authz.guard(RESOURCE, 'generate_replenishment'),
+    authz.guard(RESOURCE, 'read', {
+      allOf: [`${authz.targetOf('mfgDemands').prefix}:create`],
+    }),
     zValidator('param', idParam, validationHook),
     async (c) => c.json(await returns.generateReplenishment(permitOf(c), c.req.valid('param').id)),
   )

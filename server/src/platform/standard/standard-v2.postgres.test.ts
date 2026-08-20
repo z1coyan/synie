@@ -56,8 +56,8 @@ const crud = [
   { key: 'create', label: '新建', scope: 'row' as const },
   { key: 'update', label: '编辑', scope: 'row' as const },
   { key: 'delete', label: '删除', scope: 'row' as const },
-  { key: 'batch_update', label: '批量编辑', scope: 'bulk' as const },
-  { key: 'batch_delete', label: '批量删除', scope: 'bulk' as const },
+  { key: 'batch_update', label: '批量编辑', scope: 'bulk' as const, permissionAction: 'update' },
+  { key: 'batch_delete', label: '批量删除', scope: 'bulk' as const, permissionAction: 'delete' },
 ]
 
 const statusOptions = [

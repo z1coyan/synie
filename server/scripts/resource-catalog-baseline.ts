@@ -102,14 +102,12 @@ function main() {
           'read',
           'create',
           'update',
+          'audit',
           'delete',
-          'print',
-          'import',
+          'void',
           'export',
-          'batch_delete',
-          'batch_update',
-          'batch_print',
-        ].includes(a.key),
+          'print',
+        ].includes(a.permissionAction ?? a.key),
     )
     return {
       name: r.name,

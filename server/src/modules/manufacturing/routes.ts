@@ -851,14 +851,14 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .post(
         '/demands/:id/confirm',
-        demandGuard('confirm'),
+        demandGuard('audit'),
         zValidator('param', idParam, validationHook),
         async (c) =>
           c.json(demandWire(await demands.confirmDemand(permitOf(c), c.req.valid('param').id))),
       )
       .post(
         '/demands/:id/close',
-        demandGuard('close'),
+        demandGuard('audit'),
         zValidator('param', idParam, validationHook),
         async (c) =>
           c.json(demandWire(await demands.closeDemand(permitOf(c), c.req.valid('param').id))),
@@ -874,7 +874,7 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       // 可同时改指派类型与下发车间，合并后过联动校验
       .post(
         '/demands/:id/dispatch',
-        demandGuard('dispatch'),
+        demandGuard('update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -1290,18 +1290,18 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       // 与动作同码（限定入口），只读不写
       .get(
         '/work-orders/:id/material-demand-preview',
-        workOrderGuard('generate_material_demand'),
+        workOrderGuard('read', { allOf: [codeOf(DEMAND_RESOURCE, 'create')] }),
         zValidator('param', idParam, validationHook),
         async (c) =>
           c.json(
             await workOrders.getMaterialDemandPreview(permitOf(c), c.req.valid('param').id),
           ),
       )
-      // 生成物料需求：限定入口——guard 只认工单动作码（不 allOf mfg.demand:*），
-      // 需求单头/行由服务内受信任写落库（单事务，任一失败整体回滚）
+      // 生成物料需求：不再是工单动作。用户以 mfg.demand:create 建需求；
+      // 工单只要求可读（装载来源），需求单头/行由服务内受信任写落库。
       .post(
         '/work-orders/:id/generate-material-demand',
-        workOrderGuard('generate_material_demand'),
+        workOrderGuard('read', { allOf: [codeOf(DEMAND_RESOURCE, 'create')] }),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',

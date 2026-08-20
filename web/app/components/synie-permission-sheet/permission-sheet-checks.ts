@@ -7,6 +7,7 @@ import {
   groupByDomain,
   groupCodes,
   initialGrants,
+  scopeOptionsForGrant,
   scopeOptionsOf,
   searchGroups,
   splitActions,
@@ -28,7 +29,7 @@ function eq(actual: unknown, expected: unknown, label: string) {
 const catalog: CatalogGroup[] = [
   { prefix: 'sys.role', label: '角色', actions: ['create', 'read', 'update', 'delete'], supportedScopes: ['all'] },
   { prefix: 'sys.audit_log', actions: ['read'], supportedScopes: ['all'] },
-  { prefix: 'mfg.demand', label: '需求单', actions: ['create', 'read', 'audit'], supportedScopes: ['all', 'deptTree', 'dept'] },
+  { prefix: 'mfg.demand', label: '需求单', actions: ['create', 'read', 'audit'], supportedScopes: ['all', 'deptTree', 'self'] },
   { prefix: 'sys.file', label: '附件', actions: ['read'], supportedScopes: ['all', 'self'] },
 ]
 
@@ -36,15 +37,15 @@ const catalog: CatalogGroup[] = [
 eq(groupByDomain(catalog).map((b) => b.domain), ['sys', 'mfg'], 'groupByDomain 域顺序')
 eq(groupByDomain(catalog)[0].groups.map((g) => g.prefix), ['sys.role', 'sys.audit_log', 'sys.file'], 'groupByDomain 组内顺序')
 
-// —— splitActions:固定列 10 动作规范序在前,其余(工作流码)进"更多" ——
-eq(CANONICAL_ACTIONS.length, 10, '固定列恰为默认动作集 10 列')
+// —— splitActions:固定列八动作规范序在前,其余进"更多" ——
+eq(CANONICAL_ACTIONS.length, 8, '固定列恰为封闭八动作')
 eq(
   splitActions(['read', 'audit', 'create', 'batch_print']),
-  { fixed: ['create', 'read', 'batch_print'], extra: ['audit'] },
+  { fixed: ['read', 'create', 'audit'], extra: ['batch_print'] },
   'splitActions 固定列规范序+额外动作原序'
 )
-eq(splitActions(['create', 'read']), { fixed: ['create', 'read'], extra: [] }, 'splitActions 无额外动作')
-eq(splitActions(['audit', 'close']), { fixed: [], extra: ['audit', 'close'] }, 'splitActions 纯工作流动作')
+eq(splitActions(['create', 'read']), { fixed: ['read', 'create'], extra: [] }, 'splitActions 无额外动作')
+eq(splitActions(['audit', 'close']), { fixed: ['audit'], extra: ['close'] }, 'splitActions 折叠后的命令键进更多')
 
 // —— triState:checked 只需能回答 has(code)（Set 与 Map 均可） ——
 const codes3 = ['sys.role:create', 'sys.role:read', 'sys.role:update']
@@ -63,15 +64,23 @@ eq(searchGroups(catalog, '  角色  ', labelOf).map((g) => g.prefix), ['sys.role
 eq(searchGroups(catalog, '', labelOf), [], 'searchGroups 空关键词不过滤(调用方据此退回域视图)')
 eq(searchGroups(catalog, '不存在', labelOf), [], 'searchGroups 无命中')
 
-// —— scopeOptionsOf:仅 all/空集不渲染范围控件；多维度按 supportedScopes 过滤且恒含 all ——
+// —— scopeOptionsOf:仅 all/空集不渲染范围控件；目录不再广告 leftover dept ——
 eq(scopeOptionsOf(catalog[0]), null, 'scopeOptionsOf 仅 all 返回 null（global 资源无范围控件）')
 eq(scopeOptionsOf({ prefix: 'x.y', actions: ['read'], supportedScopes: [] }), null, 'scopeOptionsOf 空集返回 null')
-eq(scopeOptionsOf(catalog[2]), ['all', 'deptTree', 'dept'], 'scopeOptionsOf 部门维度全量')
+eq(scopeOptionsOf(catalog[2]), ['all', 'deptTree', 'self'], 'scopeOptionsOf 部门+属主维度')
 eq(scopeOptionsOf(catalog[3]), ['all', 'self'], 'scopeOptionsOf owner 维度')
 eq(
   scopeOptionsOf({ prefix: 'x.z', actions: ['read'], supportedScopes: ['dept'] }),
-  ['all', 'dept'],
-  'scopeOptionsOf 缺 all 时补上（恒含 all）'
+  null,
+  'scopeOptionsOf leftover dept 不作为新授选项'
+)
+eq(
+  scopeOptionsForGrant(
+    { prefix: 'mfg.demand', actions: ['read'], supportedScopes: ['all', 'deptTree', 'self'] },
+    'dept',
+  ),
+  ['all', 'deptTree', 'self', 'dept'],
+  'scopeOptionsForGrant leftover dept 可回读'
 )
 eq(
   // 模拟 wire 上的非法值（granted 第一期不开放）：类型外注入，验证运行时过滤
@@ -82,7 +91,7 @@ eq(
 eq(
   Object.keys(SCOPE_LABELS).sort(),
   ['all', 'dept', 'deptTree', 'self'],
-  'SCOPE_LABELS 覆盖四个 DataScope'
+  'SCOPE_LABELS 覆盖四个 DataScope（含 leftover dept）'
 )
 
 // —— initialGrants:目录内精确码 → scope；目录外码不收 ——
@@ -93,7 +102,7 @@ const rows1: GrantedRow[] = [
 ]
 const grants1 = initialGrants(catalog, rows1)
 eq(grants1.get('sys.role:read'), 'all', 'initialGrants 精确码带范围')
-eq(grants1.get('mfg.demand:read'), 'dept', 'initialGrants dept 范围回读')
+eq(grants1.get('mfg.demand:read'), 'dept', 'initialGrants leftover dept 范围回读')
 eq(grants1.has('legacy.thing:read'), false, 'initialGrants 目录外码不收')
 eq(grants1.has('sys.role:create'), false, 'initialGrants 未授予不勾')
 eq(grants1.size, 2, 'initialGrants 只收目录内码')
@@ -111,15 +120,15 @@ eq(
     { permission: 'mfg.demand:create', scope: 'deptTree' },
     { permission: 'mfg.demand:read', scope: 'dept' },
   ],
-  'buildSubmit 同资源不同码各自带范围'
+  'buildSubmit leftover dept 不钳成 all'
 )
 // 提交集顺序 = catalog 序（与勾选插入顺序无关），保证快照可比对
 eq(
-  buildSubmit(catalog, new Map([['mfg.demand:read', 'all'], ['sys.role:create', 'all'], ['mfg.demand:audit', 'dept']])),
+  buildSubmit(catalog, new Map([['mfg.demand:read', 'all'], ['sys.role:create', 'all'], ['mfg.demand:audit', 'self']])),
   [
     { permission: 'sys.role:create', scope: 'all' },
     { permission: 'mfg.demand:read', scope: 'all' },
-    { permission: 'mfg.demand:audit', scope: 'dept' },
+    { permission: 'mfg.demand:audit', scope: 'self' },
   ],
   'buildSubmit 输出按 catalog 序'
 )

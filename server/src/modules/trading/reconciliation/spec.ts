@@ -106,7 +106,7 @@ export function reconciliationHeadMeta(side: TradingSide): ResourceMeta {
     numbering: true,
     permissionLabel: spec.label,
     table: spec.table,
-    authz: { kind: 'company' },
+    authz: { kind: 'company', owner: {} },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('reconciliation_no', 'reconciliationNo', 'string', '对账单号', {
@@ -200,11 +200,12 @@ export function reconciliationHeadMeta(side: TradingSide): ResourceMeta {
       { key: 'create', label: '新增', scope: 'both' },
       { key: 'update', label: '编辑', scope: 'row' },
       { key: 'delete', label: '删除', scope: 'row', isDanger: true },
-      { key: 'confirm', label: confirmLabel, scope: 'row'},
+      { key: 'confirm', label: confirmLabel, scope: 'row', permissionAction: 'audit' },
       {
         key: 'unconfirm',
         label: '撤回确认',
         scope: 'row',
+        permissionAction: 'update',
         isDanger: true,
       },
       { key: 'audit', label: '结单', scope: 'row'},

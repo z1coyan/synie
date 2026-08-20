@@ -27,13 +27,11 @@ const STANDARD_ACTION_KEYS = new Set([
   'read',
   'create',
   'update',
+  'audit',
   'delete',
-  'print',
-  'import',
+  'void',
   'export',
-  'batch_delete',
-  'batch_update',
-  'batch_print',
+  'print',
 ])
 
 export interface NormalizedResource {
@@ -213,8 +211,8 @@ function toCommands(meta: ResourceMeta): CommandDocument[] {
   const commands: CommandDocument[] = []
   for (const action of meta.actions) {
     if (STANDARD_CRUD.has(action.key)) continue
-    // 标准 print/import/export/batch_* 若无自定义 permissionAction 伪装，暂不进 v2 commands
-    // （它们仍贡献 capabilities）；伪装语义动作（reconcile/recalc）进入 commands。
+    // 八动作里 print/export 若无自定义 permissionAction 伪装，暂不进 v2 commands
+    // （它们仍贡献 capabilities）；close/ship 等语义命令进入 commands。
     const key = semanticCommandKey(action)
     const isDisguised = key !== action.key
     const isExtended = !STANDARD_ACTION_KEYS.has(action.key)

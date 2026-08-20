@@ -48,7 +48,7 @@ describe('语义 command 鉴权与 Catalog 对齐', () => {
     }
   })
 
-  test('recalc：collection command；无 recalc 则 forbidden', () => {
+  test('recalc：collection command；无 update 则 forbidden', () => {
     const registry = createSealedResourceRegistry()
     const cmd = registry
       .buildDocument('hrAttendanceDays', {
@@ -56,7 +56,7 @@ describe('语义 command 鉴权与 Catalog 对齐', () => {
         superAdmin: true,
       })
       .commands.find((c) => c.key === 'recalc')!
-    expect(cmd).toMatchObject({ key: 'recalc', target: 'collection', requiredCapability: 'recalc' })
+    expect(cmd).toMatchObject({ key: 'recalc', target: 'collection', requiredCapability: 'update' })
     expect(
       `${registry.get('hrAttendanceDays')!.permissionPrefix}:${cmd.requiredCapability}`,
     ).toBe(HR_ATTENDANCE_DAY.recalc)
@@ -70,7 +70,7 @@ describe('语义 command 鉴权与 Catalog 对齐', () => {
     }
   })
 
-  test('reconcile：语义 key 非 export；无 reconcile 则 forbidden', () => {
+  test('reconcile：语义 key 非 export；无 update 则 forbidden', () => {
     const registry = createSealedResourceRegistry()
     const cmd = registry
       .buildDocument('accBankTransactions', {
@@ -78,7 +78,7 @@ describe('语义 command 鉴权与 Catalog 对齐', () => {
         superAdmin: true,
       })
       .commands.find((c) => c.key === 'reconcile')!
-    expect(cmd).toMatchObject({ key: 'reconcile', target: 'row', requiredCapability: 'reconcile' })
+    expect(cmd).toMatchObject({ key: 'reconcile', target: 'row', requiredCapability: 'update' })
     expect(cmd.key).not.toBe('export')
     expect(
       `${registry.get('accBankTransactions')!.permissionPrefix}:${cmd.requiredCapability}`,

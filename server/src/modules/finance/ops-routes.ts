@@ -230,7 +230,7 @@ export function bankImportRoutes(deps: {
   // 读走 readAnyOf（import-as-read 重载）；写走 import 命令码，跨资源附加码用 allOf
   const readGuard = () => authz.guard(BANK_IMPORT_RESOURCE, 'read')
   const importGuard = (allOf?: readonly string[]) =>
-    authz.guard(BANK_IMPORT_RESOURCE, 'import', allOf ? { allOf } : undefined)
+    authz.guard(BANK_IMPORT_RESOURCE, 'create', allOf ? { allOf } : undefined)
   const codeOf = (resource: string, action: string) =>
     `${authz.targetOf(resource).prefix}:${action}`
   return new Hono<AppEnv>()
@@ -274,7 +274,7 @@ export function bankImportItemRoutes(deps: {
 }) {
   const { auth, authz, banking } = deps
   const readGuard = () => authz.guard(BANK_IMPORT_ITEM_RESOURCE, 'read')
-  const importGuard = () => authz.guard(BANK_IMPORT_ITEM_RESOURCE, 'import')
+  const importGuard = () => authz.guard(BANK_IMPORT_ITEM_RESOURCE, 'create')
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', readGuard(), zValidator('json', listQuerySchema, validationHook), async (c) => {
@@ -316,7 +316,7 @@ export function bankReconciliationRoutes(deps: {
   const { auth, authz, banking } = deps
   const reconGuard = (action: string) => authz.guard(BANK_RECONCILIATION_RESOURCE, action)
   // 对账写命令码挂在银行流水资源上（meta permissionAction: 'reconcile'）
-  const commandGuard = () => authz.guard(BANK_TRANSACTION_RESOURCE, 'reconcile')
+  const commandGuard = () => authz.guard(BANK_TRANSACTION_RESOURCE, 'update')
   const codeOf = (resource: string, action: string) =>
     `${authz.targetOf(resource).prefix}:${action}`
   return new Hono<AppEnv>()

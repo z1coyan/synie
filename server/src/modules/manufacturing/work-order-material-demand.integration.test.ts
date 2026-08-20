@@ -352,7 +352,7 @@ run('PG 集成（工单物料需求派生）', () => {
     const [cA, cB, cC, cD] = snap.components as [NonNullable<(typeof snap.components)[number]>, NonNullable<(typeof snap.components)[number]>, NonNullable<(typeof snap.components)[number]>, NonNullable<(typeof snap.components)[number]>]
 
     const result = await mfg.workOrders.generateMaterialDemand(
-      permitFor('mfgWorkOrders', 'generate_material_demand'),
+      permitFor('mfgWorkOrders', 'read'),
       wo.id,
       {
         lines: [
@@ -482,7 +482,7 @@ run('PG 集成（工单物料需求派生）', () => {
     const snapB = await mfg.workOrders.getBomSnapshot(permitFor('mfgWorkOrders', 'read'), woB.id)
     const derive = (woId: string, lines: Parameters<typeof mfg.workOrders.generateMaterialDemand>[2]['lines']) =>
       mfg.workOrders.generateMaterialDemand(
-        permitFor('mfgWorkOrders', 'generate_material_demand'),
+        permitFor('mfgWorkOrders', 'read'),
         woId,
         { lines },
       )
@@ -525,7 +525,7 @@ run('PG 集成（工单物料需求派生）', () => {
   test('无 BOM 快照配料行 → 422 明确报错', async () => {
     const wo = await makeWorkOrder({ qty: '10' })
     const result = mfg.workOrders.generateMaterialDemand(
-      permitFor('mfgWorkOrders', 'generate_material_demand'),
+      permitFor('mfgWorkOrders', 'read'),
       wo.id,
       { lines: [{ componentId: crypto.randomUUID(), qty: '1', target: { kind: 'purchase' } }] },
     )
@@ -548,7 +548,7 @@ run('PG 集成（工单物料需求派生）', () => {
       const snap = await mfg.workOrders.getBomSnapshot(permitFor('mfgWorkOrders', 'read'), wo.id)
       await expect(
         mfg.workOrders.generateMaterialDemand(
-          permitFor('mfgWorkOrders', 'generate_material_demand'),
+          permitFor('mfgWorkOrders', 'read'),
           wo.id,
           {
             lines: [
@@ -610,7 +610,7 @@ run('PG 集成（工单物料需求派生）', () => {
     ])
     const wo = await makeWorkOrder({ qty: '40', bomId })
     const preview = await mfg.workOrders.getMaterialDemandPreview(
-      permitFor('mfgWorkOrders', 'generate_material_demand'),
+      permitFor('mfgWorkOrders', 'read'),
       wo.id,
     )
     expect(preview.lines).toHaveLength(4)
@@ -649,7 +649,7 @@ run('PG 集成（工单物料需求派生）', () => {
   test('票 02 弹窗取数：无 BOM 快照 → 空行（前端呈现空态）', async () => {
     const wo = await makeWorkOrder({ qty: '10' })
     const preview = await mfg.workOrders.getMaterialDemandPreview(
-      permitFor('mfgWorkOrders', 'generate_material_demand'),
+      permitFor('mfgWorkOrders', 'read'),
       wo.id,
     )
     expect(preview.lines).toHaveLength(0)
@@ -659,7 +659,7 @@ run('PG 集成（工单物料需求派生）', () => {
     const bomId = await makeActiveBom([{ materialId: compCId, unitId, quantity: '2.5' }])
     const wo = await makeWorkOrder({ qty: '40', bomId })
     const preview = await mfg.workOrders.getMaterialDemandPreview(
-      permitFor('mfgWorkOrders', 'generate_material_demand'),
+      permitFor('mfgWorkOrders', 'read'),
       wo.id,
     )
     const line = preview.lines[0]!
@@ -676,7 +676,7 @@ run('PG 集成（工单物料需求派生）', () => {
       )
     const before = await countEntries()
     const result = await mfg.workOrders.generateMaterialDemand(
-      permitFor('mfgWorkOrders', 'generate_material_demand'),
+      permitFor('mfgWorkOrders', 'read'),
       wo.id,
       {
         lines: [
@@ -709,7 +709,7 @@ run('PG 集成（工单物料需求派生）', () => {
     const snap = await mfg.workOrders.getBomSnapshot(permitFor('mfgWorkOrders', 'read'), wo.id)
     const derive = (lines: Array<{ componentId: string; qty: string; target: { kind: 'dept'; deptId: string } | { kind: 'purchase' } }>, force?: boolean) =>
       mfg.workOrders.generateMaterialDemand(
-        permitFor('mfgWorkOrders', 'generate_material_demand'),
+        permitFor('mfgWorkOrders', 'read'),
         wo.id,
         { lines, force },
       )
@@ -855,7 +855,7 @@ run('PG 集成（工单物料需求派生）', () => {
 
     // 新取数按新数量算毛需求（99），与已派生草稿（10）互不影响
     const preview = await mfg.workOrders.getMaterialDemandPreview(
-      permitFor('mfgWorkOrders', 'generate_material_demand'),
+      permitFor('mfgWorkOrders', 'read'),
       wo.id,
     )
     expect(preview.lines.find((l) => l.componentId === snap.components[0]!.id)!.grossQty).toBe('99')
@@ -930,7 +930,7 @@ run('PG 集成（工单物料需求派生）', () => {
       )
       expect(childSnap.components).toHaveLength(1)
       const second = await mfg.workOrders.generateMaterialDemand(
-        permitFor('mfgWorkOrders', 'generate_material_demand'),
+        permitFor('mfgWorkOrders', 'read'),
         childWo.id,
         {
           lines: [

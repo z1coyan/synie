@@ -27,8 +27,8 @@ const crudActions: ResourceMeta['actions'] = [
 /** 标准派生资源的动作词表：CRUD + 批量（批量端点由 platform/standard 派生） */
 const standardActions: ResourceMeta['actions'] = [
   ...crudActions,
-  { key: 'batch_update', label: '批量编辑', scope: 'bulk' },
-  { key: 'batch_delete', label: '批量删除', scope: 'bulk', isDanger: true },
+  { key: 'batch_update', label: '批量编辑', scope: 'bulk', permissionAction: 'update' },
+  { key: 'batch_delete', label: '批量删除', scope: 'bulk', permissionAction: 'delete', isDanger: true },
 ]
 
 export const CURRENCY_RESOURCE_NAME = 'basCurrencies'

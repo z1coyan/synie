@@ -74,7 +74,7 @@ export function attendancePunchResourceMeta(): ResourceMeta {
     ],
     actions: [
       { key: 'read', label: '查看', scope: 'both' },
-      { key: 'import', label: '导入', scope: 'both' },
+      { key: 'import', label: '导入', scope: 'both', permissionAction: 'create' },
     ],
   }
 }
@@ -88,7 +88,7 @@ export function attendanceImportResourceMeta(): ResourceMeta {
     table: 'hr_attendance_import',
     authz: {
       kind: 'global',
-      readAnyOf: ['hr.attendance_punch:read', 'hr.attendance_punch:import'],
+      readAnyOf: ['hr.attendance_punch:read', 'hr.attendance_punch:create'],
     },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
@@ -192,7 +192,7 @@ export function attendanceImportResourceMeta(): ResourceMeta {
         readonly: true,
       }),
     ],
-    actions: [{ key: 'import', label: '导入', scope: 'both' }],
+    actions: [{ key: 'import', label: '导入', scope: 'both', permissionAction: 'create' }],
     audit: { enabled: true },
 
   }
@@ -262,10 +262,9 @@ export function attendanceDayResourceMeta(): ResourceMeta {
     ],
     actions: [
       { key: 'read', label: '查看', scope: 'both' },
-      // v1：key=import 伪装（工单 11 删除）；v2：语义 key=recalc、collection target
       {
-        key: 'import',
-        permissionAction: 'recalc',
+        key: 'recalc',
+        permissionAction: 'update',
         label: '重算',
         scope: 'both',
         commandTarget: 'collection',
@@ -281,7 +280,7 @@ export function attendanceCorrectionResourceMeta(): ResourceMeta {
     permissionPrefix: 'hr.attendance_correction',
     permissionLabel: '补卡单',
     table: 'hr_attendance_correction',
-    authz: { kind: 'global' },
+    authz: { kind: 'global', owner: {} },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('date', 'date', 'date', '日期', {
@@ -442,7 +441,7 @@ export function payrollPaymentResourceMeta(): ResourceMeta {
     permissionPrefix: 'hr.payroll_payment',
     permissionLabel: '工资发放',
     table: 'hr_payroll_payment',
-    authz: { kind: 'global' },
+    authz: { kind: 'global', owner: {} },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('month', 'month', 'string', '月份', { filterable: true, sortable: true, readonly: true }),
@@ -526,7 +525,7 @@ export function employeeLoanResourceMeta(): ResourceMeta {
     permissionPrefix: 'hr.employee_loan',
     permissionLabel: '员工借款',
     table: 'hr_employee_loan',
-    authz: { kind: 'global' },
+    authz: { kind: 'global', owner: {} },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('kind', 'kind', 'enum', '类型', {

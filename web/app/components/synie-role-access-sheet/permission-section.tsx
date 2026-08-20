@@ -11,7 +11,7 @@ import {
   SCOPE_LABELS,
   groupByDomain,
   groupCodes,
-  scopeOptionsOf,
+  scopeOptionsForGrant,
   searchGroups,
   splitActions,
   triState,
@@ -90,14 +90,14 @@ function ScopeSelect(props: {
   )
 }
 
-/** 某域/某搜索结果分组的一张权限矩阵：行=资源，列=固定 10 动作 + 行尾"更多" */
+/** 某域/某搜索结果分组的一张权限矩阵：行=资源，列=固定八动作 + 行尾"更多" */
 function MatrixTable(props: { ariaLabel: string; groups: CatalogGroup[]; ctx: MatrixCtx }) {
   const { groups, ctx } = props
 
   // 勾选单元格：复选框 +（已勾选且资源支持范围维度时）范围下拉
   const check = (g: CatalogGroup, code: string) => {
-    const scopeOptions = scopeOptionsOf(g)
     const scope = ctx.checked.get(code)
+    const scopeOptions = scopeOptionsForGrant(g, scope)
     return (
       <div className="flex flex-col items-start gap-1">
         <Checkbox
@@ -204,7 +204,6 @@ function MatrixTable(props: { ariaLabel: string; groups: CatalogGroup[]; ctx: Ma
                 </Table.Row>
               )
               if (!isExpanded) return [mainRow]
-              const scopeOptions = scopeOptionsOf(g)
               const moreRow = (
                 <Table.Row key={`${g.prefix}:more`}>
                   <Table.Cell colSpan={CANONICAL_ACTIONS.length + 2}>
@@ -212,6 +211,7 @@ function MatrixTable(props: { ariaLabel: string; groups: CatalogGroup[]; ctx: Ma
                       {extra.map((a) => {
                         const code = `${g.prefix}:${a}`
                         const scope = ctx.checked.get(code)
+                        const scopeOptions = scopeOptionsForGrant(g, scope)
                         return (
                           <div key={a} className="flex flex-col items-start gap-1">
                             <Checkbox

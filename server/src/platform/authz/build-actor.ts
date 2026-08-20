@@ -1,3 +1,4 @@
+import { foldPermissionCode } from './action-compat.ts'
 import type { Actor, ScopeAtom, ScopeSet } from './core/index.ts'
 import {
   SCOPE_ALL,
@@ -36,12 +37,11 @@ export function actorFromFacts(facts: ActorFacts, allPermissionCodes: readonly s
     for (const code of allPermissionCodes) grants.set(code, SCOPE_ALL)
   }
   for (const grant of facts.grants) {
+    const folded = foldPermissionCode(grant.permission)
+    if (folded === null) continue
     const atom = scopeAtomFromColumn(grant.scope)
     if (atom === null) continue
-    grants.set(
-      grant.permission,
-      scopeSetUnion(grants.get(grant.permission) ?? SCOPE_NONE, scopeSetOf(atom)),
-    )
+    grants.set(folded, scopeSetUnion(grants.get(folded) ?? SCOPE_NONE, scopeSetOf(atom)))
   }
   return {
     kind: 'user',

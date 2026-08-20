@@ -25,8 +25,8 @@ const crud = [
 /** 标准派生资源的动作词表：CRUD + 批量（批量端点由 platform/standard 派生） */
 const standardActions = [
   ...crud,
-  { key: 'batch_update', label: '批量编辑', scope: 'bulk' as const },
-  { key: 'batch_delete', label: '批量删除', scope: 'bulk' as const, isDanger: true },
+  { key: 'batch_update', label: '批量编辑', scope: 'bulk' as const, permissionAction: 'update' },
+  { key: 'batch_delete', label: '批量删除', scope: 'bulk' as const, permissionAction: 'delete', isDanger: true },
 ]
 
 export function customerResourceMeta(): ResourceMeta {

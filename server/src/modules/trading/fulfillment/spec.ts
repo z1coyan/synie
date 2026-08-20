@@ -141,7 +141,7 @@ export function fulfillmentHeadMeta(side: TradingSide): ResourceMeta {
     actions.push(
       { key: 'print', label: '打印', scope: 'row' },
       { key: 'export', label: '导出', scope: 'both' },
-      { key: 'batch_print', label: '批量打印', scope: 'bulk' },
+      { key: 'batch_print', label: '批量打印', scope: 'bulk', permissionAction: 'print' },
     )
   }
   const printLoops: ResourceMeta['printLoops'] = [{ name: 'items', resource: spec.itemResource }]
@@ -154,7 +154,7 @@ export function fulfillmentHeadMeta(side: TradingSide): ResourceMeta {
     numbering: true,
     permissionLabel: spec.label,
     table: spec.headTable,
-    authz: { kind: 'company' },
+    authz: { kind: 'company', owner: {} },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f(spec.numberCol, spec.numberApi, 'string', sales ? '发货单号' : '入库单号', {

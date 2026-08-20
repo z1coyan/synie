@@ -179,14 +179,15 @@ export function resolveAuthzTarget(
 
 /**
  * 资源支持的数据范围（目录投影基准）：
- * company 恒为外层边界不入此集；无 owner 声明则无 self，无 dept 声明则无 dept/deptTree。
+ * company 恒为外层边界不入此集；无 owner 声明则无 self，无 dept 声明则无 deptTree。
+ * 「本部门不含下级」(dept) 已否决，不再开放；存量 dept 授权行仍由内核编译。
  * via 资源不拥有自己的范围（判定递归宿主），返回空集。
  */
 export function supportedScopesOf(meta: ResourceMeta): ScopeAtom[] {
   const authz = meta.authz
   if (!authz || authz.kind === 'via') return []
   const scopes: ScopeAtom[] = ['all']
-  if (authz.dept) scopes.push('deptTree', 'dept')
+  if (authz.dept) scopes.push('deptTree')
   if (authz.owner) scopes.push('self')
   return scopes
 }

@@ -176,13 +176,13 @@ export function reconciliationHeadRoutes(deps: {
     )
     .post(
       '/:id/confirm',
-      headGuard('confirm'),
+      headGuard('audit'),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await reconciliations.confirm(permitOf(c), side, c.req.valid('param').id)),
     )
     .post(
       '/:id/unconfirm',
-      headGuard('unconfirm'),
+      headGuard('update'),
       zValidator('param', idParam, validationHook),
       async (c) =>
         c.json(await reconciliations.unconfirm(permitOf(c), side, c.req.valid('param').id)),

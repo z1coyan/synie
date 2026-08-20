@@ -755,7 +755,7 @@ run('PG 集成（销售退货）', () => {
     })
     await returns.auditHead(p('salReturns', 'audit'), 'sales', draft.id)
     const gen = await returns.generateReplenishment(
-      p('salReturns', 'generate_replenishment'),
+      p('salReturns', 'read'),
       draft.id,
     )
     const rows = await sql<{
@@ -897,7 +897,7 @@ run('PG 集成（销售退货）', () => {
     })
     await returns.auditHead(p('salReturns', 'audit'), 'sales', draft.id)
 
-    const first = await returns.generateReplenishment(p('salReturns', 'generate_replenishment'), draft.id)
+    const first = await returns.generateReplenishment(p('salReturns', 'read'), draft.id)
     expect(first.demandNo.length).toBeGreaterThan(0)
     const head = await sql<{
       status: string
@@ -934,7 +934,7 @@ run('PG 集成（销售退货）', () => {
     expect(await orderItemShipped(orderItem3Id)).toBe('80')
 
     // 重复点击各成一张新草稿，同一来源留痕
-    const second = await returns.generateReplenishment(p('salReturns', 'generate_replenishment'), draft.id)
+    const second = await returns.generateReplenishment(p('salReturns', 'read'), draft.id)
     expect(second.demandId).not.toBe(first.demandId)
     const heads = await sql<{ c: string }>`
       SELECT count(*)::text AS c FROM mfg_demand
@@ -948,7 +948,7 @@ run('PG 集成（销售退货）', () => {
       { idx: 1, qty: '1', deliveryItemId },
     ]))
     await expect(
-      returns.generateReplenishment(p('salReturns', 'generate_replenishment'), draft.id),
+      returns.generateReplenishment(p('salReturns', 'read'), draft.id),
     ).rejects.toThrow(/仅已审核销售退货单可生成补货需求单/)
   })
 

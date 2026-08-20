@@ -211,7 +211,7 @@ export function returnHeadMeta(side: ReturnKind): ResourceMeta {
     numbering: true,
     permissionLabel: spec.label,
     table: spec.headTable,
-    authz: { kind: 'company' },
+    authz: { kind: 'company', owner: {} },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('return_no', 'returnNo', 'string', '退货单号', {
@@ -291,9 +291,7 @@ export function returnHeadMeta(side: ReturnKind): ResourceMeta {
       { key: 'audit', label: '审核', scope: 'row' },
       { key: 'void', label: '作废', scope: 'row', isDanger: true },
       // 补货需求生成：仅销售退货（采购/委外退货不放——缺口重现后供应商/协作方重送即可）
-      ...(sales
-        ? [{ key: 'generate_replenishment', label: '生成补货需求单', scope: 'row' as const }]
-        : []),
+      // 补货需求：不再作为源单动作。用户以 mfg.demand:create 建需求单。
     ],
     form: { kind: 'extension' },
     // 前缀组打印头锚点（本票无打印动作；打印目录派生需唯一头）

@@ -2,6 +2,8 @@
 
 2026-08-04。规格见原 `.scratch/authz-rewrite/spec.md`（已删除，见 git 历史；grill-with-docs 定案；取代同日作废的 data-scope-ladder 方案）。
 
+**现状（2026-08）：** 目录可新授的行范围只剩 all / deptTree / self；「本部门不含下级」(dept) 已否决、不再开放。内核格上仍编译存量 leftover `dept` 行。公司授权仍是外层边界，不另设「本公司」行范围。
+
 - **背景**：授权维度只有「权限码（含通配）× 公司集合」，行级能力（部门/本人）无处安放；约 498 处检查散布服务层，「能否碰这家公司」有 4 种写法 2 种 HTTP 语义；全部散布检查可折叠为 9 种判定形态。系统在开发期，不做兼容。
 - **决策**：授权判定词汇表收束为**封闭集，未来一切权限需求不得新增谓词**：
   1. **三层词汇**：主体（user/system/superAdmin）× 码级组合子（one/anyOf/allOf）× 行级范围（all/company/deptTree/dept/self/granted + via 组合子）。

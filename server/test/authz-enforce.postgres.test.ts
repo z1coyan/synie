@@ -524,17 +524,17 @@ run('authz 执行面（PG 集成）', () => {
       expect(decision).toMatchObject({ outcome: 'deny', reason: 'code' })
     })
 
-    test('anyOf 覆盖：import 码也能读（import-as-read 重载）', () => {
+    test('anyOf 覆盖：leftover import 折成 create 后可读导入批次', () => {
       const actor = testActor({ allCompanies: true, permissions: ['hr.attendance_punch:import'] })
       expect(
         authz.decideFor(actor, 'hrAttendancePunches', 'read', {
-          anyOf: ['hr.attendance_punch:read', 'hr.attendance_punch:import'],
+          anyOf: ['hr.attendance_punch:read', 'hr.attendance_punch:create'],
         }).outcome,
       ).toBe('permit')
       expect(authz.decideFor(actor, 'hrAttendancePunches', 'read').outcome).toBe('deny')
     })
 
-    test('meta 声明的 readAnyOf 真正执行（批次资源持 import 即可读）', () => {
+    test('meta 声明的 readAnyOf 真正执行（leftover import 折成 create 即可读批次）', () => {
       const actor = testActor({ allCompanies: true, permissions: ['hr.attendance_punch:import'] })
       expect(authz.decideFor(actor, 'hrAttendanceImports', 'read').outcome).toBe('permit')
     })

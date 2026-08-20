@@ -172,7 +172,6 @@ export function printingRoutes(deps: PrintingRoutesDeps) {
         `${PERMISSION_PREFIX}:read`,
         `${prefix}:print`,
         `${prefix}:export`,
-        `${prefix}:batch_print`,
       ],
     })
   }
@@ -253,13 +252,7 @@ export function printingRoutes(deps: PrintingRoutesDeps) {
       const target = resolveResource(body.resource.trim())
       const builder = printing.builderOf(target.prefix)
       const ids = body.ids ?? []
-      // 查询上下文虚拟单据按单份计，不走 batch_print
-      const action =
-        body.mode === RENDER_MODE_PRINT
-          ? !builder?.buildFromContext && ids.length > 1
-            ? 'batch_print'
-            : 'print'
-          : 'export'
+      const action = body.mode === RENDER_MODE_PRINT ? 'print' : 'export'
       const extra = builder?.requiredCodes ?? []
       const permit = extra.length
         ? authz.permitFor(c, target.name, action, { allOf: extra })

@@ -8,8 +8,8 @@ export const ACC_BANK_TRANSACTION = {
   create: 'acc.bank_transaction:create',
   update: 'acc.bank_transaction:update',
   delete: 'acc.bank_transaction:delete',
-  import: 'acc.bank_transaction:import',
-  reconcile: 'acc.bank_transaction:reconcile',
+  import: 'acc.bank_transaction:create',
+  reconcile: 'acc.bank_transaction:update',
 } as const
 
 export type AccBankTransactionPermission =

@@ -193,10 +193,10 @@ export function attendanceImportRoutes(deps: {
   auth: AuthService; authz: AuthzEnforcer; attendance: AttendanceService
 }) {
   const { auth, authz, attendance: hr } = deps
-  // 读走 readAnyOf（[hr.attendance_punch:read, :import] 析取）；写走 import 命令码
+  // 读走 readAnyOf（[hr.attendance_punch:read, :create] 析取）；导入折入 create
   const readGuard = () => authz.guard(ATTENDANCE_IMPORT_RESOURCE, 'read')
   const importGuard = (allOf?: readonly string[]) =>
-    authz.guard(ATTENDANCE_IMPORT_RESOURCE, 'import', allOf ? { allOf } : undefined)
+    authz.guard(ATTENDANCE_IMPORT_RESOURCE, 'create', allOf ? { allOf } : undefined)
   const codeOf = (resource: string, action: string) =>
     `${authz.targetOf(resource).prefix}:${action}`
   return new Hono<AppEnv>()
@@ -278,7 +278,7 @@ export function attendanceDayRoutes(deps: {
     )
     .post(
       '/recalc',
-      guard('recalc'),
+      guard('update'),
       zValidator(
         'json',
         z

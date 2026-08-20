@@ -25,7 +25,7 @@ describe('制造资源 Meta', () => {
     expect(fields.get('remainingOrderableQty')?.calculated).toBe(true)
   })
 
-  test('履约需求单以审核命令复用既有确认权限', () => {
+  test('履约需求单审核是八动作 audit，关闭折进 audit', () => {
     const audit = demandResourceMeta().actions.find(
       (action) => action.key === 'audit',
     )
@@ -33,12 +33,17 @@ describe('制造资源 Meta', () => {
     expect(audit).toMatchObject({
       label: '审核',
       scope: 'row',
-      permissionAction: 'confirm',
       confirmKind: 'audit_doc',
     })
+    expect(audit?.permissionAction ?? 'audit').toBe('audit')
     expect(
       demandResourceMeta().actions.some((action) => action.key === 'confirm'),
     ).toBe(false)
+    expect(
+      demandResourceMeta().actions.some(
+        (action) => action.key === 'close' && action.permissionAction === 'audit',
+      ),
+    ).toBe(true)
   })
 
   test('生产入库条目暴露母单号/日期/状态 calculated 列（条目 tab 筛排）', () => {
@@ -65,16 +70,16 @@ describe('制造资源 Meta', () => {
     })
   })
 
-  test('工单声明「生成物料需求」row 级动作且权限码入目录', () => {
-    const action = workOrderResourceMeta().actions.find(
-      (a) => a.key === 'generate_material_demand',
-    )
-    expect(action).toMatchObject({ label: '生成物料需求', scope: 'row' })
+  test('工单不再声明 generate_material_demand：派生走 mfg.demand:create', () => {
+    expect(
+      workOrderResourceMeta().actions.some((a) => a.key === 'generate_material_demand'),
+    ).toBe(false)
 
     const registry = createSealedResourceRegistry()
-    expect(registry.allPermissionCodes()).toContain(
+    expect(registry.allPermissionCodes()).not.toContain(
       'mfg.work_order:generate_material_demand',
     )
+    expect(registry.allPermissionCodes()).toContain('mfg.demand:create')
   })
 
   test('需求行来源工单字段：fk 只读投影（与销售来源互斥，不进表单）', () => {

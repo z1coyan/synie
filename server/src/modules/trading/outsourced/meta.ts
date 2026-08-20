@@ -20,7 +20,7 @@ export function outsourcedIssueMeta(): ResourceMeta {
     permissionLabel: '委外发料单',
     label: '委外发料单',
     table: 'pur_outsourced_issue',
-    authz: { kind: 'company' },
+    authz: { kind: 'company', owner: {} },
     printHead: true,
     fields: [
       f('id', 'id', 'uuid', 'id', {"sortable": true, "readonly": true}),
@@ -103,7 +103,7 @@ export function outsourcedReceiptMeta(): ResourceMeta {
     permissionLabel: '委外入库单',
     label: '委外入库单',
     table: 'pur_outsourced_receipt',
-    authz: { kind: 'company' },
+    authz: { kind: 'company', owner: {} },
     printHead: true,
     fields: [
       f('id', 'id', 'uuid', 'id', {"sortable": true, "readonly": true}),
