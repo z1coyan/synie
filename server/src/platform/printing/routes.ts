@@ -46,12 +46,15 @@ const updateSchema = z
   })
   .strict()
 
+const renderContextSchema = z.record(z.unknown())
+
 const renderSchema = z
   .object({
     resource: z.string().min(1),
     mode: z.enum(['print', 'export']),
     templateId: UUID,
-    ids: z.array(UUID).min(1),
+    ids: z.array(UUID).optional(),
+    context: renderContextSchema.optional(),
   })
   .strict()
 
@@ -248,19 +251,25 @@ export function printingRoutes(deps: PrintingRoutesDeps) {
       async (c) => {
       const body = c.req.valid('json')
       const target = resolveResource(body.resource.trim())
-      // mode + arity 派生动作码（S9）：单条打印 print / 多条 batch_print / 导出 export
+      const builder = printing.builderOf(target.prefix)
+      const ids = body.ids ?? []
+      // 查询上下文虚拟单据按单份计，不走 batch_print
       const action =
         body.mode === RENDER_MODE_PRINT
-          ? body.ids.length > 1
+          ? !builder?.buildFromContext && ids.length > 1
             ? 'batch_print'
             : 'print'
           : 'export'
-      const permit = renderPermit(c, target.name, action)
+      const extra = builder?.requiredCodes ?? []
+      const permit = extra.length
+        ? authz.permitFor(c, target.name, action, { allOf: extra })
+        : renderPermit(c, target.name, action)
       const output = await printing.render(permit, {
         resource: target.prefix,
         mode: body.mode,
         templateId: body.templateId,
         ids: body.ids,
+        context: body.context,
       })
       return new Response(Buffer.from(output.binary), {
         status: 200,

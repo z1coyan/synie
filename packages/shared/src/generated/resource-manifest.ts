@@ -6,6 +6,70 @@
 import type { ResourceManifest } from '../resource-manifest.ts'
 
 export const RESOURCE_MANIFEST: ResourceManifest = {
+  "accArAp": {
+    "label": "应收应付报表",
+    "lookup": {
+      "labelField": "perspective",
+      "searchFields": [
+        "perspective"
+      ]
+    },
+    "wire": {
+      "decimal": [],
+      "date": [
+        "asOf",
+        "exportedAt"
+      ],
+      "decimalZero": []
+    }
+  },
+  "accArApLedgerRows": {
+    "label": "往来明细行",
+    "lookup": {
+      "labelField": "voucherNo",
+      "searchFields": [
+        "voucherTypeLabel"
+      ]
+    },
+    "wire": {
+      "decimal": [
+        "qty",
+        "amount",
+        "unbilledReceivable",
+        "receivable",
+        "unbilledPayable",
+        "payable",
+        "otherPayable"
+      ],
+      "date": [
+        "postingDate"
+      ],
+      "decimalZero": []
+    }
+  },
+  "accArApRows": {
+    "label": "往来余额行",
+    "lookup": {
+      "labelField": "partyLabel",
+      "searchFields": [
+        "partyLabel"
+      ]
+    },
+    "wire": {
+      "decimal": [
+        "unbilledReceivable",
+        "receivable",
+        "unbilledPayable",
+        "payable",
+        "otherPayable",
+        "netReceivable",
+        "netPayable",
+        "net"
+      ],
+      "date": [],
+      "decimalZero": []
+    }
+  },
   "accBankAccounts": {
     "label": "银行账户",
     "lookup": {

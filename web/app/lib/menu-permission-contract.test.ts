@@ -12,8 +12,9 @@ import { menuModules } from './menu.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 
 /**
- * 无菜单归属的权限资源白名单（逐条注明理由）。当前为空——全部 61 个权限资源均有菜单归属
- * （sys.role_permission/sys.role_menu 挂在「角色权限」菜单下，sys.setting 挂在「基础设置」下）。
+ * 无菜单归属的权限资源白名单（逐条注明理由）。当前仅从属地址——其余权限资源均有菜单归属
+ * （sys.role_permission/sys.role_menu 挂在「角色权限」菜单下，sys.setting 挂在「基础设置」下；
+ * acc.ar_ap 挂在「应收应付」菜单下，阅读仍注解 acc.gl_entry）。
  * 将来出现真正无界面的权限资源时在此补一行并写明原因，勿为消红而放宽断言。
  */
 export const UNLINKED_PERMISSION_PREFIXES: ReadonlyArray<string> = [

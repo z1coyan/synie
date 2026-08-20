@@ -85,7 +85,9 @@ export interface RenderInput {
   resource: string
   mode: typeof RENDER_MODE_PRINT | typeof RENDER_MODE_EXPORT | string
   templateId: string
-  ids: string[]
+  ids?: string[]
+  /** 查询上下文虚拟单据（应收应付报表等）；与 ids 互斥 */
+  context?: Record<string, unknown>
 }
 
 export interface RenderOutput {

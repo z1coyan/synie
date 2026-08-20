@@ -213,4 +213,30 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
     const currencies = registry.buildDocument(CURRENCY_RESOURCE_NAME, superAdmin)
     expect(currencies.authz).toBeUndefined()
   })
+
+  test('无 read 仅 print/export：有导出权即可取文档投影，仅分录 read 则 403', () => {
+    const exporter = actor(
+      testActor({
+        permissions: new Set(['acc.ar_ap:export']),
+      }),
+    )
+    const doc = registry.buildDocument('accArAp', exporter)
+    expect(doc.capabilities).toEqual([{ action: 'export', scope: 'all' }])
+
+    const printer = actor(
+      testActor({
+        permissions: new Set(['acc.ar_ap:print']),
+      }),
+    )
+    expect(registry.buildDocument('accArAp', printer).capabilities).toEqual([
+      { action: 'print', scope: 'all' },
+    ])
+
+    const viewer = actor(
+      testActor({
+        permissions: new Set(['acc.gl_entry:read']),
+      }),
+    )
+    expect(() => registry.buildDocument('accArAp', viewer)).toThrow(/无权限访问该资源/)
+  })
 })

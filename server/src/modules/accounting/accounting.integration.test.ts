@@ -11,8 +11,11 @@ import type { Permit } from '~/platform/authz/core/index.ts'
 import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
+import { visibleArApRows } from '@synie/shared'
 import { createEntryService } from './entry-service.ts'
 import { createJournalService } from './journal-service.ts'
+import { createArApDocBuilder } from './docbuilder.ts'
+import { AR_AP_RESOURCE_NAME } from './meta.ts'
 import { testActor } from '~/platform/authz/testing.ts'
 
 
@@ -466,5 +469,103 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
     expect(Number(ledger.rows[0]!.balances.receivable)).toBe(0)
     expect(ledger.rows[1]!.isReversal).toBe(false)
     expect(Number(ledger.rows[1]!.balances.receivable)).toBe(125.5)
+  })
+
+  test('打印装配数字与报表/明细查询一致；公司不在范围则空结果', async () => {
+    const fx = await seedFixture()
+    const journal = await journals.create(journalPermit(), {
+      date: '2026-07-26',
+      companyId: fx.companyId,
+    })
+    cleanupIds.journals.push(journal.id)
+    await journals.createLine(linePermit(), {
+      journalId: journal.id,
+      idx: 1,
+      accountId: fx.receivableId,
+      debit: '125.50',
+      credit: '0',
+      partyType: 'CUSTOMER',
+      partyId: fx.customerId,
+    })
+    await journals.createLine(linePermit(), {
+      journalId: journal.id,
+      idx: 2,
+      accountId: fx.cashId,
+      debit: '0',
+      credit: '125.50',
+    })
+    await journals.audit(journalPermit(), journal.id, '2026-07-26')
+
+    const builder = createArApDocBuilder(db, entries)
+    const report = await entries.report(entryPermit(), {
+      companyId: fx.companyId,
+      asOf: '2026-07-31',
+    })
+    const view = {
+      side: 'ar' as const,
+      search: '',
+      partyTypes: [] as string[],
+      sortColumn: 'net',
+      sortDirection: 'descending' as const,
+    }
+    const expectedRows = visibleArApRows(report.rows, view)
+    const summary = await builder.buildFromContext!(entryPermit(), {
+      companyId: fx.companyId,
+      asOf: '2026-07-31',
+      ...view,
+    })
+    expect(summary).toHaveLength(1)
+    const printed = summary[0]!.doc.loops.rows ?? []
+    expect(printed).toHaveLength(expectedRows.length)
+    const hit = printed.find((row) => row.party_label === fx.customerName)
+    expect(hit).toBeDefined()
+    expect(Number(hit!.receivable)).toBe(125.5)
+    expect(Number(hit!.net)).toBe(125.5)
+    expect(summary[0]!.doc.fields.as_of).toBe('2026-07-31')
+    expect(summary[0]!.doc.fields.perspective).toBe('应收')
+
+    const ledger = await entries.partyLedger(entryPermit(), {
+      companyId: fx.companyId,
+      asOf: '2026-07-31',
+      side: 'ar',
+      partyType: 'CUSTOMER',
+      partyId: fx.customerId,
+    })
+    const detail = await builder.buildFromContext!(entryPermit(), {
+      companyId: fx.companyId,
+      asOf: '2026-07-31',
+      side: 'ar',
+      partyType: 'CUSTOMER',
+      partyId: fx.customerId,
+    })
+    const printedLedger = detail[0]!.doc.loops.ledger ?? []
+    expect(printedLedger).toHaveLength(ledger.rows.length)
+    expect(Number(printedLedger[0]!.amount)).toBe(Number(ledger.rows[0]!.amount))
+    expect(detail[0]!.doc.fields.party_label).toBe(fx.customerName)
+
+    const outsider: Actor = testActor({
+      userId: '',
+      username: 'ar-ap-outsider',
+      name: '范围外',
+      superAdmin: false,
+      allCompanies: false,
+      companyIds: [crypto.randomUUID()],
+      permissions: new Set(['acc.gl_entry:read', 'acc.ar_ap:export']),
+    })
+    const deniedCompany = authz.decideFor(outsider, AR_AP_RESOURCE_NAME, 'export', {
+      allOf: ['acc.gl_entry:read'],
+    })
+    if (deniedCompany.outcome !== 'permit') throw new Error('码级应放行，仅公司范围收窄')
+    const emptyReport = await entries.report(deniedCompany.permit, {
+      companyId: fx.companyId,
+      asOf: '2026-07-31',
+    })
+    expect(emptyReport.rows).toEqual([])
+    const emptyPrint = await builder.buildFromContext!(deniedCompany.permit, {
+      companyId: fx.companyId,
+      asOf: '2026-07-31',
+      side: 'ar',
+    })
+    expect(emptyPrint[0]!.doc.loops.rows).toEqual([])
   })
 })

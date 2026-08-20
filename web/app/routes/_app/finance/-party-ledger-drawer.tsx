@@ -91,6 +91,10 @@ export function PartyLedgerDrawer(props: {
   partyType: string | null
   partyId: string | null
   partyLabel: string
+  canExport?: boolean
+  canPrint?: boolean
+  onExport?: () => void
+  onPrint?: () => void
 }) {
   const openPreview = useFkPreview()
   const partyNil = props.partyId == null
@@ -202,6 +206,16 @@ export function PartyLedgerDrawer(props: {
               )}
             </Sheet.Body>
             <Sheet.Footer>
+              {props.canExport && (
+                <Button variant="secondary" onPress={props.onExport}>
+                  导出
+                </Button>
+              )}
+              {props.canPrint && (
+                <Button variant="secondary" onPress={props.onPrint}>
+                  打印
+                </Button>
+              )}
               <Sheet.Close>
                 <Button variant="secondary">关闭</Button>
               </Sheet.Close>

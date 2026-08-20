@@ -17,7 +17,17 @@ import {
   type SortDescriptor,
 } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
+import {
+  AR_AP_PARTY_TYPE_LABEL,
+  AR_AP_SIDE_LABEL,
+  netOfRow,
+  tabArApRows,
+  visibleArApRows,
+  type ArApLedgerSide,
+} from '@synie/shared'
 import { formatAmount } from '~/lib/amount'
+import { AR_AP_PRINT_RESOURCE, AR_AP_RESOURCE_NAME, arApOutputActions } from '~/lib/ar-ap-output'
+import { useResourceCapabilities } from '~/lib/use-resource-capabilities'
 import {
   fetchARAPReport,
   type ARAPLedgerSide,
@@ -26,18 +36,14 @@ import {
 import { companyClient } from '~/lib/resources/companies'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { Row } from '~/components/synie-data-grid/types'
+import { useContextTemplatePrint } from '~/components/synie-print/TemplatePrintDialog'
 import { PartyLedgerDrawer } from './-party-ledger-drawer'
 
 export const Route = createFileRoute('/_app/finance/ar-ap')({
   component: ArApPage,
 })
 
-const PARTY_TYPE_LABEL: Record<string, string> = {
-  CUSTOMER: '客户',
-  SUPPLIER: '供应商',
-  COMPANY: '内部公司',
-  EMPLOYEE: '员工',
-}
+const PARTY_TYPE_LABEL = AR_AP_PARTY_TYPE_LABEL
 
 const PARTY_TYPE_FILTERS = ['CUSTOMER', 'SUPPLIER', 'COMPANY', 'EMPLOYEE'] as const
 
@@ -68,11 +74,7 @@ type TabConfig = (typeof TABS)[number]
 const nonZero = (v: string | undefined) => v != null && Number(v) !== 0
 
 function netOf(row: ReportRow, tab: TabConfig): string {
-  return tab.id === 'ar' ? row.netReceivable : row.netPayable
-}
-
-function tabRows(rows: ReportRow[], tab: TabConfig): ReportRow[] {
-  return rows.filter((r) => tab.cols.some((c) => nonZero(r.balances[c.key])) || nonZero(netOf(r, tab)))
+  return netOfRow(row, tab.id)
 }
 
 function amountCell(value: string | undefined) {
@@ -89,6 +91,9 @@ function ArApPage() {
   const [partyTypes, setPartyTypes] = useState<Set<string>>(new Set())
   const [sort, setSort] = useState<SortDescriptor>({ column: 'net', direction: 'descending' })
   const [viewing, setViewing] = useState<ReportRow | null>(null)
+  const caps = useResourceCapabilities(AR_AP_RESOURCE_NAME)
+  const { canExport, canPrint } = arApOutputActions(caps)
+  const { start: startOutput, dialog: outputDialog } = useContextTemplatePrint(AR_AP_PRINT_RESOURCE)
 
   const companies = useQuery({
     queryKey: ['arApCompanies'],
@@ -117,38 +122,24 @@ function ArApPage() {
   const data = report.data
   const hasRoles = data != null && Object.keys(data.roleAccounts).length > 0
   const activeTab = TABS.find((t) => t.id === tab) ?? TABS[0]
-  const sideRows = useMemo(() => (data ? tabRows(data.rows, activeTab) : []), [data, activeTab])
-
-  const visibleRows = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    const filtered = sideRows.filter((r) => {
-      if (needle && !r.partyLabel.toLowerCase().includes(needle)) return false
-      if (partyTypes.size > 0) {
-        if (r.partyType == null) return false
-        if (!partyTypes.has(r.partyType.toUpperCase())) return false
-      }
-      return true
-    })
-    const col = String(sort.column)
-    const dir = sort.direction === 'ascending' ? 1 : -1
-    const valueOf = (row: ReportRow) => {
-      if (col === 'party') return row.partyLabel
-      if (col === 'partyType') return row.partyType ? (PARTY_TYPE_LABEL[row.partyType] ?? row.partyType) : ''
-      if (col === 'net') return Number(netOf(row, activeTab) || 0)
-      return Number(row.balances[col] || 0)
-    }
-    return [...filtered].sort((a, b) => {
-      const aNil = a.partyId == null
-      const bNil = b.partyId == null
-      if (aNil !== bNil) return aNil ? 1 : -1
-      const av = valueOf(a)
-      const bv = valueOf(b)
-      if (typeof av === 'string' && typeof bv === 'string') {
-        return av.localeCompare(bv, 'zh') * dir
-      }
-      return (Number(av) - Number(bv)) * dir
-    })
-  }, [sideRows, q, partyTypes, sort, activeTab])
+  const viewQuery = useMemo(
+    () => ({
+      side: activeTab.id as ArApLedgerSide,
+      search: q,
+      partyTypes: [...partyTypes],
+      sortColumn: String(sort.column),
+      sortDirection: sort.direction === 'ascending' ? ('ascending' as const) : ('descending' as const),
+    }),
+    [activeTab.id, q, partyTypes, sort],
+  )
+  const sideRows = useMemo(
+    () => (data ? tabArApRows(data.rows, activeTab.id) : []),
+    [data, activeTab.id],
+  )
+  const visibleRows = useMemo(
+    () => (data ? visibleArApRows(data.rows, viewQuery) : []),
+    [data, viewQuery],
+  )
 
   const totals = useMemo(() => {
     const sum = (pick: (r: ReportRow) => string | undefined) =>
@@ -224,6 +215,38 @@ function ArApPage() {
             <SearchField.ClearButton />
           </SearchField.Group>
         </SearchField>
+        {(canExport || canPrint) && companyId != null && (
+          <div className="flex flex-wrap gap-2">
+            {canExport && (
+              <Button
+                variant="secondary"
+                onPress={() =>
+                  void startOutput(
+                    'export',
+                    summaryContext(companyId, asOf, viewQuery),
+                    summaryCaption(companyRow, asOf, activeTab.id),
+                  )
+                }
+              >
+                导出
+              </Button>
+            )}
+            {canPrint && (
+              <Button
+                variant="secondary"
+                onPress={() =>
+                  void startOutput(
+                    'print',
+                    summaryContext(companyId, asOf, viewQuery),
+                    summaryCaption(companyRow, asOf, activeTab.id),
+                  )
+                }
+              >
+                打印
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -423,10 +446,79 @@ function ArApPage() {
           partyType={viewing.partyType}
           partyId={viewing.partyId}
           partyLabel={viewing.partyLabel}
+          canExport={canExport}
+          canPrint={canPrint}
+          onExport={() =>
+            void startOutput(
+              'export',
+              detailContext(companyId, asOf, activeTab.id, viewing),
+              detailCaption(companyRow, asOf, activeTab.id, viewing.partyLabel),
+            )
+          }
+          onPrint={() =>
+            void startOutput(
+              'print',
+              detailContext(companyId, asOf, activeTab.id, viewing),
+              detailCaption(companyRow, asOf, activeTab.id, viewing.partyLabel),
+            )
+          }
         />
       )}
+      {outputDialog}
     </>
   )
+}
+
+function summaryContext(
+  companyId: string,
+  asOf: string,
+  view: {
+    side: ArApLedgerSide
+    search: string
+    partyTypes: string[]
+    sortColumn: string
+    sortDirection: 'ascending' | 'descending'
+  },
+) {
+  return {
+    companyId,
+    asOf,
+    side: view.side,
+    search: view.search,
+    partyTypes: view.partyTypes,
+    sortColumn: view.sortColumn,
+    sortDirection: view.sortDirection,
+  }
+}
+
+function detailContext(
+  companyId: string,
+  asOf: string,
+  side: ArApLedgerSide,
+  viewing: ReportRow,
+) {
+  return {
+    companyId,
+    asOf,
+    side,
+    partyType: viewing.partyType,
+    partyId: viewing.partyId,
+    partyNil: viewing.partyId == null,
+  }
+}
+
+function summaryCaption(companyRow: Row | null, asOf: string, side: ArApLedgerSide) {
+  const company = typeof companyRow?.name === 'string' ? companyRow.name : '当前公司'
+  return `${company} · ${asOf} · ${AR_AP_SIDE_LABEL[side]}`
+}
+
+function detailCaption(
+  companyRow: Row | null,
+  asOf: string,
+  side: ArApLedgerSide,
+  partyLabel: string,
+) {
+  return `${summaryCaption(companyRow, asOf, side)} · ${partyLabel}`
 }
 
 function EllipsisIcon() {

@@ -43,16 +43,17 @@ export async function fetchFieldCatalog(resource: string): Promise<FieldCatalog>
 /** 调用后端打印/导出（契约端点 POST /printing/render）；返回 blob 与文件名。 */
 export async function runTemplateOutput(opts: {
   resource: string
-  ids: string[]
+  ids?: string[]
+  context?: Record<string, unknown>
   templateId: string
   mode: 'print' | 'export'
 }): Promise<{ blob: Blob; filename: string }> {
   const response = await api.printing.render.$post({
     json: {
       resource: opts.resource,
-      ids: opts.ids,
       templateId: opts.templateId,
       mode: opts.mode,
+      ...(opts.context ? { context: opts.context } : { ids: opts.ids ?? [] }),
     },
   })
   if (!response.ok) {

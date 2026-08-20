@@ -23,6 +23,11 @@ export {
 } from './entry-service.ts'
 export { accountingRoutes } from './routes.ts'
 export { allAccountingResourceMetas } from './meta.ts'
+export {
+  AR_AP_RESOURCE_NAME,
+  AR_AP_PERMISSION_PREFIX,
+} from './meta.ts'
+export { createArApDocBuilder, registerArApDocBuilder } from './docbuilder.ts'
 
 export function registerAccountingResources(registry: Registry): void {
   for (const meta of allAccountingResourceMetas()) {

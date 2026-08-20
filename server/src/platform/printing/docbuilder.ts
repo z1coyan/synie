@@ -12,7 +12,14 @@ import type { BuiltDoc } from './types.ts'
 export interface DocBuilder {
   /** 资源中文名（批量文件名用） */
   label(): string
+  /**
+   * 打印动作之外还须同时满足的权限码（如报表阅读码）。
+   * 路由经 allOf 一并判定；未声明则只判 print/export。
+   */
+  requiredCodes?: readonly string[]
   buildDocs(permit: Permit, ids: string[]): Promise<BuiltDoc[]>
+  /** 查询上下文虚拟单据（无记录 id）；未实现则走 ids */
+  buildFromContext?(permit: Permit, context: Record<string, unknown>): Promise<BuiltDoc[]>
 }
 
 export type DocBuilderMap = Map<string, DocBuilder>
