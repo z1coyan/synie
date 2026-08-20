@@ -335,7 +335,11 @@ test("客户、供应商、员工 Grid/Drawer 全程使用 Go REST", async ({ pa
     ]);
     await expect(editEmployee).toBeHidden();
 
-    await employeeGrid.getByRole("button", { name: "筛选 参保类型" }).click();
+    await page.getByRole("button", { name: "筛选", exact: true }).click();
+    await page
+      .getByRole("listbox", { name: "可筛选字段" })
+      .getByRole("option", { name: "参保类型", exact: true })
+      .click();
     const insuranceFilter = page.getByRole("dialog", { name: "参保类型" });
     await expect(insuranceFilter).toBeVisible();
     const filterResponse = page.waitForResponse(

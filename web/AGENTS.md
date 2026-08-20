@@ -20,6 +20,7 @@
 
 - 业务面（`_app` 壳、列表、抽屉、筛选）默认高密度：按钮 `size="sm"`，表单控件用 Tailwind 收到 sm 高度（HeroUI v3 字段无 size）；登录、初始化向导、启动幕布等仪式面除外。
 - 数据列表一律用 `SynieDataGrid`（`~/components/synie-data-grid/`）；数据详情、新增、编辑一律用 `SynieRecordDrawer`（`~/components/synie-record-drawer/`）三态抽屉，不要自造表格或表单。
+- 列表筛选用工具栏「筛选」加法器 + 条件标签，不要在列头放漏斗。
 - 表格列名与表单字段标签只写简短、明确的业务名称（如「数量」）；不得把正负方向、单位口径、计算规则等说明塞进名称（如「数量(带符号,入正出负,物料默认单位口径)」），这些说明应放在页面说明、帮助文案或产品文档中。
 - `form.kind=basic` 的必填、只读、标签、枚举、外键与静态布局由服务端 Resource Catalog 声明，页面通过 `useCatalogBasicForm` 消费，不得重复手写。复杂资源的条件显隐、effects、React input/render、附件和子表属于 Presentation Extension，才在共置模块或页面叠加 `fields` override；接入范例见 `routes/_app/system/roles.tsx`。
 - 「保存并审核」是所有表单的通用约定：资源 meta 下发 `audit` 扩展动作且当前用户具备 audit 权限时，`SynieRecordDrawer` 会在「保存」旁自动出现「保存并审核」按钮（仅草稿单），页面无需自绘；前提是 `onSubmit` 返回保存后的记录 id（create 态必须 return 新 id，否则只能保存不能自动审核）。审核确认统一用列出整单条目的核对弹窗（`routes/_app/scm/-audit-doc.tsx` 的 `useAuditDoc`，条目页行操作「审核整单」与单据页「审核」共用），不要再用只显示条数的通用确认框。
