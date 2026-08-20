@@ -145,8 +145,9 @@ describeIf('printing integration', () => {
     const resourcesRes = await app.request('/api/v1/printing/resources', { headers })
     expect(resourcesRes.status).toBe(200)
     const resources = (await resourcesRes.json()) as { resources: string[] }
-    expect(resources.resources.length).toBe(67)
+    expect(resources.resources.length).toBe(68)
     expect(resources.resources).toContain('sales.order')
+    expect(resources.resources).toContain('acc.ar_ap')
 
     const catalogRes = await app.request(
       '/api/v1/printing/field-catalog?resource=sales.order',

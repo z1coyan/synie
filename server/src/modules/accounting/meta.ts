@@ -33,6 +33,10 @@ const statusOptions = [
 export const JOURNAL_RESOURCE_NAME = 'accGlJournals'
 export const JOURNAL_LINE_RESOURCE_NAME = 'accGlJournalLines'
 export const GL_ENTRY_RESOURCE_NAME = 'accGlEntries'
+export const AR_AP_RESOURCE_NAME = 'accArAp'
+export const AR_AP_ROW_RESOURCE_NAME = 'accArApRows'
+export const AR_AP_LEDGER_ROW_RESOURCE_NAME = 'accArApLedgerRows'
+export const AR_AP_PERMISSION_PREFIX = 'acc.ar_ap'
 
 export function journalResourceMeta(): ResourceMeta {
   const company = 'basCompanies'
@@ -362,6 +366,133 @@ export function glEntryResourceMeta(): ResourceMeta {
   }
 }
 
+const partyTypeField = field('party_type', 'partyType', 'enum', '类型', {
+  nullable: true,
+  enumOptions: partyOptions,
+})
+
+function roleBalanceFields(): ResourceMeta['fields'] {
+  return [
+    field('unbilled_receivable', 'unbilledReceivable', 'decimal', '未开票应收', {
+      calculated: true,
+    }),
+    field('receivable', 'receivable', 'decimal', '应收账款', { calculated: true }),
+    field('unbilled_payable', 'unbilledPayable', 'decimal', '未开票应付', { calculated: true }),
+    field('payable', 'payable', 'decimal', '应付账款', { calculated: true }),
+    field('other_payable', 'otherPayable', 'decimal', '其他应付款', { calculated: true }),
+  ]
+}
+
+/** 应收应付报表虚拟单据：仅 print/export，阅读仍走 acc.gl_entry:read。 */
+export function arApResourceMeta(): ResourceMeta {
+  return {
+    name: AR_AP_RESOURCE_NAME,
+    classification: {
+      presentation: 'none',
+      interactive: false,
+      note: '应收应付报表虚拟单据，仅模板打印/导出',
+    },
+    permissionPrefix: AR_AP_PERMISSION_PREFIX,
+    permissionLabel: '应收应付报表',
+    label: '应收应付报表',
+    table: 'acc_ar_ap',
+    authz: { kind: 'company' },
+    fields: [
+      field('id', 'id', 'uuid', 'id', { readonly: true }),
+      field('as_of', 'asOf', 'date', '截至日期', { readonly: true }),
+      field('perspective', 'perspective', 'string', '视角', { readonly: true }),
+      field('exported_at', 'exportedAt', 'datetime', '导出时间', { readonly: true }),
+      field('party_label', 'partyLabel', 'string', '对手', { readonly: true }),
+      partyTypeField,
+      field('company_id', 'companyId', 'fk', '公司', {
+        required: true,
+        readonly: true,
+        ref: { resource: 'basCompanies', relation: 'company', labelField: 'name' },
+      }),
+    ],
+    actions: [
+      { key: 'print', label: '打印', scope: 'both' },
+      { key: 'export', label: '导出', scope: 'both' },
+    ],
+    printHead: true,
+    printLoops: [
+      { name: 'rows', resource: AR_AP_ROW_RESOURCE_NAME },
+      { name: 'ledger', resource: AR_AP_LEDGER_ROW_RESOURCE_NAME },
+    ],
+    form: { kind: 'none' },
+    lookup: { labelField: 'perspective' },
+    audit: { enabled: false },
+  }
+}
+
+export function arApRowResourceMeta(): ResourceMeta {
+  return {
+    name: AR_AP_ROW_RESOURCE_NAME,
+    classification: {
+      presentation: 'none',
+      interactive: false,
+      note: '应收应付汇总循环区',
+    },
+    permissionPrefix: AR_AP_PERMISSION_PREFIX,
+    permissionLabel: '应收应付报表',
+    label: '往来余额行',
+    table: 'acc_ar_ap_row',
+    authz: { kind: 'global' },
+    fields: [
+      field('id', 'id', 'uuid', 'id', { readonly: true }),
+      field('party_label', 'partyLabel', 'string', '对手', { readonly: true }),
+      partyTypeField,
+      ...roleBalanceFields(),
+      field('net_receivable', 'netReceivable', 'decimal', '净应收', { calculated: true }),
+      field('net_payable', 'netPayable', 'decimal', '净应付', { calculated: true }),
+      field('net', 'net', 'decimal', '净额', { calculated: true }),
+    ],
+    actions: [],
+    form: { kind: 'none' },
+    lookup: { labelField: 'partyLabel' },
+    audit: { enabled: false },
+  }
+}
+
+export function arApLedgerRowResourceMeta(): ResourceMeta {
+  return {
+    name: AR_AP_LEDGER_ROW_RESOURCE_NAME,
+    classification: {
+      presentation: 'none',
+      interactive: false,
+      note: '往来明细循环区',
+    },
+    permissionPrefix: AR_AP_PERMISSION_PREFIX,
+    permissionLabel: '应收应付报表',
+    label: '往来明细行',
+    table: 'acc_ar_ap_ledger_row',
+    authz: { kind: 'global' },
+    fields: [
+      field('id', 'id', 'uuid', 'id', { readonly: true }),
+      field('posting_date', 'postingDate', 'date', '日期', { readonly: true }),
+      field('voucher_type_label', 'voucherTypeLabel', 'string', '类型', { readonly: true }),
+      field('voucher_no', 'voucherNo', 'string', '单号', { readonly: true }),
+      field('material_label', 'materialLabel', 'string', '物料', { readonly: true }),
+      field('qty', 'qty', 'decimal', '数量', { calculated: true }),
+      field('unit_label', 'unitLabel', 'string', '单位', { readonly: true }),
+      field('amount', 'amount', 'decimal', '金额', { calculated: true }),
+      ...roleBalanceFields(),
+      field('remarks', 'remarks', 'string', '备注', { readonly: true, nullable: true }),
+    ],
+    actions: [],
+    form: { kind: 'none' },
+    lookup: { labelField: 'voucherNo' },
+    audit: { enabled: false },
+  }
+}
+
 export function allAccountingResourceMetas(): ResourceMeta[] {
-  return [journalResourceMeta(), journalLineResourceMeta(), glEntryResourceMeta()]
+  return [
+    journalResourceMeta(),
+    journalLineResourceMeta(),
+    glEntryResourceMeta(),
+    arApResourceMeta(),
+    arApRowResourceMeta(),
+    arApLedgerRowResourceMeta(),
+  ]
 }

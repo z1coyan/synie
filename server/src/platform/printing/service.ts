@@ -75,6 +75,10 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     builders.set(resource, builder)
   }
 
+  function builderOf(resource: string): DocBuilder | undefined {
+    return builders.get(resource)
+  }
+
   function setPDFConverter(next: PDFConverter): void {
     converter = next
   }
@@ -356,15 +360,32 @@ export function createPrintingService(deps: PrintingServiceDeps) {
         resource: ['不在打印字段目录中'],
       })
     }
-    if (input.ids.length < 1) {
-      throw ApiError.validation('请至少选择一条单据', { ids: ['请至少选择一条单据'] })
-    }
-    if (input.ids.length > MAX_RENDER_BATCH) {
-      throw ApiError.validation('单次最多处理 100 条', { ids: ['单次最多处理 100 条'] })
-    }
     const builder = builders.get(input.resource)
     if (!builder) {
       throw new ApiError('not_implemented', `资源 ${input.resource} 的模板打印暂未接入`)
+    }
+    const ids = input.ids ?? []
+    if (builder.buildFromContext) {
+      if (ids.length > 0) {
+        throw ApiError.validation('该资源不按单据 id 打印', {
+          ids: ['请提供报表上下文，不要传单据 id'],
+        })
+      }
+      if (!input.context) {
+        throw ApiError.validation('请提供报表上下文', { context: ['必填'] })
+      }
+    } else {
+      if (input.context) {
+        throw ApiError.validation('该资源按单据打印，不接受报表上下文', {
+          context: ['请传单据 id'],
+        })
+      }
+      if (ids.length < 1) {
+        throw ApiError.validation('请至少选择一条单据', { ids: ['请至少选择一条单据'] })
+      }
+      if (ids.length > MAX_RENDER_BATCH) {
+        throw ApiError.validation('单次最多处理 100 条', { ids: ['单次最多处理 100 条'] })
+      }
     }
     const template = await loadTemplate(input.templateId)
     if (template.resource !== input.resource) {
@@ -395,8 +416,16 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     templateRaw: Uint8Array,
     input: RenderInput,
   ): Promise<RenderOutput> {
-    const docs = await builder.buildDocs(permit, input.ids)
-    const filename = renderFilename(builder.label(), docs, input.mode, input.ids.length)
+    const docs =
+      builder.buildFromContext && input.context
+        ? await builder.buildFromContext(permit, input.context)
+        : await builder.buildDocs(permit, input.ids ?? [])
+    const filename = renderFilename(
+      builder.label(),
+      docs,
+      input.mode,
+      input.context ? 1 : (input.ids?.length ?? 0),
+    )
     try {
       if (input.mode === RENDER_MODE_EXPORT) {
         const named = docs.map((d) => ({ name: d.sheetName, doc: d.doc }))
@@ -493,6 +522,7 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     delete: remove,
     render,
     registerDocBuilder,
+    builderOf,
     setPDFConverter,
   }
 }

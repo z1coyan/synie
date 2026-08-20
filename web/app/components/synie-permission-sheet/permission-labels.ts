@@ -64,6 +64,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'sys.file': '附件',
   'sys.storage': '存储接入',
   'acc.gl_entry': '总账分录',
+  'acc.ar_ap': '应收应付报表',
   'acc.gl_journal': '会计凭证',
   'acc.bank_account': '银行账户',
   'acc.bank_transaction': '银行流水',

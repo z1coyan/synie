@@ -186,10 +186,16 @@ export function createRegistry() {
   function canRead(resource: ResourceMeta, actor: Actor | null): boolean {
     if (!actor) return false
     const anyOf = resource.authz?.readAnyOf
-    if (!anyOf || anyOf.length === 0) {
-      return hasPermission(actor, `${resource.permissionPrefix}:read`)
+    if (anyOf && anyOf.length > 0) {
+      return anyOf.some((code) => hasPermission(actor, code))
     }
-    return anyOf.some((code) => hasPermission(actor, code))
+    const prefix = resource.permissionPrefix
+    if (hasPermission(actor, `${prefix}:read`)) return true
+    // 无 read 动作的资源（如仅 print/export）：任一已声明动作即可取文档投影，
+    // 供前端 useResourceCapabilities 消费，不另开权限码字面量。
+    const keys = resource.actions.map((action) => action.permissionAction ?? action.key)
+    if (keys.includes('read')) return false
+    return keys.some((key) => hasPermission(actor, `${prefix}:${key}`))
   }
 
   /**

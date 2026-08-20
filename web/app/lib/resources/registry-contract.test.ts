@@ -14,6 +14,9 @@ import { listResourceBindingKeys, resourceBindingFor } from './registry'
  * 键存在即豁免；值是理由，供评审与排查。资源一旦注册 binding 必须从此移除。
  */
 const NO_BINDING_BY_DESIGN: Readonly<Record<string, string>> = {
+  accArAp: '应收应付报表虚拟单据：仅模板打印/导出，无独立 CRUD binding',
+  accArApRows: '应收应付汇总循环区；打印字段目录用，无独立 binding',
+  accArApLedgerRows: '往来明细循环区；打印字段目录用，无独立 binding',
   mfgWorkOrderByproducts: '工单副产品快照；打印循环区（ADR 2026-08-07 D12，无用户 CRUD）',
   mfgWorkOrderComponents: '工单 BOM 配料快照；打印循环区（ADR 2026-08-07 D12，无用户 CRUD）',
   mfgWorkOrderRoutes: '工单工艺路线快照；打印循环区（ADR 2026-08-07 D12，无用户 CRUD）',

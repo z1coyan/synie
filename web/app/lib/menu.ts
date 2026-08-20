@@ -23,7 +23,7 @@ export interface MenuItem {
    * 关联权限资源前缀（呈现层导航索引，非模型事实）：
    * 「权限与菜单」抽屉里菜单项旁标注这些资源名、点击跳转权限矩阵对应行。
    * 多对多——一菜单可多资源（员工薪资→工资单/工资发放/员工借款）、资源可被复用
-   * （应收应付→acc.gl_entry）；空数组 = 无专属权限（纯展示页/圈人页）。
+   * （应收应付→acc.gl_entry + acc.ar_ap）；空数组 = 无专属权限（纯展示页/圈人页）。
    * 与权限目录双向覆盖由 menu-permission-contract.test.ts 对拍，新增资源/菜单漏注解即红。
    */
   relatedPermissions: string[]
@@ -119,12 +119,12 @@ export const menuModules: MenuModule[] = [
             path: '/finance/entries',
             relatedPermissions: ['acc.gl_entry'],
           },
-          // 应收应付报表是纯 GL 时点余额视图,复用总账分录 read 权限码
+          // 阅读复用总账分录 read；打印/导出是独立资源 acc.ar_ap
           {
             code: 'menu.finance.ar-ap',
             label: '应收应付',
             path: '/finance/ar-ap',
-            relatedPermissions: ['acc.gl_entry'],
+            relatedPermissions: ['acc.gl_entry', 'acc.ar_ap'],
           },
         ],
       },

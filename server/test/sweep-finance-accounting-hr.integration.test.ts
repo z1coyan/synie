@@ -974,7 +974,7 @@ run('PG 集成（扫荡 12：finance/accounting/hr 授权语义）', () => {
     const prefixes = new Set([
       'acc.vat_invoice', 'acc.bank_account', 'acc.bank_transaction', 'acc.bank_import_template',
       'acc.expense_report', 'acc.bill', 'acc.bill_transaction', 'acc.bill_holding',
-      'acc.gl_journal', 'acc.gl_entry',
+      'acc.gl_journal', 'acc.gl_entry', 'acc.ar_ap',
       'hr.attendance_punch', 'hr.attendance_day', 'hr.attendance_correction',
       'hr.payroll', 'hr.payroll_payment', 'hr.employee_loan',
     ])

@@ -315,6 +315,12 @@ describe('FieldCatalog', () => {
     const resources = catalog.resources()
     expect(resources).toContain('sales.order')
     expect(resources).toContain('sys.print_template')
+    expect(resources).toContain('acc.ar_ap')
+    const arAp = catalog.get('acc.ar_ap')
+    expect(arAp?.loops.map((l) => l.name).sort()).toEqual(['ledger', 'rows'])
+    for (const name of ['as_of', 'perspective', 'exported_at', 'company.name']) {
+      expect(arAp!.fields.map((f) => f.name)).toContain(name)
+    }
     // 与打印头规则对拍：无 authz.readAnyOf 的资源按权限前缀去重，随注册表增减自动跟随
     const expectedHeads = new Set(
       registry

@@ -7,7 +7,7 @@
 import type { Kysely } from 'kysely'
 import type { AppDeps } from './app.ts'
 import type { DB as Database } from './db/types.ts'
-import { createAccountingServices } from './modules/accounting/index.ts'
+import { createAccountingServices, registerArApDocBuilder } from './modules/accounting/index.ts'
 import { createBaseServices } from './modules/base/index.ts'
 import { createMarketService } from './modules/base/market/index.ts'
 import { createHrServices } from './modules/hr/index.ts'
@@ -112,6 +112,7 @@ function assembleDomain(
   const accounting = createAccountingServices(db, numbering, opts.registry, {
     isJournalLinkedToBankRecon,
   })
+  registerArApDocBuilder(printing, db, accounting.entries)
   const trading = createTradingServices(db, numbering, opts.registry)
   const finance = createFinanceServices(db, numbering, {
     reconciliations: trading.reconciliations,
