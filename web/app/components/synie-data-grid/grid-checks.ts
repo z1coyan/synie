@@ -1,4 +1,5 @@
 // bun app/components/synie-data-grid/grid-checks.ts 可直接运行的纯函数自检
+import './filter-fields-checks'
 import { dayEnd, dayStart, nextSort, UUID_RE } from './query'
 import { toCsv } from './csv'
 import { cellText, dateOnlyText } from './format'

@@ -1,7 +1,6 @@
-import { useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
+import { useState } from 'react'
 import { parseDate } from '@internationalized/date'
 import {
-  Button,
   Calendar,
   Checkbox,
   DateField,
@@ -10,7 +9,6 @@ import {
   Input,
   ListBox,
   NumberField,
-  Popover,
   RangeCalendar,
   Select,
   Switch,
@@ -18,19 +16,6 @@ import {
 import { RemoteMultiSelect } from '../synie-remote-select/RemoteMultiSelect'
 import type { ColumnFilter, DateOp, GridColumnMeta, GridColumnRefVariant, NumberOp, TextOp } from './types'
 import { useDraft } from './use-debounced'
-
-// 弹层 DOM 上 portal 到了表格外,但 React 合成事件仍沿组件树冒泡回可排序的 <th>:
-// 表格的 usePress/键盘导航会拦截指针与方向键,导致输入框无法划选、焦点被抢。
-// 在 Dialog 层截断冒泡;Escape 放行给上层 Popover 做关闭。
-const stopBubble = {
-  onKeyDown: (e: KeyboardEvent) => e.key !== 'Escape' && e.stopPropagation(),
-  onKeyUp: (e: KeyboardEvent) => e.key !== 'Escape' && e.stopPropagation(),
-  onPointerDown: (e: PointerEvent) => e.stopPropagation(),
-  onPointerUp: (e: PointerEvent) => e.stopPropagation(),
-  onMouseDown: (e: MouseEvent) => e.stopPropagation(),
-  onMouseUp: (e: MouseEvent) => e.stopPropagation(),
-  onClick: (e: MouseEvent) => e.stopPropagation(),
-}
 
 const TEXT_OPS: [TextOp, string][] = [
   ['contains', '包含'],
@@ -89,53 +74,7 @@ export function filterSummary(col: GridColumnMeta, f: ColumnFilter): string {
   }
 }
 
-/** 列头筛选按钮:绝对定位吸在表头单元格右缘(th 自带 relative),不随列对齐方式移动 */
-export function ColumnFilterButton({
-  column,
-  filter,
-  onChange,
-}: {
-  column: GridColumnMeta
-  filter: ColumnFilter | undefined
-  onChange: (f: ColumnFilter | null) => void
-}) {
-  const [isOpen, setIsOpen] = useState(false)
-  const active = filter !== undefined
-
-  return (
-    <Popover isOpen={isOpen} onOpenChange={setIsOpen}>
-      <Button
-        isIconOnly
-        size="sm"
-        variant="ghost"
-        aria-label={`筛选 ${column.label}`}
-        className={`absolute end-1 top-1/2 h-6 w-6 min-w-6 -translate-y-1/2 ${active ? 'text-accent' : 'text-muted'}`}
-      >
-        <FilterIcon />
-      </Button>
-      <Popover.Content placement="bottom" className="w-72">
-        <Popover.Dialog className="flex flex-col gap-3 p-3" {...stopBubble}>
-          <Popover.Heading className="text-sm font-medium">{column.label}</Popover.Heading>
-          <FilterControl column={column} filter={filter} onChange={onChange} />
-          {active && (
-            <Button
-              size="sm"
-              variant="tertiary"
-              onPress={() => {
-                onChange(null)
-                setIsOpen(false)
-              }}
-            >
-              清除筛选
-            </Button>
-          )}
-        </Popover.Dialog>
-      </Popover.Content>
-    </Popover>
-  )
-}
-
-/** 按列类型分派的筛选输入控件;列头弹层与卡片模式筛选 Sheet 共用 */
+/** 按列类型分派的筛选输入控件;工具栏加法器与标签编辑共用 */
 export function FilterControl({
   column,
   filter,
@@ -592,10 +531,3 @@ function DateFilter({
   )
 }
 
-function FilterIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="currentColor" aria-hidden>
-      <path d="M1.5 3h13l-5 6v4.5l-3-1.5V9l-5-6z" />
-    </svg>
-  )
-}

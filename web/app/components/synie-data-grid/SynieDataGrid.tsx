@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ActionBar, DataGrid, EmptyState, InlineSelect, type DataGridColumn, type DataGridSortDescriptor } from '@heroui-pro/react'
-import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, SearchField, Separator, toast } from '@heroui/react'
+import { Button, Chip, Dropdown, Label, ListBox, Pagination, SearchField, Separator, toast } from '@heroui/react'
 import type { Selection } from 'react-aria-components'
 import type { CapabilityEntry } from '@synie/shared'
 import { useMediaQuery } from '~/lib/use-media-query'
@@ -12,12 +12,13 @@ import { AttachmentImagesCell } from './attachment-images-cell'
 import { cardFields } from './card-fields'
 import { CardList, type CardSelection } from './card-list'
 import { cellContent, imageFileId, imageFilename, type ColumnOverride, type GridImageOverride } from './cells'
-import { CardFilterSheet, CardSortSheet } from './filter-sheet'
+import { adderFields, filterableFields, resolveFilterColumn } from './filter-fields'
+import { CardSortSheet } from './filter-sheet'
+import { FilterAdder, FilterTags } from './filter-toolbar'
 import { hasMoreRows, mergeLoadedRows } from './load-more'
 import { visibleOnCard } from './mobile-actions'
 import { RowActionsMenu } from './row-menu'
 import { downloadCsv, fetchAllRows, toCsv } from './csv'
-import { ColumnFilterButton, filterSummary } from './filter-popover'
 import { cellText } from './format'
 import { mergePick } from './pick'
 import { useGridMeta } from './meta'
@@ -184,6 +185,7 @@ const isLoadingRow = (row: Row) => row.id.startsWith(LOADING_ROW_PREFIX)
 const EMPTY_EXCLUDE: string[] = []
 const EMPTY_OVERRIDES: Record<string, ColumnOverride> = {}
 const EMPTY_FILTERS: FilterState = {}
+const EMPTY_COLUMNS: GridColumnMeta[] = []
 const getRowId = (r: Row) => r.id
 
 /** 搜索框草稿化:打字即时回显,停稳 300ms 才提交给父级,避免每键重渲染整表+发请求 */
@@ -267,8 +269,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     defaultFilters: props.defaultFilters ?? EMPTY_FILTERS,
   })
   const [selection, setSelection] = useState<Selection>(new Set())
-  // 卡片模式筛选/排序底部弹层
-  const [filterSheetOpen, setFilterSheetOpen] = useState(false)
+  // 卡片模式排序底部弹层
   const [sortSheetOpen, setSortSheetOpen] = useState(false)
 
   // 筛变通知页面(建单默认公司等);不把回调放进 deps 以免父组件未 memo 时循环
@@ -485,14 +486,31 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   }, [rowsQuery.data, page, totalPages])
 
   const attachmentImages = props.attachmentImages
+  const allMetaColumns = meta.data?.columns ?? EMPTY_COLUMNS
   // 筛选代理:override.filterField 将该列筛选改按同行另一字段(如物料列按 materialId 外键),
   // 展示/排序仍属列本身;目标字段取自 meta 全量列(可不在显示列白名单内),标签沿用列标签
-  const filterTargetOf = (col: GridColumnMeta): GridColumnMeta | null => {
-    const proxy = overrides[col.name]?.filterField
-    if (proxy == null) return col.filterable ? col : null
-    const target = meta.data?.columns.find((c) => c.name === proxy)
-    return target?.filterable ? { ...target, label: overrides[col.name]?.label ?? col.label } : null
-  }
+  const filterable = useMemo(
+    () => filterableFields(columns, overrides, allMetaColumns),
+    [columns, overrides, allMetaColumns],
+  )
+  const adderCandidates = useMemo(() => adderFields(filterable, filters), [filterable, filters])
+  const hasFilterable = filterable.length > 0
+  const filterTags = useMemo(
+    () =>
+      Object.entries(filters).map(([name, f]) => {
+        const col = resolveFilterColumn(name, columns, overrides, allMetaColumns) ?? {
+          name,
+          type: 'string' as const,
+          label: name,
+          sortable: false,
+          filterable: true,
+          enumOptions: null,
+          ref: null,
+        }
+        return { name, column: col, filter: f }
+      }),
+    [filters, columns, overrides, allMetaColumns],
+  )
   const gridColumns: DataGridColumn<Row>[] = useMemo(() => {
     const byName = new Map(columns.map((c) => [c.name, c]))
     // 按 columnOrder 建列(含合成附件列位置);选择/操作列稍后另挂,不进偏好
@@ -520,25 +538,11 @@ export function SynieDataGrid(props: SynieDataGridProps) {
       const col = byName.get(name)
       if (!col) continue
       const i = dataColIndex++
-      const filterCol = filterTargetOf(col)
       mapped.push({
         id: col.name,
         align: overrides[col.name]?.align ?? (col.type === 'integer' || col.type === 'decimal' ? 'end' : undefined),
-        // 筛选按钮绝对定位吸右,右侧留出内边距防止列名/排序箭头滑到按钮下面(右对齐列尤甚)
-        headerClassName: filterCol ? 'pe-9' : undefined,
-        // 函数式 header:DataGrid 自身按 allowsSorting 在文本后接排序箭头;筛选按钮脱离文档流吸在单元格右缘
-        header: () => (
-          <>
-            {overrides[col.name]?.label ?? col.label}
-            {filterCol && (
-              <ColumnFilterButton
-                column={filterCol}
-                filter={filters[filterCol.name]}
-                onChange={(f) => applyFilter(filterCol.name, f)}
-              />
-            )}
-          </>
-        ),
+        // 函数式 header:DataGrid 自身按 allowsSorting 在文本后接排序箭头;筛选入口在工具栏
+        header: () => <>{overrides[col.name]?.label ?? col.label}</>,
         // RAC Table 要求至少一列 isRowHeader(行的无障碍名称);缺失会在并发渲染中反复抛可恢复错误
         isRowHeader: i === 0,
         // 树形页面列排序无意义(单层懒加载),整表禁用排序入口。
@@ -584,14 +588,14 @@ export function SynieDataGrid(props: SynieDataGridProps) {
       }
     }
     return mapped
-  }, [columnOrder, columns, overrides, filters, treeMode, attachmentImages, showAttachmentImages])
+  }, [columnOrder, columns, overrides, treeMode, attachmentImages, showAttachmentImages])
 
   // 取消排序必须传 null 而非 undefined:undefined 会让 DataGrid 退回非受控内部状态,残留首次点击存下的旧描述符
   const sortDescriptor = (sort ? { column: sort.column, direction: sort.direction } : null) as unknown as
     | DataGridSortDescriptor
     | undefined
 
-  // 筛选变更处理器:列筛选弹层/Chips/筛选 Sheet 共用(URL/本地 setFilters 内已回第 1 页)
+  // 筛选变更处理器:加法器/标签编辑共用(URL/本地 setFilters 内已回第 1 页)
   const applyFilter = (name: string, f: ColumnFilter | null) => {
     setFilters((prev) => {
       const next = { ...prev }
@@ -757,11 +761,8 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         }
       : undefined
 
-  // 卡片模式工具栏:筛选/排序入口的可用列与生效计数;filterField 代理列以其目标字段计入
-  const filterSheetColumns = columns.map((col) => filterTargetOf(col) ?? col)
-  const hasFilterable = filterSheetColumns.some((c) => c.filterable)
+  // 卡片模式工具栏:排序入口;筛选走与桌面同一加法器
   const hasSortable = columns.some((c) => c.sortable)
-  const activeFilterCount = Object.keys(filters).length
 
   // 加载/失败/403 三态走统一 QueryState(403 由 QueryState 识别 AppError forbidden 渲染专属态)
   const queryPending = meta.isPending || (rowsQuery.isPending && !rowsQuery.data)
@@ -781,11 +782,13 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* 工具栏:搜索 + 动作按钮 + 列设置;hideSearch 且无动作/列设置时整行不渲染。
-          卡片模式:动作按钮换为「筛选(带生效计数)/排序」入口,列设置齿轮保留 */}
+      {/* 工具栏:搜索 + 筛选标签 + 右簇(筛选加法器 / 动作 / 列设置);hideSearch 且无动作/筛选/列设置时整行不渲染。
+          卡片模式:同一加法器,另加排序入口,列设置齿轮保留 */}
       {(!props.hideSearch ||
+        hasFilterable ||
+        filterTags.length > 0 ||
         (!cardMode && actions.toolbarActions.length > 0) ||
-        (cardMode && (hasFilterable || hasSortable || cardToolbarActions.length > 0)) ||
+        (cardMode && (hasSortable || cardToolbarActions.length > 0)) ||
         columnSettingsEnabled) && (
       <div className="flex flex-wrap items-center gap-3">
         {!props.hideSearch && (
@@ -797,8 +800,17 @@ export function SynieDataGrid(props: SynieDataGridProps) {
             }}
           />
         )}
+        <FilterTags
+          items={filterTags}
+          onChange={applyFilter}
+          onClearAll={clearAllFilters}
+          compact={cardMode}
+        />
         {!cardMode && (
         <div className="ml-auto flex items-center gap-2">
+          {hasFilterable && (
+            <FilterAdder fields={adderCandidates} filters={filters} onChange={applyFilter} />
+          )}
           {actions.toolbarActions.map((a) =>
             a.key === 'import' && props.importMenu ? (
               <Dropdown key={a.key}>
@@ -847,12 +859,15 @@ export function SynieDataGrid(props: SynieDataGridProps) {
             (hasSortable && !treeMode) ||
             columnSettingsEnabled) && (
           <div className="ml-auto flex items-center gap-2">
-            {cardToolbarActions.map(toolbarButton)}
             {hasFilterable && (
-              <Button size="sm" variant="secondary" onPress={() => setFilterSheetOpen(true)}>
-                筛选{activeFilterCount > 0 ? `（${activeFilterCount}）` : ''}
-              </Button>
+              <FilterAdder
+                fields={adderCandidates}
+                filters={filters}
+                onChange={applyFilter}
+                compact
+              />
             )}
+            {cardToolbarActions.map(toolbarButton)}
             {hasSortable && !treeMode && (
               <Button size="sm" variant="secondary" onPress={() => setSortSheetOpen(true)}>
                 排序
@@ -870,33 +885,6 @@ export function SynieDataGrid(props: SynieDataGridProps) {
           </div>
         )}
       </div>
-      )}
-
-      {/* 活跃筛选 Chips */}
-      {Object.keys(filters).length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          {Object.entries(filters).map(([name, f]) => {
-            // filterField 代理筛选的键(如 materialId)可能不在显示列内,回退查 meta 全量列取标签
-            const col = columns.find((c) => c.name === name) ?? meta.data?.columns.find((c) => c.name === name)
-            return (
-              <Chip key={name} size="sm" className="pr-1">
-                <Chip.Label>{col ? `${col.label} ${filterSummary(col, f)}` : name}</Chip.Label>
-                <CloseButton
-                  aria-label={`清除 ${col?.label ?? name} 筛选`}
-                  className="h-4 w-4 [&_svg]:size-3"
-                  onPress={() => applyFilter(name, null)}
-                />
-              </Chip>
-            )
-          })}
-          <Button
-            size="sm"
-            variant="ghost"
-            onPress={clearAllFilters}
-          >
-            清除全部
-          </Button>
-        </div>
       )}
 
       {cardMode ? (
@@ -1052,27 +1040,17 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
       {actions.confirmDialog}
 
-      {/* 卡片模式筛选/排序底部弹层:与桌面列头筛选、表头排序落同一 filters/sort 状态 */}
+      {/* 卡片模式排序底部弹层:与桌面表头排序落同一 sort 状态;筛选走工具栏加法器 */}
       {cardMode && (
-        <>
-          <CardFilterSheet
-            isOpen={filterSheetOpen}
-            onOpenChange={setFilterSheetOpen}
-            columns={filterSheetColumns}
-            filters={filters}
-            onFilterChange={applyFilter}
-            onClearAll={clearAllFilters}
-          />
-          <CardSortSheet
-            isOpen={sortSheetOpen}
-            onOpenChange={setSortSheetOpen}
-            columns={columns}
-            sort={sort}
-            onSortChange={(next) => {
-              setSort(next)
-            }}
-          />
-        </>
+        <CardSortSheet
+          isOpen={sortSheetOpen}
+          onOpenChange={setSortSheetOpen}
+          columns={columns}
+          sort={sort}
+          onSortChange={(next) => {
+            setSort(next)
+          }}
+        />
       )}
 
       {/* 图片列全屏预览:items 携当前页该列全部图片可循环切换 */}
