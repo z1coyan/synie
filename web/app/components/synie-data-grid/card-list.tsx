@@ -86,7 +86,7 @@ export function CardList({
 }: CardListProps) {
   if (rows.length === 0) {
     return (
-      <EmptyState size="sm" className="py-10">
+      <EmptyState size="sm" className="py-6">
         <EmptyState.Header>
           <EmptyState.Title>暂无数据</EmptyState.Title>
           <EmptyState.Description>没有符合条件的记录。</EmptyState.Description>

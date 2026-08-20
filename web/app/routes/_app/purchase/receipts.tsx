@@ -19,8 +19,8 @@ function PurchaseReceiptsLayout() {
 
   return (
     <ReceiptDrawerProvider urlSync>
-      <h1 className="font-brand text-3xl tracking-wide">采购入库</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">采购入库</h1>
+      <p className="mt-1 text-xs text-ink-500">
         履约入库单据：审核后增加库存、回写订单已收数量，有金额时按未开票应付科目过账。
       </p>
       <Tabs
@@ -29,7 +29,7 @@ function PurchaseReceiptsLayout() {
         onSelectionChange={(key) => {
           if (key !== selected) navigate({ to: `/purchase/receipts/${String(key)}` })
         }}
-        className="mt-4"
+        className="mt-2"
       >
         <Tabs.ListContainer>
           <Tabs.List aria-label="采购入库视图" className="w-fit min-w-0 *:w-auto">
@@ -45,7 +45,7 @@ function PurchaseReceiptsLayout() {
             ))}
           </Tabs.List>
         </Tabs.ListContainer>
-        <Tabs.Panel id={selected} className="pt-4">
+        <Tabs.Panel id={selected} className="pt-2">
           <Outlet />
         </Tabs.Panel>
       </Tabs>

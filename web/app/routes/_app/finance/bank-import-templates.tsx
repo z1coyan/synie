@@ -29,8 +29,8 @@ function BankImportTemplatesPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">流水导入模板</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">流水导入模板</h1>
+      <p className="mt-1 text-xs text-ink-500">
         描述银行导出 xls/xlsx 的列布局(各字段在哪一列、日期格式、起始行),导入银行流水时按模板解析。
       </p>
 

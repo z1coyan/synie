@@ -56,8 +56,8 @@ function FilesPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">文件管理</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">文件管理</h1>
+      <p className="mt-1 text-xs text-ink-500">
         系统内所有文件对象:存储接入点、对象键与业务挂接;仍有业务挂接的文件需先在业务单据中移除附件才能删除。
       </p>
 

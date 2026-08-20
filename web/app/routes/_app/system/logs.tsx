@@ -194,8 +194,8 @@ function LogsPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">操作日志</h1>
-      <p className="mt-2 text-sm text-ink-500">系统数据变更的审计记录,只读。</p>
+      <h1 className="font-brand text-xl">操作日志</h1>
+      <p className="mt-1 text-xs text-ink-500">系统数据变更的审计记录,只读。</p>
 
       <div className="mt-6">
         {/* 审计日志只读:不传 onCreate/onEdit 即无新增/编辑入口 */}

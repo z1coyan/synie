@@ -100,8 +100,8 @@ function BankTransactionsPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">银行流水</h1>
-      <p className="mt-2 text-sm text-ink-500">银行对账单的电子档案:数据以银行为准,余额是银行口径快照。</p>
+      <h1 className="font-brand text-xl">银行流水</h1>
+      <p className="mt-1 text-xs text-ink-500">银行对账单的电子档案:数据以银行为准,余额是银行口径快照。</p>
 
       <div className="mt-6">
         <SynieDataGrid

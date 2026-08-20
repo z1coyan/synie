@@ -121,8 +121,8 @@ function NumberingPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">编号规则</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">编号规则</h1>
+      <p className="mt-1 text-xs text-ink-500">
         单据自动编号:规则绑定单据,编号由「固定文本 + 单据字段 + 序号」拼装(序号只能一段,
         日期字段可选格式);单据保存时由系统按启用规则自动取号,不接受手填。计数按「渲染后的文本 + 是否按公司」
         自然分组——日期变了序号自动从头计;计数器由取号自动创建,可在规则里调整当前序号。

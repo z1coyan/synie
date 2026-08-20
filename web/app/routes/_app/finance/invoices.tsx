@@ -666,8 +666,8 @@ function InvoicesPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">增值税发票</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">增值税发票</h1>
+      <p className="mt-1 text-xs text-ink-500">
         进销项发票登记,草稿态可自由编辑,审核后生成总账分录;支持作废、红冲与内部公司对向发票互链。
       </p>
 

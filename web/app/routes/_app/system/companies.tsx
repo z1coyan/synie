@@ -35,8 +35,8 @@ function CompaniesPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">公司管理</h1>
-      <p className="mt-2 text-sm text-ink-500">多公司主数据与集团层级。</p>
+      <h1 className="font-brand text-xl">公司管理</h1>
+      <p className="mt-1 text-xs text-ink-500">多公司主数据与集团层级。</p>
 
       <div className="mt-6">
         <SynieDataGrid

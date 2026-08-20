@@ -66,7 +66,7 @@ function longTextField(
 const DEFINITIONS = {
   purQuotations: {
     label: '采购报价单',
-    contentClassName: 'w-full lg:w-[880px]',
+    contentClassName: 'w-full lg:w-[800px]',
     exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: {
@@ -111,7 +111,7 @@ const DEFINITIONS = {
   },
   purOrders: {
     label: '采购订单',
-    contentClassName: 'w-full lg:w-[880px]',
+    contentClassName: 'w-full lg:w-[800px]',
     exclude: [...AUDIT_TRAIL_EXCLUDE, 'grossTotal', 'baseGrossTotal'],
     fields: {
       companyId: {
@@ -156,7 +156,7 @@ const DEFINITIONS = {
   },
   purReturns: {
     label: '采购退货单',
-    contentClassName: 'w-full lg:w-[960px]',
+    contentClassName: 'w-full lg:w-[880px]',
     exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: {
@@ -219,7 +219,7 @@ const DEFINITIONS = {
   purOutsourcedReturns: {
     // 纯数量单：无金额/过账日期/表底科目/原币汇率（ADR 2026-08-09）
     label: '委外退货单',
-    contentClassName: 'w-full lg:w-[960px]',
+    contentClassName: 'w-full lg:w-[880px]',
     exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: {
@@ -249,7 +249,7 @@ const DEFINITIONS = {
   },
   purReceipts: {
     label: '采购入库单',
-    contentClassName: 'w-full lg:w-[960px]',
+    contentClassName: 'w-full lg:w-[880px]',
     exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: {
@@ -355,7 +355,7 @@ const DEFINITIONS = {
   },
   purOutsourcedReceipts: {
     label: '委外入库单',
-    contentClassName: 'w-full lg:w-[960px]',
+    contentClassName: 'w-full lg:w-[880px]',
     exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: {
@@ -525,7 +525,7 @@ const DEFINITIONS = {
   },
   purOutsourcedIssues: {
     label: '委外发料单',
-    contentClassName: 'w-full lg:w-[960px]',
+    contentClassName: 'w-full lg:w-[880px]',
     exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: {
@@ -615,7 +615,7 @@ const DEFINITIONS = {
   },
   purReconciliations: {
     label: '采购对账单',
-    contentClassName: 'w-full lg:w-[960px]',
+    contentClassName: 'w-full lg:w-[880px]',
     exclude: [
       'status',
       'createdById',

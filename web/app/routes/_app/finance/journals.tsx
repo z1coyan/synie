@@ -166,8 +166,8 @@ function JournalsPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">会计凭证</h1>
-      <p className="mt-2 text-sm text-ink-500">手工录入记账凭证,草稿态可自由增删改行,审核后生成总账分录。</p>
+      <h1 className="font-brand text-xl">会计凭证</h1>
+      <p className="mt-1 text-xs text-ink-500">手工录入记账凭证,草稿态可自由增删改行,审核后生成总账分录。</p>
 
       <div className="mt-6">
         <SynieDataGrid

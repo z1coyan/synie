@@ -20,8 +20,8 @@ function SalesOrdersLayout() {
 
   return (
     <OrderDrawerProvider urlSync>
-      <h1 className="font-brand text-3xl tracking-wide">销售订单</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">销售订单</h1>
+      <p className="mt-1 text-xs text-ink-500">
         公司向客户承诺供货的订货单据:草稿态可自由增删改行,审核后锁死(无反审核),仅可关闭或作废。
       </p>
       <Tabs
@@ -31,7 +31,7 @@ function SalesOrdersLayout() {
         onSelectionChange={(key) => {
           if (key !== selected) navigate({ to: `/sales/orders/${String(key)}` })
         }}
-        className="mt-4"
+        className="mt-2"
       >
         <Tabs.ListContainer>
           {/* 默认 min-w-full + tab w-full 满宽平分;收紧为内容宽靠左,容器全宽底边保留 */}
@@ -48,7 +48,7 @@ function SalesOrdersLayout() {
             ))}
           </Tabs.List>
         </Tabs.ListContainer>
-        <Tabs.Panel id={selected} className="pt-4">
+        <Tabs.Panel id={selected} className="pt-2">
           <Outlet />
         </Tabs.Panel>
       </Tabs>

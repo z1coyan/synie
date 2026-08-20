@@ -29,8 +29,8 @@ function OperationsPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">工序</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">工序</h1>
+      <p className="mt-1 text-xs text-ink-500">
         全局共享的工序主数据,BOM 工艺路线与工艺模板按序引用;被引用后不可删除。
       </p>
 

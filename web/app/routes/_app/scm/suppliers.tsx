@@ -42,8 +42,8 @@ function SuppliersPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">供应商管理</h1>
-      <p className="mt-2 text-sm text-ink-500">采购往来的供应商主数据,编号现阶段手工维护。</p>
+      <h1 className="font-brand text-xl">供应商管理</h1>
+      <p className="mt-1 text-xs text-ink-500">采购往来的供应商主数据,编号现阶段手工维护。</p>
 
       <div className="mt-6">
         <SynieDataGrid

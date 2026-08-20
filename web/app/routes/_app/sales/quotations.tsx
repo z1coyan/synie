@@ -20,8 +20,8 @@ function QuotationsLayout() {
 
   return (
     <QuotationDrawerProvider urlSync>
-      <h1 className="font-brand text-3xl tracking-wide">销售报价</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">销售报价</h1>
+      <p className="mt-1 text-xs text-ink-500">
         对客户/内部公司的价格承诺清单:条目只报单价不含数量,支持固定价与数量梯度;审核后锁死(无反审核),截止日过后视为已过期,可作废撤回。
       </p>
       <Tabs
@@ -31,7 +31,7 @@ function QuotationsLayout() {
         onSelectionChange={(key) => {
           if (key !== selected) navigate({ to: `/sales/quotations/${String(key)}` })
         }}
-        className="mt-4"
+        className="mt-2"
       >
         <Tabs.ListContainer>
           {/* 默认 min-w-full + tab w-full 满宽平分;收紧为内容宽靠左,容器全宽底边保留 */}
@@ -48,7 +48,7 @@ function QuotationsLayout() {
             ))}
           </Tabs.List>
         </Tabs.ListContainer>
-        <Tabs.Panel id={selected} className="pt-4">
+        <Tabs.Panel id={selected} className="pt-2">
           <Outlet />
         </Tabs.Panel>
       </Tabs>

@@ -26,8 +26,8 @@ function DemandsLayout() {
 
   return (
     <DemandDrawerProvider urlSync>
-      <h1 className="font-brand text-3xl tracking-wide">需求单</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">需求单</h1>
+      <p className="mt-1 text-xs text-ink-500">
         履约需求单：计划从销售勾选或手工建独立需求；确认后按安排子表混排生产/采购/委外/库存/关闭，行完成由已安排与已完成双投影自动判定。
       </p>
       <Tabs
@@ -37,7 +37,7 @@ function DemandsLayout() {
         onSelectionChange={(key) => {
           if (key !== selected) navigate({ to: `/mfg/demands/${String(key)}` })
         }}
-        className="mt-4"
+        className="mt-2"
       >
         <Tabs.ListContainer>
           {/* 默认 min-w-full + tab w-full 满宽平分;收紧为内容宽靠左,容器全宽底边保留 */}
@@ -54,7 +54,7 @@ function DemandsLayout() {
             ))}
           </Tabs.List>
         </Tabs.ListContainer>
-        <Tabs.Panel id={selected} className="pt-4">
+        <Tabs.Panel id={selected} className="pt-2">
           <Outlet />
         </Tabs.Panel>
       </Tabs>

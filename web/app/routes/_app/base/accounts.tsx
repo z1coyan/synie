@@ -106,8 +106,8 @@ function AccountsPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">科目表</h1>
-      <p className="mt-2 text-sm text-ink-500">按公司维护会计科目,支持多级科目树。</p>
+      <h1 className="font-brand text-xl">科目表</h1>
+      <p className="mt-1 text-xs text-ink-500">按公司维护会计科目,支持多级科目树。</p>
 
       <div className="mt-6 max-w-xs">
         <RemoteSelect

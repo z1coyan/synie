@@ -33,8 +33,8 @@ function UnitsPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">单位管理</h1>
-      <p className="mt-2 text-sm text-ink-500">计量单位主数据,每类型一个基准单位,其余按比例换算。</p>
+      <h1 className="font-brand text-xl">单位管理</h1>
+      <p className="mt-1 text-xs text-ink-500">计量单位主数据,每类型一个基准单位,其余按比例换算。</p>
 
       <div className="mt-6">
         <SynieDataGrid

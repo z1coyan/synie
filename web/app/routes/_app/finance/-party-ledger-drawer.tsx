@@ -175,7 +175,7 @@ export function PartyLedgerDrawer(props: {
   return (
     <Sheet isOpen={props.isOpen} onOpenChange={props.onOpenChange} placement="right" isHandleOnly>
       <Sheet.Backdrop>
-        <Sheet.Content className="w-full lg:w-[1080px]">
+        <Sheet.Content className="w-full lg:w-[960px]">
           <Sheet.Dialog className="h-full" aria-label={title}>
             <Sheet.CloseTrigger />
             <Sheet.Header>

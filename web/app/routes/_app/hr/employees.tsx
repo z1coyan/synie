@@ -54,8 +54,8 @@ function EmployeesPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">员工档案</h1>
-      <p className="mt-2 text-sm text-ink-500">员工主数据:基本信息、证件与薪酬标准,身份证照片在详情中维护。</p>
+      <h1 className="font-brand text-xl">员工档案</h1>
+      <p className="mt-1 text-xs text-ink-500">员工主数据:基本信息、证件与薪酬标准,身份证照片在详情中维护。</p>
 
       <div className="mt-6">
         <SynieDataGrid

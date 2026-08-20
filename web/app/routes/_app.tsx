@@ -54,6 +54,12 @@ function AppLayout() {
     if (data?.user?.id) setCatalogActor(data.user.id)
   }, [data?.user?.id])
 
+  // 业务面密度 token:抽屉/筛选弹层 portal 到 body,靠此类收紧控件;登录/向导无此 class
+  useEffect(() => {
+    document.body.classList.add('synie-dense')
+    return () => document.body.classList.remove('synie-dense')
+  }, [])
+
   // 会话中途过期的客户端兜底:me 明确 401 回登录页;其它网络错误留在页面重试。
   useEffect(() => {
     if (meIsError && meError instanceof APIError && meError.code === 'unauthorized') {

@@ -72,7 +72,7 @@
 
   /* Border Radius */
   --radius: 0.125rem;
-  --field-radius: 0.75rem;
+  --field-radius: 0.375rem;
 }
 
 html {
@@ -107,14 +107,42 @@ html {
   }
 }
 
-@layer components {
-  /* 列头/单元格不换行:过宽由 .table__scroll-container 自带的横向滚动承接 */
-  .table__column {
-    @apply whitespace-nowrap;
+/*
+ * 列头/单元格不换行:过宽由 .table__scroll-container 自带的横向滚动承接。
+ * 行高靠 px-2 py-1 覆盖库默认 px-4 py-3,收到约 32–36px;
+ * 不钉死 height,避免物料富单元格被裁切。放在 layer 外才能盖过 @heroui/styles。
+ */
+.table__column,
+.table__header-cell {
+  @apply whitespace-nowrap px-2 py-1;
+}
+
+.table__cell {
+  @apply px-2 py-1 text-[13px] whitespace-nowrap;
+}
+
+/*
+ * 业务面控件收紧(HeroUI v3 表单根组件无 size):桌面收到 Button sm 的 h-8,
+ * 移动端保持库默认 min-h-9 / h-9(≥36px)。只在 _app 挂的 .synie-dense 下生效,
+ * 登录/向导/启动幕布不受影响。
+ */
+@media (min-width: 1024px) {
+  .synie-dense .select__trigger,
+  .synie-dense .autocomplete__trigger,
+  .synie-dense .input-group,
+  .synie-dense .number-field__group,
+  .synie-dense .date-input-group {
+    min-height: 2rem;
+    height: 2rem;
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
   }
 
-  .table__cell {
-    @apply text-[13px] whitespace-nowrap;
+  .synie-dense .input,
+  .synie-dense .number-field__input,
+  .synie-dense .date-input-group__input {
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
   }
 }
 

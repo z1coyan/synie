@@ -24,8 +24,8 @@ function MaterialCategoriesPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">物料分类</h1>
-      <p className="mt-2 text-sm text-ink-500">全局共享的物料分类树,分类编号将来作为物料编号前缀。</p>
+      <h1 className="font-brand text-xl">物料分类</h1>
+      <p className="mt-1 text-xs text-ink-500">全局共享的物料分类树,分类编号将来作为物料编号前缀。</p>
 
       <div className="mt-6">
         <SynieDataGrid

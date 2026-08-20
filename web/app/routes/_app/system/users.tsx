@@ -148,8 +148,8 @@ function UsersPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">用户管理</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">用户管理</h1>
+      <p className="mt-1 text-xs text-ink-500">
         管理系统登录用户。密码由系统随机生成,仅在创建或重置时显示一次。邮箱用于 Logto
         登录匹配(与 Logto 账号邮箱一致时方可首登绑定)。
       </p>

@@ -48,8 +48,8 @@ function BankAccountsPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">银行账户</h1>
-      <p className="mt-2 text-sm text-ink-500">公司名下的银行账户主数据,为银行流水与对账做准备。</p>
+      <h1 className="font-brand text-xl">银行账户</h1>
+      <p className="mt-1 text-xs text-ink-500">公司名下的银行账户主数据,为银行流水与对账做准备。</p>
 
       <div className="mt-6">
         <SynieDataGrid

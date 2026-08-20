@@ -19,8 +19,8 @@ function SalesReturnsLayout() {
 
   return (
     <ReturnDrawerProvider urlSync>
-      <h1 className="font-brand text-3xl tracking-wide">销售退货</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">销售退货</h1>
+      <p className="mt-1 text-xs text-ink-500">
         退货回库单据：审核后增加库存、回减订单已发数量，有金额时按借贷科目冲减未开票应收。
       </p>
       <Tabs
@@ -29,7 +29,7 @@ function SalesReturnsLayout() {
         onSelectionChange={(key) => {
           if (key !== selected) navigate({ to: `/sales/returns/${String(key)}` })
         }}
-        className="mt-4"
+        className="mt-2"
       >
         <Tabs.ListContainer>
           <Tabs.List aria-label="销售退货视图" className="w-fit min-w-0 *:w-auto">
@@ -45,7 +45,7 @@ function SalesReturnsLayout() {
             ))}
           </Tabs.List>
         </Tabs.ListContainer>
-        <Tabs.Panel id={selected} className="pt-4">
+        <Tabs.Panel id={selected} className="pt-2">
           <Outlet />
         </Tabs.Panel>
       </Tabs>

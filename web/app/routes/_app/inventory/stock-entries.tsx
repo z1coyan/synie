@@ -66,8 +66,8 @@ function StockEntriesPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">库存分录流水</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">库存分录流水</h1>
+      <p className="mt-1 text-xs text-ink-500">
         库存分录明细,来源单据审核后自动生成,只读不可编辑;数量入正出负,来源单据可点开速览(头+行)。
       </p>
 

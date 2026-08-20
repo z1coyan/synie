@@ -58,8 +58,8 @@ function FinanceSettingsPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">财务设置</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">财务设置</h1>
+      <p className="mt-1 text-xs text-ink-500">
         财务模块全局配置。阿里云 OCR 凭证用于发票/承兑汇票的票面识别,留空即停用识别入口。
       </p>
 

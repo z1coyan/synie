@@ -65,8 +65,8 @@ function PurchaseSettingsPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">采购设置</h1>
-      <p className="mt-2 text-sm text-ink-500">采购全局配置（非公司维度）。</p>
+      <h1 className="font-brand text-xl">采购设置</h1>
+      <p className="mt-1 text-xs text-ink-500">采购全局配置（非公司维度）。</p>
       <Card className="mt-4 max-w-2xl">
         <Card.Header>
           <Card.Title>零星订单</Card.Title>
