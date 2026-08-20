@@ -273,7 +273,7 @@ function OpSelect<K extends string>({
   onChange: (v: K) => void
 }) {
   return (
-    <Select size="sm" aria-label="筛选方式" variant="secondary" value={value} onChange={(v) => v != null && onChange(v as K)}>
+    <Select aria-label="筛选方式" variant="secondary" value={value} onChange={(v) => v != null && onChange(v as K)}>
       <Select.Trigger>
         <Select.Value />
         <Select.Indicator />
@@ -412,7 +412,7 @@ function TextFilter({
           emit(o, draft)
         }}
       />
-      <Input size="sm" placeholder="筛选值…" value={draft} onChange={(e) => setDraft(e.target.value)} />
+      <Input placeholder="筛选值…" value={draft} onChange={(e) => setDraft(e.target.value)} />
     </div>
   )
 }
@@ -447,7 +447,6 @@ function NumberFilter({
 
   const numberInput = (value: string, onValue: (v: string) => void, label: string) => (
     <NumberField
-      size="sm"
       aria-label={label}
       variant="secondary"
       value={value === '' ? NaN : Number(value)}
@@ -512,7 +511,6 @@ function DateFilter({
       />
       {op === 'between' ? (
         <DateRangePicker
-          size="sm"
           aria-label="日期区间"
           value={range}
           onChange={(r) =>
@@ -555,7 +553,6 @@ function DateFilter({
         </DateRangePicker>
       ) : (
         <DatePicker
-          size="sm"
           aria-label="日期"
           value={single}
           onChange={(v) => onChange(v ? { kind: 'date', op: op as DateOp, value: v.toString() } : null)}

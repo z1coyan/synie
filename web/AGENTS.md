@@ -18,7 +18,7 @@
 
 ## 业务数据页标准组件
 
-- 业务面（`_app` 壳、列表、抽屉、筛选）默认高密度、控件 `size="sm"`；登录、初始化向导、启动幕布等仪式面除外。
+- 业务面（`_app` 壳、列表、抽屉、筛选）默认高密度：按钮 `size="sm"`，表单控件用 Tailwind 收到 sm 高度（HeroUI v3 字段无 size）；登录、初始化向导、启动幕布等仪式面除外。
 - 数据列表一律用 `SynieDataGrid`（`~/components/synie-data-grid/`）；数据详情、新增、编辑一律用 `SynieRecordDrawer`（`~/components/synie-record-drawer/`）三态抽屉，不要自造表格或表单。
 - 表格列名与表单字段标签只写简短、明确的业务名称（如「数量」）；不得把正负方向、单位口径、计算规则等说明塞进名称（如「数量(带符号,入正出负,物料默认单位口径)」），这些说明应放在页面说明、帮助文案或产品文档中。
 - `form.kind=basic` 的必填、只读、标签、枚举、外键与静态布局由服务端 Resource Catalog 声明，页面通过 `useCatalogBasicForm` 消费，不得重复手写。复杂资源的条件显隐、effects、React input/render、附件和子表属于 Presentation Extension，才在共置模块或页面叠加 `fields` override；接入范例见 `routes/_app/system/roles.tsx`。

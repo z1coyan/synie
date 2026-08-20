@@ -636,7 +636,6 @@ function FieldInput({
     case 'decimal':
       return (
         <NumberField
-          size="sm"
           fullWidth
           isDisabled={isDisabled}
           isRequired={field.required}
@@ -657,7 +656,6 @@ function FieldInput({
       // YYYY-MM-DDTHH:mm:ss;date 保持日粒度 YYYY-MM-DD
       return (
         <DatePicker
-          size="sm"
           granularity={field.col.type === 'datetime' ? 'second' : 'day'}
           hourCycle={24}
           isDisabled={isDisabled}
@@ -700,7 +698,6 @@ function FieldInput({
     case 'enum':
       return (
         <Select
-          size="sm"
           isDisabled={isDisabled}
           isRequired={field.required}
           value={value == null || value === '' ? null : String(value)}
@@ -770,7 +767,6 @@ function FieldInput({
     default:
       return (
         <TextField
-          size="sm"
           isDisabled={isDisabled}
           isRequired={field.required}
           value={value == null ? '' : String(value)}

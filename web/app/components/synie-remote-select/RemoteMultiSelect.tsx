@@ -49,7 +49,6 @@ export function RemoteMultiSelect(props: RemoteMultiSelectProps) {
 
   return (
     <Autocomplete
-      size="sm"
       aria-label={props.label ?? props.placeholder ?? '请选择'}
       selectionMode="multiple"
       value={props.value}
