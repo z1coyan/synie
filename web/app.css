@@ -109,12 +109,12 @@ html {
 
 /*
  * 列头/单元格不换行:过宽由 .table__scroll-container 自带的横向滚动承接。
- * 行高靠 px-2 py-1 覆盖库默认 px-4 py-3,收到约 32–36px;
+ * 列头 px-2 py-2(竖向 8px)、数据行 px-2 py-1,覆盖库默认 px-4 py-3;
  * 不钉死 height,避免物料富单元格被裁切。放在 layer 外才能盖过 @heroui/styles。
  */
 .table__column,
 .table__header-cell {
-  @apply whitespace-nowrap px-2 py-1;
+  @apply whitespace-nowrap px-2 py-2;
 }
 
 .table__cell {
