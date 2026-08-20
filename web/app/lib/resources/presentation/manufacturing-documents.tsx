@@ -130,7 +130,7 @@ const DEFINITIONS = {
   },
   mfgDemands: {
     label: '履约需求单',
-    contentClassName: 'w-full lg:w-[960px]',
+    contentClassName: 'w-full lg:w-[880px]',
     exclude: ['status', 'createdById', 'insertedAt', 'updatedAt'],
     fields: {
       companyId: {
@@ -328,7 +328,7 @@ const DEFINITIONS = {
   },
   mfgOutputs: {
     label: '生产入库单',
-    contentClassName: 'w-full lg:w-[960px]',
+    contentClassName: 'w-full lg:w-[880px]',
     exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: {
