@@ -512,7 +512,6 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
     const summary = await builder.buildFromContext!(entryPermit(), {
       companyId: fx.companyId,
       asOf: '2026-07-31',
-      side: 'ar',
       ...view,
     })
     expect(summary).toHaveLength(1)
@@ -539,8 +538,9 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
       partyType: 'CUSTOMER',
       partyId: fx.customerId,
     })
-    expect(detail[0]!.doc.loops.ledger).toHaveLength(ledger.rows.length)
-    expect(Number(detail[0]!.doc.loops.ledger[0]!.amount)).toBe(Number(ledger.rows[0]!.amount))
+    const printedLedger = detail[0]!.doc.loops.ledger ?? []
+    expect(printedLedger).toHaveLength(ledger.rows.length)
+    expect(Number(printedLedger[0]!.amount)).toBe(Number(ledger.rows[0]!.amount))
     expect(detail[0]!.doc.fields.party_label).toBe(fx.customerName)
 
     const outsider: Actor = testActor({
