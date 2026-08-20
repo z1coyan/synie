@@ -118,8 +118,8 @@ function EntriesPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">总账分录</h1>
-      <p className="mt-2 text-sm text-ink-500">总账分录明细,来源单据审核后自动生成,只读不可编辑。</p>
+      <h1 className="font-brand text-xl">总账分录</h1>
+      <p className="mt-1 text-xs text-ink-500">总账分录明细,来源单据审核后自动生成,只读不可编辑。</p>
 
       <div className="mt-6">
         {/* key 随下钻参数重挂:defaultFilters 仅作初值,报表再次跳转要换新条件 */}

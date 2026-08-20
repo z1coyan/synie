@@ -32,8 +32,8 @@ function CurrenciesPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">货币管理</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">货币管理</h1>
+      <p className="mt-1 text-xs text-ink-500">
         交易与账务使用的货币主数据。停用后不可再选作新单据/公司本币；历史引用不受影响。被公司引用为本币的不可停用。
       </p>
 

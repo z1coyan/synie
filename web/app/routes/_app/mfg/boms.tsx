@@ -39,8 +39,8 @@ function BomsPageInner() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">BOM</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">BOM</h1>
+      <p className="mt-1 text-xs text-ink-500">
         物料清单(单层配方):同一物料可建多张,凭编号/方案名称区分;配料含净用量与损耗率;工艺路线可手录或从工艺模板带入;副产品为联产出声明。
       </p>
 

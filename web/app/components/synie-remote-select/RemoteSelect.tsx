@@ -44,6 +44,7 @@ export function RemoteSelect(props: RemoteSelectProps) {
 
   return (
     <Autocomplete
+      size="sm"
       aria-label={props.label ?? props.placeholder ?? '请选择'}
       value={props.value}
       onChange={(key) => {

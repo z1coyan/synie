@@ -26,8 +26,8 @@ function OutputsLayout() {
 
   return (
     <OutputDrawerProvider urlSync>
-      <h1 className="font-brand text-3xl tracking-wide">生产入库</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">生产入库</h1>
+      <p className="mt-1 text-xs text-ink-500">
         对生产工单成品入账：行挂工单、可分次；审核写库存分录并累加工单已入，满量后工单完工。
       </p>
       <Tabs
@@ -36,7 +36,7 @@ function OutputsLayout() {
         onSelectionChange={(key) => {
           if (key !== selected) navigate({ to: `/mfg/outputs/${String(key)}` })
         }}
-        className="mt-4"
+        className="mt-2"
       >
         <Tabs.ListContainer>
           <Tabs.List aria-label="生产入库视图" className="w-fit min-w-0 *:w-auto">
@@ -52,7 +52,7 @@ function OutputsLayout() {
             ))}
           </Tabs.List>
         </Tabs.ListContainer>
-        <Tabs.Panel id={selected} className="pt-4">
+        <Tabs.Panel id={selected} className="pt-2">
           <Outlet />
         </Tabs.Panel>
       </Tabs>

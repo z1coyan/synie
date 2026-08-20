@@ -20,7 +20,7 @@ function PayrollLayout() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">员工薪资</h1>
+      <h1 className="font-brand text-xl">员工薪资</h1>
       <Tabs
         variant="secondary"
         selectedKey={selected}
@@ -29,7 +29,7 @@ function PayrollLayout() {
         onSelectionChange={(key) => {
           if (key !== selected) navigate({ to: `/hr/payroll/${String(key)}` })
         }}
-        className="mt-4"
+        className="mt-2"
       >
         <Tabs.ListContainer>
           {/* 默认 min-w-full + tab w-full 满宽平分;收紧为内容宽靠左,容器全宽底边保留 */}
@@ -46,7 +46,7 @@ function PayrollLayout() {
             ))}
           </Tabs.List>
         </Tabs.ListContainer>
-        <Tabs.Panel id={selected} className="pt-4">
+        <Tabs.Panel id={selected} className="pt-2">
           <Outlet />
         </Tabs.Panel>
       </Tabs>

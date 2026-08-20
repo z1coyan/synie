@@ -102,8 +102,8 @@ function WarehousesPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">仓库管理</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">仓库管理</h1>
+      <p className="mt-1 text-xs text-ink-500">
         按公司维护仓库树;外协仓必挂一个协作方(供应商/内部公司),其结存即协作方处的我方材料结存。
       </p>
 

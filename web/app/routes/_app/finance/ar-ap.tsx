@@ -152,8 +152,8 @@ function ArApPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">应收应付</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">应收应付</h1>
+      <p className="mt-1 text-xs text-ink-500">
         截至日按对手轧差的往来余额，口径为总账分录（未过账不统计）。行尾查看打开该对手往来明细。
       </p>
 
@@ -326,7 +326,7 @@ function ArApPage() {
                 ))}
               </Tabs.List>
             </Tabs.ListContainer>
-            <Tabs.Panel id={tab} className="pt-4">
+            <Tabs.Panel id={tab} className="pt-2">
               {sideRows.length === 0 ? (
                 <EmptyState size="md" className="h-48 justify-center">
                   <EmptyState.Header>

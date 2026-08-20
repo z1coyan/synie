@@ -409,7 +409,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
     const subset = tabKey == null ? shown : shown.filter((f) => (f.tab ?? firstTabKey) === tabKey)
     const extraFn = tabKey == null || tabKey === firstTabKey ? props.extraContent : props.tabExtraContent?.[tabKey]
     return (
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+      <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-12">
         {renderFields(subset)}
         {extraFn && <div className="mt-2 lg:col-span-12">{extraFn(renderMode, renderRow, values, patchValues)}</div>}
       </div>
@@ -453,10 +453,10 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                 </EmptyState>
               ) : (
                 <>
-                {/* 返回 null/undefined 不渲染占位容器(空 div 的 mb-6 会平白多出一段间距) */}
+                {/* 返回 null/undefined 不渲染占位容器(空 div 的 mb-3 会平白多出一段间距) */}
                 {(() => {
                   const node = props.headerContent?.(renderMode, renderRow, values, patchValues)
-                  return node == null ? null : <div className="mb-6">{node}</div>
+                  return node == null ? null : <div className="mb-3">{node}</div>
                 })()}
                 {tabsOn ? (
                   <Tabs
@@ -475,7 +475,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                         ))}
                       </Tabs.List>
                     </Tabs.ListContainer>
-                    <Tabs.Panel id={currentTab!} className="pt-4">
+                    <Tabs.Panel id={currentTab!} className="pt-2">
                       {renderTabBody(currentTab)}
                     </Tabs.Panel>
                   </Tabs>
@@ -490,21 +490,22 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
               {mode === 'view' ? (
                 <>
                   <Sheet.Close>
-                    <Button variant="secondary">关闭</Button>
+                    <Button size="sm" variant="secondary">关闭</Button>
                   </Sheet.Close>
                   {props.footerActions?.(renderMode, renderRow)}
-                  {props.onEdit && <Button onPress={props.onEdit}>编辑</Button>}
+                  {props.onEdit && <Button size="sm" onPress={props.onEdit}>编辑</Button>}
                 </>
               ) : (
                 <>
                   <Sheet.Close>
-                    <Button variant="secondary" isDisabled={saving}>
+                    <Button size="sm" variant="secondary" isDisabled={saving}>
                       取消
                     </Button>
                   </Sheet.Close>
                   {/* 元数据失败时字段集为空,禁止提交空 payload */}
                   {canSaveAndAudit && (
                     <Button
+                      size="sm"
                       variant="secondary"
                       onPress={() => void save(true)}
                       isPending={saving}
@@ -514,6 +515,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                     </Button>
                   )}
                   <Button
+                    size="sm"
                     onPress={() => void save()}
                     isPending={saving}
                     isDisabled={metaError || props.isSubmitDisabled}
@@ -634,6 +636,7 @@ function FieldInput({
     case 'decimal':
       return (
         <NumberField
+          size="sm"
           fullWidth
           isDisabled={isDisabled}
           isRequired={field.required}
@@ -654,6 +657,7 @@ function FieldInput({
       // YYYY-MM-DDTHH:mm:ss;date 保持日粒度 YYYY-MM-DD
       return (
         <DatePicker
+          size="sm"
           granularity={field.col.type === 'datetime' ? 'second' : 'day'}
           hourCycle={24}
           isDisabled={isDisabled}
@@ -696,6 +700,7 @@ function FieldInput({
     case 'enum':
       return (
         <Select
+          size="sm"
           isDisabled={isDisabled}
           isRequired={field.required}
           value={value == null || value === '' ? null : String(value)}
@@ -765,6 +770,7 @@ function FieldInput({
     default:
       return (
         <TextField
+          size="sm"
           isDisabled={isDisabled}
           isRequired={field.required}
           value={value == null ? '' : String(value)}

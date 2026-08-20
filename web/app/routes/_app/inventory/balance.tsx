@@ -85,8 +85,8 @@ function InventoryPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">库存余额</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">库存余额</h1>
+      <p className="mt-1 text-xs text-ink-500">
         截至日按仓×物料聚合的库存余额(口径为库存分录,未作废且业务日期不晚于截至日);在途仓自然呈现在途库存。
       </p>
 

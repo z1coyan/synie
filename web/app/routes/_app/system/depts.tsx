@@ -60,8 +60,8 @@ function DepartmentsPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">部门管理</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">部门管理</h1>
+      <p className="mt-1 text-xs text-ink-500">
         部门按公司维护,支持多级组织树。部门是「本部门」「本部门及以下」数据范围的取值来源;
         停用的部门不能再挂用户,已挂接的用户保留不变。
       </p>

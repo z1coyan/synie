@@ -149,8 +149,8 @@ function PrintTemplatesPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">打印模板</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">打印模板</h1>
+      <p className="mt-1 text-xs text-ink-500">
         维护单据版式 Excel 模板（.xlsx + 占位符）。打印转 PDF、导出为填充后的
         xlsx；同资源可多份、一份默认。
       </p>

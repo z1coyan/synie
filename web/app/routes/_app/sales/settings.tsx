@@ -57,8 +57,8 @@ function SalesSettingsPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">销售设置</h1>
-      <p className="mt-2 text-sm text-ink-500">销售全局配置（非公司维度）。</p>
+      <h1 className="font-brand text-xl">销售设置</h1>
+      <p className="mt-1 text-xs text-ink-500">销售全局配置（非公司维度）。</p>
       <Card className="mt-4 max-w-2xl">
         <Card.Header>
           <Card.Title>样品订单</Card.Title>

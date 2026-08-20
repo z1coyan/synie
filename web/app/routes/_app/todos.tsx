@@ -60,8 +60,8 @@ function TodosPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">待办</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">待办</h1>
+      <p className="mt-1 text-xs text-ink-500">
         对账确认后的开票/收票提醒:随源单据状态自动出现、关闭与复活;个人可已读或忽略。
       </p>
 
@@ -69,7 +69,7 @@ function TodosPage() {
         variant="secondary"
         selectedKey={tab}
         onSelectionChange={(key) => setTab(String(key) as 'active' | 'history')}
-        className="mt-4"
+        className="mt-2"
       >
         <Tabs.ListContainer>
           <Tabs.List aria-label="待办视图" className="w-fit min-w-0 *:w-auto">
@@ -83,7 +83,7 @@ function TodosPage() {
             </Tabs.Tab>
           </Tabs.List>
         </Tabs.ListContainer>
-        <Tabs.Panel id={tab} className="pt-4">
+        <Tabs.Panel id={tab} className="pt-2">
           {listQ.isLoading && (
             <p className="py-8 text-center text-sm text-ink-500">加载中…</p>
           )}

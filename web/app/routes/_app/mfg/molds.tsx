@@ -178,8 +178,8 @@ function MoldsPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">模具管理</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">模具管理</h1>
+      <p className="mt-1 text-xs text-ink-500">
         模具即模具设计档案:保存时系统自动创建资产类物料(分类取生产设置的模具物料分类),
         编号自动取号;图纸与附件挂在物料上。
       </p>

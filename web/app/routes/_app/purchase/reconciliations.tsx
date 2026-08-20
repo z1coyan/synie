@@ -19,8 +19,8 @@ function PurchaseReconciliationsLayout() {
 
   return (
     <ReconciliationDrawerProvider urlSync>
-      <h1 className="font-brand text-3xl tracking-wide">采购对账</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">采购对账</h1>
+      <p className="mt-1 text-xs text-ink-500">
         入库与收票之间的勾稽:常规单供应商确认后由开入发票关联结单;赠送/样品单结单审核即过账,兼任超收尾差核销。
       </p>
       <Tabs
@@ -29,7 +29,7 @@ function PurchaseReconciliationsLayout() {
         onSelectionChange={(key) => {
           if (key !== selected) navigate({ to: `/purchase/reconciliations/${String(key)}` })
         }}
-        className="mt-4"
+        className="mt-2"
       >
         <Tabs.ListContainer>
           <Tabs.List aria-label="采购对账视图" className="w-fit min-w-0 *:w-auto">
@@ -45,7 +45,7 @@ function PurchaseReconciliationsLayout() {
             ))}
           </Tabs.List>
         </Tabs.ListContainer>
-        <Tabs.Panel id={selected} className="pt-4">
+        <Tabs.Panel id={selected} className="pt-2">
           <Outlet />
         </Tabs.Panel>
       </Tabs>

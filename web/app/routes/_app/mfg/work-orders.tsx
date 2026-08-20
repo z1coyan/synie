@@ -326,8 +326,8 @@ function WorkOrdersPageInner() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">生产工单</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">生产工单</h1>
+      <p className="mt-1 text-xs text-ink-500">
         从已确认未关闭需求行生成；同一需求行可开多张工单，数量默认剩余可安排。新增时可
         dialog 选用启用中 BOM，或打开完整 BOM 表单新建；创建时复制物料图纸挂接。
       </p>

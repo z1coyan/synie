@@ -661,8 +661,8 @@ function MarketPage() {
     <>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-brand text-3xl tracking-wide">行情</h1>
-          <p className="mt-2 text-sm text-ink-500">
+          <h1 className="font-brand text-xl">行情</h1>
+          <p className="mt-1 text-xs text-ink-500">
             期货与现货参考价：多品种走势对比、价点补录与品种主数据维护。只观测、落库，不持仓不记账。
           </p>
         </div>
@@ -1095,7 +1095,7 @@ function MarketPage() {
           </Tabs.ListContainer>
 
           {showPriceTab && (
-            <Tabs.Panel id="prices" className="pt-4">
+            <Tabs.Panel id="prices" className="pt-2">
               <SynieDataGrid
                 key={`prices-${gridFilterKey}`}
                 resource="basMarketPricePoints"
@@ -1109,7 +1109,7 @@ function MarketPage() {
           )}
 
           {showInstrumentTab && (
-            <Tabs.Panel id="instruments" className="pt-4">
+            <Tabs.Panel id="instruments" className="pt-2">
               <SynieDataGrid
                 resource="basMarketInstruments"
                 columns={INSTRUMENT_COLUMNS}

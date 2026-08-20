@@ -26,8 +26,8 @@ function DashboardPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">工作台</h1>
-      <p className="mt-2 text-sm text-ink-500">一处纵览企业的人、财、物与流程。</p>
+      <h1 className="font-brand text-xl">工作台</h1>
+      <p className="mt-1 text-xs text-ink-500">一处纵览企业的人、财、物与流程。</p>
 
       <section className="mt-8">
         <h2 className="text-sm font-medium text-ink-500">快捷入口</h2>

@@ -19,8 +19,8 @@ function SalesDeliveriesLayout() {
 
   return (
     <DeliveryDrawerProvider urlSync>
-      <h1 className="font-brand text-3xl tracking-wide">销售发货</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">销售发货</h1>
+      <p className="mt-1 text-xs text-ink-500">
         履约出库单据：审核后扣减库存、回写订单已发数量，有金额时按未开票应收科目过账。
       </p>
       <Tabs
@@ -29,7 +29,7 @@ function SalesDeliveriesLayout() {
         onSelectionChange={(key) => {
           if (key !== selected) navigate({ to: `/sales/deliveries/${String(key)}` })
         }}
-        className="mt-4"
+        className="mt-2"
       >
         <Tabs.ListContainer>
           <Tabs.List aria-label="销售发货视图" className="w-fit min-w-0 *:w-auto">
@@ -45,7 +45,7 @@ function SalesDeliveriesLayout() {
             ))}
           </Tabs.List>
         </Tabs.ListContainer>
-        <Tabs.Panel id={selected} className="pt-4">
+        <Tabs.Panel id={selected} className="pt-2">
           <Outlet />
         </Tabs.Panel>
       </Tabs>

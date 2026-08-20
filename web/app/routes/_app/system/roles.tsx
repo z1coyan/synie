@@ -65,8 +65,8 @@ function RolesPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">角色权限</h1>
-      <p className="mt-2 text-sm text-ink-500">管理系统角色与其权限授权。</p>
+      <h1 className="font-brand text-xl">角色权限</h1>
+      <p className="mt-1 text-xs text-ink-500">管理系统角色与其权限授权。</p>
 
       <div className="mt-6">
         <SynieDataGrid

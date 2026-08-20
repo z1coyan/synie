@@ -20,7 +20,7 @@ function AcceptanceLayout() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">承兑汇票</h1>
+      <h1 className="font-brand text-xl">承兑汇票</h1>
       <Tabs
         variant="secondary"
         selectedKey={selected}
@@ -28,7 +28,7 @@ function AcceptanceLayout() {
         onSelectionChange={(key) => {
           if (key !== selected) navigate({ to: `/finance/acceptance/${String(key)}` })
         }}
-        className="mt-4"
+        className="mt-2"
       >
         <Tabs.ListContainer>
           {/* 默认 min-w-full + tab w-full 满宽平分;收紧为内容宽靠左,容器全宽底边保留 */}
@@ -45,7 +45,7 @@ function AcceptanceLayout() {
             ))}
           </Tabs.List>
         </Tabs.ListContainer>
-        <Tabs.Panel id={selected} className="pt-4">
+        <Tabs.Panel id={selected} className="pt-2">
           <Outlet />
         </Tabs.Panel>
       </Tabs>

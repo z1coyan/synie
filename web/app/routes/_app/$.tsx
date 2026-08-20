@@ -15,7 +15,7 @@ function PlaceholderPage() {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
       <p className="text-xs tracking-[0.4em] text-ink-500/50">UNDER CONSTRUCTION</p>
-      <h1 className="mt-4 font-brand text-3xl tracking-wide">
+      <h1 className="mt-4 font-brand text-xl">
         「{item?.label ?? '该页面'}」建设中
       </h1>
       <p className="mt-3 text-sm text-ink-500">

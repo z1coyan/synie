@@ -16,8 +16,8 @@ function BaseSettingsLayout() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">基础设置</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">基础设置</h1>
+      <p className="mt-1 text-xs text-ink-500">
         基础数据相关全局配置（非公司维度）。行情节奏与主数据维护配合使用。
       </p>
       <Tabs
@@ -26,7 +26,7 @@ function BaseSettingsLayout() {
         onSelectionChange={(key) => {
           if (key !== selected) navigate({ to: `/base/settings/${String(key)}` })
         }}
-        className="mt-4"
+        className="mt-2"
       >
         <Tabs.ListContainer>
           <Tabs.List aria-label="基础设置" className="w-fit min-w-0 *:w-auto">
@@ -42,7 +42,7 @@ function BaseSettingsLayout() {
             ))}
           </Tabs.List>
         </Tabs.ListContainer>
-        <Tabs.Panel id={selected} className="pt-4">
+        <Tabs.Panel id={selected} className="pt-2">
           <Outlet />
         </Tabs.Panel>
       </Tabs>

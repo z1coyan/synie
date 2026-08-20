@@ -50,8 +50,8 @@ function OtherStockLayout() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">其他库存单</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">其他库存单</h1>
+      <p className="mt-1 text-xs text-ink-500">
         无业务上游的库存来源单据:出入库调整、仓间调拨、账实盘点。按类型分 tab 维护;公司在列表列与建单表单中选择。
       </p>
       <Tabs
@@ -62,7 +62,7 @@ function OtherStockLayout() {
           const tab = tabs.find((t) => t.id === String(key))
           if (tab) navigate({ to: tab.path })
         }}
-        className="mt-4"
+        className="mt-2"
       >
         <Tabs.ListContainer>
           <Tabs.List aria-label="其他库存单" className="w-fit min-w-0 *:w-auto">
@@ -78,7 +78,7 @@ function OtherStockLayout() {
             ))}
           </Tabs.List>
         </Tabs.ListContainer>
-        <Tabs.Panel id={selected} className="pt-4">
+        <Tabs.Panel id={selected} className="pt-2">
           <Outlet />
         </Tabs.Panel>
       </Tabs>

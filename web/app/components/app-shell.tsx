@@ -69,7 +69,7 @@ export function AppShell({ user, menuCodes, onLogout, children }: AppShellProps)
       {/* 第一列:模块图标栏(仅桌面) — 品牌仪式面,恒定玄蓝 */}
       <nav
         aria-label="模块导航"
-        className="hidden w-16 shrink-0 flex-col items-center bg-brand-ink py-5 text-brand-porcelain lg:flex"
+        className="hidden w-14 shrink-0 flex-col items-center bg-brand-ink py-5 text-brand-porcelain lg:flex"
       >
         <Link
           to="/"
@@ -90,7 +90,7 @@ export function AppShell({ user, menuCodes, onLogout, children }: AppShellProps)
                   aria-label={m.label}
                   aria-current={active ? 'true' : undefined}
                   onPress={() => navigate({ to: m.entry })}
-                  className={`relative h-11 w-11 rounded-xl ${
+                  className={`relative h-9 w-9 rounded-xl ${
                     active
                       ? 'bg-brand-porcelain/15 text-brand-porcelain hover:bg-brand-porcelain/15'
                       : 'text-brand-porcelain/45 hover:bg-brand-porcelain/10 hover:text-brand-porcelain/90'
@@ -123,8 +123,8 @@ export function AppShell({ user, menuCodes, onLogout, children }: AppShellProps)
       </nav>
 
       {/* 第二列:二级菜单面板(仅桌面) — 跟随外观 */}
-      <aside className="hidden w-56 shrink-0 flex-col border-r border-ink-900/10 lg:flex">
-        <div className="px-6 pb-2 pt-7">
+      <aside className="hidden w-48 shrink-0 flex-col border-r border-ink-900/10 lg:flex">
+        <div className="px-4 pb-2 pt-4">
           <p className="font-brand text-lg tracking-wide">{activeModule.label}</p>
           <p className="mt-1 text-xs text-ink-500/70">{activeModule.description}</p>
         </div>
@@ -150,7 +150,7 @@ export function AppShell({ user, menuCodes, onLogout, children }: AppShellProps)
 
       {/* 内容列:顶栏 + 页面 */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center gap-2 border-b border-ink-900/10 px-4 lg:px-8">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-ink-900/10 px-4">
           <Button
             isIconOnly
             variant="ghost"
@@ -180,7 +180,7 @@ export function AppShell({ user, menuCodes, onLogout, children }: AppShellProps)
           </div>
         </header>
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full px-4 pb-16 pt-8 sm:px-6 lg:px-8">
+          <div className="mx-auto w-full px-4 pb-6 pt-4">
             {children}
           </div>
         </main>

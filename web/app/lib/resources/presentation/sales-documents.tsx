@@ -57,7 +57,7 @@ function longTextField(
 const DEFINITIONS = {
   salOrders: {
     label: '销售订单',
-    contentClassName: 'w-full lg:w-[880px]',
+    contentClassName: 'w-full lg:w-[800px]',
     exclude: [...AUDIT_TRAIL_EXCLUDE, 'grossTotal', 'baseGrossTotal'],
     fields: {
       companyId: {
@@ -102,7 +102,7 @@ const DEFINITIONS = {
   },
   salQuotations: {
     label: '销售报价单',
-    contentClassName: 'w-full lg:w-[880px]',
+    contentClassName: 'w-full lg:w-[800px]',
     exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: {
@@ -147,7 +147,7 @@ const DEFINITIONS = {
   },
   salDeliveries: {
     label: '销售发货单',
-    contentClassName: 'w-full lg:w-[960px]',
+    contentClassName: 'w-full lg:w-[880px]',
     exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: {
@@ -253,7 +253,7 @@ const DEFINITIONS = {
   },
   salReturns: {
     label: '销售退货单',
-    contentClassName: 'w-full lg:w-[960px]',
+    contentClassName: 'w-full lg:w-[880px]',
     exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: {
@@ -315,7 +315,7 @@ const DEFINITIONS = {
   },
   salReconciliations: {
     label: '销售对账单',
-    contentClassName: 'w-full lg:w-[960px]',
+    contentClassName: 'w-full lg:w-[880px]',
     exclude: [
       'status',
       'createdById',

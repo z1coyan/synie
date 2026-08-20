@@ -94,8 +94,8 @@ function ProcessTemplatesPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">工艺模板</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">工艺模板</h1>
+      <p className="mt-1 text-xs text-ink-500">
         全局共享的工艺路线模板:建 BOM 工艺路线时选模板复制带入为 BOM
         私行,此后模板再改不影响已建 BOM。
       </p>

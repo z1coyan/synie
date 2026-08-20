@@ -19,8 +19,8 @@ function OutsourcedReceiptsLayout() {
 
   return (
     <ReceiptDrawerProvider urlSync>
-      <h1 className="font-brand text-3xl tracking-wide">委外入库</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">委外入库</h1>
+      <p className="mt-1 text-xs text-ink-500">
         登记协作方送回的成品：审核同事务成品入仓＋按比例扣外协仓材料＋副产物入仓，加工费过未开票应付。
       </p>
       <Tabs
@@ -29,7 +29,7 @@ function OutsourcedReceiptsLayout() {
         onSelectionChange={(key) => {
           if (key !== selected) navigate({ to: `/purchase/outsourced-receipts/${String(key)}` })
         }}
-        className="mt-4"
+        className="mt-2"
       >
         <Tabs.ListContainer>
           <Tabs.List aria-label="委外入库视图" className="w-fit min-w-0 *:w-auto">
@@ -45,7 +45,7 @@ function OutsourcedReceiptsLayout() {
             ))}
           </Tabs.List>
         </Tabs.ListContainer>
-        <Tabs.Panel id={selected} className="pt-4">
+        <Tabs.Panel id={selected} className="pt-2">
           <Outlet />
         </Tabs.Panel>
       </Tabs>

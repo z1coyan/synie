@@ -19,8 +19,8 @@ function OutsourcedIssuesLayout() {
 
   return (
     <IssueDrawerProvider urlSync>
-      <h1 className="font-brand text-3xl tracking-wide">委外发料</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <h1 className="font-brand text-xl">委外发料</h1>
+      <p className="mt-1 text-xs text-ink-500">
         发给协作方的委外材料：审核后材料从调出仓移入外协仓并累加发料清单已发料量；无金额不过总账。
       </p>
       <Tabs
@@ -29,7 +29,7 @@ function OutsourcedIssuesLayout() {
         onSelectionChange={(key) => {
           if (key !== selected) navigate({ to: `/purchase/outsourced-issues/${String(key)}` })
         }}
-        className="mt-4"
+        className="mt-2"
       >
         <Tabs.ListContainer>
           <Tabs.List aria-label="委外发料视图" className="w-fit min-w-0 *:w-auto">
@@ -45,7 +45,7 @@ function OutsourcedIssuesLayout() {
             ))}
           </Tabs.List>
         </Tabs.ListContainer>
-        <Tabs.Panel id={selected} className="pt-4">
+        <Tabs.Panel id={selected} className="pt-2">
           <Outlet />
         </Tabs.Panel>
       </Tabs>

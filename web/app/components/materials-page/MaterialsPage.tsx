@@ -160,8 +160,8 @@ export function MaterialsPage({ title, description }: MaterialsPageProps) {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">{title}</h1>
-      <p className="mt-2 text-sm text-ink-500">{description}</p>
+      <h1 className="font-brand text-xl">{title}</h1>
+      <p className="mt-1 text-xs text-ink-500">{description}</p>
 
       <div className="mt-6">
         {/* 页面级网格：urlState 默认开启（搜索/筛选/分页/排序进 URL）；本页作 url-grid-state 试点 */}
