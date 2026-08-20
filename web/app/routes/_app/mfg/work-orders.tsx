@@ -115,9 +115,11 @@ function WorkOrdersPageInner() {
   // BOM 新建/工单编辑门控改消费资源文档投影(fail-closed)
   const bomCaps = useResourceCapabilities('mfgBoms')
   const workOrderCaps = useResourceCapabilities(RESOURCE)
+  const demandCaps = useResourceCapabilities('mfgDemands')
   const canCreateBom = bomCaps.has('create')
   const canUpdateWo = workOrderCaps.has('update')
-  // 生成物料需求（票 01）：分流弹窗（逐行去向→需求单草稿），仅进行中工单可用
+  const canCreateDemand = demandCaps.has('create')
+  // 生成物料需求：便利入口，门控是需求单新增（不是工单第九动作）
   const materialDemand = useGenerateMaterialDemand()
 
   const rowId = drawer?.recordId ?? null
@@ -349,12 +351,16 @@ function WorkOrdersPageInner() {
               capability: 'export',
               onAction: (row) => void startPrint('export', [row]),
             },
+            ...(canCreateDemand
+              ? [
+                  {
+                    key: 'generate_material_demand',
+                    label: '生成物料需求',
+                    onAction: (row: Row) => materialDemand.requestGenerate(row),
+                  },
+                ]
+              : []),
           ]}
-          // meta 声明的 row 动作：生成物料需求走分流弹窗（能力门控由 grid 按文档投影判）
-          actionHandlers={{
-            generate_material_demand: (rows) =>
-              materialDemand.requestGenerate(rows[0]),
-          }}
           actionVisible={{
             generate_material_demand: (row) => row.status === 'IN_PROGRESS',
           }}
@@ -395,7 +401,7 @@ function WorkOrdersPageInner() {
           return (
             <div className="mt-4 space-y-4 border-t border-border pt-4">
               {row.status === 'IN_PROGRESS' &&
-                workOrderCaps.has('generate_material_demand') && (
+                canCreateDemand && (
                   <div>
                     <Button
                       size="sm"

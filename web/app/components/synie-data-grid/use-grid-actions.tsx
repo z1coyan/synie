@@ -251,7 +251,7 @@ export function useGridActions(opts: {
 
   const mob = (key: string) => opts.actionMobile?.[key]
   const toolbarActions: ResolvedAction[] = [
-    ...(can('import') && opts.onImport
+    ...(can('create') && opts.onImport
       ? [{ key: 'import', label: '导入', isDanger: false, mobile: mob('import'), run: () => opts.onImport!(ctx) }]
       : []),
     ...(can('create') && opts.onCreate
@@ -313,7 +313,7 @@ export function useGridActions(opts: {
   ]
 
   const bulkBarActions: ResolvedAction[] = [
-    ...(can('batch_print') && opts.onPrintRows
+    ...(can('print') && opts.onPrintRows
       ? [
           {
             key: 'batch_print',
@@ -334,7 +334,7 @@ export function useGridActions(opts: {
         mobile: a.mobile,
         run: (rows: Row[]) => a.onAction(rows, ctx),
       })),
-    ...(can('batch_delete') && canDelete
+    ...(can('delete') && canDelete
       ? [
           {
             key: 'batch_delete',

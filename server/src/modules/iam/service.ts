@@ -627,7 +627,10 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
         permissions: [`包含目录外权限码: ${code}`],
       })
     }
-    if (!(group.supportedScopes as readonly string[]).includes(scope)) {
+    const supported = group.supportedScopes as readonly string[]
+    // leftover dept：本部门不含下级已否决、目录不再开放；存量行仍可再保存
+    const leftoverDept = scope === 'dept' && supported.includes('deptTree')
+    if (!supported.includes(scope) && !leftoverDept) {
       throw ApiError.validation('数据范围不合法', {
         permissions: [`权限码 ${code} 不支持数据范围 ${scope}`],
       })

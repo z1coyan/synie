@@ -151,7 +151,8 @@ export type DataScope = 'all' | 'deptTree' | 'dept' | 'self'
 /**
  * 权限目录分组：前缀 + 中文标签 + 动作集 + 该资源支持的数据范围
  * （GET /api/v1/meta/permission-catalog）。
- * supportedScopes 由 ResourceMeta.authz 声明推导：无 owner 声明无 self、无 dept 声明无 dept/deptTree。
+ * supportedScopes 由 ResourceMeta.authz 声明推导：无 owner 声明无 self、无 dept 声明无 deptTree。
+ * 「本部门不含下级」(dept) 已否决，目录不再开放；存量 dept 授权行仍可读。
  */
 export interface PermissionGroup {
   prefix: string

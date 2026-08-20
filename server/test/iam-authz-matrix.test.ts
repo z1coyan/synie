@@ -7,6 +7,7 @@ import {
   type Actor,
 } from '~/platform/authz/actor.ts'
 import { actorFromFacts } from '~/platform/authz/index.ts'
+import { decide, one } from '~/platform/authz/core/index.ts'
 import { testActor } from '~/platform/authz/testing.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 
@@ -135,6 +136,51 @@ describe('授权矩阵规格', () => {
       expect(hasPermission(actor, code)).toBe(true)
     }
     expect(hasPermission(actor, 'not.in:catalog')).toBe(false)
+  })
+
+  test('旧动作码装配后授权折叠后的行为，不是删除用例', () => {
+    const actor = testActor({
+      permissions: [
+        'sales.order:close',
+        'acc.vat_invoice:reverse',
+        'acc.gl_journal:cancel',
+        'inv.stock_transfer:ship',
+        'mfg.demand:dispatch',
+        'mfg.work_order:generate_material_demand',
+      ],
+    })
+    expect(hasPermission(actor, 'sales.order:audit')).toBe(true)
+    expect(hasPermission(actor, 'acc.vat_invoice:create')).toBe(true)
+    expect(hasPermission(actor, 'acc.vat_invoice:void')).toBe(false)
+    expect(hasPermission(actor, 'acc.gl_journal:void')).toBe(true)
+    expect(hasPermission(actor, 'inv.stock_transfer:audit')).toBe(true)
+    expect(hasPermission(actor, 'mfg.demand:update')).toBe(true)
+    expect(hasPermission(actor, 'mfg.work_order:create')).toBe(false)
+    expect(hasPermission(actor, 'sales.return:generate_replenishment')).toBe(false)
+  })
+
+  test('仅作废不能红冲：void 不折进 create', () => {
+    const actor = testActor({ permissions: ['acc.vat_invoice:void'] })
+    expect(hasPermission(actor, 'acc.vat_invoice:void')).toBe(true)
+    expect(hasPermission(actor, 'acc.vat_invoice:create')).toBe(false)
+  })
+
+  test('self 范围不能审他人的单：行过滤器只含 self', () => {
+    const actor = testActor({
+      userId: 'u-self',
+      allCompanies: true,
+      scopes: { 'sales.order:audit': ['self'] },
+    })
+    expect(hasPermission(actor, 'sales.order:audit')).toBe(true)
+    const decision = decide(actor, {
+      resource: 'salOrders',
+      action: 'audit',
+      requirement: one('sales.order:audit'),
+    })
+    expect(decision.outcome).toBe('permit')
+    if (decision.outcome === 'permit') {
+      expect(decision.permit.rowFilter.atoms).toEqual(['self'])
+    }
   })
 
   test('granted 范围：装配层丢弃（第一期不实现）', () => {

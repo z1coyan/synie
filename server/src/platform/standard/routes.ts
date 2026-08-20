@@ -8,8 +8,8 @@
  * - PATCH /:id           update（present-key 语义：出现即写，null 清空，缺省不动——
  *                        取代手写路由的 `*Present` 布尔）
  * - DELETE /:id          delete
- * - POST /bulk-update    batch_update（{ ids, patch }，单事务全成全败）
- * - POST /bulk-delete    batch_delete（{ ids }）
+ * - POST /bulk-update    update（{ ids, patch }，单事务全成全败）
+ * - POST /bulk-delete    delete（{ ids }）
  *
  * 全部端点链式注册以保 ApiType 类型链（web hono/client 依赖）。因此标准派生
  * 资源必须声明完整标准词表（装配期断言）；只要部分动作的资源应弹射回手写路由。
@@ -37,7 +37,7 @@ export const idsSchema = z.array(z.string().uuid()).min(1).max(200)
 export const bulkIdsSchema = z.object({ ids: idsSchema }).strict()
 
 /** 标准路由要求的动作全集（词表收敛的路由面） */
-const REQUIRED_ACTIONS = ['read', 'create', 'update', 'delete', 'batch_update', 'batch_delete'] as const
+const REQUIRED_ACTIONS = ['read', 'create', 'update', 'delete'] as const
 
 export interface StandardRouteDeps {
   auth: AuthService
@@ -104,12 +104,12 @@ export function standardRoutes(deps: StandardRouteDeps) {
       await service.remove(permitOf(c), c.req.valid('param').id)
       return c.body(null, 204)
     })
-    .post('/bulk-update', guard('batch_update'), zValidator('json', bulkUpdateSchema, validationHook), async (c) => {
+    .post('/bulk-update', guard('update'), zValidator('json', bulkUpdateSchema, validationHook), async (c) => {
       const body = c.req.valid('json')
       const items = await service.bulkUpdate(permitOf(c), body.ids, body.patch as Record<string, unknown>)
       return c.json({ count: items.length, results: items.map(dto) })
     })
-    .post('/bulk-delete', guard('batch_delete'), zValidator('json', bulkDeleteSchema, validationHook), async (c) => {
+    .post('/bulk-delete', guard('delete'), zValidator('json', bulkDeleteSchema, validationHook), async (c) => {
       const count = await service.bulkRemove(permitOf(c), c.req.valid('json').ids)
       return c.json({ count })
     })

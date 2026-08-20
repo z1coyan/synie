@@ -222,7 +222,7 @@ export function accountingRoutes(deps: {
     )
     .post(
       '/gl-journals/:id/cancel',
-      journalGuard('cancel'),
+      journalGuard('void'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         const item = await journals.cancel(permitOf(c), c.req.valid('param').id)

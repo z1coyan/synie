@@ -153,25 +153,62 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
       permissions: new Set(['acc.bank_transaction:read', 'acc.bank_transaction:reconcile']),
     }))
     const reconDoc = registry.buildDocument('accBankTransactions', recon)
-    expect(reconDoc.capabilities).toContainEqual({ action: 'reconcile', scope: 'all' })
+    expect(reconDoc.capabilities).toContainEqual({ action: 'update', scope: 'all' })
     expect(reconDoc.capabilities.some((entry) => entry.action === 'export')).toBe(false)
     expect(reconDoc.commands.some((c) => c.key === 'reconcile')).toBe(true)
     const reconMeta = registry.get('accBankTransactions')!
     expect(
-      reconMeta.actions.some((a) => a.key === 'export' && a.permissionAction === 'reconcile'),
+      reconMeta.actions.some((a) => a.key === 'reconcile' && a.permissionAction === 'update'),
     ).toBe(true)
 
     const recalc = actor(testActor({
       permissions: new Set(['hr.attendance_day:read', 'hr.attendance_day:recalc']),
     }))
     const recalcDoc = registry.buildDocument('hrAttendanceDays', recalc)
-    expect(recalcDoc.capabilities).toContainEqual({ action: 'recalc', scope: 'all' })
+    expect(recalcDoc.capabilities).toContainEqual({ action: 'update', scope: 'all' })
     expect(recalcDoc.capabilities.some((entry) => entry.action === 'import')).toBe(false)
     expect(recalcDoc.commands.some((c) => c.key === 'recalc')).toBe(true)
     const dayMeta = registry.get('hrAttendanceDays')!
     expect(
-      dayMeta.actions.some((a) => a.key === 'import' && a.permissionAction === 'recalc'),
+      dayMeta.actions.some((a) => a.key === 'recalc' && a.permissionAction === 'update'),
     ).toBe(true)
+  })
+
+  test('发票红冲：command 仍是 reverse，能力是 create；仅作废看不到红冲', () => {
+    const invoiceMeta = registry.get('accVatInvoices')!
+    expect(
+      invoiceMeta.actions.some((a) => a.key === 'reverse' && a.permissionAction === 'create'),
+    ).toBe(true)
+
+    const creator = actor(
+      testActor({
+        permissions: new Set(['acc.vat_invoice:read', 'acc.vat_invoice:create']),
+      }),
+    )
+    const createDoc = registry.buildDocument('accVatInvoices', creator)
+    expect(createDoc.capabilities).toContainEqual({ action: 'create', scope: 'all' })
+    expect(createDoc.commands.find((c) => c.key === 'reverse')).toMatchObject({
+      key: 'reverse',
+      requiredCapability: 'create',
+    })
+
+    const voidOnly = actor(
+      testActor({
+        permissions: new Set(['acc.vat_invoice:read', 'acc.vat_invoice:void']),
+      }),
+    )
+    const voidDoc = registry.buildDocument('accVatInvoices', voidOnly)
+    expect(voidDoc.capabilities.some((entry) => entry.action === 'create')).toBe(false)
+    expect(voidDoc.commands.some((c) => c.key === 'reverse')).toBe(false)
+
+    const leftover = actor(
+      testActor({
+        permissions: new Set(['acc.vat_invoice:read', 'acc.vat_invoice:reverse']),
+      }),
+    )
+    const leftoverDoc = registry.buildDocument('accVatInvoices', leftover)
+    expect(leftoverDoc.capabilities).toContainEqual({ action: 'create', scope: 'all' })
+    expect(leftoverDoc.commands.some((c) => c.key === 'reverse')).toBe(true)
   })
 
   test('币种 form.kind=basic 且布局含字段', () => {
@@ -203,11 +240,19 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
   test('v3 authz 维度：company 资源按绑定列 apiName 投影，global/via 不携带', () => {
     // assigned 形态：显式业务列 → deptId=assignedDeptId
     const demands = registry.buildDocument('mfgDemands', superAdmin)
-    expect(demands.authz).toEqual({ deptId: 'assignedDeptId', deptMode: 'assigned' })
+    expect(demands.authz).toEqual({
+      deptId: 'assignedDeptId',
+      deptMode: 'assigned',
+      ownerId: 'createdById',
+    })
 
-    // stamped 形态：缺省 owner_dept_id → deptId=ownerDeptId
+    // stamped 形态：缺省 owner_dept_id → deptId=ownerDeptId；同时声明 createdBy
     const workOrders = registry.buildDocument('mfgWorkOrders', superAdmin)
-    expect(workOrders.authz).toEqual({ deptId: 'ownerDeptId', deptMode: 'stamped' })
+    expect(workOrders.authz).toEqual({
+      deptId: 'ownerDeptId',
+      deptMode: 'stamped',
+      ownerId: 'createdById',
+    })
 
     // 无 owner/dept 绑定的 company 资源不携带 authz 维度
     const currencies = registry.buildDocument(CURRENCY_RESOURCE_NAME, superAdmin)

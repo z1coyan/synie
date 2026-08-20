@@ -49,7 +49,7 @@ export function journalResourceMeta(): ResourceMeta {
     numbering: true,
     permissionLabel: '会计凭证',
     table: 'acc_gl_journal',
-    authz: { kind: 'company' },
+    authz: { kind: 'company', owner: {} },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('voucher_no', 'voucherNo', 'string', '凭证编号', {
@@ -122,7 +122,7 @@ export function journalResourceMeta(): ResourceMeta {
       { key: 'update', label: '编辑', scope: 'row' },
       { key: 'delete', label: '删除', scope: 'row', isDanger: true },
       { key: 'audit', label: '审核', scope: 'row' },
-      { key: 'cancel', label: '取消', scope: 'row', isDanger: true },
+      { key: 'cancel', label: '取消', scope: 'row', permissionAction: 'void', isDanger: true },
     ],
     printHead: true,
     printLoops: [{ name: 'lines', resource: JOURNAL_LINE_RESOURCE_NAME }],

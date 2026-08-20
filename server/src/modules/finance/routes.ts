@@ -2,7 +2,8 @@
  * 增值税发票 REST：/finance/vat-invoices/*
  *
  * 逐端点挂 `guard(资源, 动作)`（requireAuth 之后），handler 用 `permitOf(c)` 取凭证。
- * S9（请求形态派生动作码）：作废/红冲共用服务实现，动作码由 `endInvoiceAction(reverseMode)`
+ * 作废走 void；红冲开新红字分录、原单保留，能力折进 create（仅作废不能红冲）。
+ * 动作码由 `endInvoiceAction(reverseMode)` 派生。
  * 在本文件派生——两码都已在 meta 的 actions 里声明，故 guard 不会撞 assertActionDeclared。
  */
 import { zValidator } from '@hono/zod-validator'
@@ -184,9 +185,9 @@ function invoiceDto(item: VatInvoice) {
   }
 }
 
-/** S9：作废/红冲的动作码由 reverseMode 派生（两码都在 meta 声明） */
+/** 作废 → void；红冲 → create（新开红字，不是作废） */
 export function endInvoiceAction(reverseMode: boolean): string {
-  return reverseMode ? 'reverse' : 'void'
+  return reverseMode ? 'create' : 'void'
 }
 
 export function vatInvoiceRoutes(deps: {

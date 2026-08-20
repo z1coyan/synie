@@ -109,7 +109,7 @@ export interface AttachmentsMeta {
 
 /**
  * 行级维度绑定（公司/全局资源可声明；派生资源判定递归宿主故不适用）。
- * 声明即启用对应范围原子——无 owner 声明则该资源不支持 self，无 dept 声明则不支持 dept/deptTree。
+ * 声明即启用对应范围原子——无 owner 声明则该资源不支持 self，无 dept 声明则不支持 deptTree。
  */
 export interface AuthzRowBindings {
   /** 属主列绑定，缺省 `created_by_id`（创建人即初始属主）；声明即启用 self 范围 */
@@ -226,16 +226,14 @@ export interface ResourceMeta {
   }
 }
 
-/** 标准十件套（permission catalog 与 capabilities 的基准） */
+/** 封闭八动作（permission catalog 与 capabilities 的基准） */
 export const STANDARD_ACTIONS = [
-  'create',
   'read',
+  'create',
   'update',
+  'audit',
   'delete',
-  'print',
-  'import',
+  'void',
   'export',
-  'batch_delete',
-  'batch_update',
-  'batch_print',
+  'print',
 ] as const

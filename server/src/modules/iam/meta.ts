@@ -203,10 +203,10 @@ export function roleResourceMeta(): ResourceMeta {
       { key: 'create', label: '新增', scope: 'both' },
       { key: 'update', label: '编辑', scope: 'row' },
       { key: 'delete', label: '删除', scope: 'row', isDanger: true },
-      { key: 'batch_delete', label: '批量删除', scope: 'bulk', isDanger: true },
+      { key: 'batch_delete', label: '批量删除', scope: 'bulk', permissionAction: 'delete', isDanger: true },
       { key: 'export', label: '导出', scope: 'both' },
       { key: 'print', label: '打印', scope: 'row' },
-      { key: 'batch_print', label: '批量打印', scope: 'bulk' },
+      { key: 'batch_print', label: '批量打印', scope: 'bulk', permissionAction: 'print' },
     ],
     form: {
       exclude: ['id', 'enabled', 'builtin', 'insertedAt', 'updatedAt'],

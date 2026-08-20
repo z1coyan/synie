@@ -92,13 +92,12 @@ describe('Resource Catalog seal 与 v3 投影', () => {
     expect(reconCmd).toMatchObject({
       key: 'reconcile',
       target: 'row',
-      requiredCapability: 'reconcile',
+      requiredCapability: 'update',
     })
     expect(recon.commands.every((c) => !('http' in c) && !('mutation' in c))).toBe(true)
-    // 服务端定义仍可用 disguise key + permissionAction 声明语义
     expect(
       registry.get('accBankTransactions')!.actions.some(
-        (a) => a.key === 'export' && a.permissionAction === 'reconcile',
+        (a) => a.key === 'reconcile' && a.permissionAction === 'update',
       ),
     ).toBe(true)
 
@@ -107,7 +106,7 @@ describe('Resource Catalog seal 与 v3 投影', () => {
     expect(recalcCmd).toMatchObject({
       key: 'recalc',
       target: 'collection',
-      requiredCapability: 'recalc',
+      requiredCapability: 'update',
     })
 
     const storage = registry.buildDocument('sysStorages', superAdmin)
@@ -122,7 +121,15 @@ describe('Resource Catalog seal 与 v3 投影', () => {
   test('标准 CRUD 不进入 commands，只贡献 capabilities', () => {
     const registry = createSealedResourceRegistry()
     const doc = registry.buildDocument('basCurrencies', superAdmin)
-    expect(doc.commands).toEqual([])
+    expect(doc.commands.every((c) => !['create', 'update', 'delete', 'read'].includes(c.key))).toBe(
+      true,
+    )
+    expect(doc.commands).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'batch_update', requiredCapability: 'update' }),
+        expect.objectContaining({ key: 'batch_delete', requiredCapability: 'delete' }),
+      ]),
+    )
     expect(doc.capabilities).toEqual(
       expect.arrayContaining([
         { action: 'create', scope: 'all' },

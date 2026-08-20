@@ -664,11 +664,9 @@ export const SALES_ROLE_PERMISSIONS: ReadonlyArray<string> = [
   'sales.order:update',
   'sales.order:delete',
   'sales.order:audit',
-  'sales.order:close',
   'sales.order:void',
   'sales.order:print',
   'sales.order:export',
-  'sales.order:batch_print',
   // 销售发货单：完整权限
   'sales.delivery:create',
   'sales.delivery:read',
@@ -678,22 +676,18 @@ export const SALES_ROLE_PERMISSIONS: ReadonlyArray<string> = [
   'sales.delivery:void',
   'sales.delivery:print',
   'sales.delivery:export',
-  'sales.delivery:batch_print',
-  // 销售退货单：完整权限（含生成补货需求单）
+  // 销售退货单：完整权限（补货改走 mfg.demand:create）
   'sales.return:create',
   'sales.return:read',
   'sales.return:update',
   'sales.return:delete',
   'sales.return:audit',
   'sales.return:void',
-  'sales.return:generate_replenishment',
   // 销售对账单：完整权限
   'sales.reconciliation:create',
   'sales.reconciliation:read',
   'sales.reconciliation:update',
   'sales.reconciliation:delete',
-  'sales.reconciliation:confirm',
-  'sales.reconciliation:unconfirm',
   'sales.reconciliation:audit',
   'sales.reconciliation:void',
   // 销售报价单：完整权限
@@ -718,8 +712,7 @@ export const SALES_ROLE_PERMISSIONS: ReadonlyArray<string> = [
   'mfg.demand:read',
   'mfg.demand:update',
   'mfg.demand:delete',
-  'mfg.demand:confirm',
-  'mfg.demand:close',
+  'mfg.demand:audit',
   'mfg.demand:void',
   // 物料：只读
   'base.material:read',

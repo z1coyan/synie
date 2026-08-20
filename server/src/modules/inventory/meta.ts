@@ -23,8 +23,8 @@ const crud = [
 /** 标准派生资源的动作词表：CRUD + 批量（批量端点由 platform/standard 派生） */
 const standardCrud = [
   ...crud,
-  { key: 'batch_update', label: '批量编辑', scope: 'bulk' as const },
-  { key: 'batch_delete', label: '批量删除', scope: 'bulk' as const, isDanger: true },
+  { key: 'batch_update', label: '批量编辑', scope: 'bulk' as const, permissionAction: 'update' },
+  { key: 'batch_delete', label: '批量删除', scope: 'bulk' as const, permissionAction: 'delete', isDanger: true },
 ]
 
 const directionOptions = [
@@ -550,8 +550,7 @@ export function stockDocResourceMeta(): ResourceMeta {
     permissionPrefix: 'inv.stock_doc',
     permissionLabel: '手工出入库单',
     table: 'inv_stock_doc',
-    // 手工库存单据不按人/部门收窄：不声明 owner/dept，supportedScopes 只出 all
-    authz: { kind: 'company' },
+    authz: { kind: 'company', owner: {} },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('doc_no', 'docNo', 'string', '单据编号', { readonly: true, filterable: true, sortable: true }),
@@ -731,8 +730,7 @@ export function stockTransferResourceMeta(): ResourceMeta {
     permissionPrefix: 'inv.stock_transfer',
     permissionLabel: '手工调拨单',
     table: 'inv_stock_transfer',
-    // 同手工出入库单：无 owner/dept 绑定，只有公司边界
-    authz: { kind: 'company' },
+    authz: { kind: 'company', owner: {} },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('doc_no', 'docNo', 'string', '单据编号', { readonly: true, filterable: true, sortable: true }),
@@ -804,8 +802,8 @@ export function stockTransferResourceMeta(): ResourceMeta {
     ],
     actions: [
       ...crud,
-      { key: 'ship', label: '发货', scope: 'row' },
-      { key: 'receive', label: '收货', scope: 'row' },
+      { key: 'ship', label: '发货', scope: 'row', permissionAction: 'audit' },
+      { key: 'receive', label: '收货', scope: 'row', permissionAction: 'audit' },
     ],
     form: {
       exclude: [
@@ -942,8 +940,7 @@ export function stockCountResourceMeta(): ResourceMeta {
     permissionPrefix: 'inv.stock_count',
     permissionLabel: '库存盘点单',
     table: 'inv_stock_count',
-    // 同手工出入库单：无 owner/dept 绑定，只有公司边界
-    authz: { kind: 'company' },
+    authz: { kind: 'company', owner: {} },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('doc_no', 'docNo', 'string', '单据编号', { readonly: true, filterable: true, sortable: true }),
@@ -1004,8 +1001,8 @@ export function stockCountResourceMeta(): ResourceMeta {
     ],
     actions: [
       ...crud,
-      { key: 'approve', label: '审核', scope: 'row' },
-      { key: 'cancel', label: '作废', scope: 'row', isDanger: true },
+      { key: 'approve', label: '审核', scope: 'row', permissionAction: 'audit' },
+      { key: 'cancel', label: '作废', scope: 'row', permissionAction: 'void', isDanger: true },
     ],
     print: true,
     printHead: true,

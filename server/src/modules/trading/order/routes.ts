@@ -184,7 +184,7 @@ export function orderHeadRoutes(deps: {
     .post('/:id/audit', guard('audit'), zValidator('param', idParam, validationHook), async (c) =>
       c.json(await orders.audit(permitOf(c), side, c.req.valid('param').id)),
     )
-    .post('/:id/close', guard('close'), zValidator('param', idParam, validationHook), async (c) =>
+    .post('/:id/close', guard('audit'), zValidator('param', idParam, validationHook), async (c) =>
       c.json(await orders.close(permitOf(c), side, c.req.valid('param').id)),
     )
     .post('/:id/void', guard('void'), zValidator('param', idParam, validationHook), async (c) =>

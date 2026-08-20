@@ -815,8 +815,7 @@ run('PG 集成（扫荡 12：finance/accounting/hr 授权语义）', () => {
     expect(await errorCode(invalid)).toBe('validation')
   })
 
-  test('S9 发票 reverseMode 派生动作码：void 与 reverse 各自独立门控', async () => {
-    // 只授 void、不授 reverse
+  test('红冲走 create：仅作废不能红冲；create 可红冲且原单保留、新开红字分录', async () => {
     await grant(readRoleId, [...READ_ONLY_CODES, 'acc.vat_invoice:void'])
     const reverseDenied = await post(
       `/finance/vat-invoices/${invoiceAuditedA}/reverse`,
@@ -825,9 +824,40 @@ run('PG 集成（扫荡 12：finance/accounting/hr 授权语义）', () => {
     )
     expect(reverseDenied.status).toBe(403)
     expect(await errorCode(reverseDenied)).toBe('forbidden')
-    // 同一角色的 void 端点不再 403（派生动作码分别判定，不是同一个码）
-    const voidRes = await post(`/finance/vat-invoices/${invoiceAuditedA}/void`, readHeaders, {})
-    expect(voidRes.status).not.toBe(403)
+
+    await grant(readRoleId, [...READ_ONLY_CODES, 'acc.vat_invoice:create'])
+    const invoiceEntryId = crypto.randomUUID()
+    await sql`
+      INSERT INTO acc_gl_entry (
+        id, posting_date, debit, credit, voucher_type, voucher_id, voucher_no,
+        is_cancelled, company_id, account_id)
+      VALUES (${invoiceEntryId}::uuid, '2026-08-01'::date, 226, 0, 'acc.vat_invoice',
+        ${invoiceAuditedA}::uuid, ${'IVA' + suffix}, false, ${companyA}::uuid, ${accountPartyA}::uuid)
+    `.execute(db)
+    const reversed = await post(
+      `/finance/vat-invoices/${invoiceAuditedA}/reverse`,
+      readHeaders,
+      { postingDate: '2026-08-05', redInvoiceNo: `RED${suffix}` },
+    )
+    expect(reversed.status).toBe(200)
+    const body = (await reversed.json()) as { id: string; status: string; redInvoiceNo: string | null }
+    expect(body.id).toBe(invoiceAuditedA)
+    expect(body.status).toBe('REVERSED')
+    expect(body.redInvoiceNo).toBe(`RED${suffix}`)
+    const gl = await sql<{ originals: string; reversals: string }>`
+      SELECT
+        count(*) FILTER (WHERE is_reversed)::text AS originals,
+        count(*) FILTER (WHERE is_reversal)::text AS reversals
+      FROM acc_gl_entry
+      WHERE voucher_type='acc.vat_invoice' AND voucher_id=${invoiceAuditedA}::uuid
+    `.execute(db)
+    expect(Number(gl.rows[0]!.originals)).toBeGreaterThan(0)
+    expect(Number(gl.rows[0]!.reversals)).toBeGreaterThan(0)
+    const stillThere = await get(`/finance/vat-invoices/${invoiceAuditedA}`, readHeaders)
+    expect(stillThere.status).toBe(200)
+    const original = (await stillThere.json()) as { id: string; status: string }
+    expect(original.id).toBe(invoiceAuditedA)
+    expect(original.status).toBe('REVERSED')
     await grant(readRoleId, READ_ONLY_CODES)
   })
 
@@ -970,17 +1000,23 @@ run('PG 集成（扫荡 12：finance/accounting/hr 授权语义）', () => {
     expect(body.roleAccounts).toEqual({})
   })
 
-  test('本批前缀 supportedScopes 只出 all（未加 owner/dept 绑定，矩阵不新增档位）', () => {
-    const prefixes = new Set([
-      'acc.vat_invoice', 'acc.bank_account', 'acc.bank_transaction', 'acc.bank_import_template',
-      'acc.expense_report', 'acc.bill', 'acc.bill_transaction', 'acc.bill_holding',
-      'acc.gl_journal', 'acc.gl_entry', 'acc.ar_ap',
-      'hr.attendance_punch', 'hr.attendance_day', 'hr.attendance_correction',
-      'hr.payroll', 'hr.payroll_payment', 'hr.employee_loan',
+  test('本批前缀：有 createdBy 的出 all+self，其余只出 all；不广告 leftover dept', () => {
+    const withSelf = new Set([
+      'acc.vat_invoice', 'acc.expense_report', 'acc.bill_transaction', 'acc.gl_journal',
+      'hr.attendance_correction', 'hr.payroll_payment', 'hr.employee_loan',
+    ])
+    const onlyAll = new Set([
+      'acc.bank_account', 'acc.bank_transaction', 'acc.bank_import_template',
+      'acc.bill', 'acc.bill_holding', 'acc.gl_entry', 'acc.ar_ap',
+      'hr.attendance_punch', 'hr.attendance_day', 'hr.payroll',
     ])
     for (const group of registry.permissionCatalog()) {
-      if (!prefixes.has(group.prefix)) continue
-      expect([group.prefix, group.supportedScopes]).toEqual([group.prefix, ['all']])
+      if (withSelf.has(group.prefix)) {
+        expect([group.prefix, group.supportedScopes]).toEqual([group.prefix, ['all', 'self']])
+      } else if (onlyAll.has(group.prefix)) {
+        expect([group.prefix, group.supportedScopes]).toEqual([group.prefix, ['all']])
+      }
+      expect(group.supportedScopes.includes('dept')).toBe(false)
     }
     // via 子行不拥有自己的范围（否则同前缀交集会把维度交没）
     for (const name of ['accExpenseReportItems', 'accGlJournalLines', 'accBankImportItems']) {

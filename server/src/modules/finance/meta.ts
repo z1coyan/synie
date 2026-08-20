@@ -67,7 +67,7 @@ export function vatInvoiceResourceMeta(): ResourceMeta {
     numbering: true,
     permissionLabel: '增值税发票',
     table: 'acc_vat_invoice',
-    authz: { kind: 'company' },
+    authz: { kind: 'company', owner: {} },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('doc_no', 'docNo', 'string', '内部单据编号', { readonly: true, filterable: true, sortable: true }),
@@ -260,6 +260,7 @@ export function vatInvoiceResourceMeta(): ResourceMeta {
         key: 'reverse',
         label: '红冲',
         scope: 'row',
+        permissionAction: 'create',
         isDanger: true,
       },
     ],
@@ -359,8 +360,8 @@ const crudActions = [
 /** 标准派生资源的动作词表：CRUD + 批量（批量端点由 platform/standard 派生） */
 const standardActions = [
   ...crudActions,
-  { key: 'batch_update', label: '批量编辑', scope: 'bulk' as const },
-  { key: 'batch_delete', label: '批量删除', scope: 'bulk' as const, isDanger: true },
+  { key: 'batch_update', label: '批量编辑', scope: 'bulk' as const, permissionAction: 'update' },
+  { key: 'batch_delete', label: '批量删除', scope: 'bulk' as const, permissionAction: 'delete', isDanger: true },
 ]
 
 export function bankAccountResourceMeta(): ResourceMeta {
@@ -459,13 +460,12 @@ export function bankTransactionResourceMeta(): ResourceMeta {
     ],
     actions: [
       ...crudActions,
-      { key: 'import', label: '导入', scope: 'both' },
-      // v1：key=export 伪装（工单 11 删除）；v2：语义 key=reconcile、row target
+      { key: 'import', label: '导入', scope: 'both', permissionAction: 'create' },
       {
-        key: 'export',
-        permissionAction: 'reconcile',
+        key: 'reconcile',
+        permissionAction: 'update',
         label: '对账',
-        scope: 'both',
+        scope: 'row',
         commandTarget: 'row',
       },
     ],
@@ -560,7 +560,7 @@ export function bankImportResourceMeta(): ResourceMeta {
     table: 'acc_bank_import',
     /**
      * import-as-read 重载：导入批次没有独立权限点，读写一律由单码
-     * `acc.bank_transaction:import` 门控（迁移前服务里就是这一个码）。
+     * `acc.bank_transaction:create` 门控（import 已折入 create）。
      * readAnyOf 让 read 也解析到该码；批次因此不进权限目录（码归银行流水资源）。
      */
     authz: { kind: 'company', readAnyOf: [ACC_BANK_TRANSACTION.import] },
@@ -604,7 +604,7 @@ export function bankImportResourceMeta(): ResourceMeta {
     // 本资源因 readAnyOf 不进权限目录，故两个动作都不新增权限码（码归 acc.bank_transaction）
     actions: [
       { key: 'read', label: '查看', scope: 'both' },
-      { key: 'import', label: '导入', scope: 'both' },
+      { key: 'import', label: '导入', scope: 'both', permissionAction: 'create' },
     ],
     // exclude 保留历史审计面：聚合计数列不进审计 diff
     audit: { enabled: true, exclude: ['item_count', 'error_count'] },
@@ -702,7 +702,7 @@ export function expenseReportResourceMeta(): ResourceMeta {
     numbering: true,
     permissionLabel: '费用报销单',
     table: 'acc_expense_report',
-    authz: { kind: 'company' },
+    authz: { kind: 'company', owner: {} },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('doc_no', 'docNo', 'string', '单据编号', { readonly: true, filterable: true, sortable: true }),
@@ -873,7 +873,7 @@ export function billTransactionResourceMeta(): ResourceMeta {
     numbering: true,
     permissionLabel: '承兑交易',
     table: 'acc_bill_transaction',
-    authz: { kind: 'company' },
+    authz: { kind: 'company', owner: {} },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('doc_no', 'docNo', 'string', '单据编号', { readonly: true, filterable: true, sortable: true }),

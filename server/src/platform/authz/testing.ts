@@ -5,8 +5,9 @@
  * 旧字段（allCompanies/companyIds/permissions）。旧字段优先，便于存量测试
  * 逐批迁移而不必一次性重写。
  */
+import { foldPermissionCode } from './action-compat.ts'
 import type { Actor, ScopeAtom, ScopeSet } from './core/index.ts'
-import { SCOPE_ALL, scopeSetOf } from './core/index.ts'
+import { SCOPE_ALL, SCOPE_NONE, scopeSetOf, scopeSetUnion } from './core/index.ts'
 
 export type TestActorInput = Partial<Actor> & {
   /** @deprecated 旧形状：等价于 companies.all */
@@ -29,12 +30,18 @@ export function testActor(input: TestActorInput = {}): Actor {
   if (input.scopes !== undefined) {
     const map = new Map<string, ScopeSet>()
     for (const [code, atoms] of Object.entries(input.scopes)) {
-      map.set(code, scopeSetOf(...atoms))
+      const folded = foldPermissionCode(code)
+      if (folded === null) continue
+      map.set(folded, scopeSetUnion(map.get(folded) ?? SCOPE_NONE, scopeSetOf(...atoms)))
     }
     grants = map
   } else if (input.permissions !== undefined) {
     const map = new Map<string, ScopeSet>()
-    for (const code of input.permissions) map.set(code, SCOPE_ALL)
+    for (const code of input.permissions) {
+      const folded = foldPermissionCode(code)
+      if (folded === null) continue
+      map.set(folded, SCOPE_ALL)
+    }
     grants = map
   } else {
     grants = input.grants ?? new Map()

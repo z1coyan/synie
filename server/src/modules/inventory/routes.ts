@@ -340,7 +340,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-transfers/:id/ship',
-        transferGuard('ship'),
+        transferGuard('audit'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           const item = await stockTransfers.ship(permitOf(c), c.req.valid('param').id)
@@ -349,7 +349,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-transfers/:id/receive',
-        transferGuard('receive'),
+        transferGuard('audit'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -554,7 +554,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-counts/:id/approve',
-        countGuard('approve'),
+        countGuard('audit'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           const item = await stockCounts.approve(permitOf(c), c.req.valid('param').id)
@@ -563,7 +563,7 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-counts/:id/cancel',
-        countGuard('cancel'),
+        countGuard('void'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           const item = await stockCounts.cancel(permitOf(c), c.req.valid('param').id)

@@ -31,7 +31,7 @@ import type { ResourceMeta } from './types.ts'
 const IDENTIFIER_RE = /^[a-z_][a-z0-9_]*$/
 
 /** 数据范围呈现顺序（宽 → 窄），目录投影按此稳定排序 */
-const SCOPE_ORDER: readonly DataScope[] = ['all', 'deptTree', 'dept', 'self']
+const SCOPE_ORDER: readonly DataScope[] = ['all', 'deptTree', 'self']
 
 export interface SealReport {
   total: number

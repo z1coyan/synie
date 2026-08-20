@@ -106,7 +106,7 @@ export function quotationHeadMeta(side: TradingSide): ResourceMeta {
     numbering: true,
     permissionLabel: spec.label,
     table: spec.headTable,
-    authz: { kind: 'company' },
+    authz: { kind: 'company', owner: {} },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('quotation_no', 'quotationNo', 'string', '报价单号', {

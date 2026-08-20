@@ -41,6 +41,7 @@ import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { generateSalesReturnReplenishment } from '~/lib/resources/returns'
 import { demandClient } from '~/lib/resources/manufacturing'
+import { useResourceCapabilities } from '~/lib/use-resource-capabilities'
 import { toastError } from '~/lib/toast'
 import { auditMaterialCell, type AuditDocConfig } from './-audit-doc'
 import {
@@ -427,6 +428,7 @@ function ReplenishmentPanel({
   invalidate: () => void
 }) {
   const [busy, setBusy] = useState(false)
+  const canCreateDemand = useResourceCapabilities('mfgDemands').has('create')
   const generated = useQuery({
     queryKey: ['returnReplenishments', String(row.id)],
     enabled: row.id != null,
@@ -465,15 +467,17 @@ function ReplenishmentPanel({
     <div className="mt-4 flex flex-col gap-2 border-t border-separator pt-4">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-medium">补货需求单</span>
-        <Button
-          size="sm"
-          variant="secondary"
-          isDisabled={busy}
-          isPending={busy}
-          onPress={() => void run()}
-        >
-          生成补货需求单
-        </Button>
+        {canCreateDemand && (
+          <Button
+            size="sm"
+            variant="secondary"
+            isDisabled={busy}
+            isPending={busy}
+            onPress={() => void run()}
+          >
+            生成补货需求单
+          </Button>
+        )}
       </div>
       {(generated.data ?? []).length > 0 ? (
         <ul className="flex flex-col gap-0.5 text-sm text-muted">

@@ -103,7 +103,7 @@ function AttendanceDaysPage() {
   const queryClient = useQueryClient()
   const binding = resourceBindingFor('hrAttendanceDays')
   const meta = useGridMeta('hrAttendanceDays', true)
-  const canRecalc = hasCapability(meta.data?.capabilities ?? [], 'recalc')
+  const canRecalc = hasCapability(meta.data?.capabilities ?? [], 'update')
 
   const runRecalc = async () => {
     if (!dateFrom || !dateTo) return

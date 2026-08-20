@@ -479,8 +479,8 @@ export function demandResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.demand',
     permissionLabel: '履约需求单',
     table: 'mfg_demand',
-    // 指派部门形态：下发车间是业务字段，谁能改由 dispatch 动作码管，填写不受操作者部门约束
-    authz: { kind: 'company', dept: { column: 'assigned_dept_id', mode: 'assigned' } },
+    // 指派部门（下发车间）+ 录入人：范围三档 all / deptTree / self
+    authz: { kind: 'company', owner: {}, dept: { column: 'assigned_dept_id', mode: 'assigned' } },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('demand_no', 'demandNo', 'string', '需求单号', { readonly: true, filterable: true, sortable: true }),
@@ -538,14 +538,11 @@ export function demandResourceMeta(): ResourceMeta {
         key: 'audit',
         label: '审核',
         scope: 'row',
-        permissionAction: 'confirm',
         confirmKind: 'audit_doc',
       },
-      { key: 'close', label: '关闭', scope: 'row' },
+      { key: 'close', label: '关闭', scope: 'row', permissionAction: 'audit' },
       { key: 'void', label: '作废', scope: 'row', isDanger: true },
-      // 下发/改派：草稿态在表单里填（随 assignType 联动校验），已确认后只能走本动作
-      // （独立权限码，不并入 update）；动作内可同时改指派类型与下发车间
-      { key: 'dispatch', label: '下发/改派', scope: 'row' },
+      { key: 'dispatch', label: '下发/改派', scope: 'row', permissionAction: 'update' },
     ],
     printHead: true,
     printLoops: [{ name: 'items', resource: 'mfgDemandItems' }],
@@ -713,8 +710,8 @@ export function workOrderResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.work_order',
     permissionLabel: '生产工单',
     table: 'mfg_work_order',
-    // 归属部门形态（盖章）：创建时按创建人部门写入 owner_dept_id，车间自建自见
-    authz: { kind: 'company', dept: { mode: 'stamped' } },
+    // 归属部门盖章 + 生成人：范围三档 all / deptTree / self
+    authz: { kind: 'company', owner: {}, dept: { mode: 'stamped' } },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('work_order_no', 'workOrderNo', 'string', '工单号', {
@@ -782,11 +779,9 @@ export function workOrderResourceMeta(): ResourceMeta {
     actions: [
       ...headCrud,
       { key: 'void', label: '作废', scope: 'row', isDanger: true },
-      // 物料需求派生：限定入口——车间角色只持本动作码，需求单写库走服务内受信任写
-      { key: 'generate_material_demand', label: '生成物料需求', scope: 'row' },
       { key: 'print', label: '打印', scope: 'row' },
       { key: 'export', label: '导出', scope: 'both' },
-      { key: 'batch_print', label: '批量打印', scope: 'bulk' },
+      { key: 'batch_print', label: '批量打印', scope: 'bulk', permissionAction: 'print' },
     ],
     print: true,
     printHead: true,
@@ -885,7 +880,7 @@ export function outputResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.output',
     permissionLabel: '生产入库单',
     table: 'mfg_output',
-    authz: { kind: 'company' },
+    authz: { kind: 'company', owner: {} },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('output_no', 'outputNo', 'string', '入库单号', {

@@ -2,13 +2,13 @@
  * 车间权限收口端到端（工单物料需求派生 · 票 03）。
  *
  * 角色：计划员（需求单/工单全套，scope=all，无部门）× 车间经理 A/B
- * （mfg.demand 的 read/update/confirm/delete + 工单全套 + generate_material_demand，
- * 均 scope=dept，分别挂车间 A / 车间 B；**不授 create/dispatch/close/void**）。
+ * （mfg.demand 的 read/update/confirm/delete + 工单全套，
+ * 均 scope=dept_tree，分别挂车间 A / 车间 B；**不授 create/dispatch/close/void**）。
+ * leftover confirm 装配后折成 audit；generate_material_demand 已移除，不授权。
  *
- * 断言口径：车间经工单「生成物料需求」动作完成派生（不持 mfg.demand:create）；
- * 下发到本车间的派生草稿可改/可审/可删；手工建单与销售勾选纳入端点 403；
- * 未下发到本车间的需求单（含派生给他车间的）一律不可见；计划角色全链路不回归。
- * 前端建单按钮随 create capability 缺失自动隐藏（meta 能力下发既有机制，不在本文件覆盖）。
+ * 断言口径：无 mfg.demand:create 则不能从工单派生（缺口接受）；
+ * 计划员用 demand.create 派生后，下发到本车间的草稿可改/可审/可删；
+ * 手工建单与销售勾选纳入端点 403；未下发到本车间的需求单一律不可见。
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { sql } from 'kysely'
@@ -40,8 +40,8 @@ const PLANNER_CODES = [
 ] as const
 
 /**
- * 车间经理：需求单 read/update/confirm/delete（本部门）+ 工单全套（本部门）
- * + 派生动作码；**不授 mfg.demand:create**——手工建单与勾选销售入口因此关闭
+ * 车间经理：需求单 read/update/confirm/delete（本部门及以下）+ 工单全套
+ * leftover confirm → audit；**不授 mfg.demand:create**——手工建单、勾选销售与工单派生均关闭
  */
 const SHOP_CODES = [
   'mfg.demand:read',
@@ -52,7 +52,6 @@ const SHOP_CODES = [
   'mfg.work_order:create',
   'mfg.work_order:update',
   'mfg.work_order:void',
-  'mfg.work_order:generate_material_demand',
 ] as const
 
 run('PG 集成（车间权限收口：需求单限定入口授权）', () => {
@@ -283,7 +282,7 @@ run('PG 集成（车间权限收口：需求单限定入口授权）', () => {
     shopBId = shopB.user.id
 
     await grant(plannerRoleId, PLANNER_CODES, 'all')
-    await grant(shopRoleId, SHOP_CODES, 'dept')
+    await grant(shopRoleId, SHOP_CODES, 'dept_tree')
 
     // 派生草稿/工单经编号规则取号：已有启用规则则复用，否则建本测前缀规则
     // （共享库并发建撞 one_enabled_per_resource 唯一索引时回落复用）
@@ -441,10 +440,18 @@ run('PG 集成（车间权限收口：需求单限定入口授权）', () => {
   let derivedToBId = ''
   let derivedPurchaseId = ''
 
-  test('车间持动作码完成派生：按去向拆单（他车间+采购），全程无需 mfg.demand:create', async () => {
+  test('无 demand.create 不能派生（缺口接受）；计划员用 create 按去向拆单', async () => {
     const compA = snapComponents.find((c) => c.materialId === compAId)!
     const compB = snapComponents.find((c) => c.materialId === compBId)!
-    const res = await post(`/work-orders/${workOrder.id}/generate-material-demand`, shopAHeaders, {
+    const denied = await post(`/work-orders/${workOrder.id}/generate-material-demand`, shopAHeaders, {
+      lines: [
+        { componentId: compA.id, qty: '5', target: { kind: 'dept', deptId: deptBId } },
+        { componentId: compB.id, qty: '3', target: { kind: 'purchase' } },
+      ],
+    })
+    expect(denied.status).toBe(403)
+
+    const res = await post(`/work-orders/${workOrder.id}/generate-material-demand`, plannerHeaders, {
       lines: [
         { componentId: compA.id, qty: '5', target: { kind: 'dept', deptId: deptBId } },
         { componentId: compB.id, qty: '3', target: { kind: 'purchase' } },
@@ -507,9 +514,9 @@ run('PG 集成（车间权限收口：需求单限定入口授权）', () => {
     expect((await get(`/demands/${derivedPurchaseId}`, shopBHeaders)).status).toBe(404)
   })
 
-  test('车间对自己派生到本车间的草稿可改可删', async () => {
+  test('计划员派生到本车间的草稿，车间可改可删', async () => {
     const compA = snapComponents.find((c) => c.materialId === compAId)!
-    const res = await post(`/work-orders/${workOrder.id}/generate-material-demand`, shopAHeaders, {
+    const res = await post(`/work-orders/${workOrder.id}/generate-material-demand`, plannerHeaders, {
       lines: [{ componentId: compA.id, qty: '2', target: { kind: 'dept', deptId: deptAId } }],
     })
     expect(res.status).toBe(201)
