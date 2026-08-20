@@ -18,6 +18,8 @@ export interface ReturnSideSpec {
   /** 金额单=true：科目/原币/GL/对账投影；委外纯数量单=false */
   monetary: boolean
   label: string
+  /** 聚合草稿校验文案前缀（「销售退货草稿参数不合法」）；与 label 解耦，改单据名不会静默破文案 */
+  draftLabel: string
   itemLabel: string
   prefix: string
   headTable: string
@@ -61,6 +63,7 @@ export function returnSpec(side: ReturnKind): ReturnSideSpec {
       requireOutsourced: false,
       monetary: true,
       label: '销售退货单',
+      draftLabel: '销售退货',
       itemLabel: '销售退货条目',
       prefix: 'sales.return',
       headTable: 'sal_return',
@@ -97,6 +100,7 @@ export function returnSpec(side: ReturnKind): ReturnSideSpec {
       requireOutsourced: false,
       monetary: true,
       label: '采购退货单',
+      draftLabel: '采购退货',
     itemLabel: '采购退货条目',
     prefix: 'purchase.return',
     headTable: 'pur_return',
@@ -133,6 +137,7 @@ export function returnSpec(side: ReturnKind): ReturnSideSpec {
     requireOutsourced: true,
     monetary: false,
     label: '委外退货单',
+    draftLabel: '委外退货',
     itemLabel: '委外退货条目',
     prefix: 'purchase.outsourced_return',
     headTable: 'pur_outsourced_return',

@@ -229,9 +229,11 @@ export async function loadSource(
 ): Promise<SourceItem> {
   const lockSql = lock ? sql` FOR UPDATE OF i` : sql``
   let rows: { rows: Record<string, unknown>[] }
-  if (side === 'sales' && input.returnItemId) {
-    // 销售退货条目：价税口径沿用退货条目快照（源单行=发货快照，手工行=手填价×单头汇率）；
+  if (input.returnItemId && (side === 'sales' || side === 'purchase')) {
+    // 退货条目：价税口径沿用退货条目快照（源单行=履约快照，手工行=手填价×单头汇率）；
     // 汇率：源单行取源订单汇率（经 order_item_id 桥接），手工行取退货单头汇率
+    // 销售/采购两臂仅表前缀之差（sal_ / pur_）；FOR UPDATE OF i 与交付/入库臂保持一致
+    const p = side === 'sales' ? 'sal' : 'pur'
     rows = await sql<Record<string, unknown>>`
       SELECT i.id::text, h.company_id::text, h.party_type, h.party_id::text, h.status,
         h.return_no AS no, h.return_date AS source_date, i.material_name, i.unit_name,
@@ -239,10 +241,10 @@ export async function loadSource(
         i.reconciled_qty::text, i.order_price::text,
         COALESCE(o.exchange_rate, h.exchange_rate, 1)::text AS exchange_rate,
         o.order_type, o.id::text AS order_id
-      FROM sal_return_item i
-      JOIN sal_return h ON h.id=i.return_id
-      LEFT JOIN sal_order_item oi ON oi.id=i.order_item_id
-      LEFT JOIN sal_order o ON o.id=oi.order_id
+      FROM ${ident(`${p}_return_item`)} i
+      JOIN ${ident(`${p}_return`)} h ON h.id=i.return_id
+      LEFT JOIN ${ident(`${p}_order_item`)} oi ON oi.id=i.order_item_id
+      LEFT JOIN ${ident(`${p}_order`)} o ON o.id=oi.order_id
       WHERE i.id=${input.returnItemId}::uuid${lockSql}
     `.execute(db)
   } else if (side === 'sales') {
@@ -257,22 +259,6 @@ export async function loadSource(
       JOIN sal_order_item oi ON oi.id=i.order_item_id
       JOIN sal_order o ON o.id=oi.order_id
       WHERE i.id=${input.deliveryItemId!}::uuid${lockSql}
-    `.execute(db)
-  } else if (side === 'purchase' && input.returnItemId) {
-    // 采购退货条目：价税口径沿用退货条目快照（源单行=入库快照，手工行=手填价×单头汇率）；
-    // 汇率：源单行取源订单汇率（经 order_item_id 桥接），手工行取退货单头汇率
-    rows = await sql<Record<string, unknown>>`
-      SELECT i.id::text, h.company_id::text, h.party_type, h.party_id::text, h.status,
-        h.return_no AS no, h.return_date AS source_date, i.material_name, i.unit_name,
-        i.order_currency_code AS currency_code, i.qty::text, i.base_qty::text,
-        i.reconciled_qty::text, i.order_price::text,
-        COALESCE(o.exchange_rate, h.exchange_rate, 1)::text AS exchange_rate,
-        o.order_type, o.id::text AS order_id
-      FROM pur_return_item i
-      JOIN pur_return h ON h.id=i.return_id
-      LEFT JOIN pur_order_item oi ON oi.id=i.order_item_id
-      LEFT JOIN pur_order o ON o.id=oi.order_id
-      WHERE i.id=${input.returnItemId}::uuid${lockSql}
     `.execute(db)
   } else if (input.receiptItemId) {
     rows = await sql<Record<string, unknown>>`

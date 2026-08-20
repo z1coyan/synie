@@ -400,7 +400,7 @@ export function createReturnsService(
       db,
       registry,
       head: heads,
-      validationMessage: `${spec.label.slice(0, -1)}草稿参数不合法`,
+      validationMessage: `${spec.draftLabel}草稿参数不合法`,
       children: [{ key: 'items', service: items }],
     })
 
