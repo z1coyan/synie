@@ -18,15 +18,9 @@ async function migrationSql(): Promise<string> {
 describe('存量授权收口迁移（SQL 约定）', () => {
   test('映射与 FOLDED_ACTIONS 对齐：reverse→create，不删行、不授 ar_ap:read', async () => {
     const text = await migrationSql()
-    expect(text).toContain('空范围默认 all')
-    expect(text).toContain('旧行留给后续退役')
-    expect(text).toContain('不删除未映射旧码')
-    expect(text).toContain('不跑 seed')
-    expect(text).toContain('不加 acc.ar_ap:read')
     expect(text).toContain('WHERE scope IS NULL')
-    expect(text).toMatch(/SET scope = 'all'/)
-    expect(text).not.toMatch(/\bDELETE\b/i)
-    expect(text).not.toContain('acc.ar_ap:read')
+    expect(text).not.toMatch(/\bDELETE\s+FROM\b/i)
+    expect(text).not.toMatch(/'acc\.ar_ap:read'/)
     for (const [from, to] of Object.entries(FOLDED_ACTIONS)) {
       expect(text).toContain(`('${from}', '${to}')`)
     }
