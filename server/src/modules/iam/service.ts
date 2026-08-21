@@ -407,6 +407,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
       try {
         await trx.deleteFrom('sys_user_role').where('user_id', '=', id).execute()
         await trx.deleteFrom('sys_user_company').where('user_id', '=', id).execute()
+        await trx.deleteFrom('sys_user_api_key').where('user_id', '=', id).execute()
         await trx.deleteFrom('sys_user').where('id', '=', id).execute()
         // 同事务清 better-auth 账号（级联删 session/account，登录态随删即失效）
         if (locked.auth_user_id) {

@@ -58,11 +58,13 @@ export function AppShell({ user, menuCodes, onLogout, children }: AppShellProps)
   const displayName = user ? (user.name ?? user.username) : '…'
 
   const crumbs =
-    activeModule.key === 'dashboard'
-      ? [activeModule.label]
-      : [activeModule.label, activeItem?.label].filter(
-          (c): c is string => Boolean(c)
-        )
+    pathname === '/account/api-keys'
+      ? ['账户', 'API 密钥']
+      : activeModule.key === 'dashboard'
+        ? [activeModule.label]
+        : [activeModule.label, activeItem?.label].filter(
+            (c): c is string => Boolean(c)
+          )
 
   return (
     <div className="flex h-screen bg-porcelain text-ink-900">
@@ -286,6 +288,7 @@ function UserMenu({
   avatarClassName: string
   fallbackClassName: string
 }) {
+  const navigate = useNavigate()
   return (
     <Dropdown>
       <Button
@@ -309,11 +312,15 @@ function UserMenu({
           aria-label="用户操作"
           onAction={(key) => {
             if (key === 'logout') onLogout()
+            if (key === 'api-keys') navigate({ to: '/account/api-keys' })
           }}
         >
           <Dropdown.Item id="profile" textValue={displayName}>
             <Label>{displayName}</Label>
             <Description>{username}</Description>
+          </Dropdown.Item>
+          <Dropdown.Item id="api-keys" textValue="API 密钥">
+            <Label>API 密钥</Label>
           </Dropdown.Item>
           <Dropdown.Item id="logout" textValue="退出登录" variant="danger">
             <Label>退出登录</Label>

@@ -33,6 +33,7 @@ export async function createTestAuth(
 ): Promise<AuthService> {
   const codes = registry ?? createSealedResourceRegistry()
   return createAuthService({
+    db,
     store: createAuthStore(db),
     actors: createActorAssembler({
       store: createAuthzStore(db),

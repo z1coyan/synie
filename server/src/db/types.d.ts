@@ -2026,6 +2026,23 @@ export interface SysUser {
   username: string;
 }
 
+export interface SysUserApiKey {
+  expires_at: Timestamp | null;
+  id: Generated<string>;
+  inserted_at: Generated<Timestamp>;
+  last_used_at: Timestamp | null;
+  name: string;
+  /**
+   * 完整明文的 SHA-256 hex
+   */
+  token_hash: string;
+  /**
+   * 展示用前缀（不含密钥体）
+   */
+  token_hint: string;
+  user_id: string;
+}
+
 export interface SysUserCompany {
   company_id: string;
   id: Generated<string>;
@@ -2160,6 +2177,7 @@ export interface DB {
   sys_todo: SysTodo;
   sys_todo_state: SysTodoState;
   sys_user: SysUser;
+  sys_user_api_key: SysUserApiKey;
   sys_user_company: SysUserCompany;
   sys_user_role: SysUserRole;
 }

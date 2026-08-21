@@ -65,6 +65,7 @@ run('PG 集成（files / storages）', () => {
     permitOf(STORAGE_RESOURCE_NAME, action, input)
 
   const authPromise = createAuthService({
+    db,
     store: createAuthStore(db),
     actors: createActorAssembler({
       store: createAuthzStore(db),

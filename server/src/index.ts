@@ -65,6 +65,7 @@ logJson('info', 'meta.catalog.sealed', {
 })
 
 const auth = await createAuthService({
+  db,
   store: createAuthStore(db),
   actors: createActorAssembler({
     store: createAuthzStore(db),

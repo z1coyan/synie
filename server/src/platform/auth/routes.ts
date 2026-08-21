@@ -4,7 +4,7 @@ import { zValidator } from '@hono/zod-validator'
 import { topAtom } from '../authz/core/index.ts'
 import type { AppEnv } from '../http/context.ts'
 import { validationHook } from '../http/zod.ts'
-import { requireAuth } from './middleware.ts'
+import { rejectApiKeyManagement, requireAuth } from './middleware.ts'
 import type { AuthService } from './service.ts'
 
 // 形状对齐 contracts/openapi LoginRequest/LoginResponse/MeResponse（wire 契约不变）
@@ -14,6 +14,15 @@ const loginSchema = z
     password: z.string().min(1).max(1024),
   })
   .strict()
+
+const createApiKeySchema = z
+  .object({
+    name: z.string().trim().min(1).max(64),
+    expiresAt: z.string().min(1).nullable().optional(),
+  })
+  .strict()
+
+const apiKeyIdParam = z.object({ id: z.string().uuid() })
 
 export function authRoutes(auth: AuthService) {
   return new Hono<AppEnv>()
@@ -27,6 +36,33 @@ export function authRoutes(auth: AuthService) {
         user: result.user,
       })
     })
+    .get('/api-keys', requireAuth(auth), rejectApiKeyManagement(), async (c) => {
+      return c.json({ results: await auth.listApiKeys(c.get('actor')) })
+    })
+    .post(
+      '/api-keys',
+      requireAuth(auth),
+      rejectApiKeyManagement(),
+      zValidator('json', createApiKeySchema, validationHook),
+      async (c) => {
+        const body = c.req.valid('json')
+        const created = await auth.createApiKey(c.get('actor'), {
+          name: body.name,
+          expiresAt: body.expiresAt,
+        })
+        return c.json(created, 201)
+      },
+    )
+    .delete(
+      '/api-keys/:id',
+      requireAuth(auth),
+      rejectApiKeyManagement(),
+      zValidator('param', apiKeyIdParam, validationHook),
+      async (c) => {
+        await auth.revokeApiKey(c.get('actor'), c.req.valid('param').id)
+        return c.body(null, 204)
+      },
+    )
     .get('/me', requireAuth(auth), async (c) => {
       const actor = c.get('actor')
       const menuCodes = await auth.menuCodes(actor)
