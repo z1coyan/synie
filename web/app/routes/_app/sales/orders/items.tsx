@@ -1,12 +1,18 @@
 import { useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { Link } from '@heroui/react'
+import { Button, Link } from '@heroui/react'
 import { formatAmount, formatPrice } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
-import type { Row } from '~/components/synie-data-grid/types'
+import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { docActionVisible, ORDER_DOC_STATUS_ENUM_COLORS } from '~/lib/doc-status'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { useOrderDrawer, salesOrderAuditConfig, type OpenOrderDrawer } from './-order-drawer'
+import {
+  applyPendingShip,
+  clearPendingShip,
+  isPendingShipFilters,
+  PENDING_SHIP_FILTERS,
+} from './-pending-ship-filters'
 import { useAuditDoc } from '../../scm/-audit-doc'
 import { QtyProgressCell } from '../../scm/-qty-progress-cell'
 
@@ -118,6 +124,11 @@ function SalesOrderItemsTab() {
         ]}
         // 默认订单日期倒序(新单在前);calc 列排序后端已验证支持
         defaultSort={{ column: 'orderDate', direction: 'descending' }}
+        // 无 f 进入 = 待发货；用户改/清后 URL 写 f（空则 f={}），刷新不回套
+        defaultFilters={PENDING_SHIP_FILTERS}
+        toolbarExtra={({ filters, setFilters }) => (
+          <PendingShipQuickFilters filters={filters} setFilters={setFilters} />
+        )}
         createLabel="新建订单"
         onCreate={() => openDrawer('create', null)}
         onView={(row) => openDrawer('view', { id: String(row.orderId), status: row.orderStatus })}
@@ -137,5 +148,35 @@ function SalesOrderItemsTab() {
       />
       {auditDialog}
     </>
+  )
+}
+
+function PendingShipQuickFilters({
+  filters,
+  setFilters,
+}: {
+  filters: FilterState
+  setFilters: (next: FilterState | ((prev: FilterState) => FilterState)) => void
+}) {
+  const pending = isPendingShipFilters(filters)
+  return (
+    <div className="flex items-center gap-1">
+      <Button
+        size="sm"
+        variant={pending ? 'primary' : 'secondary'}
+        aria-pressed={pending}
+        onPress={() => setFilters((prev) => applyPendingShip(prev))}
+      >
+        待发货
+      </Button>
+      <Button
+        size="sm"
+        variant={pending ? 'secondary' : 'primary'}
+        aria-pressed={!pending}
+        onPress={() => setFilters((prev) => clearPendingShip(prev))}
+      >
+        全部
+      </Button>
+    </div>
   )
 }

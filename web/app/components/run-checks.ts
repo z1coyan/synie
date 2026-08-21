@@ -3,6 +3,7 @@
 // 纯逻辑,不依赖 @heroui-pro,可在无 Pro token 的环境(CI check 步骤)运行。
 import './synie-data-grid/grid-checks.ts'
 import './synie-data-grid/card-mode-checks.ts'
+import '../routes/_app/sales/orders/-pending-ship-filters-checks.ts'
 import './synie-record-drawer/record-drawer-checks.ts'
 import './synie-record-drawer/document-preview-checks.ts'
 import './synie-remote-select/remote-select-checks.ts'
