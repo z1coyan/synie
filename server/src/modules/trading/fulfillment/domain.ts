@@ -8,8 +8,6 @@ import type { DbHandle } from '~/db/tx.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { validateEnabledLeafWarehouse } from '~/platform/posting/warehouse.ts'
 import {
-  asDate,
-  asDateTime,
   asOptionalString,
   convertToBaseQty,
   guardMaterialType,
@@ -19,7 +17,6 @@ import {
   partyExists,
   runeLen,
   type TradingSide,
-  upperStatus,
   wireRequiredDecimal,
 } from '../common.ts'
 import { fulfillmentSpec, type FulfillmentSideSpec } from './spec.ts'
@@ -212,13 +209,6 @@ export async function assertDeliveryDraft(db: DbHandle, deliveryId: string): Pro
   }
 }
 
-export async function loadHead(db: DbHandle, spec: FulfillmentSideSpec, id: string) {
-  const rows = await sql<Record<string, unknown>>`
-    SELECT * FROM ${ident(spec.headTable)} WHERE id=${id}::uuid
-  `.execute(db)
-  return rows.rows[0]
-}
-
 export interface ActionItem {
   id: string
   orderItemId: string
@@ -389,49 +379,6 @@ export async function validatePackEquality(db: DbHandle, headId: string, items: 
   }
 }
 
-export function mapHead(row: Record<string, unknown>): FulfillmentHead {
-  const no = String(row.delivery_no ?? row.receipt_no ?? row.number ?? '')
-  const documentDate = asDate(row.delivery_date ?? row.receipt_date ?? row.document_date)
-  return {
-    id: String(row.id),
-    no,
-    documentDate,
-    postingDate: row.posting_date ? asDate(row.posting_date) : null,
-    partyType: String(row.party_type),
-    partyId: String(row.party_id),
-    remarks: asOptionalString(row.remarks),
-    status: upperStatus(String(row.status)),
-    auditedAt: asDateTime(row.audited_at),
-    insertedAt: asDateTime(row.inserted_at)!,
-    updatedAt: asDateTime(row.updated_at)!,
-    companyId: String(row.company_id),
-    warehouseId: row.warehouse_id ? String(row.warehouse_id) : null,
-    debitAccountId: String(row.debit_account_id),
-    creditAccountId: String(row.credit_account_id),
-    createdById: row.created_by_id ? String(row.created_by_id) : null,
-    auditedById: row.audited_by_id ? String(row.audited_by_id) : null,
-  }
-}
-
-export function headSnap(item: FulfillmentHead): Record<string, unknown> {
-  return {
-    number: item.no,
-    document_date: item.documentDate,
-    posting_date: item.postingDate,
-    party_type: item.partyType,
-    party_id: item.partyId,
-    remarks: item.remarks,
-    status: item.status,
-    audited_at: item.auditedAt,
-    company_id: item.companyId,
-    warehouse_id: item.warehouseId,
-    debit_account_id: item.debitAccountId,
-    credit_account_id: item.creditAccountId,
-    created_by_id: item.createdById,
-    audited_by_id: item.auditedById,
-  }
-}
-
 export function applyDerivedItem(
   draft: Record<string, unknown>,
   derived: Awaited<ReturnType<typeof deriveItem>>,
@@ -459,6 +406,17 @@ export function applyDerivedItem(
   draft.orderCurrencyCode = derived.orderCurrencyCode
   draft.remarks = derived.remarks
   draft.orderItemId = derived.orderItemId
+}
+
+/**
+ * 转移 effect 入参适配：内核 transition 的 wire 形 before → 领域头
+ * （单号/日期键随 side；状态闸门已由内核完成，status 占位不消费）。
+ */
+export function headFromWire(
+  spec: FulfillmentSideSpec,
+  before: Record<string, unknown>,
+): FulfillmentHead {
+  return headLikeFromDraft({}, before, { no: spec.numberApi, date: spec.dateApi })
 }
 
 export function headLikeFromDraft(

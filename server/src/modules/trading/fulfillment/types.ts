@@ -19,6 +19,48 @@ export interface FulfillmentHead {
   auditedById: string | null
 }
 
+/** wire 头 DTO（presentSalesHead 返回形；键集/键序/值由 meta 派生，本接口是 hc 契约锚点） */
+export interface SalesHeadDto {
+  id: string
+  deliveryNo: string
+  deliveryDate: string
+  postingDate: string | null
+  partyType: string
+  partyId: string
+  remarks: string | null
+  status: string
+  auditedAt: string | null
+  insertedAt: string
+  updatedAt: string
+  companyId: string
+  warehouseId: string | null
+  debitAccountId: string
+  creditAccountId: string
+  createdById: string | null
+  auditedById: string | null
+}
+
+/** wire 头 DTO（presentPurchaseHead 返回形） */
+export interface PurchaseHeadDto {
+  id: string
+  receiptNo: string
+  receiptDate: string
+  postingDate: string | null
+  partyType: string
+  partyId: string
+  remarks: string | null
+  status: string
+  auditedAt: string | null
+  insertedAt: string
+  updatedAt: string
+  companyId: string
+  warehouseId: string | null
+  debitAccountId: string
+  creditAccountId: string
+  createdById: string | null
+  auditedById: string | null
+}
+
 export interface FulfillmentHeadDraftInput {
   companyId: string
   no?: string | null
@@ -164,24 +206,7 @@ export interface SalesDraftPackBoxDto {
   lines: SalesDraftPackLineDto[]
 }
 
-export interface SalesDraftDto {
-  id: string
-  deliveryNo: string
-  deliveryDate: string
-  postingDate: string | null
-  partyType: string
-  partyId: string
-  remarks: string | null
-  status: string
-  auditedAt: string | null
-  insertedAt: string
-  updatedAt: string
-  companyId: string
-  warehouseId: string | null
-  debitAccountId: string
-  creditAccountId: string
-  createdById: string | null
-  auditedById: string | null
+export type SalesDraftDto = SalesHeadDto & {
   items: SalesDraftItemDto[]
   packBoxes: SalesDraftPackBoxDto[]
 }
@@ -226,23 +251,6 @@ export interface PurchaseReceiptItemDto {
   remainingReturnableQty: string
 }
 
-export interface PurchaseReceiptDraftDto {
-  id: string
-  receiptNo: string
-  receiptDate: string
-  postingDate: string | null
-  partyType: string
-  partyId: string
-  remarks: string | null
-  status: string
-  auditedAt: string | null
-  insertedAt: string
-  updatedAt: string
-  companyId: string
-  warehouseId: string | null
-  debitAccountId: string
-  creditAccountId: string
-  createdById: string | null
-  auditedById: string | null
+export type PurchaseReceiptDraftDto = PurchaseHeadDto & {
   items: PurchaseReceiptItemDto[]
 }

@@ -1,98 +1,60 @@
-/** 退货 wire 呈现：标准服务返回值 → 路由/草稿 DTO（销售/采购对称）。 */
+/**
+ * 退货 wire 呈现：meta 派生 presenter + 计算列/键并集钩子（销售/采购/委外对称）。
+ *
+ * 键集/键序/规范化规则唯一事实源是 spec.ts 的 meta：
+ * - 头/条目 presenter 派生自销售侧（金额单）meta——三侧共享同一 wire 形状，
+ *   委外侧缺金额键时派生值自然为 null（与迁前手写一致）
+ * - 条目来源锚点是三侧并集键（deliveryItemId/receiptItemId/outsourcedReceiptItemId），
+ *   字段描述符从各侧 meta 拼接，不重新声明类型
+ * - remainingReconcilableQty / reconciledQty 的计算回退保留为逐键值钩子
+ */
 import { decimal } from '@synie/shared'
-import {
-  asDate,
-  asDateTime,
-  asOptionalString,
-  upperStatus,
-  wireRequiredDecimal,
-} from '../common.ts'
-import { mapHead } from './domain.ts'
-import { returnSpec, type ReturnKind } from './spec.ts'
-import type { ReturnDraftDto, ReturnDraftInput, ReturnItemDto } from './types.ts'
+import type { FieldMeta } from '~/platform/meta/types.ts'
+import { derivePresenter } from '~/platform/standard/present.ts'
+import { asDate, upperStatus, wireRequiredDecimal } from '../common.ts'
+import { returnHeadMeta, returnItemMeta, returnSpec, type ReturnKind } from './spec.ts'
+import type { ReturnDraftDto, ReturnDraftInput, ReturnHeadDto, ReturnItemDto } from './types.ts'
 
-function asIso(value: unknown): string | null {
-  if (value === null || value === undefined) return null
-  if (value instanceof Date) return value.toISOString()
-  return new Date(String(value)).toISOString()
+// 三侧共享 wire 形状：派生基准取金额单（销售）meta
+const HEAD_META = returnHeadMeta('sales')
+const ITEM_META = returnItemMeta('sales')
+const PURCHASE_ITEM_FIELDS = returnItemMeta('purchase').fields
+const OUTSOURCED_ITEM_FIELDS = returnItemMeta('outsourced').fields
+
+const fieldOf = (fields: readonly FieldMeta[], apiName: string): FieldMeta => {
+  const found = fields.find((f) => f.apiName === apiName)
+  if (!found) throw new Error(`退货 wire 派生：缺字段 ${apiName}`)
+  return found
 }
 
-function wireOptionalDecimal(value: unknown): string | null {
-  if (value === null || value === undefined) return null
-  return wireRequiredDecimal(String(value))
-}
+/** 条目键清单：销售侧 meta 字段序 + 来源锚点并集（三侧键同一位置） */
+const ITEM_FIELDS = ITEM_META.fields.flatMap((f) =>
+  f.apiName === 'deliveryItemId'
+    ? [
+        f,
+        fieldOf(PURCHASE_ITEM_FIELDS, 'receiptItemId'),
+        fieldOf(OUTSOURCED_ITEM_FIELDS, 'outsourcedReceiptItemId'),
+      ]
+    : [f],
+)
 
-export function presentReturnHead(row: Record<string, unknown>) {
-  return {
-    id: String(row.id),
-    returnNo: String(row.returnNo ?? ''),
-    returnDate: String(row.returnDate ?? ''),
-    postingDate: row.postingDate == null ? null : String(row.postingDate),
-    partyType: upperStatus(String(row.partyType ?? '')),
-    partyId: String(row.partyId ?? ''),
-    currencyId: row.currencyId == null ? null : String(row.currencyId),
-    exchangeRate: wireOptionalDecimal(row.exchangeRate),
-    remarks: row.remarks == null ? null : String(row.remarks),
-    status: upperStatus(String(row.status ?? 'DRAFT')),
-    auditedAt: asIso(row.auditedAt),
-    insertedAt: asIso(row.insertedAt)!,
-    updatedAt: asIso(row.updatedAt)!,
-    companyId: String(row.companyId ?? ''),
-    warehouseId: row.warehouseId == null ? null : String(row.warehouseId),
-    debitAccountId: row.debitAccountId == null ? null : String(row.debitAccountId),
-    creditAccountId: row.creditAccountId == null ? null : String(row.creditAccountId),
-    createdById: row.createdById == null ? null : String(row.createdById),
-    auditedById: row.auditedById == null ? null : String(row.auditedById),
-  }
-}
+export const presentReturnHead = derivePresenter<ReturnHeadDto>(HEAD_META)
 
-export function presentReturnItem(row: Record<string, unknown>): ReturnItemDto {
-  const baseQty = String(row.baseQty ?? 0)
-  const reconciled = String(row.reconciledQty ?? 0)
-  return {
-    id: String(row.id),
-    idx: Number(row.idx),
-    qty: wireRequiredDecimal(String(row.qty ?? 0)),
-    baseQty: wireRequiredDecimal(baseQty),
-    materialCode: row.materialCode == null ? null : String(row.materialCode),
-    materialName: row.materialName == null ? null : String(row.materialName),
-    materialSpec: row.materialSpec == null ? null : String(row.materialSpec),
-    customerPartNo: row.customerPartNo == null ? null : String(row.customerPartNo),
-    unitName: row.unitName == null ? null : String(row.unitName),
-    orderNo: row.orderNo == null ? null : String(row.orderNo),
-    orderQty: wireOptionalDecimal(row.orderQty),
-    orderBaseQty: wireOptionalDecimal(row.orderBaseQty),
-    orderUnitName: row.orderUnitName == null ? null : String(row.orderUnitName),
-    orderPrice: wireOptionalDecimal(row.orderPrice),
-    orderAmount: wireOptionalDecimal(row.orderAmount),
-    orderBasePrice: wireOptionalDecimal(row.orderBasePrice),
-    orderBaseAmount: wireOptionalDecimal(row.orderBaseAmount),
-    orderTaxRate: wireOptionalDecimal(row.orderTaxRate),
-    orderCurrencyCode: row.orderCurrencyCode == null ? null : String(row.orderCurrencyCode),
-    reconciledQty: wireRequiredDecimal(reconciled),
-    remarks: row.remarks == null ? null : String(row.remarks),
-    insertedAt: asIso(row.insertedAt)!,
-    updatedAt: asIso(row.updatedAt)!,
-    returnId: String(row.returnId ?? ''),
-    companyId: String(row.companyId ?? ''),
-    deliveryItemId: row.deliveryItemId == null ? null : String(row.deliveryItemId),
-    receiptItemId: row.receiptItemId == null ? null : String(row.receiptItemId),
-    outsourcedReceiptItemId:
-      row.outsourcedReceiptItemId == null ? null : String(row.outsourcedReceiptItemId),
-    orderItemId: row.orderItemId == null ? null : String(row.orderItemId),
-    materialId: row.materialId == null ? null : String(row.materialId),
-    unitId: row.unitId == null ? null : String(row.unitId),
-    warehouseId: row.warehouseId == null ? null : String(row.warehouseId),
-    returnNo: String(row.returnNo ?? ''),
-    returnDate: row.returnDate == null ? '' : String(row.returnDate),
-    returnStatus: upperStatus(String(row.returnStatus ?? 'DRAFT')),
-    partyType: upperStatus(String(row.partyType ?? '')),
-    partyId: String(row.partyId ?? ''),
-    remainingReconcilableQty: wireRequiredDecimal(
-      String(row.remainingReconcilableQty ?? decimal(baseQty).sub(reconciled)),
-    ),
-  }
-}
+export const presentReturnItem = derivePresenter<ReturnItemDto>(ITEM_META, {
+  fields: ITEM_FIELDS,
+  values: {
+    // 委外侧无 reconciled 列：迁前手写回退 0，逐字保留
+    reconciledQty: (row) => wireRequiredDecimal(String(row.reconciledQty ?? 0)),
+    // 剩余可对账 = 折算数量 − 已对账（投影列缺省时回退，与 mapReturnItemExtras 同口径）
+    remainingReconcilableQty: (row) =>
+      wireRequiredDecimal(
+        String(
+          row.remainingReconcilableQty ??
+            decimal(String(row.baseQty ?? 0)).sub(String(row.reconciledQty ?? 0)),
+        ),
+      ),
+  },
+})
 
 export function presentReturnDraft(raw: Record<string, unknown>): ReturnDraftDto {
   const items = Array.isArray(raw.items)
@@ -115,31 +77,6 @@ export function mapReturnItemExtras(row: Record<string, unknown>): Record<string
     remainingReconcilableQty: wireRequiredDecimal(
       String(row.remaining_reconcilable_qty ?? decimal(baseQty).sub(reconciled)),
     ),
-  }
-}
-
-export function mapHeadDto(row: Record<string, unknown>) {
-  const h = mapHead(row)
-  return {
-    id: h.id,
-    returnNo: h.no,
-    returnDate: h.documentDate,
-    postingDate: h.postingDate,
-    partyType: upperStatus(h.partyType),
-    partyId: h.partyId,
-    currencyId: h.currencyId,
-    exchangeRate: h.exchangeRate,
-    remarks: h.remarks,
-    status: h.status,
-    auditedAt: h.auditedAt,
-    insertedAt: h.insertedAt,
-    updatedAt: h.updatedAt,
-    companyId: h.companyId,
-    warehouseId: h.warehouseId,
-    debitAccountId: h.debitAccountId,
-    creditAccountId: h.creditAccountId,
-    createdById: h.createdById,
-    auditedById: h.auditedById,
   }
 }
 

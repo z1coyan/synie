@@ -8,11 +8,20 @@ import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { dateOnlySchema, decimalStringSchema, draftValidationHook, listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
-import { idParam } from '~/platform/standard/routes.ts'
+import { draftValidationHook, listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
+import { aggregateReplaceGuard, idParam } from '~/platform/standard/routes.ts'
+import { deriveDraftObject, deriveDraftSchemas } from '~/platform/standard/wire.ts'
 import { presentKey } from '../common.ts'
 import type { FulfillmentService } from './service.ts'
-import { fulfillmentSpec, PACK_BOX_RESOURCE, PACK_LINE_RESOURCE } from './spec.ts'
+import {
+  fulfillmentHeadMeta,
+  fulfillmentItemMeta,
+  fulfillmentSpec,
+  packBoxMeta,
+  packLineMeta,
+  PACK_BOX_RESOURCE,
+  PACK_LINE_RESOURCE,
+} from './spec.ts'
 
 export interface FulfillmentRouteDeps {
   auth: AuthService
@@ -20,103 +29,86 @@ export interface FulfillmentRouteDeps {
   fulfillment: FulfillmentService
 }
 
-/**
- * 聚合草稿整单替换的码级门控：一次 PUT 可同时新增/修改/删除子树，
- * 故要求 `update` ∧ `create` ∧ `delete`（附加码由 prefix 拼，不写字面量）。
- */
-function aggregateReplaceGuard(authz: AuthzEnforcer, headResource: string) {
-  const { prefix } = authz.targetOf(headResource)
-  return authz.guard(headResource, 'update', {
-    allOf: [`${prefix}:create`, `${prefix}:delete`],
-  })
-}
+// 草稿 zod 自 meta 派生（类型/格式约束唯一事实源）；readonly 编号手填、子行 id、
+// enum 放宽 string 为草稿专属字面量/逐字段补丁。
+export const salesDraftItemSchema = deriveDraftObject(fulfillmentItemMeta('sales'), [
+  ['id', z.string().uuid().optional()],
+  'idx',
+  'qty',
+  'orderItemId',
+  ['unitId', { nullable: true, optional: true }],
+  ['warehouseId', { nullable: true, optional: false }],
+  ['remarks', { nullable: true }],
+])
 
-const salesDraftItemSchema = z
-  .object({
-    id: z.string().uuid().optional(),
-    idx: z.number().int(),
-    qty: decimalStringSchema,
-    orderItemId: z.string().uuid(),
-    unitId: z.string().uuid().nullable().optional(),
-    warehouseId: z.string().uuid().nullable(),
-    remarks: z.string().nullable().optional(),
-  })
-  .strict()
+export const salesDraftPackLineSchema = deriveDraftObject(packLineMeta(), [
+  ['id', z.string().uuid().optional()],
+  'idx',
+  'qty',
+  'materialId',
+  ['unitId', { nullable: true, optional: true }],
+  ['remarks', { nullable: true }],
+])
 
-const salesDraftPackLineSchema = z
-  .object({
-    id: z.string().uuid().optional(),
-    idx: z.number().int(),
-    qty: decimalStringSchema,
-    materialId: z.string().uuid(),
-    unitId: z.string().uuid().nullable().optional(),
-    remarks: z.string().nullable().optional(),
-  })
-  .strict()
+export const salesDraftPackBoxSchema = deriveDraftObject(packBoxMeta(), [
+  ['id', z.string().uuid().optional()],
+  ['lines', z.array(salesDraftPackLineSchema)],
+])
 
-const salesDraftPackBoxSchema = z
-  .object({
-    id: z.string().uuid().optional(),
-    lines: z.array(salesDraftPackLineSchema),
-  })
-  .strict()
+const salesDraftSchemas = deriveDraftSchemas(
+  fulfillmentHeadMeta('sales'),
+  [
+    'companyId',
+    ['deliveryNo', z.string().nullable().optional()],
+    ['deliveryDate', { nullable: true, optional: true }],
+    ['postingDate', { nullable: true }],
+    ['partyType', { schema: z.string().min(1) }],
+    'partyId',
+    ['remarks', { nullable: true }],
+    ['warehouseId', { nullable: true }],
+    'debitAccountId',
+    'creditAccountId',
+  ],
+  {
+    items: {
+      create: z.array(salesDraftItemSchema),
+      replace: z.array(salesDraftItemSchema),
+    },
+    packBoxes: {
+      create: z.array(salesDraftPackBoxSchema),
+      replace: z.array(salesDraftPackBoxSchema),
+    },
+  },
+)
 
-const salesDraftFields = {
-  companyId: z.string().uuid(),
-  deliveryNo: z.string().nullable().optional(),
-  deliveryDate: dateOnlySchema.nullable().optional(),
-  postingDate: dateOnlySchema.nullable().optional(),
-  partyType: z.string().min(1),
-  partyId: z.string().uuid(),
-  remarks: z.string().nullable().optional(),
-  warehouseId: z.string().uuid().nullable().optional(),
-  debitAccountId: z.string().uuid(),
-  creditAccountId: z.string().uuid(),
-}
+export const salesDraftCreateSchema = salesDraftSchemas.create
+export const salesDraftReplaceSchema = salesDraftSchemas.replace
 
-const salesDraftCreateSchema = z
-  .object({
-    ...salesDraftFields,
-    items: z.array(salesDraftItemSchema),
-    packBoxes: z.array(salesDraftPackBoxSchema),
-  })
-  .strict()
+const purchaseReceiptDraftSchemas = deriveDraftSchemas(
+  fulfillmentHeadMeta('purchase'),
+  [
+    'companyId',
+    ['receiptNo', z.string().nullable().optional()],
+    ['receiptDate', { nullable: true, optional: true }],
+    ['postingDate', { nullable: true }],
+    ['partyType', { schema: z.string().min(1) }],
+    'partyId',
+    ['remarks', { nullable: true }],
+    ['warehouseId', { nullable: true }],
+    'debitAccountId',
+    'creditAccountId',
+  ],
+  {
+    items: {
+      // 兼容仍只创建空表头的领域调用；聚合抽屉始终显式发送完整 items。
+      create: z.array(salesDraftItemSchema).default([]),
+      replace: z.array(salesDraftItemSchema),
+    },
+  },
+)
 
-const salesDraftReplaceSchema = z
-  .object({
-    ...salesDraftFields,
-    items: z.array(salesDraftItemSchema),
-    packBoxes: z.array(salesDraftPackBoxSchema),
-  })
-  .strict()
-
-const purchaseReceiptDraftFields = {
-  companyId: z.string().uuid(),
-  receiptNo: z.string().nullable().optional(),
-  receiptDate: dateOnlySchema.nullable().optional(),
-  postingDate: dateOnlySchema.nullable().optional(),
-  partyType: z.string().min(1),
-  partyId: z.string().uuid(),
-  remarks: z.string().nullable().optional(),
-  warehouseId: z.string().uuid().nullable().optional(),
-  debitAccountId: z.string().uuid(),
-  creditAccountId: z.string().uuid(),
-}
-
-const purchaseReceiptDraftCreateSchema = z
-  .object({
-    ...purchaseReceiptDraftFields,
-    // 兼容仍只创建空表头的领域调用；聚合抽屉始终显式发送完整 items。
-    items: z.array(salesDraftItemSchema).default([]),
-  })
-  .strict()
-
-const purchaseReceiptDraftReplaceSchema = z
-  .object({
-    ...purchaseReceiptDraftFields,
-    items: z.array(salesDraftItemSchema),
-  })
-  .strict()
+export const purchaseReceiptDraftCreateSchema = purchaseReceiptDraftSchemas.create
+export const purchaseReceiptDraftReplaceSchema = purchaseReceiptDraftSchemas.replace
 
 function toSalesDraftInput(
   body: z.infer<typeof salesDraftCreateSchema> | z.infer<typeof salesDraftReplaceSchema>,

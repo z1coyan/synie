@@ -15,7 +15,7 @@ import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { dateOnlySchema, decimalStringSchema, draftValidationHook, listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
-import { idParam } from '~/platform/standard/routes.ts'
+import { aggregateReplaceGuard, idParam } from '~/platform/standard/routes.ts'
 import type { TradingSide } from '../common.ts'
 import { presentKey } from '../common.ts'
 import {
@@ -106,10 +106,6 @@ export function orderHeadRoutes(deps: {
   const { auth, authz, orders, side } = deps
   const resource = orderSpec(side).headResource
   const guard = (action: string) => authz.guard(resource, action)
-  /** 附加码从判定归宿的 prefix 拼，不写字面量 */
-  const codeOf = (action: string) => `${authz.targetOf(resource).prefix}:${action}`
-  const aggregateReplaceGuard = () =>
-    authz.guard(resource, 'update', { allOf: [codeOf('create'), codeOf('delete')] })
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', guard('read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
@@ -130,7 +126,7 @@ export function orderHeadRoutes(deps: {
     )
     .put(
       '/:id',
-      aggregateReplaceGuard(),
+      aggregateReplaceGuard(authz, resource),
       zValidator('param', idParam, validationHook),
       zValidator('json', orderDraftReplaceSchema, draftValidationHook()),
       async (c) =>

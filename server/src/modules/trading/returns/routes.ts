@@ -8,16 +8,15 @@ import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import {
-  dateOnlySchema,
-  decimalStringSchema,
   draftValidationHook,
   listQuerySchema,
   toListQuery,
   validationHook,
 } from '~/platform/http/zod.ts'
-import { idParam } from '~/platform/standard/routes.ts'
+import { aggregateReplaceGuard, idParam } from '~/platform/standard/routes.ts'
+import { deriveDraftObject, deriveDraftSchemas } from '~/platform/standard/wire.ts'
 import type { ReturnsService } from './service.ts'
-import { returnSpec, type ReturnKind } from './spec.ts'
+import { returnHeadMeta, returnItemMeta, returnSpec, type ReturnKind } from './spec.ts'
 
 export interface ReturnsRouteDeps {
   auth: AuthService
@@ -25,63 +24,53 @@ export interface ReturnsRouteDeps {
   returns: ReturnsService
 }
 
-/**
- * 聚合草稿整单替换的码级门控：一次 PUT 可同时新增/修改/删除条目，
- * 故要求 `update` ∧ `create` ∧ `delete`（附加码由 prefix 拼，不写字面量）。
- */
-function aggregateReplaceGuard(authz: AuthzEnforcer, headResource: string) {
-  const { prefix } = authz.targetOf(headResource)
-  return authz.guard(headResource, 'update', {
-    allOf: [`${prefix}:create`, `${prefix}:delete`],
-  })
-}
+// 草稿 zod 自 meta 派生（类型/格式约束唯一事实源）；三侧共享金额单 meta 键集，
+// 条目来源锚点并集与 readonly 编号手填为草稿专属字面量，enum 放宽 string 为逐字段补丁。
+const DRAFT_HEAD_META = returnHeadMeta('sales')
+const DRAFT_ITEM_META = returnItemMeta('sales')
 
-const draftItemSchema = z
-  .object({
-    id: z.string().uuid().optional(),
-    idx: z.number().int(),
-    qty: decimalStringSchema,
-    // 源单行锚点（销售=发货 / 采购=入库 / 委外=委外入库条目）；留空即手工行
-    deliveryItemId: z.string().uuid().nullable().optional(),
-    receiptItemId: z.string().uuid().nullable().optional(),
-    outsourcedReceiptItemId: z.string().uuid().nullable().optional(),
-    materialId: z.string().uuid().nullable().optional(),
-    orderPrice: decimalStringSchema.nullable().optional(),
-    orderTaxRate: decimalStringSchema.nullable().optional(),
-    unitId: z.string().uuid().nullable().optional(),
-    warehouseId: z.string().uuid().nullable(),
-    remarks: z.string().nullable().optional(),
-  })
-  .strict()
+export const draftItemSchema = deriveDraftObject(DRAFT_ITEM_META, [
+  ['id', z.string().uuid().optional()],
+  'idx',
+  'qty',
+  // 源单行锚点（销售=发货 / 采购=入库 / 委外=委外入库条目）；留空即手工行
+  ['deliveryItemId', { nullable: true }],
+  ['receiptItemId', z.string().uuid().nullable().optional()],
+  ['outsourcedReceiptItemId', z.string().uuid().nullable().optional()],
+  ['materialId', { nullable: true }],
+  ['orderPrice', { nullable: true }],
+  ['orderTaxRate', { nullable: true }],
+  ['unitId', { nullable: true }],
+  ['warehouseId', { nullable: true, optional: false }],
+  ['remarks', { nullable: true }],
+])
 
-const draftFields = {
-  companyId: z.string().uuid(),
-  returnNo: z.string().nullable().optional(),
-  returnDate: dateOnlySchema.nullable().optional(),
-  postingDate: dateOnlySchema.nullable().optional(),
-  partyType: z.string().min(1),
-  partyId: z.string().uuid(),
-  currencyId: z.string().uuid().nullable().optional(),
-  exchangeRate: decimalStringSchema.nullable().optional(),
-  remarks: z.string().nullable().optional(),
-  warehouseId: z.string().uuid().nullable().optional(),
-  debitAccountId: z.string().uuid().nullable().optional(),
-  creditAccountId: z.string().uuid().nullable().optional(),
-}
+const draftSchemas = deriveDraftSchemas(
+  DRAFT_HEAD_META,
+  [
+    'companyId',
+    ['returnNo', z.string().nullable().optional()],
+    ['returnDate', { nullable: true, optional: true }],
+    ['postingDate', { nullable: true }],
+    ['partyType', { schema: z.string().min(1) }],
+    'partyId',
+    ['currencyId', { nullable: true }],
+    ['exchangeRate', { nullable: true }],
+    ['remarks', { nullable: true }],
+    ['warehouseId', { nullable: true }],
+    ['debitAccountId', { nullable: true, optional: true }],
+    ['creditAccountId', { nullable: true, optional: true }],
+  ],
+  {
+    items: {
+      create: z.array(draftItemSchema).default([]),
+      replace: z.array(draftItemSchema),
+    },
+  },
+)
 
-const draftCreateSchema = z
-  .object({
-    ...draftFields,
-    items: z.array(draftItemSchema).default([]),
-  })
-  .strict()
-
-const draftReplaceSchema = z
-  .object({
-    ...draftFields,
-    items: z.array(draftItemSchema),
-  })
-  .strict()
+export const draftCreateSchema = draftSchemas.create
+export const draftReplaceSchema = draftSchemas.replace
 
 function toDraftInput(
   body: z.infer<typeof draftCreateSchema> | z.infer<typeof draftReplaceSchema>,

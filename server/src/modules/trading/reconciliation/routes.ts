@@ -18,52 +18,51 @@ import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { decimalStringSchema, draftValidationHook, listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
+import { draftValidationHook, listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
 import { idParam } from '~/platform/standard/routes.ts'
+import { deriveDraftObject, deriveDraftSchemas } from '~/platform/standard/wire.ts'
 import type { TradingSide } from '../common.ts'
 import { presentKey } from '../common.ts'
 import type { ReconciliationService } from './service.ts'
-import { reconciliationSpec } from './spec.ts'
+import { reconciliationHeadMeta, reconciliationItemMeta, reconciliationSpec } from './spec.ts'
 
-const reconciliationDraftItemSchema = z
-  .object({
-    id: z.string().uuid().optional(),
-    idx: z.number().int(),
-    qty: decimalStringSchema,
-    deliveryItemId: z.string().uuid().nullable().optional(),
-    returnItemId: z.string().uuid().nullable().optional(),
-    receiptItemId: z.string().uuid().nullable().optional(),
-    outsourcedReceiptItemId: z.string().uuid().nullable().optional(),
-    remarks: z.string().nullable().optional(),
-  })
-  .strict()
+// 草稿 zod 自 meta 派生（类型/格式约束唯一事实源）；双侧共享同一 wire 形状——
+// 条目来源锚点四键并集中销售侧两键取自 meta，采购侧两键为草稿专属字面量。
+export const reconciliationDraftItemSchema = deriveDraftObject(reconciliationItemMeta('sales'), [
+  ['id', z.string().uuid().optional()],
+  'idx',
+  'qty',
+  ['deliveryItemId', { nullable: true }],
+  ['returnItemId', { nullable: true }],
+  ['receiptItemId', z.string().uuid().nullable().optional()],
+  ['outsourcedReceiptItemId', z.string().uuid().nullable().optional()],
+  ['remarks', { nullable: true }],
+])
 
-const reconciliationDraftHeadFields = {
-  companyId: z.string().uuid(),
-  reconciliationNo: z.string().nullable().optional(),
-  reconciliationType: z.string().min(1),
-  partyType: z.string().min(1),
-  partyId: z.string().uuid(),
-  debitAccountId: z.string().uuid().nullable().optional(),
-  creditAccountId: z.string().uuid().nullable().optional(),
-  remarks: z.string().nullable().optional(),
-}
+const reconciliationDraftSchemas = deriveDraftSchemas(
+  reconciliationHeadMeta('sales'),
+  [
+    'companyId',
+    ['reconciliationNo', z.string().nullable().optional()],
+    ['reconciliationType', { schema: z.string().min(1) }],
+    ['partyType', { schema: z.string().min(1) }],
+    'partyId',
+    ['debitAccountId', { nullable: true }],
+    ['creditAccountId', { nullable: true }],
+    ['remarks', { nullable: true }],
+  ],
+  {
+    items: {
+      // 兼容仍只创建空表头的领域调用；聚合抽屉始终显式发送完整 items。
+      create: z.array(reconciliationDraftItemSchema).default([]),
+      // PUT 是全量替换：顶层 items 必须显式提交。
+      replace: z.array(reconciliationDraftItemSchema),
+    },
+  },
+)
 
-const reconciliationDraftCreateSchema = z
-  .object({
-    ...reconciliationDraftHeadFields,
-    // 兼容仍只创建空表头的领域调用；聚合抽屉始终显式发送完整 items。
-    items: z.array(reconciliationDraftItemSchema).default([]),
-  })
-  .strict()
-
-// PUT 是全量替换：顶层 items 必须显式提交。
-const reconciliationDraftReplaceSchema = z
-  .object({
-    ...reconciliationDraftHeadFields,
-    items: z.array(reconciliationDraftItemSchema),
-  })
-  .strict()
+export const reconciliationDraftCreateSchema = reconciliationDraftSchemas.create
+export const reconciliationDraftReplaceSchema = reconciliationDraftSchemas.replace
 
 export function reconciliationHeadRoutes(deps: {
   auth: AuthService

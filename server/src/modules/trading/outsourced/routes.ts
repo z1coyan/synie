@@ -17,7 +17,7 @@ import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { draftValidationHook, listQuerySchema, toListQuery, validationHook } from '~/platform/http/zod.ts'
-import { idParam } from '~/platform/standard/routes.ts'
+import { aggregateReplaceGuard, idParam } from '~/platform/standard/routes.ts'
 import { presentKey } from '../common.ts'
 import {
   ISSUE_ITEM_RESOURCE,
@@ -117,17 +117,6 @@ const receiptDraftReplaceSchema = z
     items: z.array(receiptDraftItemSchema),
   })
   .strict()
-
-/**
- * 聚合草稿整单替换的码级门控：一次 PUT 可同时新增/修改/删除子树，
- * 故要求 `update` ∧ `create` ∧ `delete`（附加码由 prefix 拼，不写字面量）。
- */
-function aggregateReplaceGuard(authz: AuthzEnforcer, headResource: string) {
-  const { prefix } = authz.targetOf(headResource)
-  return authz.guard(headResource, 'update', {
-    allOf: [`${prefix}:create`, `${prefix}:delete`],
-  })
-}
 
 export function outsourcedIssueRoutes(deps: OutsourcedRouteDeps) {
   const { auth, authz, outsourced } = deps

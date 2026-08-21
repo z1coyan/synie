@@ -1,16 +1,22 @@
-/** 履约 wire 呈现：标准服务返回值 → 路由/草稿 DTO。 */
+/**
+ * 履约 wire 呈现：meta 派生 presenter + 计算列/键序钩子（销售发货 / 采购入库对称）。
+ *
+ * 键集/键序/规范化规则唯一事实源是 spec.ts 的 meta；模块只保留：
+ * - returnedQty 键序钩子：物理列在 meta 中紧随 reconciledQty，wire 上既有位置在
+ *   remainingReconcilableQty 之后（字节冻结），以 fields 覆盖改序
+ * - remainingReconcilableQty / remainingReturnableQty 计算回退与 boxNo 整数转
+ *   字符串的逐字保留（values 钩子）
+ * - 投影 mapExtras（db 原生行 → wire 附加键）与草稿 payload 装配
+ */
 import { decimal } from '@synie/shared'
-import {
-  asDate,
-  asDateTime,
-  asOptionalString,
-  type TradingSide,
-  upperStatus,
-  wireRequiredDecimal,
-} from '../common.ts'
-import { mapHead } from './domain.ts'
+import type { FieldMeta } from '~/platform/meta/types.ts'
+import { mapRow } from '~/platform/standard/fields.ts'
+import { derivePresenter } from '~/platform/standard/present.ts'
+import { asDate, type TradingSide, upperStatus, wireRequiredDecimal } from '../common.ts'
+import { fulfillmentHeadMeta, fulfillmentItemMeta, packBoxMeta, packLineMeta } from './spec.ts'
 import type {
   FulfillmentHeadDraftInput,
+  PurchaseHeadDto,
   PurchaseReceiptDraftDto,
   PurchaseReceiptDraftInput,
   PurchaseReceiptItemDto,
@@ -19,188 +25,63 @@ import type {
   SalesDraftItemDto,
   SalesDraftPackBoxDto,
   SalesDraftPackLineDto,
+  SalesHeadDto,
 } from './types.ts'
 
-function asIso(value: unknown): string | null {
-  if (value === null || value === undefined) return null
-  if (value instanceof Date) return value.toISOString()
-  return new Date(String(value)).toISOString()
+const SALES_HEAD_META = fulfillmentHeadMeta('sales')
+const PURCHASE_HEAD_META = fulfillmentHeadMeta('purchase')
+const SALES_ITEM_META = fulfillmentItemMeta('sales')
+const PURCHASE_ITEM_META = fulfillmentItemMeta('purchase')
+
+/** returnedQty 改序：从 reconciledQty 后移到 remainingReturnableQty 前（wire 既有键序） */
+function itemFieldsWireOrder(meta: { fields: readonly FieldMeta[] }): FieldMeta[] {
+  const returned = meta.fields.find((f) => f.apiName === 'returnedQty')
+  if (!returned) throw new Error('履约 wire 派生：缺 returnedQty 字段')
+  const rest = meta.fields.filter((f) => f.apiName !== 'returnedQty')
+  const anchor = rest.findIndex((f) => f.apiName === 'remainingReturnableQty')
+  if (anchor < 0) throw new Error('履约 wire 派生：缺 remainingReturnableQty 字段')
+  return [...rest.slice(0, anchor), returned, ...rest.slice(anchor)]
 }
 
-export function presentSalesHead(row: Record<string, unknown>) {
-  return {
-    id: String(row.id),
-    deliveryNo: String(row.deliveryNo ?? ''),
-    deliveryDate: String(row.deliveryDate ?? ''),
-    postingDate: row.postingDate == null ? null : String(row.postingDate),
-    partyType: upperStatus(String(row.partyType ?? '')),
-    partyId: String(row.partyId ?? ''),
-    remarks: row.remarks == null ? null : String(row.remarks),
-    status: upperStatus(String(row.status ?? 'DRAFT')),
-    auditedAt: asIso(row.auditedAt),
-    insertedAt: asIso(row.insertedAt)!,
-    updatedAt: asIso(row.updatedAt)!,
-    companyId: String(row.companyId ?? ''),
-    warehouseId: row.warehouseId == null ? null : String(row.warehouseId),
-    debitAccountId: String(row.debitAccountId ?? ''),
-    creditAccountId: String(row.creditAccountId ?? ''),
-    createdById: row.createdById == null ? null : String(row.createdById),
-    auditedById: row.auditedById == null ? null : String(row.auditedById),
-  }
-}
-
-export function presentPurchaseHead(row: Record<string, unknown>) {
-  return {
-    id: String(row.id),
-    receiptNo: String(row.receiptNo ?? ''),
-    receiptDate: String(row.receiptDate ?? ''),
-    postingDate: row.postingDate == null ? null : String(row.postingDate),
-    partyType: upperStatus(String(row.partyType ?? '')),
-    partyId: String(row.partyId ?? ''),
-    remarks: row.remarks == null ? null : String(row.remarks),
-    status: upperStatus(String(row.status ?? 'DRAFT')),
-    auditedAt: asIso(row.auditedAt),
-    insertedAt: asIso(row.insertedAt)!,
-    updatedAt: asIso(row.updatedAt)!,
-    companyId: String(row.companyId ?? ''),
-    warehouseId: row.warehouseId == null ? null : String(row.warehouseId),
-    debitAccountId: String(row.debitAccountId ?? ''),
-    creditAccountId: String(row.creditAccountId ?? ''),
-    createdById: row.createdById == null ? null : String(row.createdById),
-    auditedById: row.auditedById == null ? null : String(row.auditedById),
-  }
-}
-
-export function presentSalesItem(row: Record<string, unknown>): SalesDraftItemDto {
-  const baseQty = String(row.baseQty ?? 0)
-  const reconciled = String(row.reconciledQty ?? 0)
-  const returned = String(row.returnedQty ?? 0)
-  return {
-    id: String(row.id),
-    idx: Number(row.idx),
-    qty: wireRequiredDecimal(String(row.qty ?? 0)),
-    baseQty: wireRequiredDecimal(baseQty),
-    materialCode: String(row.materialCode ?? ''),
-    materialName: String(row.materialName ?? ''),
-    materialSpec: row.materialSpec == null ? null : String(row.materialSpec),
-    customerPartNo: row.customerPartNo == null ? null : String(row.customerPartNo),
-    unitName: String(row.unitName ?? ''),
-    orderNo: String(row.orderNo ?? ''),
-    orderQty: wireRequiredDecimal(String(row.orderQty ?? 0)),
-    orderBaseQty: wireRequiredDecimal(String(row.orderBaseQty ?? 0)),
-    orderUnitName: String(row.orderUnitName ?? ''),
-    orderPrice: wireRequiredDecimal(String(row.orderPrice ?? 0)),
-    orderAmount: wireRequiredDecimal(String(row.orderAmount ?? 0)),
-    orderBasePrice: wireRequiredDecimal(String(row.orderBasePrice ?? 0)),
-    orderBaseAmount: wireRequiredDecimal(String(row.orderBaseAmount ?? 0)),
-    orderTaxRate: wireRequiredDecimal(String(row.orderTaxRate ?? 0)),
-    orderCurrencyCode: String(row.orderCurrencyCode ?? ''),
-    reconciledQty: wireRequiredDecimal(reconciled),
-    remarks: row.remarks == null ? null : String(row.remarks),
-    insertedAt: asIso(row.insertedAt)!,
-    updatedAt: asIso(row.updatedAt)!,
-    deliveryId: String(row.deliveryId ?? ''),
-    companyId: String(row.companyId ?? ''),
-    orderItemId: String(row.orderItemId ?? ''),
-    materialId: String(row.materialId ?? ''),
-    unitId: String(row.unitId ?? ''),
-    warehouseId: row.warehouseId == null ? null : String(row.warehouseId),
-    deliveryNo: String(row.deliveryNo ?? ''),
-    deliveryDate: row.deliveryDate == null ? '' : String(row.deliveryDate),
-    deliveryStatus: upperStatus(String(row.deliveryStatus ?? 'DRAFT')),
-    partyType: upperStatus(String(row.partyType ?? '')),
-    partyId: String(row.partyId ?? ''),
-    remainingReconcilableQty: wireRequiredDecimal(
-      String(row.remainingReconcilableQty ?? decimal(baseQty).sub(reconciled)),
+const remainingHooks = {
+  // 剩余可对账 = 折算数量 − 已对账；剩余可退 = 折算数量 − 已退（投影列缺省时回退）
+  remainingReconcilableQty: (row: Record<string, unknown>) =>
+    wireRequiredDecimal(
+      String(
+        row.remainingReconcilableQty ??
+          decimal(String(row.baseQty ?? 0)).sub(String(row.reconciledQty ?? 0)),
+      ),
     ),
-    returnedQty: wireRequiredDecimal(returned),
-    remainingReturnableQty: wireRequiredDecimal(
-      String(row.remainingReturnableQty ?? decimal(baseQty).sub(returned)),
+  remainingReturnableQty: (row: Record<string, unknown>) =>
+    wireRequiredDecimal(
+      String(
+        row.remainingReturnableQty ??
+          decimal(String(row.baseQty ?? 0)).sub(String(row.returnedQty ?? 0)),
+      ),
     ),
-  }
 }
 
-export function presentPurchaseItem(row: Record<string, unknown>): PurchaseReceiptItemDto {
-  const baseQty = String(row.baseQty ?? 0)
-  const reconciled = String(row.reconciledQty ?? 0)
-  const returned = String(row.returnedQty ?? 0)
-  return {
-    id: String(row.id),
-    idx: Number(row.idx),
-    qty: wireRequiredDecimal(String(row.qty ?? 0)),
-    baseQty: wireRequiredDecimal(baseQty),
-    materialCode: String(row.materialCode ?? ''),
-    materialName: String(row.materialName ?? ''),
-    materialSpec: row.materialSpec == null ? null : String(row.materialSpec),
-    customerPartNo: row.customerPartNo == null ? null : String(row.customerPartNo),
-    unitName: String(row.unitName ?? ''),
-    orderNo: String(row.orderNo ?? ''),
-    orderQty: wireRequiredDecimal(String(row.orderQty ?? 0)),
-    orderBaseQty: wireRequiredDecimal(String(row.orderBaseQty ?? 0)),
-    orderUnitName: String(row.orderUnitName ?? ''),
-    orderPrice: wireRequiredDecimal(String(row.orderPrice ?? 0)),
-    orderAmount: wireRequiredDecimal(String(row.orderAmount ?? 0)),
-    orderBasePrice: wireRequiredDecimal(String(row.orderBasePrice ?? 0)),
-    orderBaseAmount: wireRequiredDecimal(String(row.orderBaseAmount ?? 0)),
-    orderTaxRate: wireRequiredDecimal(String(row.orderTaxRate ?? 0)),
-    orderCurrencyCode: String(row.orderCurrencyCode ?? ''),
-    reconciledQty: wireRequiredDecimal(reconciled),
-    remarks: row.remarks == null ? null : String(row.remarks),
-    insertedAt: asIso(row.insertedAt)!,
-    updatedAt: asIso(row.updatedAt)!,
-    receiptId: String(row.receiptId ?? ''),
-    companyId: String(row.companyId ?? ''),
-    orderItemId: String(row.orderItemId ?? ''),
-    materialId: String(row.materialId ?? ''),
-    unitId: String(row.unitId ?? ''),
-    warehouseId: row.warehouseId == null ? null : String(row.warehouseId),
-    receiptNo: String(row.receiptNo ?? ''),
-    receiptDate: row.receiptDate == null ? '' : String(row.receiptDate),
-    receiptStatus: upperStatus(String(row.receiptStatus ?? 'DRAFT')),
-    partyType: upperStatus(String(row.partyType ?? '')),
-    partyId: String(row.partyId ?? ''),
-    remainingReconcilableQty: wireRequiredDecimal(
-      String(row.remainingReconcilableQty ?? decimal(baseQty).sub(reconciled)),
-    ),
-    returnedQty: wireRequiredDecimal(returned),
-    remainingReturnableQty: wireRequiredDecimal(
-      String(row.remainingReturnableQty ?? decimal(baseQty).sub(returned)),
-    ),
-  }
-}
+export const presentSalesHead = derivePresenter<SalesHeadDto>(SALES_HEAD_META)
+export const presentPurchaseHead = derivePresenter<PurchaseHeadDto>(PURCHASE_HEAD_META)
 
-export function presentPackBox(row: Record<string, unknown>) {
-  return {
-    id: String(row.id),
-    boxNo: String(row.boxNo ?? ''),
-    insertedAt: asIso(row.insertedAt)!,
-    updatedAt: asIso(row.updatedAt)!,
-    deliveryId: String(row.deliveryId ?? ''),
-    companyId: String(row.companyId ?? ''),
-  }
-}
+export const presentSalesItem = derivePresenter<SalesDraftItemDto>(SALES_ITEM_META, {
+  fields: itemFieldsWireOrder(SALES_ITEM_META),
+  values: remainingHooks,
+})
 
-export function presentPackLine(row: Record<string, unknown>): SalesDraftPackLineDto {
-  return {
-    id: String(row.id),
-    idx: Number(row.idx),
-    packBoxId: String(row.packBoxId ?? ''),
-    qty: wireRequiredDecimal(String(row.qty ?? 0)),
-    baseQty: wireRequiredDecimal(String(row.baseQty ?? 0)),
-    materialCode: String(row.materialCode ?? ''),
-    materialName: String(row.materialName ?? ''),
-    materialSpec: row.materialSpec == null ? null : String(row.materialSpec),
-    customerPartNo: row.customerPartNo == null ? null : String(row.customerPartNo),
-    unitName: String(row.unitName ?? ''),
-    remarks: row.remarks == null ? null : String(row.remarks),
-    insertedAt: asIso(row.insertedAt)!,
-    updatedAt: asIso(row.updatedAt)!,
-    deliveryId: String(row.deliveryId ?? ''),
-    companyId: String(row.companyId ?? ''),
-    materialId: String(row.materialId ?? ''),
-    unitId: String(row.unitId ?? ''),
-  }
-}
+export const presentPurchaseItem = derivePresenter<PurchaseReceiptItemDto>(PURCHASE_ITEM_META, {
+  fields: itemFieldsWireOrder(PURCHASE_ITEM_META),
+  values: remainingHooks,
+})
+
+export const presentPackBox = derivePresenter<Omit<SalesDraftPackBoxDto, 'lines'>>(packBoxMeta(), {
+  values: {
+    // 箱号列是 integer，wire 既有形状为字符串（字节冻结）
+    boxNo: (row) => String(row.boxNo ?? ''),
+  },
+})
+
+export const presentPackLine = derivePresenter<SalesDraftPackLineDto>(packLineMeta())
 
 export function presentSalesDraft(raw: Record<string, unknown>): SalesDraftDto {
   const items = Array.isArray(raw.items)
@@ -267,86 +148,18 @@ export function mapPurchaseItemExtras(row: Record<string, unknown>): Record<stri
   }
 }
 
-export function mapHeadDto(side: TradingSide, row: Record<string, unknown>) {
-  const h = mapHead(row)
-  const numberKey = side === 'sales' ? 'deliveryNo' : 'receiptNo'
-  const dateKey = side === 'sales' ? 'deliveryDate' : 'receiptDate'
-  return {
-    id: h.id,
-    [numberKey]: h.no,
-    [dateKey]: h.documentDate,
-    postingDate: h.postingDate,
-    partyType: upperStatus(h.partyType),
-    partyId: h.partyId,
-    remarks: h.remarks,
-    status: h.status,
-    auditedAt: h.auditedAt,
-    insertedAt: h.insertedAt,
-    updatedAt: h.updatedAt,
-    companyId: h.companyId,
-    warehouseId: h.warehouseId,
-    debitAccountId: h.debitAccountId,
-    creditAccountId: h.creditAccountId,
-    createdById: h.createdById,
-    auditedById: h.auditedById,
-  }
-}
-
+/**
+ * 销售发货条目列表（候选池筛选走 listMeta 弹射路径）：db 原生行 → wire DTO。
+ * 迁前为逐键手写映射；现为 mapRow + 投影 extras + 派生 presenter 的复合，等价。
+ */
 export function mapItemDto(side: TradingSide, row: Record<string, unknown>) {
-  const parentIdKey = side === 'sales' ? 'deliveryId' : 'receiptId'
-  const parentNoKey = side === 'sales' ? 'deliveryNo' : 'receiptNo'
-  const parentDateKey = side === 'sales' ? 'deliveryDate' : 'receiptDate'
-  const parentStatusKey = side === 'sales' ? 'deliveryStatus' : 'receiptStatus'
-  const baseQty = String(row.base_qty)
-  const reconciled = String(row.reconciled_qty ?? 0)
-  return {
-    id: String(row.id),
-    idx: Number(row.idx),
-    qty: wireRequiredDecimal(String(row.qty)),
-    baseQty: wireRequiredDecimal(baseQty),
-    materialCode: String(row.material_code),
-    materialName: String(row.material_name),
-    materialSpec: asOptionalString(row.material_spec),
-    customerPartNo: asOptionalString(row.customer_part_no),
-    unitName: String(row.unit_name),
-    orderNo: String(row.order_no),
-    orderQty: wireRequiredDecimal(String(row.order_qty)),
-    orderBaseQty: wireRequiredDecimal(String(row.order_base_qty)),
-    orderUnitName: String(row.order_unit_name),
-    orderPrice: wireRequiredDecimal(String(row.order_price)),
-    orderAmount: wireRequiredDecimal(String(row.order_amount)),
-    orderBasePrice: wireRequiredDecimal(String(row.order_base_price)),
-    orderBaseAmount: wireRequiredDecimal(String(row.order_base_amount)),
-    orderTaxRate: wireRequiredDecimal(String(row.order_tax_rate)),
-    orderCurrencyCode: String(row.order_currency_code),
-    reconciledQty: wireRequiredDecimal(reconciled),
-    remarks: asOptionalString(row.remarks),
-    insertedAt: asDateTime(row.inserted_at)!,
-    updatedAt: asDateTime(row.updated_at)!,
-    [parentIdKey]: String(row[side === 'sales' ? 'delivery_id' : 'receipt_id'] ?? row.head_id),
-    companyId: String(row.company_id),
-    orderItemId: String(row.order_item_id),
-    materialId: String(row.material_id),
-    unitId: String(row.unit_id),
-    warehouseId: row.warehouse_id ? String(row.warehouse_id) : null,
-    [parentNoKey]: String(row[side === 'sales' ? 'delivery_no' : 'receipt_no'] ?? ''),
-    [parentDateKey]: asDate(row[side === 'sales' ? 'delivery_date' : 'receipt_date']),
-    [parentStatusKey]: upperStatus(
-      String(row[side === 'sales' ? 'delivery_status' : 'receipt_status'] ?? 'DRAFT'),
-    ),
-    partyType: upperStatus(String(row.party_type)),
-    partyId: String(row.party_id),
-    remainingReconcilableQty: wireRequiredDecimal(
-      String(row.remaining_reconcilable_qty ?? decimal(baseQty).sub(reconciled)),
-    ),
-    returnedQty: wireRequiredDecimal(String(row.returned_qty ?? 0)),
-    remainingReturnableQty: wireRequiredDecimal(
-      String(
-        row.remaining_returnable_qty ??
-          decimal(baseQty).sub(decimal(String(row.returned_qty ?? 0))),
-      ),
-    ),
-  }
+  const meta = side === 'sales' ? SALES_ITEM_META : PURCHASE_ITEM_META
+  const wire = mapRow(meta, row)
+  Object.assign(
+    wire,
+    side === 'sales' ? mapSalesItemExtras(row) : mapPurchaseItemExtras(row),
+  )
+  return side === 'sales' ? presentSalesItem(wire) : presentPurchaseItem(wire)
 }
 
 export function purchaseHeadPayload(input: FulfillmentHeadDraftInput): Record<string, unknown> {

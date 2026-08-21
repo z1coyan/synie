@@ -1,18 +1,24 @@
 /**
  * 对账单头/条目列表与写后 reload 共用投影。
  * 别名与 source 子查询必须逐字一致（via 链 EXISTS 依赖别名）。
+ *
+ * wire presenter 自 meta 派生（键集/键序/规范化唯一事实源是 spec.ts）：
+ * - 条目来源锚点是双侧并集键（delivery/return/receipt/outsourcedReceipt 四键），
+ *   字段描述符从两侧 meta 拼接；采购侧 wire 键序（returnItemId 在 receiptItemId 前）
+ *   与 meta 物理序不同，以 fields 覆盖冻结
+ * - 头 String(null)='null' 与合计 ?? 0 的历史怪癖以 values 钩子逐字保留
  */
 import { sql, type RawBuilder } from 'kysely'
+import type { FieldMeta } from '~/platform/meta/types.ts'
+import { derivePresenter } from '~/platform/standard/present.ts'
 import {
   asDate,
-  asDateTime,
-  asOptionalString,
   ident,
   type TradingSide,
   upperStatus,
   wireRequiredDecimal,
 } from '../common.ts'
-import type { ReconciliationSideSpec } from './spec.ts'
+import { reconciliationHeadMeta, reconciliationItemMeta, type ReconciliationSideSpec } from './spec.ts'
 import type { ReconciliationHead, ReconciliationItem } from './types.ts'
 
 export const HEAD_ALIAS = 'reconciliations'
@@ -110,75 +116,65 @@ export function itemExtras(side: TradingSide, row: Record<string, unknown>): Rec
 }
 
 /** 写路径/wire 呈现：标准服务 Date → ISO；与迁前 mapHeadDto 字节对齐 */
-export function presentHead(row: Record<string, unknown>): ReconciliationHead {
-  return {
-    id: String(row.id),
-    reconciliationNo: String(row.reconciliationNo),
-    reconciliationType: upperStatus(String(row.reconciliationType)),
-    partyType: upperStatus(String(row.partyType)),
-    partyId: String(row.partyId),
-    postingDate: row.postingDate != null ? asDate(row.postingDate) : null,
-    remarks: asOptionalString(row.remarks),
-    status: upperStatus(String(row.status)),
-    insertedAt: asDateTime(row.insertedAt),
-    updatedAt: asDateTime(row.updatedAt),
-    companyId: String(row.companyId),
-    debitAccountId: String(row.debitAccountId),
-    creditAccountId: String(row.creditAccountId),
-    createdById: row.createdById != null ? String(row.createdById) : null,
-    grossTotal: wireRequiredDecimal(String(row.grossTotal ?? 0)),
-    baseGrossTotal: wireRequiredDecimal(String(row.baseGrossTotal ?? 0)),
-  }
+const HEAD_META = reconciliationHeadMeta('sales')
+const SALES_ITEM_META = reconciliationItemMeta('sales')
+const PURCHASE_ITEM_META = reconciliationItemMeta('purchase')
+
+const fieldOf = (fields: readonly FieldMeta[], apiName: string): FieldMeta => {
+  const found = fields.find((f) => f.apiName === apiName)
+  if (!found) throw new Error(`对账 wire 派生：缺字段 ${apiName}`)
+  return found
 }
 
-export function presentItem(
-  side: TradingSide,
-  row: Record<string, unknown>,
-): ReconciliationItem {
-  const numberKey = side === 'sales' ? 'deliveryNo' : 'receiptNo'
-  const dateKey = side === 'sales' ? 'deliveryDate' : 'receiptDate'
-  return {
-    id: String(row.id),
-    idx: Number(row.idx),
-    qty: wireRequiredDecimal(String(row.qty)),
-    baseQty: wireRequiredDecimal(String(row.baseQty)),
-    amount: wireRequiredDecimal(String(row.amount)),
-    baseAmount: wireRequiredDecimal(String(row.baseAmount)),
-    remarks: asOptionalString(row.remarks),
-    insertedAt: asDateTime(row.insertedAt),
-    updatedAt: asDateTime(row.updatedAt),
-    reconciliationId: String(row.reconciliationId),
-    companyId: String(row.companyId),
-    deliveryItemId:
-      side === 'sales'
-        ? row.deliveryItemId != null
-          ? String(row.deliveryItemId)
-          : null
-        : null,
-    returnItemId:
-      row.returnItemId != null
-        ? String(row.returnItemId)
-        : null,
-    receiptItemId:
-      side === 'purchase'
-        ? row.receiptItemId != null
-          ? String(row.receiptItemId)
-          : null
-        : null,
-    outsourcedReceiptItemId:
-      side === 'purchase'
-        ? row.outsourcedReceiptItemId != null
-          ? String(row.outsourcedReceiptItemId)
-          : null
-        : null,
-    reconciliationNo: String(row.reconciliationNo ?? ''),
-    reconciliationStatus: upperStatus(String(row.reconciliationStatus ?? '')),
-    [numberKey]: String(row[numberKey] ?? ''),
-    [dateKey]: row[dateKey] != null ? asDate(row[dateKey]) : null,
-    materialName: String(row.materialName ?? ''),
-    unitName: String(row.unitName ?? ''),
-    orderCurrencyCode: String(row.orderCurrencyCode ?? ''),
+// 条目 wire 键序（双侧一致）：deliveryItemId, returnItemId, receiptItemId, outsourcedReceiptItemId
+const SALES_ITEM_FIELDS = SALES_ITEM_META.fields.flatMap((f) =>
+  f.apiName === 'returnItemId'
+    ? [
+        f,
+        fieldOf(PURCHASE_ITEM_META.fields, 'receiptItemId'),
+        fieldOf(PURCHASE_ITEM_META.fields, 'outsourcedReceiptItemId'),
+      ]
+    : [f],
+)
+const PURCHASE_ITEM_FIELDS = PURCHASE_ITEM_META.fields.flatMap((f) => {
+  if (f.apiName === 'receiptItemId') {
+    return [
+      fieldOf(SALES_ITEM_META.fields, 'deliveryItemId'),
+      fieldOf(PURCHASE_ITEM_META.fields, 'returnItemId'),
+      f,
+    ]
   }
+  if (f.apiName === 'returnItemId') return []
+  return [f]
+})
+
+export const presentHead = derivePresenter<ReconciliationHead>(HEAD_META, {
+  values: {
+    // 历史怪癖逐字保留（字节冻结）：科目键无 null 分支、合计缺省回退 0
+    debitAccountId: (row) => String(row.debitAccountId),
+    creditAccountId: (row) => String(row.creditAccountId),
+    grossTotal: (row) => wireRequiredDecimal(String(row.grossTotal ?? 0)),
+    baseGrossTotal: (row) => wireRequiredDecimal(String(row.baseGrossTotal ?? 0)),
+  },
+})
+
+const presentItemSales = derivePresenter<ReconciliationItem>(SALES_ITEM_META, {
+  fields: SALES_ITEM_FIELDS,
+  values: {
+    // 异侧锚点键恒 null（迁前手写即硬编码，非透传；生产行本就不带这些键）
+    receiptItemId: () => null,
+    outsourcedReceiptItemId: () => null,
+  },
+})
+const presentItemPurchase = derivePresenter<ReconciliationItem>(PURCHASE_ITEM_META, {
+  fields: PURCHASE_ITEM_FIELDS,
+  values: {
+    deliveryItemId: () => null,
+  },
+})
+
+export function presentItem(side: TradingSide, row: Record<string, unknown>): ReconciliationItem {
+  return side === 'sales' ? presentItemSales(row) : presentItemPurchase(row)
 }
 
 /** 发票接缝：裸 SQL 行 → 与 presentHead 同形 */

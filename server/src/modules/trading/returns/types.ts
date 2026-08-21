@@ -22,6 +22,29 @@ export interface ReturnHead {
   auditedById: string | null
 }
 
+/** wire 头 DTO（presentReturnHead 返回形；键集/键序/值由 meta 派生，本接口是 hc 契约锚点） */
+export interface ReturnHeadDto {
+  id: string
+  returnNo: string
+  returnDate: string
+  postingDate: string | null
+  partyType: string
+  partyId: string
+  currencyId: string | null
+  exchangeRate: string | null
+  remarks: string | null
+  status: string
+  auditedAt: string | null
+  insertedAt: string
+  updatedAt: string
+  companyId: string
+  warehouseId: string | null
+  debitAccountId: string | null
+  creditAccountId: string | null
+  createdById: string | null
+  auditedById: string | null
+}
+
 export interface ReturnDraftItemInput {
   id?: string
   idx: number
@@ -103,25 +126,6 @@ export interface ReturnItemDto {
   remainingReconcilableQty: string
 }
 
-export interface ReturnDraftDto {
-  id: string
-  returnNo: string
-  returnDate: string
-  postingDate: string | null
-  partyType: string
-  partyId: string
-  currencyId: string | null
-  exchangeRate: string | null
-  remarks: string | null
-  status: string
-  auditedAt: string | null
-  insertedAt: string
-  updatedAt: string
-  companyId: string
-  warehouseId: string | null
-  debitAccountId: string | null
-  creditAccountId: string | null
-  createdById: string | null
-  auditedById: string | null
+export type ReturnDraftDto = ReturnHeadDto & {
   items: ReturnItemDto[]
 }

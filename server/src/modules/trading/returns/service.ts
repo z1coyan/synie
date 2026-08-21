@@ -14,7 +14,6 @@ import type { TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import type { GlEngine } from '~/engines/gl/index.ts'
 import type { InventoryEngine } from '~/engines/inventory/index.ts'
-import { auditFieldsOf, mergeAuditFields } from '~/platform/audit/spec.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
@@ -22,10 +21,11 @@ import type { AuthzTarget } from '~/platform/meta/resource-authz.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import {
   createAggregateService,
+  withAggregateWireAdapter,
   type AggregateService,
 } from '~/platform/standard/aggregate.ts'
 import { createStandardChildService } from '~/platform/standard/child.ts'
-import { createStandardService } from '~/platform/standard/service.ts'
+import { auditStamp, createStandardService, type TransitionContext } from '~/platform/standard/service.ts'
 import {
   lowerParty,
   runeLen,
@@ -36,6 +36,7 @@ import {
 import { utcToday } from '~/db/dates.ts'
 import {
   deriveItem,
+  headFromWire,
   headLikeFromDraft,
   ITEM_ALIAS,
   ITEM_SOURCE,
@@ -44,8 +45,8 @@ import {
   validateHeadRefs,
   validateHeadWire,
 } from './domain.ts'
-import { runAuditHead, runGenerateReplenishment, runVoidHead } from './workflow.ts'
-import { returnHeadMeta, returnSpec, type ReturnKind, type ReturnSideSpec } from './spec.ts'
+import { effectAuditHead, effectVoidHead, runGenerateReplenishment } from './workflow.ts'
+import { returnSpec, type ReturnKind, type ReturnSideSpec } from './spec.ts'
 import type { ReturnDraftDto, ReturnDraftInput } from './types.ts'
 import {
   mapReturnItemExtras,
@@ -63,15 +64,6 @@ export type {
   ReturnItemDto,
 } from './types.ts'
 
-// 审核/作废审计：三侧 meta 并集；单号/日期列经 rename 为通用键
-const HEAD_AUDIT = mergeAuditFields(
-  ...(['sales', 'purchase', 'outsourced'] as const).map((s) =>
-    auditFieldsOf(returnHeadMeta(s), {
-      rename: { return_no: 'number', return_date: 'document_date' },
-    }),
-  ),
-)
-
 type Numberer = Pick<NumberingService, 'assignedInTx' | 'nextInTx'>
 
 interface SideCtx {
@@ -79,6 +71,8 @@ interface SideCtx {
   heads: ReturnType<typeof createStandardService>
   items: ReturnType<typeof createStandardChildService>
   aggregate: AggregateService
+  /** 合同适配聚合（toPayload + present 包装由内核承担） */
+  contractAggregate: AggregateService
 }
 
 export function createReturnsService(
@@ -217,9 +211,31 @@ export function createReturnsService(
           `.execute(trx)
         },
       },
+      // 审核/作废转移（D7 收尾）：外壳内核承担，领域效果进 effect
       workflow: {
         mutableMessage: `仅草稿${spec.label}可编辑`,
-        transitions: [],
+        transitions: [
+          {
+            key: 'audit',
+            label: '审核',
+            from: ['DRAFT'],
+            to: 'AUDITED',
+            guardMessage: `仅草稿${spec.label}可审核`,
+            stamps: ({ permit }: { permit: Permit }) => auditStamp(permit),
+            effect: async (trx: TrxHandle, { before }: TransitionContext) =>
+              effectAuditHead(trx, engines, spec, headFromWire(before)),
+          },
+          {
+            key: 'void',
+            label: '作废',
+            from: ['AUDITED'],
+            to: 'VOIDED',
+            guardMessage: `仅已审核${spec.label}可作废`,
+            effect: async (trx: TrxHandle, { before }: TransitionContext) => {
+              await effectVoidHead(trx, engines, spec, headFromWire(before))
+            },
+          },
+        ],
       },
     })
 
@@ -404,7 +420,12 @@ export function createReturnsService(
       children: [{ key: 'items', service: items }],
     })
 
-    return { spec, heads, items, aggregate }
+    const contractAggregate = withAggregateWireAdapter(aggregate, {
+      toPayload: (input) => returnDraftPayload(side, input as unknown as ReturnDraftInput),
+      present: (draft) => presentReturnDraft(draft) as unknown as Record<string, unknown>,
+    })
+
+    return { spec, heads, items, aggregate, contractAggregate }
   }
 
   const sides: Record<ReturnKind, SideCtx> = {
@@ -413,8 +434,6 @@ export function createReturnsService(
     outsourced: buildSide('outsourced'),
   }
 
-  const engineDeps = { inventory, gl, headTargets, auditFields: HEAD_AUDIT }
-  const asRec = (v: unknown) => v as Record<string, unknown>
   const listMapped = <T,>(
     r: { count: number; results: readonly unknown[] },
     present: (row: Record<string, unknown>) => T,
@@ -439,41 +458,21 @@ export function createReturnsService(
     getHead: async (p: Permit, side: ReturnKind, id: string) =>
       presentReturnHead((await sides[side].heads.get(p, id)) as Record<string, unknown>),
     deleteHead: (p: Permit, side: ReturnKind, id: string) => sides[side].heads.remove(p, id),
-    auditHead: (p: Permit, side: ReturnKind, id: string) =>
-      runAuditHead(db, p, side, id, engineDeps),
-    voidHead: (p: Permit, side: ReturnKind, id: string) =>
-      runVoidHead(db, p, side, id, engineDeps),
+    auditHead: async (p: Permit, side: ReturnKind, id: string) =>
+      presentReturnHead(
+        (await sides[side].heads.transition(p, id, 'audit')) as Record<string, unknown>,
+      ),
+    voidHead: async (p: Permit, side: ReturnKind, id: string) =>
+      presentReturnHead(
+        (await sides[side].heads.transition(p, id, 'void')) as Record<string, unknown>,
+      ),
     generateReplenishment: (p: Permit, id: string) =>
       runGenerateReplenishment(db, p, id, { headTargets, numberer }),
     listItems: async (p: Permit, side: ReturnKind, q: Partial<ListQuery>) =>
       listMapped(await sides[side].items.list(p, q), presentReturnItem),
     getItem: async (p: Permit, side: ReturnKind, id: string) =>
       presentReturnItem((await sides[side].items.get(p, id)) as Record<string, unknown>),
-    _aggregateForContract: (side: ReturnKind): AggregateService => ({
-      loadDraft: async (p, id) =>
-        asRec(presentReturnDraft(await sides[side].aggregate.loadDraft(p, id))),
-      createDraft: async (p, input) =>
-        asRec(
-          presentReturnDraft(
-            await sides[side].aggregate.createDraft(
-              p,
-              returnDraftPayload(side, input as unknown as ReturnDraftInput),
-            ),
-          ),
-        ),
-      replaceDraft: async (p, id, input) =>
-        asRec(
-          presentReturnDraft(
-            await sides[side].aggregate.replaceDraft(
-              p,
-              id,
-              returnDraftPayload(side, input as unknown as ReturnDraftInput),
-            ),
-          ),
-        ),
-      head: sides[side].heads,
-      children: sides[side].aggregate.children,
-    }),
+    _aggregateForContract: (side: ReturnKind): AggregateService => sides[side].contractAggregate,
   }
 }
 

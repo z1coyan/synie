@@ -14,13 +14,13 @@ import type { Kysely } from 'kysely'
 import type { DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import { utcToday } from '~/db/dates.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import type { Actor } from '~/platform/authz/core/index.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import type { GlEngine } from '~/engines/gl/index.ts'
-import { createAggregateService, type AggregateService } from '~/platform/standard/aggregate.ts'
+import { createAggregateService, withAggregateWireAdapter, type AggregateService } from '~/platform/standard/aggregate.ts'
 import {
   createStandardChildService,
   type StandardChildService,
@@ -74,6 +74,8 @@ interface SideCtx {
   heads: StandardService
   items: StandardChildService
   aggregate: AggregateService
+  /** 合同适配聚合（toPayload + present 包装由内核承担） */
+  contractAggregate: AggregateService
 }
 
 function headPayload(input: {
@@ -223,6 +225,14 @@ function presentDraft(side: TradingSide, draft: Record<string, unknown>): Reconc
     ? (draft.items as Array<Record<string, unknown>>).map((row) => presentItem(side, row))
     : []
   return { ...presentHead(draft), items }
+}
+
+/** 整单草稿输入 → 聚合 wire payload（createDraft/replaceDraft 与合同适配共用唯一拷贝） */
+function draftPayload(side: TradingSide, input: Record<string, unknown>): Record<string, unknown> {
+  const items = Array.isArray(input.items)
+    ? (input.items as Array<Record<string, unknown>>).map((item) => draftItemPayload(side, item))
+    : input.items
+  return { ...draftHeadPayload(input), items }
 }
 
 async function sumBaseGross(trx: TrxHandle, itemTable: string, id: string): Promise<string> {
@@ -581,18 +591,18 @@ export function createReconciliationService(
       },
     })
 
-    return {
-      spec,
-      heads,
-      items,
-      aggregate: createAggregateService({
-        db,
-        registry,
-        head: heads,
-        validationMessage: '对账草稿参数不合法',
-        children: [{ key: 'items', service: items }],
-      }),
-    }
+    const aggregate = createAggregateService({
+      db,
+      registry,
+      head: heads,
+      validationMessage: '对账草稿参数不合法',
+      children: [{ key: 'items', service: items }],
+    })
+    const contractAggregate = withAggregateWireAdapter(aggregate, {
+      toPayload: (input) => draftPayload(side, input),
+      present: (draft) => presentDraft(side, draft) as unknown as Record<string, unknown>,
+    })
+    return { spec, heads, items, aggregate, contractAggregate }
   }
 
   return {
@@ -657,77 +667,19 @@ export function createReconciliationService(
     deleteItem: (p: Permit, side: TradingSide, id: string) => sides[side].items.remove(p, id),
     getDraft: async (p: Permit, side: TradingSide, id: string) =>
       presentDraft(side, await sides[side].aggregate.loadDraft(p, id)),
-    createDraft: async (p: Permit, side: TradingSide, input: Record<string, unknown>) => {
-      const items = Array.isArray(input.items)
-        ? (input.items as Array<Record<string, unknown>>).map((item) =>
-            draftItemPayload(side, item),
-          )
-        : input.items
-      return presentDraft(
-        side,
-        await sides[side].aggregate.createDraft(p, { ...draftHeadPayload(input), items }),
-      )
-    },
+    createDraft: async (p: Permit, side: TradingSide, input: Record<string, unknown>) =>
+      presentDraft(side, await sides[side].aggregate.createDraft(p, draftPayload(side, input))),
     replaceDraft: async (
       p: Permit,
       side: TradingSide,
       id: string,
       input: Record<string, unknown>,
-    ) => {
-      const items = Array.isArray(input.items)
-        ? (input.items as Array<Record<string, unknown>>).map((item) =>
-            draftItemPayload(side, item),
-          )
-        : input.items
-      return presentDraft(
+    ) =>
+      presentDraft(
         side,
-        await sides[side].aggregate.replaceDraft(p, id, {
-          ...draftHeadPayload(input),
-          items,
-        }),
-      )
-    },
-    _aggregateForContract: (side: TradingSide): AggregateService => {
-      const asRec = (d: ReconciliationDraft) => d as unknown as Record<string, unknown>
-      return {
-        loadDraft: async (p, id) =>
-          asRec(presentDraft(side, await sides[side].aggregate.loadDraft(p, id))),
-        createDraft: async (p, input) => {
-          const items = Array.isArray(input.items)
-            ? (input.items as Array<Record<string, unknown>>).map((item) =>
-                draftItemPayload(side, item),
-              )
-            : input.items
-          return asRec(
-            presentDraft(
-              side,
-              await sides[side].aggregate.createDraft(p, {
-                ...draftHeadPayload(input),
-                items,
-              }),
-            ),
-          )
-        },
-        replaceDraft: async (p, id, input) => {
-          const items = Array.isArray(input.items)
-            ? (input.items as Array<Record<string, unknown>>).map((item) =>
-                draftItemPayload(side, item),
-              )
-            : input.items
-          return asRec(
-            presentDraft(
-              side,
-              await sides[side].aggregate.replaceDraft(p, id, {
-                ...draftHeadPayload(input),
-                items,
-              }),
-            ),
-          )
-        },
-        head: sides[side].heads,
-        children: sides[side].aggregate.children,
-      }
-    },
+        await sides[side].aggregate.replaceDraft(p, id, draftPayload(side, input)),
+      ),
+    _aggregateForContract: (side: TradingSide): AggregateService => sides[side].contractAggregate,
   }
 }
 

@@ -5,7 +5,8 @@
  * W2/W3：头/条目/装箱 + 整单草稿由 platform/standard 派生
  * （createStandardService + createStandardChildService + createAggregateService）。
  * 销售发货 3 层平行子树：条目 + 装箱箱→装箱行（孙级 D3 第二消费者）。
- * 审核/作废双侧走 workflow.ts 内联 effect（跨引擎效果，不进聚合草稿钩子；W4 已清零 skeleton）。
+ * 审核/作废迁 workflow transition（D7 收尾）：锁行/闸门/盖章/审计/重载由内核承担，
+ * 跨引擎领域效果在 workflow.ts 的 effect 函数（不进聚合草稿钩子）。
  *
  * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
  * 装箱行的可达性经两级 via（pack_line → pack_box → sal_delivery）递归到发货单谓词。
@@ -19,18 +20,17 @@ import type { TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import type { GlEngine } from '~/engines/gl/index.ts'
 import type { InventoryEngine } from '~/engines/inventory/index.ts'
-import { auditFieldsOf, mergeAuditFields } from '~/platform/audit/spec.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
-import type { AuthzTarget } from '~/platform/meta/resource-authz.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import {
   createAggregateService,
+  withAggregateWireAdapter,
   type AggregateService,
 } from '~/platform/standard/aggregate.ts'
 import { createStandardChildService } from '~/platform/standard/child.ts'
-import { createStandardService } from '~/platform/standard/service.ts'
+import { auditStamp, createStandardService, type TransitionContext } from '~/platform/standard/service.ts'
 import { listAuthorized } from '~/db/list.ts'
 import {
   convertToBaseQty,
@@ -48,6 +48,7 @@ import {
   assertDeliveryDraft,
   deriveItem,
   FULFILLMENT_WRITE_ERRORS,
+  headFromWire,
   headLikeFromDraft,
   ITEM_ALIAS,
   ITEM_DERIVED,
@@ -58,9 +59,8 @@ import {
   validatePurchaseHeadWire,
   validateSalesHeadWire,
 } from './domain.ts'
-import { runAuditHead, runVoidHead } from './workflow.ts'
+import { effectAuditHead, effectVoidHead } from './workflow.ts'
 import {
-  fulfillmentHeadMeta,
   fulfillmentItemListMeta,
   fulfillmentSpec,
   PACK_BOX_RESOURCE,
@@ -108,16 +108,6 @@ export type {
   SalesDraftPackLineInput,
 } from './types.ts'
 
-// 审核/作废审计：双侧 meta 并集；单号/日期列经 rename 为通用键
-const HEAD_AUDIT = mergeAuditFields(
-  ...(['sales', 'purchase'] as const).map((s) => {
-    const spec = fulfillmentSpec(s)
-    return auditFieldsOf(fulfillmentHeadMeta(s), {
-      rename: { [spec.numberCol]: 'number', [spec.dateCol]: 'document_date' },
-    })
-  }),
-)
-
 type Numberer = Pick<NumberingService, 'assignedInTx' | 'nextInTx'>
 
 export function createFulfillmentService(
@@ -130,13 +120,40 @@ export function createFulfillmentService(
   registry: Registry,
 ) {
   const { inventory, gl } = engines
-  const headTargets: Record<TradingSide, AuthzTarget> = {
-    sales: registry.authzTarget(fulfillmentSpec('sales').headResource),
-    purchase: registry.authzTarget(fulfillmentSpec('purchase').headResource),
-  }
 
   const purSpec = fulfillmentSpec('purchase')
   const salSpec = fulfillmentSpec('sales')
+
+  /** 审核/作废转移声明（D7）：外壳（锁/闸门/盖章/审计/重载）内核承担，领域效果进 effect */
+  function headWorkflow(spec: FulfillmentSideSpec) {
+    return {
+      mutableMessage: `仅草稿${spec.label}可编辑`,
+      transitions: [
+        {
+          key: 'audit',
+          label: '审核',
+          from: ['DRAFT'],
+          to: 'AUDITED',
+          guardMessage: `仅草稿${spec.label}可审核`,
+          stamps: ({ permit }: { permit: Permit }) => auditStamp(permit),
+          effect: async (trx: TrxHandle, { before, input }: TransitionContext) => {
+            const override = input.postingDate == null ? null : String(input.postingDate)
+            return effectAuditHead(trx, engines, spec, headFromWire(spec, before), override)
+          },
+        },
+        {
+          key: 'void',
+          label: '作废',
+          from: ['AUDITED'],
+          to: 'VOIDED',
+          guardMessage: `仅已审核${spec.label}可作废`,
+          effect: async (trx: TrxHandle, { before }: TransitionContext) => {
+            await effectVoidHead(trx, engines, spec, headFromWire(spec, before))
+          },
+        },
+      ],
+    }
+  }
 
   const purHeads = createStandardService({
     db,
@@ -156,10 +173,7 @@ export function createFulfillmentService(
         }),
       requireNo: 'requireReceiptNo',
     }),
-    workflow: {
-      mutableMessage: `仅草稿${purSpec.label}可编辑`,
-      transitions: [],
-    },
+    workflow: headWorkflow(purSpec),
   })
 
   const salHeads = createStandardService({
@@ -181,10 +195,7 @@ export function createFulfillmentService(
       requireNo: 'requireDeliveryNo',
       partyConflictAsValidation: true,
     }),
-    workflow: {
-      mutableMessage: `仅草稿${salSpec.label}可编辑`,
-      transitions: [],
-    },
+    workflow: headWorkflow(salSpec),
   })
 
   const purItems = createStandardChildService({
@@ -354,6 +365,16 @@ export function createFulfillmentService(
         children: [{ key: 'lines', service: packLines }],
       },
     ],
+  })
+
+  // 合同适配聚合（toPayload + present 包装由内核承担）
+  const purContractAggregate = withAggregateWireAdapter(purAggregate, {
+    toPayload: (input) => purchaseDraftPayload(input as unknown as PurchaseReceiptDraftInput),
+    present: (draft) => presentPurchaseDraft(draft) as unknown as Record<string, unknown>,
+  })
+  const salContractAggregate = withAggregateWireAdapter(salAggregate, {
+    toPayload: (input) => salesDraftPayload(input as unknown as SalesDraftInput),
+    present: (draft) => presentSalesDraft(draft) as unknown as Record<string, unknown>,
   })
 
   function draftGate(spec: FulfillmentSideSpec) {
@@ -553,9 +574,6 @@ export function createFulfillmentService(
     }
   }
 
-  const engineDeps = { inventory, gl, headTargets, auditFields: HEAD_AUDIT }
-
-  const asRec = (v: unknown) => v as Record<string, unknown>
   const listMapped = <T,>(
     r: { count: number; results: readonly unknown[] },
     present: (row: Record<string, unknown>) => T,
@@ -612,10 +630,17 @@ export function createFulfillmentService(
     },
     deleteHead: (p: Permit, side: TradingSide, id: string) =>
       side === 'purchase' ? purHeads.remove(p, id) : salHeads.remove(p, id),
-    auditHead: (p: Permit, side: TradingSide, id: string, postingDateOverride?: string | null) =>
-      runAuditHead(db, p, side, id, { ...engineDeps, postingDateOverride }),
-    voidHead: (p: Permit, side: TradingSide, id: string) =>
-      runVoidHead(db, p, side, id, engineDeps),
+    auditHead: async (p: Permit, side: TradingSide, id: string, postingDateOverride?: string | null) => {
+      // postingDateOverride 经转移 input 传入（照 bill-service 先例），不再是 deps hack
+      const input = { postingDate: postingDateOverride ?? null }
+      return side === 'purchase'
+        ? presentPurchaseHead((await purHeads.transition(p, id, 'audit', input)) as Record<string, unknown>)
+        : presentSalesHead((await salHeads.transition(p, id, 'audit', input)) as Record<string, unknown>)
+    },
+    voidHead: async (p: Permit, side: TradingSide, id: string) =>
+      side === 'purchase'
+        ? presentPurchaseHead((await purHeads.transition(p, id, 'void')) as Record<string, unknown>)
+        : presentSalesHead((await salHeads.transition(p, id, 'void')) as Record<string, unknown>),
     listItems: async (p: Permit, side: TradingSide, q: Partial<ListQuery>) => {
       if (side === 'purchase') return listMapped(await purItems.list(p, q), presentPurchaseItem)
       return listAuthorized({
@@ -667,57 +692,7 @@ export function createFulfillmentService(
     getPackLine: async (p: Permit, id: string) =>
       presentPackLine((await packLines.get(p, id)) as Record<string, unknown>),
     _aggregateForContract: (side: 'sales' | 'purchase'): AggregateService =>
-      side === 'purchase'
-        ? {
-            loadDraft: async (p, id) =>
-              asRec(presentPurchaseDraft(await purAggregate.loadDraft(p, id))),
-            createDraft: async (p, input) =>
-              asRec(
-                presentPurchaseDraft(
-                  await purAggregate.createDraft(
-                    p,
-                    purchaseDraftPayload(input as unknown as PurchaseReceiptDraftInput),
-                  ),
-                ),
-              ),
-            replaceDraft: async (p, id, input) =>
-              asRec(
-                presentPurchaseDraft(
-                  await purAggregate.replaceDraft(
-                    p,
-                    id,
-                    purchaseDraftPayload(input as unknown as PurchaseReceiptDraftInput),
-                  ),
-                ),
-              ),
-            head: purHeads,
-            children: purAggregate.children,
-          }
-        : {
-            loadDraft: async (p, id) =>
-              asRec(presentSalesDraft(await salAggregate.loadDraft(p, id))),
-            createDraft: async (p, input) =>
-              asRec(
-                presentSalesDraft(
-                  await salAggregate.createDraft(
-                    p,
-                    salesDraftPayload(input as unknown as SalesDraftInput),
-                  ),
-                ),
-              ),
-            replaceDraft: async (p, id, input) =>
-              asRec(
-                presentSalesDraft(
-                  await salAggregate.replaceDraft(
-                    p,
-                    id,
-                    salesDraftPayload(input as unknown as SalesDraftInput),
-                  ),
-                ),
-              ),
-            head: salHeads,
-            children: salAggregate.children,
-          },
+      side === 'purchase' ? purContractAggregate : salContractAggregate,
   }
 }
 

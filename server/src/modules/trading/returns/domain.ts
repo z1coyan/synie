@@ -172,13 +172,6 @@ export async function validateHeadRefs(db: DbHandle, spec: ReturnSideSpec, item:
   }
 }
 
-export async function loadHead(db: DbHandle, spec: ReturnSideSpec, id: string) {
-  const rows = await sql<Record<string, unknown>>`
-    SELECT * FROM ${ident(spec.headTable)} WHERE id=${id}::uuid
-  `.execute(db)
-  return rows.rows[0]
-}
-
 export interface ActionItem {
   id: string
   /** 源单行锚点（发货/入库条目 id）；手工行为 null（不动任何订单投影、不受剩余可退限制） */
@@ -481,25 +474,12 @@ export function mapHead(row: Record<string, unknown>): ReturnHead {
   }
 }
 
-export function headSnap(item: ReturnHead): Record<string, unknown> {
-  return {
-    number: item.no,
-    document_date: item.documentDate,
-    posting_date: item.postingDate,
-    party_type: item.partyType,
-    party_id: item.partyId,
-    currency_id: item.currencyId,
-    exchange_rate: item.exchangeRate,
-    remarks: item.remarks,
-    status: item.status,
-    audited_at: item.auditedAt,
-    company_id: item.companyId,
-    warehouse_id: item.warehouseId,
-    debit_account_id: item.debitAccountId,
-    credit_account_id: item.creditAccountId,
-    created_by_id: item.createdById,
-    audited_by_id: item.auditedById,
-  }
+/**
+ * 转移 effect 入参适配：内核 transition 的 wire 形 before → 领域头
+ * （状态闸门已由内核完成，status 占位不消费）。
+ */
+export function headFromWire(before: Record<string, unknown>): ReturnHead {
+  return headLikeFromDraft({}, before)
 }
 
 export function headLikeFromDraft(
