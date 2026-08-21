@@ -62,7 +62,7 @@
 
 ## 否决 / 非目标
 
-- 不动 `engines/gl`、`engines/inventory` interface。
+- 不动 `engines/gl`、`engines/inventory` interface。**后续更新（2026-08-21）**：经架构评审重开此条款——为 `engines/inventory` 读侧新增原语形方法 `onHand` / `onHandByMaterial` / `hasEntries`（收 `DbHandle` 只读），动机是「账面库存 = Σ 未作废分录」口径 4 份散落实现（helpers 手写 SUM、盘点两段原生 SQL、工单需求预览借用报表形 `balance()` 等）收口进引擎；`balance()` 报表形与写侧 interface（`post`/`cancel`）不变，`engines/gl` 不动。
 - 不做路由词表收口与批量权限码扩面（独立决策）。
 - 不做红冲扩面、库存估值等业务演进。
 - 不为工单虚构 draft URL 或把只读快照 meta 改成可写 child（D12）。
@@ -72,5 +72,5 @@
 
 - 对账/委外/需求/BOM 等草稿 URL 与前端 `DRAFT_ADAPTERS` 扩面（wire 增量，需产品确认）。**已完成（对账/委外四资源，决策日志 W8）**；mfgDemands / mfgBoms / mfgProcessTemplates 仍待产品确认。
 - `mfgOutputItems` list 等仍弹射的投影 join。
-- 类型级 wire 派生（const meta → 精确输入类型）——继承标准动作内核待办。
+- 类型级 wire 派生（const meta → 精确输入类型）——继承标准动作内核待办。**后续更新（2026-08-21）**：运行时半边已落地——`platform/standard/present.ts` `derivePresenter`（meta → wire DTO，fields/values 钩子挂键并集·改序·计算列）与 `wire.ts` `deriveDraftObject`/`deriveDraftSchemas`（meta → 草稿 zod，逐字段补丁），trading 的 returns/fulfillment/reconciliation 已迁移（presenter/草稿 zod 字段事实收回 meta，wire 字节经 `server/scripts/wire-equiv-dump.ts` 对拍冻结）；`_aggregateForContract` 的 toPayload+present 包装收进内核 `withAggregateWireAdapter`。DTO interface 仍保留为 hc 契约锚点；const meta → 精确类型推导（消灭 interface 锚点）仍为待办。order/quotation/outsourced 尚未迁移。
 - 标准动作内核 ADR 中「审核/作废 + 单据迁入」：单据聚合路径由**本 ADR 完成**；平坦资源 workflow 仍按原 ADR 演进。

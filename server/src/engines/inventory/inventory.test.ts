@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { ApiError } from '~/platform/http/errors.ts'
-import { post } from './engine.ts'
+import { hasEntries, onHand, onHandByMaterial, post } from './engine.ts'
 import type { StockVoucher } from './types.ts'
 
 /** 无 DB 即可验证的凭证/行形状：用 mock 会过重，这里只测会在触库前抛出的校验 */
@@ -63,5 +63,35 @@ describe('inventory 形状校验（触库前）', () => {
       expect(err).toBeInstanceOf(ApiError)
       expect((err as ApiError).fields?.['lines.0.quantity']?.[0]).toBe('数量必须大于零')
     }
+  })
+})
+
+describe('inventory 读原语形状校验（触库前）', () => {
+  test('onHand 缺物料 / 缺维度拒绝', async () => {
+    await expect(onHand(null as never, { materialId: '' })).rejects.toMatchObject({
+      code: 'validation',
+      message: '库存账面参数不合法',
+    })
+    try {
+      await onHand(null as never, { materialId: crypto.randomUUID() })
+      expect.unreachable()
+    } catch (err) {
+      expect(err).toBeInstanceOf(ApiError)
+      expect((err as ApiError).fields).toHaveProperty('warehouseId')
+    }
+  })
+
+  test('onHandByMaterial 缺仓拒绝', async () => {
+    await expect(onHandByMaterial(null as never, '')).rejects.toMatchObject({
+      code: 'validation',
+      message: '库存账面参数不合法',
+    })
+  })
+
+  test('hasEntries 缺维度拒绝', async () => {
+    await expect(hasEntries(null as never, {})).rejects.toMatchObject({
+      code: 'validation',
+      message: '库存分录查询参数不合法',
+    })
   })
 })

@@ -312,13 +312,8 @@ export function createWorkOrderSideActions(
 
     const stockBaseByMaterial = new Map<string, string>()
     for (const materialId of [...new Set(components.map((c) => c.material_id))]) {
-      const rows = await inventory.balance(db, {
-        companyId: wo.companyId,
-        materialId,
-        hideZero: false,
-      })
-      let total = decimal(0)
-      for (const r of rows) total = total.add(r.quantity)
+      // 公司全仓合计账面（Σ 未作废分录，无截至日）——引擎读原语
+      const total = await inventory.onHand(db, { companyId: wo.companyId, materialId })
       stockBaseByMaterial.set(materialId, toDecimalString(decimal(roundBaseQty(total))))
     }
 

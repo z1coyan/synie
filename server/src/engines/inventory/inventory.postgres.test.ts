@@ -386,6 +386,39 @@ run('PG 集成（库存引擎不变量）', () => {
       await inv.cancel(trx, { type: v.type, id: v.id })
     })
   })
+
+  test('读原语：onHand / onHandByMaterial / hasEntries', async () => {
+    const v = voucher({ no: `READ-${suffix}` })
+    await withTx(db, async (trx) => {
+      await inv.post(trx, v, [
+        { warehouseId, materialId, quantity: '5', direction: 'in' },
+        { warehouseId: otherWhId, materialId, quantity: '3', direction: 'in' },
+      ])
+    })
+
+    // 仓×物料 / 公司全仓合计 / 双维度同给
+    expect((await inv.onHand(db, { warehouseId, materialId })).toFixed()).toBe('5')
+    expect((await inv.onHand(db, { companyId, materialId })).toFixed()).toBe('8')
+    expect((await inv.onHand(db, { warehouseId, companyId, materialId })).toFixed()).toBe('5')
+    // 他司维度不串
+    expect((await inv.onHand(db, { companyId: otherCompanyId, materialId })).toFixed()).toBe('0')
+
+    // 仓内按物料分组（非零行）
+    const rows = await inv.onHandByMaterial(db, warehouseId)
+    expect(rows.map((r) => [r.materialId, r.quantity.toFixed()])).toEqual([[materialId, '5']])
+
+    // 分录存在性：无分录的汇总仓为 false
+    expect(await inv.hasEntries(db, { warehouseId: groupWhId })).toBe(false)
+    expect(await inv.hasEntries(db, { warehouseId, materialId })).toBe(true)
+
+    await withTx(db, async (trx) => {
+      await inv.cancel(trx, { type: v.type, id: v.id })
+    })
+    // 作废后账面归零、非零行剔除；但作废行仍是引用（存在性不变）
+    expect((await inv.onHand(db, { warehouseId, materialId })).toFixed()).toBe('0')
+    expect(await inv.onHandByMaterial(db, warehouseId)).toEqual([])
+    expect(await inv.hasEntries(db, { warehouseId })).toBe(true)
+  })
 })
 
 function letters(seed: string, n: number): string {

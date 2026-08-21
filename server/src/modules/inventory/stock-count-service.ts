@@ -11,7 +11,7 @@
  * 授权全由平台承担：路由挂 `guard(资源, 动作)`，本服务只收 Permit。
  * `refresh` 无独立动作码（meta 未声明），沿用 update 的门控。
  */
-import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
+import { decimal, isDecimalString, toDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import type { InventoryEngine, StockLine } from '~/engines/inventory/index.ts'
@@ -29,7 +29,6 @@ import { mapWriteError } from '~/db/dberr.ts'
 import { listAuthorized } from '~/db/list.ts'
 import { assertCompanyWritable, loadAuthorized } from '~/db/load.ts'
 import {
-  currentBookQty,
   dateWire,
   projectStockItem,
   runeLen,
@@ -338,49 +337,43 @@ export function createStockCountService(
           changes: auditCreated(snapshot(DOC_META, count, DOC_AUDIT), DOC_AUDIT),
         })
         if (input.loadAll) {
-          const projections = await sql<{
-            material_id: string
-            material_code: string
-            material_name: string
-            material_spec: string | null
-            unit_id: string
-            unit_name: string
-            book_quantity: string
-          }>`
-            SELECT m.id AS material_id,
-                   m.code AS material_code,
-                   m.name AS material_name,
-                   m.spec AS material_spec,
-                   m.default_unit_id AS unit_id,
-                   u.name AS unit_name,
-                   sum(e.quantity)::text AS book_quantity
-            FROM inv_stock_entry AS e
-            JOIN inv_material AS m ON m.id = e.material_id
-            JOIN bas_unit AS u ON u.id = m.default_unit_id
-            WHERE e.company_id = ${input.companyId}::uuid
-              AND e.warehouse_id = ${input.warehouseId}::uuid
-              AND e.is_cancelled = false
-            GROUP BY m.id, m.code, m.name, m.spec, m.default_unit_id, u.name
-            HAVING sum(e.quantity) <> 0
-            ORDER BY m.code ASC, m.id ASC
-          `.execute(trx)
-          for (const p of projections.rows) {
-            await insertCountItem(trx, permit, count, {
-              materialId: p.material_id,
-              unitId: p.unit_id,
-              countedQuantity: null,
-              remark: null,
-              bookQuantity: p.book_quantity,
-              materialCode: p.material_code,
-              materialName: p.material_name,
-              materialSpec: p.material_spec,
-              unitName: p.unit_name,
-              convertedCounted: null,
-            })
+          // 账面行走引擎原语（Σ 未作废分录、只取非零行）；物料/单位快照字段另查主数据
+          const bookRows = await inventory.onHandByMaterial(trx, input.warehouseId)
+          if (bookRows.length > 0) {
+            const qtyByMaterial = new Map(bookRows.map((r) => [r.materialId, r.quantity]))
+            const materials = await trx
+              .selectFrom('inv_material as m')
+              .innerJoin('bas_unit as u', 'u.id', 'm.default_unit_id')
+              .select([
+                'm.id',
+                'm.code',
+                'm.name',
+                'm.spec',
+                'm.default_unit_id as unit_id',
+                'u.name as unit_name',
+              ])
+              .where('m.id', 'in', bookRows.map((r) => r.materialId))
+              .orderBy('m.code', 'asc')
+              .orderBy('m.id', 'asc')
+              .execute()
+            for (const m of materials) {
+              await insertCountItem(trx, permit, count, {
+                materialId: m.id,
+                unitId: m.unit_id,
+                countedQuantity: null,
+                remark: null,
+                bookQuantity: toDecimalString(qtyByMaterial.get(m.id)!),
+                materialCode: m.code,
+                materialName: m.name,
+                materialSpec: m.spec,
+                unitName: m.unit_name,
+                convertedCounted: null,
+              })
+            }
           }
         } else {
           for (const line of input.items ?? []) {
-            await createItemInTx(trx, permit, count, {
+            await createItemInTx(trx, inventory, permit, count, {
               materialId: line.materialId,
               unitId: line.unitId,
               countedQuantity: line.countedQuantity ?? null,
@@ -412,7 +405,10 @@ export function createStockCountService(
         .where('count_id', '=', id)
         .execute()
       for (const raw of items) {
-        const book = await currentBookQty(trx, before.warehouseId, raw.material_id)
+        const book = await inventory.onHand(trx, {
+          warehouseId: before.warehouseId,
+          materialId: raw.material_id,
+        })
         const beforeItem = mapItem(raw)
         const row = await trx
           .updateTable('inv_stock_count_item')
@@ -506,7 +502,7 @@ export function createStockCountService(
   ): Promise<StockCountItem> {
     return withTx(db, async (trx) => {
       const count = await lockDraftCount(trx, permit, input.countId)
-      return createItemInTx(trx, permit, count, {
+      return createItemInTx(trx, inventory, permit, count, {
         materialId: input.materialId,
         unitId: input.unitId,
         countedQuantity: input.countedQuantity ?? null,
@@ -546,7 +542,7 @@ export function createStockCountService(
       const remark = input.remarkPresent ? trimOrNull(input.remark) : before.remark
       const counted = parseCounted(countedRaw)
       validateItemInput(materialId, unitId, counted, remark)
-      const projection = await projectCountItem(trx, count.warehouseId, materialId, unitId, counted)
+      const projection = await projectCountItem(trx, inventory, count.warehouseId, materialId, unitId, counted)
       const after: StockCountItem = {
         ...before,
         materialId,
@@ -647,6 +643,7 @@ function normalizeDocDraft(draft: Record<string, unknown>): void {
 
 async function createItemInTx(
   db: DbHandle,
+  inventory: InventoryEngine,
   permit: Permit,
   count: StockCount,
   input: {
@@ -660,6 +657,7 @@ async function createItemInTx(
   validateItemInput(input.materialId, input.unitId, counted, input.remark)
   const projection = await projectCountItem(
     db,
+    inventory,
     count.warehouseId,
     input.materialId,
     input.unitId,
@@ -732,6 +730,7 @@ async function insertCountItem(
 
 async function projectCountItem(
   db: DbHandle,
+  inventory: InventoryEngine,
   warehouseId: string,
   materialId: string,
   unitId: string,
@@ -758,7 +757,7 @@ async function projectCountItem(
     materialSpec = p.materialSpec
     unitName = p.unitName
   }
-  const bookQuantity = await currentBookQty(db, warehouseId, materialId)
+  const bookQuantity = await inventory.onHand(db, { warehouseId, materialId })
   return {
     convertedCounted,
     bookQuantity,

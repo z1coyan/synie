@@ -3,10 +3,9 @@
  *
  * 鉴权不在本文件：路由挂 `guard(资源, 动作)`，服务收 Permit，
  * 三个执行点（listAuthorized / loadAuthorized / assertCompanyWritable）由平台拥有。
+ * 账面取数不在本文件：走库存引擎读原语 `onHand` / `onHandByMaterial` / `hasEntries`。
  */
 import { decimal, toDecimalString, type Decimal } from '@synie/shared'
-import { sql } from 'kysely'
-import type { DbHandle } from '~/db/tx.ts'
 
 export function toDate(value: unknown): Date {
   if (value instanceof Date) return value
@@ -75,18 +74,3 @@ export {
 
 /** 叶子仓校验：实现见 platform/posting/warehouse（W0 T0.2） */
 export { validateLeafWarehouse } from '~/platform/posting/warehouse.ts'
-
-export async function currentBookQty(
-  db: DbHandle,
-  warehouseId: string,
-  materialId: string,
-): Promise<Decimal> {
-  const row = await sql<{ qty: string }>`
-    SELECT COALESCE(sum(quantity), 0)::text AS qty
-    FROM inv_stock_entry
-    WHERE warehouse_id = ${warehouseId}::uuid
-      AND material_id = ${materialId}::uuid
-      AND is_cancelled = false
-  `.execute(db)
-  return decimal(row.rows[0]?.qty ?? '0')
-}

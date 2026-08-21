@@ -10,6 +10,7 @@ import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
+import type { InventoryEngine } from '~/engines/inventory/index.ts'
 import {
   auditCreated,
   auditDestroyed,
@@ -75,7 +76,12 @@ const SELECT = sql`SELECT id,code,name,is_leaf,active,is_outsourced,party_type,p
   allow_negative,inserted_at,updated_at,company_id,parent_id,account_id,
   company_code,company_name,parent_name,account_code,account_name,has_children`
 
-export function createWarehouseService(db: Kysely<Database>, numbering: NumberingService, registry: Registry) {
+export function createWarehouseService(
+  db: Kysely<Database>,
+  numbering: NumberingService,
+  inventory: InventoryEngine,
+  registry: Registry,
+) {
   const target = registry.authzTarget(WAREHOUSE_RESOURCE)
 
   async function get(permit: Permit, id: string): Promise<Warehouse> {
@@ -293,12 +299,7 @@ export function createWarehouseService(db: Kysely<Database>, numbering: Numberin
             })
           }
         } else {
-          const stock = await trx
-            .selectFrom('inv_stock_entry')
-            .select('id')
-            .where('warehouse_id', '=', id)
-            .executeTakeFirst()
-          if (stock) {
+          if (await inventory.hasEntries(trx, { warehouseId: id })) {
             throw ApiError.validation('仓库参数不合法', {
               isLeaf: ['仓库已有库存分录,不能改为非叶子'],
             })
@@ -366,12 +367,9 @@ export function createWarehouseService(db: Kysely<Database>, numbering: Numberin
         .where('parent_id', '=', id)
         .executeTakeFirst()
       if (child) throw new ApiError('conflict', '存在下级仓库,不能删除')
-      const stock = await trx
-        .selectFrom('inv_stock_entry')
-        .select('id')
-        .where('warehouse_id', '=', id)
-        .executeTakeFirst()
-      if (stock) throw new ApiError('conflict', '仓库已有库存分录,不能删除')
+      if (await inventory.hasEntries(trx, { warehouseId: id })) {
+        throw new ApiError('conflict', '仓库已有库存分录,不能删除')
+      }
       const item = await getInTx(trx, id)
       await trx.deleteFrom('inv_warehouse').where('id', '=', id).execute()
       await writeAudit(trx, permit.actor, {

@@ -1,4 +1,4 @@
-export { createInventoryEngine, post, cancel, balance } from './engine.ts'
+export { createInventoryEngine, post, cancel, balance, onHand, onHandByMaterial, hasEntries } from './engine.ts'
 export type {
   InventoryEngine,
   StockVoucher,
@@ -7,4 +7,7 @@ export type {
   StockDirection,
   BalanceQuery,
   BalanceRow,
+  OnHandQuery,
+  OnHandRow,
+  HasEntriesQuery,
 } from './types.ts'

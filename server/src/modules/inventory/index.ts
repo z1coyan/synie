@@ -47,7 +47,7 @@ export function createInventoryServices(
     categories: createMaterialCategoryService(db, registry),
     materials: createMaterialService(db, numbering, registry),
     materialUnits: createMaterialUnitService(db, registry),
-    warehouses: createWarehouseService(db, numbering, registry),
+    warehouses: createWarehouseService(db, numbering, inventory, registry),
     stockDocs: createStockDocService(db, numbering, inventory, registry),
     stockTransfers: createStockTransferService(db, numbering, inventory, registry),
     stockCounts: createStockCountService(db, numbering, inventory, registry),

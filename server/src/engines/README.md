@@ -7,6 +7,8 @@
   `validateEntries` 为测试出口，不挂 interface
 - `inventory/`：`createInventoryEngine()` → `post` / `cancel` / `balance`
   （（仓×物料）advisory lock + 叶子仓 + 负库存；`StockLine.direction` 表达出入）
+  读侧原语 `onHand` / `onHandByMaterial` / `hasEntries`（收 `DbHandle`）：
+  「账面 = Σ 未作废分录」口径唯一实现，模块取账面/判分录引用一律走原语
 
 纪律：
 

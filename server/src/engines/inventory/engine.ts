@@ -10,7 +10,10 @@ import { ApiError } from '~/platform/http/errors.ts'
 import type {
   BalanceQuery,
   BalanceRow,
+  HasEntriesQuery,
   InventoryEngine,
+  OnHandQuery,
+  OnHandRow,
   StockLine,
   StockVoucher,
   StockVoucherRef,
@@ -33,7 +36,7 @@ interface MaterialRef {
 }
 
 export function createInventoryEngine(): InventoryEngine {
-  return { post, cancel, balance }
+  return { post, cancel, balance, onHand, onHandByMaterial, hasEntries }
 }
 
 /**
@@ -228,6 +231,77 @@ export async function balance(db: DbHandle, query: BalanceQuery): Promise<Balanc
   }
 }
 
+// ─── 读侧原语（账面口径唯一实现：Σ 未作废分录，无截至日） ───
+
+/** 账面库存：Σ 未作废分录。仓×物料（warehouseId）或公司全仓合计（companyId） */
+export async function onHand(db: DbHandle, query: OnHandQuery): Promise<Decimal> {
+  const fields: Record<string, string[]> = {}
+  if (!query.materialId) fields.materialId = ['物料必填']
+  if (!query.warehouseId && !query.companyId) {
+    fields.warehouseId = ['仓库与公司至少给一项']
+  }
+  if (Object.keys(fields).length > 0) {
+    throw ApiError.validation('库存账面参数不合法', fields)
+  }
+  try {
+    return await liveQty(db, {
+      warehouseId: query.warehouseId ?? null,
+      companyId: query.companyId ?? null,
+      materialId: query.materialId,
+    })
+  } catch (err) {
+    if (err instanceof ApiError) throw err
+    throw new ApiError('internal', '读取库存账面失败', { cause: err })
+  }
+}
+
+/** 仓内账面：按物料分组的非零行（HAVING sum <> 0，与余额视图 hideZero 默认同口径） */
+export async function onHandByMaterial(db: DbHandle, warehouseId: string): Promise<OnHandRow[]> {
+  if (!warehouseId) {
+    throw ApiError.validation('库存账面参数不合法', { warehouseId: ['仓库必填'] })
+  }
+  try {
+    const rows = await sql<{ material_id: string; qty: string }>`
+      SELECT material_id, sum(quantity)::text AS qty
+      FROM inv_stock_entry
+      WHERE warehouse_id = ${warehouseId}::uuid
+        AND is_cancelled = false
+      GROUP BY material_id
+      HAVING sum(quantity) <> 0
+      ORDER BY material_id ASC
+    `.execute(db)
+    return rows.rows.map((row) => ({ materialId: row.material_id, quantity: decimal(row.qty) }))
+  } catch (err) {
+    if (err instanceof ApiError) throw err
+    throw new ApiError('internal', '读取仓内库存账面失败', { cause: err })
+  }
+}
+
+/** 分录存在性：仓/物料是否已被分录引用（含作废行；引用保护口径） */
+export async function hasEntries(db: DbHandle, query: HasEntriesQuery): Promise<boolean> {
+  if (!query.warehouseId && !query.materialId) {
+    throw ApiError.validation('库存分录查询参数不合法', {
+      warehouseId: ['仓库与物料至少给一项'],
+    })
+  }
+  const warehouseId = query.warehouseId ?? null
+  const materialId = query.materialId ?? null
+  try {
+    const row = await sql<{ found: boolean }>`
+      SELECT EXISTS(
+        SELECT 1
+        FROM inv_stock_entry
+        WHERE (${warehouseId}::uuid IS NULL OR warehouse_id = ${warehouseId}::uuid)
+          AND (${materialId}::uuid IS NULL OR material_id = ${materialId}::uuid)
+      ) AS found
+    `.execute(db)
+    return row.rows[0]?.found === true
+  } catch (err) {
+    if (err instanceof ApiError) throw err
+    throw new ApiError('internal', '查询库存分录存在性失败', { cause: err })
+  }
+}
+
 // ─── 内部 ───────────────────────────────────────────────────
 
 interface NormalizedLine {
@@ -235,6 +309,22 @@ interface NormalizedLine {
   materialId: string
   quantity: Decimal
   remarks: string | null
+}
+
+/** Σ 未作废分录（当前账面，无截至日）；写侧负库存校验与读侧 onHand 共用同一实现 */
+async function liveQty(
+  db: DbHandle,
+  dims: { warehouseId: string | null; companyId: string | null; materialId: string },
+): Promise<Decimal> {
+  const row = await sql<{ qty: string }>`
+    SELECT COALESCE(sum(quantity), 0)::text AS qty
+    FROM inv_stock_entry
+    WHERE material_id = ${dims.materialId}::uuid
+      AND is_cancelled = false
+      AND (${dims.warehouseId}::uuid IS NULL OR warehouse_id = ${dims.warehouseId}::uuid)
+      AND (${dims.companyId}::uuid IS NULL OR company_id = ${dims.companyId}::uuid)
+  `.execute(db)
+  return decimal(row.rows[0]?.qty ?? '0')
 }
 
 function validateVoucher(voucher: StockVoucher): void {
@@ -397,14 +487,11 @@ async function checkLockedBalances(
 
     let current: Decimal
     try {
-      const row = await sql<{ qty: string }>`
-        SELECT COALESCE(sum(quantity), 0)::text AS qty
-        FROM inv_stock_entry
-        WHERE warehouse_id = ${key.warehouseId}
-          AND material_id = ${key.materialId}
-          AND is_cancelled = false
-      `.execute(db)
-      current = decimal(row.rows[0]?.qty ?? '0')
+      current = await liveQty(db, {
+        warehouseId: key.warehouseId,
+        companyId: null,
+        materialId: key.materialId,
+      })
     } catch (err) {
       if (err instanceof ApiError) throw err
       throw new ApiError('internal', '读取当前库存余额失败', { cause: err })
