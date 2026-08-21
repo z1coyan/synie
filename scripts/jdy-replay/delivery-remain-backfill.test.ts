@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import type { Kysely } from 'kysely'
-import type { DB as Database } from '~/db/types.ts'
-import { systemPermit } from '~/platform/authz/core/index.ts'
-import { ApiError } from '~/platform/http/errors.ts'
+import type { DB as Database } from '../../server/src/db/types.ts'
+import { systemPermit } from '../../server/src/platform/authz/core/index.ts'
+import { ApiError } from '../../server/src/platform/http/errors.ts'
 import { runDeliveryRemainBackfill } from './delivery-remain-backfill.ts'
 
 const db = {} as Kysely<Database>

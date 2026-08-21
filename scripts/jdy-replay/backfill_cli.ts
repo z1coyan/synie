@@ -8,6 +8,6 @@
  *
  * 缺省 dry-run；--apply 才写库。
  */
-import { main } from '../../server/src/modules/finance/backfill-cli.ts'
+import { main } from './backfill-cli.ts'
 
 await main(process.argv.slice(2))

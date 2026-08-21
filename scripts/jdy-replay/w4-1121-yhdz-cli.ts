@@ -9,19 +9,18 @@
  */
 import { decimal } from '@synie/shared'
 import { sql } from 'kysely'
-import { createDb } from '~/db/index.ts'
-import { withTx, type DbHandle } from '~/db/tx.ts'
-import { createGlEngine } from '~/engines/gl/index.ts'
-import { createJournalService } from '~/modules/accounting/journal-service.ts'
-import { isJournalLinkedToBankRecon } from '~/modules/finance/banking-recon.ts'
-import { reconcileStatus, txnAmount } from '~/modules/finance/banking-shared.ts'
-import { lower } from '~/modules/finance/common.ts'
-import { systemPermit } from '~/platform/authz/core/index.ts'
-import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
-import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
-import { resolveBackfillDatabaseUrl } from './backfill-cli.ts'
+import { withTx, type DbHandle } from '../../server/src/db/tx.ts'
+import { reconcileStatus, txnAmount } from '../../server/src/modules/finance/banking-shared.ts'
+import { lower } from '../../server/src/modules/finance/common.ts'
+import {
+  assertReplayUrl,
+  createMigrationJournalService,
+  createMigrationWorld,
+  MIGRATION_ACTOR_ID as ACTOR,
+  migrationPermits,
+  resolveBackfillDatabaseUrl,
+} from './bootstrap.ts'
 
-const ACTOR = '99e3e4f6-e208-4bb9-904c-72299808a8e7'
 const WHITELIST_AMT = '2217.64'
 const JOURNAL_VOUCHER = 'acc.gl_journal'
 const BILL_VOUCHER = 'acc.bill_transaction'
@@ -61,29 +60,6 @@ interface Snapshot {
   gl_1121: string
   holding: string
   hold_n: string
-}
-
-function dsnHost(url: string): string {
-  try {
-    const u = new URL(url)
-    return `${u.hostname}:${u.port}${u.pathname}`
-  } catch {
-    return '(unparseable)'
-  }
-}
-
-function assertReplayUrl(url: string, allowProd: boolean): void {
-  const isReplay = url.includes('synie_replay_check') && url.includes(':5441')
-  const isProd = /100\.82\.52\.74|:26002/.test(url) && /\/synie(\?|$)/.test(url)
-  if (allowProd) {
-    if (!isProd) {
-      throw new Error(`--allow-prod 只允许生产 DSN，当前 ${dsnHost(url)}`)
-    }
-    return
-  }
-  if (!isReplay) {
-    throw new Error(`禁止非彩排库：${dsnHost(url)}（生产请加 --allow-prod）`)
-  }
 }
 
 function parseArgs(argv: string[]): { apply: boolean; allowProd: boolean } {
@@ -412,7 +388,8 @@ export async function main(argv: string[]): Promise<void> {
   const { apply, allowProd } = parseArgs(argv)
   const url = resolveBackfillDatabaseUrl()
   assertReplayUrl(url, allowProd)
-  const db = createDb(url)
+  const world = createMigrationWorld(url)
+  const db = world.db
   try {
     const before = await loadSnapshot(db)
     const arBefore = (
@@ -481,11 +458,8 @@ export async function main(argv: string[]): Promise<void> {
       return
     }
 
-    const registry = createSealedResourceRegistry()
-    const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
-    const gl = createGlEngine()
-    const journals = createJournalService(db, numbering, gl, registry, { isJournalLinkedToBankRecon })
-    const permit = systemPermit('accGlJournals', 'cancel')
+    const journals = createMigrationJournalService(world)
+    const permit = migrationPermits.journalCancel()
 
     const counts = { cancel: 0, relink: 0, cancel_no_relink: 0, skip: 0, error: 0 }
     const noRelink: string[] = []

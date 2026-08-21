@@ -1,0 +1,10 @@
+{
+  "name": "@synie/jdy-replay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@synie/shared": "workspace:*",
+    "kysely": "^0.28.8"
+  }
+}

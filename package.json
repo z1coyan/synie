@@ -6,7 +6,8 @@
   "workspaces": [
     "packages/*",
     "server",
-    "web"
+    "web",
+    "scripts/jdy-replay"
   ],
   "scripts": {
     "dev": "bun scripts/dev.ts",

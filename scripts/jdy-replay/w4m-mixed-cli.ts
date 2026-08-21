@@ -6,13 +6,13 @@
  * bun scripts/jdy-replay/w4m_mixed.ts --apply
  */
 import { sql } from 'kysely'
-import { createDb } from '~/db/index.ts'
-import { withTx } from '~/db/tx.ts'
-import { createGlEngine } from '~/engines/gl/index.ts'
-import { resolveBackfillDatabaseUrl } from './backfill-cli.ts'
-
-const ACTOR = '99e3e4f6-e208-4bb9-904c-72299808a8e7'
-const gl = createGlEngine()
+import { withTx, type TrxHandle } from '../../server/src/db/tx.ts'
+import type { GlEngine } from '../../server/src/engines/gl/index.ts'
+import {
+  createMigrationWorld,
+  MIGRATION_ACTOR_ID as ACTOR,
+  resolveBackfillDatabaseUrl,
+} from './bootstrap.ts'
 
 type Side = { account: string; customer?: string | null }
 
@@ -182,7 +182,7 @@ const SPECS: Spec[] = [
   },
 ]
 
-type Db = Parameters<typeof gl.post>[0]
+type Db = TrxHandle
 
 async function companyId(db: Db, label: string): Promise<string> {
   const codes = label === '京泰' || label === 'JT' ? sql`('JT','京泰')` : sql`('DF','东方')`
@@ -219,7 +219,7 @@ async function journalExists(db: Db, voucherNoVal: string): Promise<boolean> {
   return Number(row.rows[0]?.c ?? 0) > 0
 }
 
-async function postOne(db: Db, spec: Spec): Promise<'ok' | 'skip'> {
+async function postOne(gl: GlEngine, db: Db, spec: Spec): Promise<'ok' | 'skip'> {
   if (await journalExists(db, spec.voucher)) return 'skip'
   const coId = await companyId(db, spec.company)
   const debitId = await accountId(db, coId, spec.debit.account)
@@ -312,12 +312,13 @@ export async function main(argv: string[]): Promise<void> {
     return
   }
 
-  const db = createDb(resolveBackfillDatabaseUrl())
+  const world = createMigrationWorld(resolveBackfillDatabaseUrl())
+  const db = world.db
   const counts = { ok: 0, skip: 0, error: 0 }
   try {
     for (const spec of SPECS) {
       try {
-        const status = await withTx(db, (trx) => postOne(trx, spec))
+        const status = await withTx(db, (trx) => postOne(world.gl, trx, spec))
         if (status === 'skip') counts.skip++
         else counts.ok++
         console.log(JSON.stringify({ level: 'info', msg: 'w4m_posted', voucher: spec.voucher, status }))

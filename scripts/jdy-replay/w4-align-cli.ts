@@ -6,18 +6,17 @@
  */
 import { readFileSync } from 'node:fs'
 import { sql } from 'kysely'
-import { createDb } from '~/db/index.ts'
-import { withTx } from '~/db/tx.ts'
-import { createGlEngine } from '~/engines/gl/index.ts'
-import { systemPermit } from '~/platform/authz/core/index.ts'
-import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
-import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
-import { createBillService } from './bill-service.ts'
-import { resolveBackfillDatabaseUrl } from './backfill-cli.ts'
+import { withTx, type TrxHandle } from '../../server/src/db/tx.ts'
+import type { GlEngine } from '../../server/src/engines/gl/index.ts'
+import { createBillService } from '../../server/src/modules/finance/bill-service.ts'
+import {
+  createMigrationWorld,
+  MIGRATION_ACTOR_ID as ACTOR,
+  migrationPermits,
+  resolveBackfillDatabaseUrl,
+} from './bootstrap.ts'
 
-const ACTOR = '99e3e4f6-e208-4bb9-904c-72299808a8e7'
 const BILL_VOUCHER = 'acc.bill_transaction'
-const gl = createGlEngine()
 
 interface ReceiveUntarget {
   tx_id: string
@@ -86,7 +85,7 @@ function loadPlan(path: string): Plan {
 }
 
 // kysely / withTx 句柄都能跑 sql`` 与 gl.post
-type Db = Parameters<typeof gl.post>[0]
+type Db = TrxHandle
 
 async function companyId(db: Db, label: string): Promise<string> {
   const codes = label === '京泰' || label === 'JT' ? sql`('JT','京泰')` : sql`('DF','东方')`
@@ -137,6 +136,7 @@ function ymd(iso: string): string {
 }
 
 async function postReclassJournal(
+  gl: GlEngine,
   db: Db,
   opts: {
     voucherNo: string
@@ -246,12 +246,15 @@ export async function main(argv: string[]): Promise<void> {
     return
   }
 
-  const db = createDb(resolveBackfillDatabaseUrl())
+  const world = createMigrationWorld(resolveBackfillDatabaseUrl())
+  const db = world.db
+  const gl = world.gl
   try {
-    const registry = createSealedResourceRegistry()
-    const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
-    const bills = createBillService(db, numbering, { gl, registry })
-    const permit = systemPermit('accBillTransactions', 'audit')
+    const bills = createBillService(world.db, world.numbering, {
+      gl: world.gl,
+      registry: world.registry,
+    })
+    const permit = migrationPermits.billAudit()
 
     for (const id of plan.endorse_reclass) {
       try {
@@ -463,10 +466,10 @@ export async function main(argv: string[]): Promise<void> {
     const postOne = async (
       kind: string,
       voucherNo: string,
-      spec: Parameters<typeof postReclassJournal>[1],
+      spec: Parameters<typeof postReclassJournal>[2],
     ) => {
       try {
-        const status = await withTx(db, (trx) => postReclassJournal(trx, spec))
+        const status = await withTx(db, (trx) => postReclassJournal(world.gl, trx, spec))
         if (status === 'skip') counts.journals.skip++
         else counts.journals.ok++
       } catch (err) {

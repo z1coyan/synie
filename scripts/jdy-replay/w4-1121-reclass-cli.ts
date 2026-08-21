@@ -3,19 +3,21 @@
  * 不 cancel 原 YHDZ（保住银行借方），不碰 1122。
  */
 import { sql } from 'kysely'
-import { createDb } from '~/db/index.ts'
-import { withTx } from '~/db/tx.ts'
-import { createGlEngine } from '~/engines/gl/index.ts'
-import { resolveBackfillDatabaseUrl } from './backfill-cli.ts'
+import { withTx } from '../../server/src/db/tx.ts'
+import {
+  createMigrationWorld,
+  MIGRATION_ACTOR_ID as ACTOR,
+  resolveBackfillDatabaseUrl,
+} from './bootstrap.ts'
 
-const ACTOR = '99e3e4f6-e208-4bb9-904c-72299808a8e7'
 const KEEP = 'A(J)-20260514-0030'
-const gl = createGlEngine()
 
 export async function main(argv: string[]): Promise<void> {
   const apply = argv.includes('--apply')
   if (apply && argv.includes('--dry-run')) throw new Error('不能同时 --apply 与 --dry-run')
-  const db = createDb(resolveBackfillDatabaseUrl())
+  const world = createMigrationWorld(resolveBackfillDatabaseUrl())
+  const db = world.db
+  const gl = world.gl
   try {
     const rows = await sql<{
       voucher_no: string

@@ -3,5 +3,5 @@
  * 白名单 A(J)-20260514-0030 2217.64 不改。
  * bun scripts/jdy-replay/w4_1121_reclass.ts [--apply]
  */
-import { main } from '../../server/src/modules/finance/w4-1121-reclass-cli.ts'
+import { main } from './w4-1121-reclass-cli.ts'
 await main(process.argv.slice(2))

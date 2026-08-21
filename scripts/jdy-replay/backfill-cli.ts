@@ -4,17 +4,18 @@
  */
 import { readFileSync } from 'node:fs'
 import type { Kysely } from 'kysely'
-import { createDb } from '~/db/index.ts'
-import type { DB as Database } from '~/db/types.ts'
-import { createGlEngine } from '~/engines/gl/index.ts'
-import { systemPermit } from '~/platform/authz/core/index.ts'
-import { ApiError } from '~/platform/http/errors.ts'
-import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
-import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
-import { createReconciliationService } from '~/modules/trading/reconciliation/service.ts'
-import { runDeliveryRemainBackfill } from '~/modules/trading/fulfillment/delivery-remain-backfill.ts'
-import { createBillService } from './bill-service.ts'
-import { createVatInvoiceService } from './invoice-service.ts'
+import { createDb } from '../../server/src/db/index.ts'
+import type { DB as Database } from '../../server/src/db/types.ts'
+import { createBillService } from '../../server/src/modules/finance/bill-service.ts'
+import { createVatInvoiceService } from '../../server/src/modules/finance/invoice-service.ts'
+import { createReconciliationService } from '../../server/src/modules/trading/reconciliation/service.ts'
+import { ApiError } from '../../server/src/platform/http/errors.ts'
+import {
+  createServiceAssembly,
+  migrationPermits,
+  resolveBackfillDatabaseUrl,
+} from './bootstrap.ts'
+import { runDeliveryRemainBackfill } from './delivery-remain-backfill.ts'
 
 export const BACKFILL_KINDS = ['invoice', 'bill', 'delivery-remain'] as const
 export type BackfillKind = (typeof BACKFILL_KINDS)[number]
@@ -99,20 +100,16 @@ export async function runBackfill(
   args: BackfillCliArgs,
 ): Promise<BackfillCliResult> {
   if (args.kind === 'delivery-remain') {
-    const permit = systemPermit('salDeliveries', 'audit')
-    const deliveryRemain = await runDeliveryRemainBackfill(db, permit, {
+    const deliveryRemain = await runDeliveryRemainBackfill(db, migrationPermits.deliveryAudit(), {
       ids: args.ids,
       apply: args.apply,
     })
     return { kind: args.kind, apply: args.apply, ids: args.ids.length, deliveryRemain }
   }
 
-  const registry = createSealedResourceRegistry()
-  const numbering = createNumberingService(db, buildNumberingCatalog(registry), registry)
-  const gl = createGlEngine()
+  const { registry, numbering, gl } = createServiceAssembly(db)
 
   if (args.kind === 'invoice') {
-    const permit = systemPermit('accVatInvoices', 'audit')
     if (!args.apply) {
       return {
         kind: args.kind,
@@ -123,11 +120,12 @@ export async function runBackfill(
     }
     const reconciliations = createReconciliationService(db, numbering, gl, registry)
     const invoices = createVatInvoiceService(db, numbering, { gl, reconciliations, registry })
-    const docs = await backfillEachDoc(args.kind, args.ids, (id) => invoices.backfillPostedGL(permit, id))
+    const docs = await backfillEachDoc(args.kind, args.ids, (id) =>
+      invoices.backfillPostedGL(migrationPermits.vatInvoiceAudit(), id),
+    )
     return { kind: args.kind, apply: true, ids: args.ids.length, docs }
   }
 
-  const permit = systemPermit('accBillTransactions', 'audit')
   if (!args.apply) {
     return {
       kind: args.kind,
@@ -137,7 +135,9 @@ export async function runBackfill(
     }
   }
   const bills = createBillService(db, numbering, { gl, registry })
-  const docs = await backfillEachDoc(args.kind, args.ids, (id) => bills.backfillPostedGL(permit, id))
+  const docs = await backfillEachDoc(args.kind, args.ids, (id) =>
+    bills.backfillPostedGL(migrationPermits.billAudit(), id),
+  )
   return { kind: args.kind, apply: true, ids: args.ids.length, docs }
 }
 
@@ -160,20 +160,6 @@ export async function backfillEachDoc(
     }
   }
   return docs
-}
-
-export function resolveBackfillDatabaseUrl(env: NodeJS.ProcessEnv = process.env): string {
-  if (env.DATABASE_URL) return env.DATABASE_URL
-  if (!env.PGDATABASE) {
-    throw new Error('必须设置 DATABASE_URL 或 PGDATABASE')
-  }
-  const user = env.PGUSER ?? 'postgres'
-  const auth = env.PGPASSWORD
-    ? `${encodeURIComponent(user)}:${encodeURIComponent(env.PGPASSWORD)}`
-    : encodeURIComponent(user)
-  const host = env.PGHOST ?? 'localhost'
-  const port = env.PGPORT ?? '5432'
-  return `postgres://${auth}@${host}:${port}/${env.PGDATABASE}?sslmode=disable`
 }
 
 export async function main(argv: string[]): Promise<void> {

@@ -6,6 +6,6 @@
  * bun scripts/jdy-replay/w4_1121_yhdz.ts --apply
  * bun scripts/jdy-replay/w4_1121_yhdz.ts --apply --allow-prod
  */
-import { main } from '../../server/src/modules/finance/w4-1121-yhdz-cli.ts'
+import { main } from './w4-1121-yhdz-cli.ts'
 
 await main(process.argv.slice(2))

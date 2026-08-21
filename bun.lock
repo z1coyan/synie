@@ -21,6 +21,14 @@
         "typescript": "7.0.2",
       },
     },
+    "scripts/jdy-replay": {
+      "name": "@synie/jdy-replay",
+      "version": "0.1.0",
+      "dependencies": {
+        "@synie/shared": "workspace:*",
+        "kysely": "^0.28.8",
+      },
+    },
     "server": {
       "name": "@synie/server",
       "version": "0.1.0",
@@ -417,6 +425,8 @@
     "@standard-schema/utils": ["@standard-schema/utils@0.3.0", "", {}, "sha512-e7Mew686owMaPJVNNLs55PUvgz371nKgwsc4vxE49zsODpJEnxgxRo2y/OKrqueavXgZNMDVj3DdHFlaSAeU8g=="],
 
     "@swc/helpers": ["@swc/helpers@0.5.23", "", { "dependencies": { "tslib": "^2.8.0" } }, "sha512-5lSsMOTXURePglDfvuAQUqkGek9Hg2kksOYay2m0+XR++b2NWYL/4sWyuvVBIs8oKnJaxkdi9whaL/sqN13afw=="],
+
+    "@synie/jdy-replay": ["@synie/jdy-replay@workspace:scripts/jdy-replay"],
 
     "@synie/server": ["@synie/server@workspace:server"],
 

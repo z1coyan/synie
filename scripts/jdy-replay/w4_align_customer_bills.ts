@@ -4,6 +4,6 @@
  *
  * bun scripts/jdy-replay/w4_align_customer_bills.ts --plan .scratch/replay/w4_align_plan.json
  */
-import { main } from '../../server/src/modules/finance/w4-align-cli.ts'
+import { main } from './w4-align-cli.ts'
 
 await main(process.argv.slice(2))

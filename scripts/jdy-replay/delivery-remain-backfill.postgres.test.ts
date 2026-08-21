@@ -5,9 +5,9 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { sql } from 'kysely'
-import { createDb } from '~/db/index.ts'
-import { systemPermit } from '~/platform/authz/core/index.ts'
-import { ApiError } from '~/platform/http/errors.ts'
+import { createDb } from '../../server/src/db/index.ts'
+import { systemPermit } from '../../server/src/platform/authz/core/index.ts'
+import { ApiError } from '../../server/src/platform/http/errors.ts'
 import {
   PLUG_0008_DATE,
   PLUG_0008_VOUCHER_NO,

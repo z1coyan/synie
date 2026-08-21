@@ -3,6 +3,6 @@
  * bun scripts/jdy-replay/w4_1121_nail.ts
  * bun scripts/jdy-replay/w4_1121_nail.ts --apply --allow-prod
  */
-import { main } from '../../server/src/modules/finance/w4-1121-nail-cli.ts'
+import { main } from './w4-1121-nail-cli.ts'
 
 await main(process.argv.slice(2))

@@ -4,6 +4,13 @@
 
 权威日期：`china_date.py` 的 `jdyChinaDate`（T16:00Z = 中国次日）。
 
+## TS CLI 结构
+
+每个 `*.ts` 入口（壳）与同目录的 `*-cli.ts`（肉）配对；共享装配（env → DSN → db →
+sealed registry → numbering → gl → systemPermit）只在 `bootstrap.ts` 写一次，
+走 `server/src` 的真实工厂，CLI 不再各自重建世界。`server/src/modules/` 内不存放
+一次性迁移工具（`bill-replay.ts` 是产品代码，例外留存）。
+
 ## 主集
 
 闸「0 行超差」只对**主集**：`jdy_targets_v3.csv` 里 `source=dashboard` 的仪表盘户，排除下列留档/例外（verify_today / verify_asof 内建同清单）：

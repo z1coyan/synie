@@ -2,7 +2,8 @@ import { afterAll, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { backfillEachDoc, parseBackfillCliArgs, resolveBackfillDatabaseUrl } from './backfill-cli.ts'
+import { backfillEachDoc, parseBackfillCliArgs } from './backfill-cli.ts'
+import { resolveBackfillDatabaseUrl } from './bootstrap.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'backfill-cli-'))
 const idsPath = join(dir, 'ids.txt')
