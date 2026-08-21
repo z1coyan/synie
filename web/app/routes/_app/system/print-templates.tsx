@@ -116,7 +116,8 @@ function PrintTemplatesPage() {
         setCurrentFile(null)
         toast.danger(error instanceof Error ? error.message : '加载模板文件失败')
       })
-  }, [drawer, drawerRow?.fileId])
+    // parseRecordDrawerSearch 每次渲染返回新对象,依赖 drawer 会把 metadata 打成循环
+  }, [drawer?.recordId, drawer?.mode, drawerRow?.fileId])
 
   // 字段清单:create 用 resourcePick,既有记录用行上 resource
   useEffect(() => {
@@ -126,7 +127,8 @@ function PrintTemplatesPage() {
     void fetchFieldCatalog(resource)
       .then(setCatalog)
       .catch(() => setCatalog(null))
-  }, [drawer, drawerRow?.resource, resourcePick])
+    // 同上:依赖 drawer 对象身份时,setCatalog → 重渲染 → 再请求
+  }, [drawer?.recordId, drawer?.mode, drawerRow?.resource, resourcePick])
 
   const onPickFile = async (file: File | null) => {
     if (!file || uploading) return
