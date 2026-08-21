@@ -1,6 +1,12 @@
 /**
  * 标准动作内核·子行服务：单据行等 via 资源的 CRUD 派生。
  *
+ * 本文件是瘦装配器：记录读侧与写管线骨架（load → normalize → hooks → diff →
+ * INSERT/UPDATE/DELETE → mapWriteError → 审计三型 → reload）与 service.ts 共享唯一拷贝
+ * （record.ts），以写入闸门（锁母单 → 状态门 → 带入列 → 锁行）与列集合
+ * （writable + inherit 带入列 + derived 派生列）参数化；本文件只留 child 真差异——
+ * parent 链（含孙级装配断言）、母单锁/带入、listByParentOn。
+ *
  * 与标准服务的差异：
  * - 授权：via 目标，行级可达性递归到母单谓词；写侧以「锁母单（授权）→ 状态门」
  *   取代 assertCompanyWritable，行不存在与母单不可达同为 not_found
@@ -24,19 +30,17 @@
 import type { ListQuery } from '@synie/shared'
 import { sql, type RawBuilder } from 'kysely'
 import type { Kysely } from 'kysely'
-import { mapWriteError, type PgWriteMapping } from '~/db/dberr.ts'
+import type { PgWriteMapping } from '~/db/dberr.ts'
 import { ident } from '~/db/ident.ts'
-import { listAuthorized } from '~/db/list.ts'
-import { loadAuthorized, loadAuthorizedFrom } from '~/db/load.ts'
+import { loadAuthorized } from '~/db/load.ts'
 import { withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { auditCreated, auditDestroyed, auditDiff, writeAudit } from '~/platform/audit/write.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
-import type { FieldMeta, ResourceMeta } from '~/platform/meta/types.ts'
-import { fromDbValue, mapRow, physicalFields, snapshot, toDbValue, writableFields } from './fields.ts'
+import type { ResourceMeta } from '~/platform/meta/types.ts'
+import { mapRow, physicalFields, writableFields } from './fields.ts'
+import { createRecordAccess, createRecordWritePipeline, type RecordWriteGate } from './record.ts'
 import type { ExtraWhere, StandardItem, StandardProjection } from './service.ts'
 
 export interface ChildHookContext {
@@ -139,10 +143,6 @@ export interface StandardChildService<TItem extends StandardItem = StandardItem>
   readonly stampedColumns: ReadonlySet<string>
 }
 
-function normalizeWire(field: FieldMeta, value: unknown): unknown {
-  return fromDbValue(field, toDbValue(field, value))
-}
-
 /**
  * 装配期：parent.resource 可指 child，但 via 链深（本资源相对根的层数）不得超过上限。
  * 从直接 parent 沿 meta.authz.via 上行计数；成环或未知资源同步 fail-closed。
@@ -201,7 +201,6 @@ export function createStandardChildService<TItem extends StandardItem = Standard
   const parentTarget = registry.authzTarget(parent.resource)
 
   const TABLE = meta.table
-  const AUDIT = auditFieldsOf(meta)
   const label = meta.label ?? meta.permissionLabel
   const parentLabel = parentMeta.label ?? parentMeta.permissionLabel
   const notFound = options.notFound ?? `${label}不存在`
@@ -224,7 +223,6 @@ export function createStandardChildService<TItem extends StandardItem = Standard
   })
   const stampedColumns = new Set(inheritFields.map((f) => f.dbColumn))
   const writable = writableFields(meta, stampedColumns)
-  const writableByApi = new Map(writable.map((f) => [f.apiName, f]))
   /** 无差异判定的列面：可写列 + 派生列。审计白名单只管审计记录（可写列被 exclude 不得丢写） */
   const WRITE_COLS = [...writable, ...derivedFields].map((f) => f.dbColumn)
 
@@ -232,42 +230,31 @@ export function createStandardChildService<TItem extends StandardItem = Standard
     ? byName(meta.lookup.labelField)
     : (byName('name') ?? byName('label') ?? byName('code') ?? meta.fields.find((f) => f.type === 'string' && !f.calculated))
 
-  const companyField = physicalFields(meta).find((f) => f.dbColumn === 'company_id')
+  // 子行公司列是母单（判定归宿根）公司列的镜像带入：列名由根 authz 绑定派生，不用字面量。
+  // 根无 company（global 归宿）或子行未带入该列（如工单组件/工艺/副产物）→ 无公司归属
+  const rootCompany = parentTarget.root.company
+  const companyField = rootCompany
+    ? physicalFields(meta).find((f) => f.dbColumn === rootCompany.column)
+    : undefined
 
-  const selectCols = sql.join(physicalFields(meta).map((f) => sql.id(f.dbColumn)))
-  const SELECT = projection?.selectExtra ? sql`SELECT ${selectCols}, ${projection.selectExtra}` : sql`SELECT ${selectCols}`
-  const SOURCE = projection?.source ?? sql` FROM ${sql.id(TABLE)}`
-  const ALIAS = projection?.alias ?? TABLE
-  const defaultOrder = options.defaultOrder ?? sql`"idx" ASC, "id" ASC`
-
-  function mapRowFull(row: Record<string, unknown>): TItem {
-    const base = mapRow(meta, row)
-    if (projection?.mapExtra) Object.assign(base, projection.mapExtra(row))
-    return base as TItem
-  }
-
-  function recordLabel(item: Record<string, unknown>): string | null {
-    if (options.recordLabel) return options.recordLabel(item)
-    if (!labelField) return null
-    const value = item[labelField.apiName]
-    return value === null || value === undefined ? null : String(value)
-  }
-
-  function auditCompanyId(item: Record<string, unknown>): string | null {
-    if (!companyField) return null
-    const value = item[companyField.apiName]
-    return value === null || value === undefined ? null : String(value)
-  }
-
-  function normalizeInput(input: Record<string, unknown>): Record<string, unknown> {
-    const out: Record<string, unknown> = {}
-    for (const [key, value] of Object.entries(input)) {
-      const field = writableByApi.get(key)
-      if (!field || value === undefined) continue
-      out[key] = value === null ? null : normalizeWire(field, value)
-    }
-    return out
-  }
+  const access = createRecordAccess<TItem>({
+    db,
+    meta,
+    target,
+    label,
+    notFound,
+    writeErrors,
+    projection,
+    defaultOrder: options.defaultOrder ?? sql`"idx" ASC, "id" ASC`,
+    companyField,
+    labelField,
+    recordLabel: options.recordLabel,
+    extraWhere: options.extraWhere,
+    writable,
+    insertFields: [...inheritFields, ...derivedFields],
+    updateFields: derivedFields,
+    writeCols: WRITE_COLS,
+  })
 
   /** 锁母单（授权 + 状态门）：行编辑与并发路径的公共前置 */
   async function lockParent(trx: TrxHandle, permit: Permit, parentId: string): Promise<Record<string, unknown>> {
@@ -302,245 +289,71 @@ export function createStandardChildService<TItem extends StandardItem = Standard
     return mapRow(meta, result.rows[0]!) as TItem
   }
 
-  function resolveExtraWhere(
-    permit: Permit,
-    alias: string,
-    query: Partial<ListQuery> & Record<string, unknown> = {},
-  ): { where: RawBuilder<unknown> | null; query: Partial<ListQuery> } {
-    if (!options.extraWhere) return { where: null, query }
-    const result = options.extraWhere({ permit, query, alias })
-    if (!result) return { where: null, query }
-    return {
-      where: result.where ?? null,
-      query: result.query ?? query,
-    }
-  }
-
-  /** 投影单条（get 与写后重载共用） */
-  async function loadProjected(handle: DbHandle, permit: Permit, id: string): Promise<TItem> {
-    const { where: extraWhere } = resolveExtraWhere(permit, ALIAS)
-    return loadAuthorizedFrom({
-      db: handle,
-      permit,
-      target,
-      alias: ALIAS,
-      source: SOURCE,
-      select: SELECT,
-      id,
-      mapRow: mapRowFull,
-      notFoundMessage: notFound,
-      extraWhere,
-    })
-  }
-
-  /** 写后返回值：有投影则按投影重载（同事务），无投影直接映射 RETURNING 行 */
-  async function reload(trx: TrxHandle, permit: Permit, fallback: TItem): Promise<TItem> {
-    if (!projection) return fallback
-    return loadProjected(trx, permit, fallback.id)
-  }
-
-  async function get(permit: Permit, id: string): Promise<TItem> {
-    return getOn(db, permit, id)
-  }
-
-  async function getOn(handle: DbHandle, permit: Permit, id: string): Promise<TItem> {
-    if (projection) {
-      return loadProjected(handle, permit, id)
-    }
-    const { where: extraWhere } = resolveExtraWhere(permit, TABLE)
-    const row = await loadAuthorized({
-      db: handle,
-      permit,
-      target,
-      table: TABLE,
-      id,
-      notFoundMessage: notFound,
-      extraWhere,
-    })
-    return mapRow(meta, row as Record<string, unknown>) as TItem
-  }
-
   /**
    * 聚合装载：母下全量子行（无 LIMIT）。
    * 投影与 get/list 共用 SELECT/SOURCE/mapRowFull；不走 listAuthorized 分页。
    */
   async function listByParentOn(handle: DbHandle, parentId: string): Promise<TItem[]> {
     const result = await sql<Record<string, unknown>>`
-      ${SELECT}${SOURCE}
-      WHERE ${ident(ALIAS)}.${ident(fkField!.dbColumn)} = ${parentId}::uuid
-      ORDER BY ${defaultOrder}
+      ${access.SELECT}${access.SOURCE}
+      WHERE ${ident(access.ALIAS)}.${ident(fkField!.dbColumn)} = ${parentId}::uuid
+      ORDER BY ${access.defaultOrder}
     `.execute(handle)
-    return result.rows.map((row) => mapRowFull(row))
+    return result.rows.map((row) => access.mapRowFull(row))
   }
 
-  async function list(permit: Permit, query: Partial<ListQuery>) {
-    const resolved = resolveExtraWhere(
-      permit,
-      ALIAS,
-      query as Partial<ListQuery> & Record<string, unknown>,
-    )
-    return listAuthorized<TItem>({
-      db,
-      permit,
-      target,
-      alias: ALIAS,
-      resource: meta,
-      source: SOURCE,
-      select: SELECT,
-      defaultOrder,
-      query: resolved.query,
-      extraWhere: resolved.where,
-      mapRow: mapRowFull,
-    })
+  // —— 写闸门：锁母单（授权 + 状态门）→ 带入列 → 锁行 ——
+  const gate: RecordWriteGate<TItem, { parent: Record<string, unknown> }> = {
+    async prepareCreate(trx, permit, draft) {
+      const parentId = draft[fkField!.apiName]
+      if (typeof parentId !== 'string' || !parentId) {
+        throw ApiError.validation(`${label}参数不合法`, { [fkField!.apiName]: ['不能为空'] })
+      }
+      const parentWire = await lockParent(trx, permit, parentId)
+      for (const field of inheritFields) {
+        draft[field.apiName] = parentWire[field.apiName]
+      }
+      return { parent: parentWire }
+    },
+    async lockForUpdate(trx, permit, id) {
+      const parentWire = await parentOf(trx, permit, id)
+      const before = await lockRow(trx, id)
+      return { before, context: { parent: parentWire } }
+    },
   }
 
-  async function insertRow(trx: TrxHandle, draft: Record<string, unknown>): Promise<TItem> {
-    const cols: RawBuilder<unknown>[] = []
-    const vals: RawBuilder<unknown>[] = []
-    for (const field of writable) {
-      const value = draft[field.apiName]
-      if (value === undefined) continue
-      cols.push(sql.id(field.dbColumn))
-      vals.push(sql`${toDbValue(field, value)}`)
-    }
-    for (const field of [...inheritFields, ...derivedFields]) {
-      const value = draft[field.apiName]
-      if (value === undefined) continue
-      cols.push(sql.id(field.dbColumn))
-      vals.push(sql`${toDbValue(field, value)}`)
-    }
-    const result = await sql`
-      INSERT INTO ${sql.id(TABLE)} (${sql.join(cols)}) VALUES (${sql.join(vals)}) RETURNING *
-    `.execute(trx)
-    return mapRow(meta, result.rows[0] as Record<string, unknown>) as TItem
-  }
-
-  async function createInTx(trx: TrxHandle, permit: Permit, input: Record<string, unknown>): Promise<TItem> {
-    const draft = normalizeInput(input)
-    const parentId = draft[fkField!.apiName]
-    if (typeof parentId !== 'string' || !parentId) {
-      throw ApiError.validation(`${label}参数不合法`, { [fkField!.apiName]: ['不能为空'] })
-    }
-    const parentWire = await lockParent(trx, permit, parentId)
-    for (const field of inheritFields) {
-      draft[field.apiName] = parentWire[field.apiName]
-    }
-    hooks.validate?.({ action: 'create', permit, draft, parent: parentWire })
-    await hooks.beforeWrite?.(trx, { action: 'create', permit, draft, parent: parentWire })
-    let item: TItem
-    try {
-      item = await insertRow(trx, draft)
-    } catch (err) {
-      throw mapWriteError(err, `保存${label}失败`, writeErrors)
-    }
-    const projected = await reload(trx, permit, item)
-    await writeAudit(trx, permit.actor, {
-      resource: TABLE,
-      recordId: item.id,
-      recordLabel: recordLabel(projected),
-      actionType: 'create',
-      actionName: 'create',
-      companyId: auditCompanyId(item),
-      changes: auditCreated(snapshot(meta, item, AUDIT), AUDIT),
-      sensitiveFields: meta.audit?.sensitiveFields,
-    })
-    await hooks.afterWrite?.(trx, { action: 'create', permit, item, parent: parentWire })
-    return projected
-  }
+  const pipeline = createRecordWritePipeline(access, {
+    gate,
+    hooks,
+    // 派生列在 beforeWrite 充实（物料快照等），须先充实再按 WRITE_COLS 判落库
+    beforeWriteBeforeDiff: true,
+    // 审计 record_label 取投影后记录（子行名称在 join 引用上），写后返回值审计前重载
+    auditLabelFromProjection: true,
+  })
 
   async function create(permit: Permit, input: Record<string, unknown>): Promise<TItem> {
-    return withTx(db, (trx) => createInTx(trx, permit, input))
-  }
-
-  async function updateInTx(
-    trx: TrxHandle,
-    permit: Permit,
-    id: string,
-    patch: Record<string, unknown>,
-  ): Promise<TItem> {
-    const parentWire = await parentOf(trx, permit, id)
-    const before = await lockRow(trx, id)
-    const draft: Record<string, unknown> = { ...before, ...normalizeInput(patch) }
-    hooks.validate?.({ action: 'update', permit, draft, parent: parentWire, before })
-    // beforeWrite 先充实派生列，再按 WRITE_COLS 判落库——审计 exclude 不得短路丢写
-    await hooks.beforeWrite?.(trx, { action: 'update', permit, draft, parent: parentWire, before })
-    const writeChanges = auditDiff(
-      snapshot(meta, before, WRITE_COLS),
-      snapshot(meta, draft, WRITE_COLS),
-      WRITE_COLS,
-    )
-    if (Object.keys(writeChanges).length === 0) return reload(trx, permit, before)
-    const changes = auditDiff(snapshot(meta, before, AUDIT), snapshot(meta, draft, AUDIT), AUDIT)
-    const sets = [...writable, ...derivedFields].map(
-      (f) => sql`${sql.id(f.dbColumn)} = ${toDbValue(f, draft[f.apiName])}`,
-    )
-    sets.push(sql`updated_at = (now() AT TIME ZONE 'utc')`)
-    let item: TItem
-    try {
-      const result = await sql`UPDATE ${sql.id(TABLE)} SET ${sql.join(sets)} WHERE id = ${id}::uuid RETURNING *`.execute(trx)
-      item = mapRow(meta, result.rows[0] as Record<string, unknown>) as TItem
-    } catch (err) {
-      throw mapWriteError(err, `保存${label}失败`, writeErrors)
-    }
-    const projected = await reload(trx, permit, item)
-    if (Object.keys(changes).length > 0) {
-      await writeAudit(trx, permit.actor, {
-        resource: TABLE,
-        recordId: id,
-        recordLabel: recordLabel(projected),
-        actionType: 'update',
-        actionName: 'update',
-        companyId: auditCompanyId(item),
-        changes,
-        sensitiveFields: meta.audit?.sensitiveFields,
-      })
-    }
-    await hooks.afterWrite?.(trx, { action: 'update', permit, item, parent: parentWire, before })
-    return projected
+    return withTx(db, (trx) => pipeline.createInTx(trx, permit, input))
   }
 
   async function update(permit: Permit, id: string, patch: Record<string, unknown>): Promise<TItem> {
-    return withTx(db, (trx) => updateInTx(trx, permit, id, patch))
-  }
-
-  async function removeInTx(trx: TrxHandle, permit: Permit, id: string): Promise<void> {
-    const parentWire = await parentOf(trx, permit, id)
-    const item = await lockRow(trx, id)
-    // 标签取自投影（引用名在 join 上），须在 DELETE 前取
-    const projected = await reload(trx, permit, item)
-    await hooks.beforeDelete?.(trx, { permit, item, parent: parentWire })
-    try {
-      await sql`DELETE FROM ${sql.id(TABLE)} WHERE id = ${id}::uuid`.execute(trx)
-    } catch (err) {
-      throw mapWriteError(err, `删除${label}失败`, writeErrors)
-    }
-    await writeAudit(trx, permit.actor, {
-      resource: TABLE,
-      recordId: id,
-      recordLabel: recordLabel(projected),
-      actionType: 'destroy',
-      actionName: 'destroy',
-      companyId: auditCompanyId(item),
-      changes: auditDestroyed(snapshot(meta, item, AUDIT), AUDIT),
-      sensitiveFields: meta.audit?.sensitiveFields,
-    })
+    return withTx(db, (trx) => pipeline.updateInTx(trx, permit, id, patch))
   }
 
   async function remove(permit: Permit, id: string): Promise<void> {
-    await withTx(db, (trx) => removeInTx(trx, permit, id))
+    await withTx(db, (trx) => pipeline.removeInTx(trx, permit, id))
   }
 
   return {
-    get,
-    getOn,
-    list,
+    get: access.get,
+    getOn: access.getOn,
+    list: access.list,
     listByParentOn,
     create,
-    createInTx,
+    createInTx: pipeline.createInTx,
     update,
-    updateInTx,
+    updateInTx: pipeline.updateInTx,
     remove,
-    removeInTx,
+    removeInTx: pipeline.removeInTx,
     meta,
     stampedColumns,
   }

@@ -9,6 +9,7 @@
 import { decimal } from '@synie/shared'
 import { toDateOnly } from '~/db/dates.ts'
 import { enumDbValue } from '../meta/enum-storage.ts'
+import type { AuthzBinding } from '../meta/resource-authz.ts'
 import type { FieldMeta, ResourceMeta } from '../meta/types.ts'
 
 /** 平台管理列：任何资源都不可经 wire 写入 */
@@ -17,6 +18,21 @@ const MANAGED_COLUMNS = new Set(['id', 'inserted_at', 'updated_at'])
 /** 物理字段（排除计算投影列与仅打印列） */
 export function physicalFields(meta: ResourceMeta): FieldMeta[] {
   return meta.fields.filter((f) => !f.calculated && !f.printOnly)
+}
+
+/**
+ * 公司列唯一解析点：由 authz 绑定派生（fail-closed），禁止 `company_id` 字面量查找。
+ * 绑定无 company（global 资源）→ undefined；绑定列无对应字段即 seal 漏拦（不变量破坏），抛错。
+ * 注意：via 子行不适用本助手——子行公司列是母单绑定列的镜像带入，由 child.ts 按
+ * 母单归宿绑定派生并容忍缺列（子行可不带入公司列）。
+ */
+export function companyFieldOf(meta: ResourceMeta, binding: AuthzBinding): FieldMeta | undefined {
+  if (!binding.company) return undefined
+  const field = physicalFields(meta).find((f) => f.dbColumn === binding.company!.column)
+  if (!field) {
+    throw new Error(`标准派生：资源 ${binding.resource} 公司列 ${binding.company.column} 无对应字段`)
+  }
+  return field
 }
 
 /**
@@ -31,6 +47,7 @@ export function writableFields(meta: ResourceMeta, stampedColumns: ReadonlySet<s
 /** wire → db 值（schema 已完成类型/格式校验；此处只做规范化） */
 export function toDbValue(field: FieldMeta, value: unknown): unknown {
   if (value === null || value === undefined) return null
+  if (field.codec) return field.codec.toSnapshot(value)
   switch (field.type) {
     case 'enum':
       // 库内大小写按 meta 声明（缺省小写）；与筛选编译共用同一换算，见 enum-storage.ts
@@ -51,6 +68,7 @@ export function toDbValue(field: FieldMeta, value: unknown): unknown {
 /** db → wire 值 */
 export function fromDbValue(field: FieldMeta, value: unknown): unknown {
   if (value === null || value === undefined) return null
+  if (field.codec) return field.codec.fromDb(value)
   switch (field.type) {
     case 'enum':
       return String(value).toUpperCase()

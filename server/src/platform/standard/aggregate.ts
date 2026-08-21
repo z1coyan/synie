@@ -35,7 +35,6 @@
  * platform 禁止 import `~/modules/*`。
  */
 import type { Kysely } from 'kysely'
-import { loadAuthorized } from '~/db/load.ts'
 import { withReadSnapshot, withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
@@ -44,7 +43,8 @@ import type { Registry } from '~/platform/meta/registry.ts'
 import type { FieldMeta, ResourceMeta } from '~/platform/meta/types.ts'
 import { withIndexedFields } from '~/platform/posting/text.ts'
 import type { StandardChildService } from './child.ts'
-import { mapRow, physicalFields } from './fields.ts'
+import { companyFieldOf } from './fields.ts'
+import { loadBareAuthorized } from './load-bare.ts'
 import type { StandardItem, StandardService } from './service.ts'
 
 /** 聚合子树节点：collection 键 + 已装配 child service + 可选孙级 */
@@ -262,7 +262,7 @@ export function createAggregateService(options: AggregateServiceOptions): Aggreg
   const validationMessage = options.validationMessage ?? `${label}草稿参数不合法`
   const runtimes = buildRuntime(options.children, headMeta.name, headMeta.name)
 
-  const companyField = physicalFields(headMeta).find((f) => f.dbColumn === 'company_id')
+  const companyField = companyFieldOf(headMeta, headTarget.root)
 
   /** 写前裸表锁：FOR UPDATE 不能走投影子查询 */
   async function lockHead(
@@ -270,16 +270,15 @@ export function createAggregateService(options: AggregateServiceOptions): Aggreg
     permit: Permit,
     id: string,
   ): Promise<StandardItem> {
-    const row = await loadAuthorized({
-      db: handle,
+    return loadBareAuthorized<StandardItem>({
+      handle,
       permit,
       target: headTarget,
-      table: headMeta.table,
+      meta: headMeta,
       id,
       forUpdate: true,
       notFoundMessage: notFound,
     })
-    return mapRow(headMeta, row as Record<string, unknown>) as StandardItem
   }
 
   /** 母下子行（投影口径；无分页）——索引/删行/装载共用 */
@@ -540,5 +539,31 @@ export function createAggregateService(options: AggregateServiceOptions): Aggreg
     replaceDraft,
     head,
     children: options.children,
+  }
+}
+
+/**
+ * 合同/wire 适配（D8 后续）：模块侧 `_aggregateForContract` 曾经的
+ * 「toPayload + present 三方法包装」同形拷贝收进内核——模块只在装配期给两个函数：
+ * 领域/合同输入 → 聚合 wire payload（no→returnNo、来源锚点并集收窄等），
+ * 聚合 wire 草稿 → 呈现 DTO。基础聚合行为不变。
+ */
+export interface AggregateWireAdapter {
+  toPayload: (input: Record<string, unknown>) => Record<string, unknown>
+  present: (draft: Record<string, unknown>) => Record<string, unknown>
+}
+
+export function withAggregateWireAdapter(
+  base: AggregateService,
+  adapter: AggregateWireAdapter,
+): AggregateService {
+  return {
+    loadDraft: async (permit, id) => adapter.present(await base.loadDraft(permit, id)),
+    createDraft: async (permit, input) =>
+      adapter.present(await base.createDraft(permit, adapter.toPayload(input))),
+    replaceDraft: async (permit, id, input) =>
+      adapter.present(await base.replaceDraft(permit, id, adapter.toPayload(input))),
+    head: base.head,
+    children: base.children,
   }
 }

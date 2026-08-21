@@ -46,7 +46,7 @@ src/
 │   ├── auth/           # 登录/JWT/限流/Actor 装配
 │   ├── authz/          # 权限码通配匹配、公司数据范围
 │   ├── meta/           # ResourceMeta 权威模型 + Registry + meta 端点
-│   ├── standard/       # 标准动作 + 聚合草稿（service/child/aggregate + 合同套件）
+│   ├── standard/       # 标准动作 + 聚合草稿（service/child/record/aggregate/load-bare + 合同套件）
 │   ├── posting/        # 跨域单据共享：material-qty/warehouse/controlled-projection/text/account-currency（无 skeleton）
 │   ├── audit|numbering|settings|files|printing|todo|setup/
 ├── engines/            # gl / inventory
@@ -96,6 +96,6 @@ db/
      「调用方已鉴权」约定与 null-actor 分支。
    - **错误语义唯一规则**：动作码不满足 → `forbidden`；行级范围不命中（公司/
      部门/本人）→ `not_found`（不泄露存在性）。
-   - 扫荡期过渡：`platform/authz/actor.ts` 的旧原语全部 `@deprecated`，
-     存量模块在封路豁免清单里逐批清零（工单 09-12）。
+   - 扫荡期过渡层（`platform/authz/actor.ts`、`db/list.ts` 的 companyScopeWhere）已随
+     工单 09-12 清零删除；`modules/**` 零旧原语由 `authz-firewall.test.ts` 封路防回退。
 9. 用户可见文案一律中文；代码标识符英文。

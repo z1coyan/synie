@@ -1,4 +1,5 @@
 import type { FormMeta, GridColumnRef, GridEnumOption } from '@synie/shared'
+import type { RawBuilder } from 'kysely'
 
 /**
  * 权威 Meta 模型（服务端内部，宽于 wire；wire DTO 类型在 @synie/shared）。
@@ -17,6 +18,19 @@ export type FieldType =
   | 'uuid'
   | 'json'
   | 'fk'
+
+/**
+ * 物理列编解码（仅标准动作内核写管线消费）：驱动/通用类型映射表达不了的列型
+ * （如 jsonb[]，绑参会被驱动把元素再 JSON 编码成标量）按字段声明唯一拷贝。
+ * - fromDb：db 行值 → wire 值
+ * - toSnapshot：wire 值 → 审计快照/无差异 diff 的规范形
+ * - toSql：wire 值 → INSERT/UPDATE 的写入 SQL 片段
+ */
+export interface FieldDbCodec {
+  fromDb: (value: unknown) => unknown
+  toSnapshot: (value: unknown) => unknown
+  toSql: (value: unknown) => RawBuilder<unknown>
+}
 
 export interface FieldMeta {
   /** 内部名（snake_case 属性名） */
@@ -57,6 +71,8 @@ export interface FieldMeta {
   printOnly?: boolean
   /** 多态外键在打印目录中只暴露原始 ID 列，不做 party.name 式展开 */
   printRawId?: boolean
+  /** 物理列编解码（见 FieldDbCodec）；仅内核写管线消费，不进 wire/meta 投影 */
+  codec?: FieldDbCodec
 }
 
 export interface ActionMeta {

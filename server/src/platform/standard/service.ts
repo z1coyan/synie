@@ -8,6 +8,11 @@
  * 对齐 numbering.nextInTx；外层事务由调用方持有，Permit 仍是唯一入场券；
  * 不采用可选 trx 参数重载）。
  *
+ * 本文件是瘦装配器：记录读侧与写管线骨架（load → normalize → hooks → diff →
+ * INSERT/UPDATE/DELETE → mapWriteError → 审计三型 → reload）与 child.ts 共享唯一拷贝
+ * （record.ts），以写入闸门（公司可写校验 + 树锁/授权锁行）与列集合参数化；
+ * 本文件只留 root 真差异——tree / workflow / numbering / transition / 批量。
+ *
  * 平台契约（与手写服务逐字对齐，路由不可区分）：
  * - 授权：列表 listAuthorized、单条/写前 loadAuthorized(forUpdate)、create 走
  *   assertCompanyWritable + ownershipStamp；服务只收 Permit
@@ -37,18 +42,17 @@ import type { ListQuery } from '@synie/shared'
 import { sql, type RawBuilder } from 'kysely'
 import type { Kysely } from 'kysely'
 import { mapWriteError, type PgWriteMapping } from '~/db/dberr.ts'
-import { listAuthorized } from '~/db/list.ts'
-import { assertCompanyWritable, loadAuthorized, loadAuthorizedFrom, ownershipStamp } from '~/db/load.ts'
+import { assertCompanyWritable, ownershipStamp } from '~/db/load.ts'
 import { withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import { auditFieldsOf } from '~/platform/audit/spec.ts'
-import { auditCreated, auditDestroyed, auditDiff, writeAudit } from '~/platform/audit/write.ts'
+import { auditDiff, writeAudit } from '~/platform/audit/write.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
-import type { FieldMeta, ResourceMeta } from '~/platform/meta/types.ts'
+import type { ResourceMeta } from '~/platform/meta/types.ts'
 import { runeLen } from '~/platform/posting/text.ts'
-import { fromDbValue, mapRow, physicalFields, snapshot, toDbValue, writableFields } from './fields.ts'
+import { companyFieldOf, mapRow, physicalFields, snapshot, toDbValue, writableFields } from './fields.ts'
+import { createRecordAccess, createRecordWritePipeline, type RecordWriteGate } from './record.ts'
 
 export interface StandardItem {
   id: string
@@ -190,6 +194,8 @@ export interface StandardServiceOptions {
   resource: string
   /** 缺省 `${label}不存在` */
   notFound?: string
+  /** 审计 record_label 覆盖；缺省镜像 lookup 缺省（name → label → code → 首个字符串字段） */
+  recordLabel?: (item: Record<string, unknown>) => string | null
   /** 列表缺省排序；缺省 inserted_at DESC, id ASC */
   defaultOrder?: RawBuilder<unknown>
   /** 唯一/外键冲突 → 领域文案 */
@@ -242,11 +248,6 @@ export interface StandardService<TItem extends StandardItem = StandardItem> {
   readonly stampedColumns: ReadonlySet<string>
 }
 
-/** wire 值规范化往返（enum 大小写、decimal toFixed），保证 diff 与库内一致 */
-function normalizeWire(field: FieldMeta, value: unknown): unknown {
-  return fromDbValue(field, toDbValue(field, value))
-}
-
 /** 转移盖章便捷式：audited_at/audited_by_id（全站单据盖章列的既有口径） */
 export function auditStamp(permit: Permit): Record<string, unknown> {
   return {
@@ -279,7 +280,6 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
   if (binding.dept?.mode === 'stamped') stampedColumns.add(binding.dept.column)
 
   const TABLE = meta.table
-  const AUDIT = auditFieldsOf(meta)
   const label = meta.label ?? meta.permissionLabel
   const notFound = options.notFound ?? `${label}不存在`
   const writeErrors = options.writeErrors ?? []
@@ -294,12 +294,7 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
     ? byName(meta.lookup.labelField)
     : (byName('name') ?? byName('label') ?? byName('code') ?? meta.fields.find((f) => f.type === 'string' && !f.calculated))
 
-  const companyField = binding.company
-    ? physicalFields(meta).find((f) => f.dbColumn === binding.company!.column)
-    : undefined
-  if (binding.company && !companyField) {
-    throw new Error(`标准派生：资源 ${resource} 公司列 ${binding.company.column} 无对应字段`)
-  }
+  const companyField = companyFieldOf(meta, binding)
 
   // —— 工作流装配 ——
   const statusField = workflow ? (byName(workflow.statusField ?? 'status') ?? null) : null
@@ -321,123 +316,22 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
     throw new Error(`标准派生：资源 ${resource} 编号字段 ${options.numbering.field} 不存在`)
   }
 
-  const selectCols = sql.join(physicalFields(meta).map((f) => sql.id(f.dbColumn)))
-  const SELECT = projection?.selectExtra ? sql`SELECT ${selectCols}, ${projection.selectExtra}` : sql`SELECT ${selectCols}`
-  const SOURCE = projection?.source ?? sql` FROM ${sql.id(TABLE)}`
-  const ALIAS = projection?.alias ?? TABLE
-  const defaultOrder = options.defaultOrder ?? sql`"inserted_at" DESC, "id" ASC`
-
-  function mapRowFull(row: Record<string, unknown>): TItem {
-    const base = mapRow(meta, row)
-    if (projection?.mapExtra) Object.assign(base, projection.mapExtra(row))
-    return base as TItem
-  }
-
-  function recordLabel(item: Record<string, unknown>): string | null {
-    if (!labelField) return null
-    const value = item[labelField.apiName]
-    return value === null || value === undefined ? null : String(value)
-  }
-
-  function auditCompanyId(item: Record<string, unknown>): string | null {
-    if (!companyField) return null
-    const value = item[companyField.apiName]
-    return value === null || value === undefined ? null : String(value)
-  }
-
-  /** patch/input → wire 规范形（只收可写字段的已提供键；schema 已挡未知键与类型） */
-  function normalizeInput(input: Record<string, unknown>): Record<string, unknown> {
-    const out: Record<string, unknown> = {}
-    for (const [key, value] of Object.entries(input)) {
-      const field = writableByApi.get(key)
-      if (!field || value === undefined) continue
-      out[key] = value === null ? null : normalizeWire(field, value)
-    }
-    return out
-  }
-
-  /**
-   * 解析领域行筛选：list 传入调用方 query；load/写前锁传空 query。
-   * 返回 where 片段与（可能被改写的）list query。
-   */
-  function resolveExtraWhere(
-    permit: Permit,
-    alias: string,
-    query: Partial<ListQuery> & Record<string, unknown> = {},
-  ): { where: RawBuilder<unknown> | null; query: Partial<ListQuery> } {
-    if (!options.extraWhere) return { where: null, query }
-    const result = options.extraWhere({ permit, query, alias })
-    if (!result) return { where: null, query }
-    return {
-      where: result.where ?? null,
-      query: result.query ?? query,
-    }
-  }
-
-  /** 裸表行加载（锁路径）；返回物理字段 wire 形（无投影列） */
-  async function loadBare(handle: DbHandle, permit: Permit, id: string, forUpdate: boolean) {
-    const { where: extraWhere } = resolveExtraWhere(permit, TABLE)
-    const row = await loadAuthorized({
-      db: handle,
-      permit,
-      target,
-      table: TABLE,
-      id,
-      forUpdate,
-      notFoundMessage: notFound,
-      extraWhere,
-    })
-    return mapRow(meta, row as Record<string, unknown>) as TItem
-  }
-
-  /** 投影单条（get 与写后重载共用） */
-  async function loadProjected(handle: DbHandle, permit: Permit, id: string): Promise<TItem> {
-    const { where: extraWhere } = resolveExtraWhere(permit, ALIAS)
-    return loadAuthorizedFrom({
-      db: handle,
-      permit,
-      target,
-      alias: ALIAS,
-      source: SOURCE,
-      select: SELECT,
-      id,
-      mapRow: mapRowFull,
-      notFoundMessage: notFound,
-      extraWhere,
-    })
-  }
-
-  /** 写后返回值：有投影则按投影重载（同事务），无投影直接映射 RETURNING 行 */
-  async function reload(trx: TrxHandle, permit: Permit, fallback: TItem): Promise<TItem> {
-    if (!projection) return fallback
-    return loadProjected(trx, permit, fallback.id)
-  }
-
-  async function get(permit: Permit, id: string): Promise<TItem> {
-    return getOn(db, permit, id)
-  }
-
-  async function getOn(handle: DbHandle, permit: Permit, id: string): Promise<TItem> {
-    if (projection) return loadProjected(handle, permit, id)
-    return loadBare(handle, permit, id, false)
-  }
-
-  async function list(permit: Permit, query: Partial<ListQuery>) {
-    const resolved = resolveExtraWhere(permit, ALIAS, query as Partial<ListQuery> & Record<string, unknown>)
-    return listAuthorized<TItem>({
-      db,
-      permit,
-      target,
-      alias: ALIAS,
-      resource: meta,
-      source: SOURCE,
-      select: SELECT,
-      defaultOrder,
-      query: resolved.query,
-      extraWhere: resolved.where,
-      mapRow: mapRowFull,
-    })
-  }
+  const access = createRecordAccess<TItem>({
+    db,
+    meta,
+    target,
+    label,
+    notFound,
+    writeErrors,
+    projection,
+    defaultOrder: options.defaultOrder ?? sql`"inserted_at" DESC, "id" ASC`,
+    companyField,
+    labelField,
+    recordLabel: options.recordLabel,
+    extraWhere: options.extraWhere,
+    writable,
+    writeCols: WRITE_COLS,
+  })
 
   // —— 树形写侧 ——
 
@@ -507,120 +401,6 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
     return `${parentPath ?? '/'}${id}/`
   }
 
-  async function insertRow(
-    trx: TrxHandle,
-    draft: Record<string, unknown>,
-    permit: Permit,
-    extraCols: Record<string, unknown>,
-  ): Promise<TItem> {
-    const cols: RawBuilder<unknown>[] = []
-    const vals: RawBuilder<unknown>[] = []
-    for (const field of writable) {
-      const value = draft[field.apiName]
-      if (value === undefined) continue
-      cols.push(sql.id(field.dbColumn))
-      vals.push(sql`${toDbValue(field, value)}`)
-    }
-    for (const [column, value] of Object.entries({ ...ownershipStamp(permit, target), ...extraCols })) {
-      cols.push(sql.id(column))
-      vals.push(sql`${value}`)
-    }
-    const stmt =
-      cols.length === 0
-        ? sql`INSERT INTO ${sql.id(TABLE)} DEFAULT VALUES RETURNING *`
-        : sql`INSERT INTO ${sql.id(TABLE)} (${sql.join(cols)}) VALUES (${sql.join(vals)}) RETURNING *`
-    const result = await stmt.execute(trx)
-    return mapRow(meta, result.rows[0] as Record<string, unknown>) as TItem
-  }
-
-  async function createInTx(trx: TrxHandle, permit: Permit, input: Record<string, unknown>): Promise<TItem> {
-    // 编号一律系统生成：readonly 使 wire 层拿不到编号键；服务层调用方传非空值同样 400，
-    // 不做静默丢弃（ADR 2026-08-06-system-generated-numbering：编号由系统生成,不接受手填）
-    if (options.numbering && numberField) {
-      const provided = input[numberField.apiName]
-      if (provided !== undefined && provided !== null && String(provided).trim() !== '') {
-        throw ApiError.validation('编号由系统生成,不接受手填', {
-          [numberField.apiName]: ['编号由系统生成,不接受手填'],
-        })
-      }
-    }
-    const draft = normalizeInput(input)
-    if (companyField) {
-      const companyId = draft[companyField.apiName]
-      if (typeof companyId !== 'string' || !companyId) {
-        throw ApiError.validation(`${label}参数不合法`, { [companyField.apiName]: ['不能为空'] })
-      }
-      assertCompanyWritable(permit, companyId, notFound)
-    }
-    hooks.validate?.({ action: 'create', permit, draft })
-    if (tree) {
-      await lockTree(trx, companyField ? String(draft[companyField.apiName]) : null)
-    }
-    await hooks.beforeWrite?.(trx, { action: 'create', permit, draft })
-    const extraCols: Record<string, unknown> = {}
-    if (tree) {
-      const parent = await resolveParent(trx, draft, null, null)
-      if (tree.pathColumn) {
-        const id = crypto.randomUUID()
-        extraCols.id = id
-        extraCols[tree.pathColumn] = childPath(parent?.path ?? null, id)
-      }
-    }
-    if (hooks.insertColumns) Object.assign(extraCols, hooks.insertColumns({ action: 'create', permit, draft }))
-    if (options.numbering && numberField) {
-      // 编号一律系统生成（ADR 2026-08-06-system-generated-numbering）：
-      // wire 层 readonly 已挡手填；内部调用方传非空值同样 400，不做静默覆盖
-      const current = draft[numberField.apiName]
-      if (current !== undefined && current !== null && String(current).trim() !== '') {
-        throw ApiError.validation('编号由系统生成,不接受手填', {
-          [numberField.apiName]: ['编号由系统生成,不接受手填'],
-        })
-      }
-      const values: Record<string, unknown> = {}
-      for (const field of physicalFields(meta)) {
-        const v = draft[field.apiName]
-        if (v !== undefined) values[field.dbColumn] = toDbValue(field, v)
-      }
-      const assigned = await options.numbering.service.nextInTx(trx, {
-        resource: meta.permissionPrefix,
-        values,
-      })
-      if (numberField.maxLength !== undefined && runeLen(assigned) > numberField.maxLength) {
-        throw ApiError.validation(`${label}参数不合法`, {
-          [numberField.apiName]: [`最多 ${numberField.maxLength} 个字符`],
-        })
-      }
-      draft[numberField.apiName] = assigned
-      // 编号字段声明 readonly（wire 不可写）时不在可写列集，须经 extraCols 落库（与树 path 同形态）；
-      // 可写编号字段（个别夹具/过渡资源）已随 draft 进可写列，勿重复
-      if (!writableByApi.has(numberField.apiName)) {
-        extraCols[numberField.dbColumn] = assigned
-      }
-    }
-    let item: TItem
-    try {
-      item = await insertRow(trx, draft, permit, extraCols)
-    } catch (err) {
-      throw mapWriteError(err, `保存${label}失败`, writeErrors)
-    }
-    await writeAudit(trx, permit.actor, {
-      resource: TABLE,
-      recordId: item.id,
-      recordLabel: recordLabel(item),
-      actionType: 'create',
-      actionName: 'create',
-      companyId: auditCompanyId(item),
-      changes: auditCreated(snapshot(meta, item, AUDIT), AUDIT),
-      sensitiveFields: meta.audit?.sensitiveFields,
-    })
-    await hooks.afterWrite?.(trx, { action: 'create', permit, item })
-    return reload(trx, permit, item)
-  }
-
-  async function create(permit: Permit, input: Record<string, unknown>): Promise<TItem> {
-    return withTx(db, (trx) => createInTx(trx, permit, input))
-  }
-
   /** 工作流可变状态门：非可变状态的改/删一律 conflict */
   function assertMutable(before: Record<string, unknown>): void {
     if (!workflow || !statusField) return
@@ -640,117 +420,141 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
     return String(result.rows[0]!.path)
   }
 
-  async function updateInTx(trx: TrxHandle, permit: Permit, id: string, patch: Record<string, unknown>): Promise<TItem> {
-    if (tree && companyField) {
-      // 树锁先于行锁（对齐既有加锁顺序）；公司列 createOnly 不会变，无锁读安全
-      const result = await sql<Record<string, unknown>>`
-        SELECT ${sql.id(companyField.dbColumn)} AS company FROM ${sql.id(TABLE)} WHERE id = ${id}::uuid
-      `.execute(trx)
-      if (result.rows.length === 0) throw new ApiError('not_found', notFound)
-      await lockTree(trx, String(result.rows[0]!.company))
-    } else if (tree) {
-      await lockTree(trx, null)
-    }
-    const before = await loadBare(trx, permit, id, true)
-    assertMutable(before)
-    const draft: Record<string, unknown> = { ...before, ...normalizeInput(patch) }
-    hooks.validate?.({ action: 'update', permit, draft, before })
-    const writeChanges = auditDiff(snapshot(meta, before, WRITE_COLS), snapshot(meta, draft, WRITE_COLS), WRITE_COLS)
-    if (Object.keys(writeChanges).length === 0) return reload(trx, permit, before)
-    const changes = auditDiff(snapshot(meta, before, AUDIT), snapshot(meta, draft, AUDIT), AUDIT)
-    await hooks.beforeWrite?.(trx, { action: 'update', permit, draft, before })
+  // —— 写闸门：公司可写校验（create）+ 树锁/授权锁行（update/remove）——
+  const gate: RecordWriteGate<TItem, {}> = {
+    async prepareCreate(_trx, permit, draft) {
+      if (companyField) {
+        const companyId = draft[companyField.apiName]
+        if (typeof companyId !== 'string' || !companyId) {
+          throw ApiError.validation(`${label}参数不合法`, { [companyField.apiName]: ['不能为空'] })
+        }
+        assertCompanyWritable(permit, companyId, notFound)
+      }
+      return {}
+    },
+    async lockForUpdate(trx, permit, id) {
+      if (tree && companyField) {
+        // 树锁先于行锁（对齐既有加锁顺序）；公司列 createOnly 不会变，无锁读安全
+        const result = await sql<Record<string, unknown>>`
+          SELECT ${sql.id(companyField.dbColumn)} AS company FROM ${sql.id(TABLE)} WHERE id = ${id}::uuid
+        `.execute(trx)
+        if (result.rows.length === 0) throw new ApiError('not_found', notFound)
+        await lockTree(trx, String(result.rows[0]!.company))
+      } else if (tree) {
+        await lockTree(trx, null)
+      }
+      const before = await access.loadBare(trx, permit, id, true)
+      return { before, context: {} }
+    },
+  }
 
-    let pathRewrite: { oldPath: string; newPath: string } | null = null
-    if (tree && parentField) {
-      const moved = draft[parentField.apiName] !== before[parentField.apiName]
-      if (moved) {
-        const selfPath = await treePathOf(trx, id)
-        const parent = await resolveParent(trx, draft, id, selfPath)
-        if (tree.pathColumn && selfPath) {
-          pathRewrite = { oldPath: selfPath, newPath: childPath(parent?.path ?? null, id) }
+  const pipeline = createRecordWritePipeline(access, {
+    gate,
+    hooks,
+    assertInput(input) {
+      // 编号一律系统生成：readonly 使 wire 层拿不到编号键；服务层调用方传非空值同样 400，
+      // 不做静默丢弃（ADR 2026-08-06-system-generated-numbering：编号由系统生成,不接受手填）
+      if (options.numbering && numberField) {
+        const provided = input[numberField.apiName]
+        if (provided !== undefined && provided !== null && String(provided).trim() !== '') {
+          throw ApiError.validation('编号由系统生成,不接受手填', {
+            [numberField.apiName]: ['编号由系统生成,不接受手填'],
+          })
         }
       }
-    }
+    },
+    async beforeCreateWrite(trx, draft) {
+      if (tree) {
+        await lockTree(trx, companyField ? String(draft[companyField.apiName]) : null)
+      }
+    },
+    async insertColumns(trx, { permit, draft }) {
+      const extraCols: Record<string, unknown> = { ...ownershipStamp(permit, target) }
+      if (tree) {
+        const parent = await resolveParent(trx, draft, null, null)
+        if (tree.pathColumn) {
+          const id = crypto.randomUUID()
+          extraCols.id = id
+          extraCols[tree.pathColumn] = childPath(parent?.path ?? null, id)
+        }
+      }
+      if (hooks.insertColumns) Object.assign(extraCols, hooks.insertColumns({ action: 'create', permit, draft }))
+      if (options.numbering && numberField) {
+        // 编号一律系统生成（ADR 2026-08-06-system-generated-numbering）：
+        // wire 层 readonly 已挡手填；内部调用方传非空值同样 400，不做静默覆盖
+        const current = draft[numberField.apiName]
+        if (current !== undefined && current !== null && String(current).trim() !== '') {
+          throw ApiError.validation('编号由系统生成,不接受手填', {
+            [numberField.apiName]: ['编号由系统生成,不接受手填'],
+          })
+        }
+        const values: Record<string, unknown> = {}
+        for (const field of physicalFields(meta)) {
+          const v = draft[field.apiName]
+          if (v !== undefined) values[field.dbColumn] = toDbValue(field, v)
+        }
+        const assigned = await options.numbering.service.nextInTx(trx, {
+          resource: meta.permissionPrefix,
+          values,
+        })
+        if (numberField.maxLength !== undefined && runeLen(assigned) > numberField.maxLength) {
+          throw ApiError.validation(`${label}参数不合法`, {
+            [numberField.apiName]: [`最多 ${numberField.maxLength} 个字符`],
+          })
+        }
+        draft[numberField.apiName] = assigned
+        // 编号字段声明 readonly（wire 不可写）时不在可写列集，须经 extraCols 落库（与树 path 同形态）；
+        // 可写编号字段（个别夹具/过渡资源）已随 draft 进可写列，勿重复
+        if (!writableByApi.has(numberField.apiName)) {
+          extraCols[numberField.dbColumn] = assigned
+        }
+      }
+      return extraCols
+    },
+    onLocked: (before) => assertMutable(before),
+    async beforeUpdate(trx, { id, draft, before }) {
+      if (!tree || !parentField) return undefined
+      const moved = draft[parentField.apiName] !== before[parentField.apiName]
+      if (!moved) return undefined
+      const selfPath = await treePathOf(trx, id)
+      const parent = await resolveParent(trx, draft, id, selfPath)
+      if (tree.pathColumn && selfPath) {
+        const pathRewrite = { oldPath: selfPath, newPath: childPath(parent?.path ?? null, id) }
+        // 移动节点即改写整棵子树的物化路径（含自身：oldPath 处的后缀为空串）
+        return async (post: TrxHandle) => {
+          // ::int 必须显式：无类型参数会让 PG 选中 substring(text FROM text) 的正则重载
+          await sql`
+            UPDATE ${sql.id(TABLE)}
+            SET ${sql.id(tree.pathColumn!)} = ${pathRewrite.newPath} || substring(${sql.id(tree.pathColumn!)} FROM ${pathRewrite.oldPath.length + 1}::int),
+                updated_at = (now() AT TIME ZONE 'utc')
+            WHERE ${sql.id(tree.pathColumn!)} LIKE ${pathRewrite.oldPath} || '%'
+          `.execute(post)
+        }
+      }
+      return undefined
+    },
+    async beforeRemove(trx, before) {
+      if (tree && parentField) {
+        const child = await sql<{ id: string }>`
+          SELECT id FROM ${sql.id(TABLE)} WHERE ${sql.id(parentField.dbColumn)} = ${before.id}::uuid LIMIT 1
+        `.execute(trx)
+        if (child.rows.length > 0) {
+          throw new ApiError('conflict', tree.childBlockMessage ?? `存在下级${label},不能删除`)
+        }
+      }
+    },
+  })
 
-    const sets = writable.map((f) => sql`${sql.id(f.dbColumn)} = ${toDbValue(f, draft[f.apiName])}`)
-    sets.push(sql`updated_at = (now() AT TIME ZONE 'utc')`)
-    let item: TItem
-    try {
-      const result = await sql`UPDATE ${sql.id(TABLE)} SET ${sql.join(sets)} WHERE id = ${id}::uuid RETURNING *`.execute(trx)
-      item = mapRow(meta, result.rows[0] as Record<string, unknown>) as TItem
-    } catch (err) {
-      throw mapWriteError(err, `保存${label}失败`, writeErrors)
-    }
-    // 移动节点即改写整棵子树的物化路径（含自身：oldPath 处的后缀为空串）
-    if (pathRewrite && tree?.pathColumn) {
-      // ::int 必须显式：无类型参数会让 PG 选中 substring(text FROM text) 的正则重载
-      await sql`
-        UPDATE ${sql.id(TABLE)}
-        SET ${sql.id(tree.pathColumn)} = ${pathRewrite.newPath} || substring(${sql.id(tree.pathColumn)} FROM ${pathRewrite.oldPath.length + 1}::int),
-            updated_at = (now() AT TIME ZONE 'utc')
-        WHERE ${sql.id(tree.pathColumn)} LIKE ${pathRewrite.oldPath} || '%'
-      `.execute(trx)
-    }
-    if (Object.keys(changes).length > 0) {
-      await writeAudit(trx, permit.actor, {
-        resource: TABLE,
-        recordId: id,
-        recordLabel: recordLabel(item),
-        actionType: 'update',
-        actionName: 'update',
-        companyId: auditCompanyId(item),
-        changes,
-        sensitiveFields: meta.audit?.sensitiveFields,
-      })
-    }
-    await hooks.afterWrite?.(trx, { action: 'update', permit, item, before })
-    return reload(trx, permit, item)
+  async function create(permit: Permit, input: Record<string, unknown>): Promise<TItem> {
+    return withTx(db, (trx) => pipeline.createInTx(trx, permit, input))
   }
 
   async function update(permit: Permit, id: string, patch: Record<string, unknown>): Promise<TItem> {
-    return withTx(db, (trx) => updateInTx(trx, permit, id, patch))
-  }
-
-  async function removeInTx(trx: TrxHandle, permit: Permit, id: string): Promise<void> {
-    if (tree && companyField) {
-      const result = await sql<Record<string, unknown>>`
-        SELECT ${sql.id(companyField.dbColumn)} AS company FROM ${sql.id(TABLE)} WHERE id = ${id}::uuid
-      `.execute(trx)
-      if (result.rows.length === 0) throw new ApiError('not_found', notFound)
-      await lockTree(trx, String(result.rows[0]!.company))
-    } else if (tree) {
-      await lockTree(trx, null)
-    }
-    const item = await loadBare(trx, permit, id, true)
-    assertMutable(item)
-    if (tree && parentField) {
-      const child = await sql<{ id: string }>`
-        SELECT id FROM ${sql.id(TABLE)} WHERE ${sql.id(parentField.dbColumn)} = ${id}::uuid LIMIT 1
-      `.execute(trx)
-      if (child.rows.length > 0) {
-        throw new ApiError('conflict', tree.childBlockMessage ?? `存在下级${label},不能删除`)
-      }
-    }
-    await hooks.beforeDelete?.(trx, { permit, item })
-    try {
-      await sql`DELETE FROM ${sql.id(TABLE)} WHERE id = ${id}::uuid`.execute(trx)
-    } catch (err) {
-      throw mapWriteError(err, `删除${label}失败`, writeErrors)
-    }
-    await writeAudit(trx, permit.actor, {
-      resource: TABLE,
-      recordId: id,
-      recordLabel: recordLabel(item),
-      actionType: 'destroy',
-      actionName: 'destroy',
-      companyId: auditCompanyId(item),
-      changes: auditDestroyed(snapshot(meta, item, AUDIT), AUDIT),
-      sensitiveFields: meta.audit?.sensitiveFields,
-    })
+    return withTx(db, (trx) => pipeline.updateInTx(trx, permit, id, patch))
   }
 
   async function remove(permit: Permit, id: string): Promise<void> {
-    await withTx(db, (trx) => removeInTx(trx, permit, id))
+    await withTx(db, (trx) => pipeline.removeInTx(trx, permit, id))
   }
 
   function uniqueIds(ids: readonly string[]): string[] {
@@ -763,7 +567,7 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
     const targets = uniqueIds(ids)
     return withTx(db, async (trx) => {
       const items: TItem[] = []
-      for (const id of targets) items.push(await updateInTx(trx, permit, id, patch))
+      for (const id of targets) items.push(await pipeline.updateInTx(trx, permit, id, patch))
       return items
     })
   }
@@ -771,7 +575,7 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
   async function bulkRemove(permit: Permit, ids: readonly string[]): Promise<number> {
     const targets = uniqueIds(ids)
     return withTx(db, async (trx) => {
-      for (const id of targets) await removeInTx(trx, permit, id)
+      for (const id of targets) await pipeline.removeInTx(trx, permit, id)
       return targets.length
     })
   }
@@ -789,7 +593,7 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
     if (!t || !statusField) {
       throw new Error(`标准派生：资源 ${resource} 未声明工作流转移 ${key}`)
     }
-    const before = await loadBare(trx, permit, id, true)
+    const before = await access.loadBare(trx, permit, id, true)
     const status = String(before[statusField.apiName])
     if (!t.from.includes(status)) {
       throw new ApiError('conflict', t.guardMessage ?? `当前状态不可${t.label}`)
@@ -810,19 +614,19 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
     } catch (err) {
       throw mapWriteError(err, `保存${label}失败`, writeErrors)
     }
-    const changes = auditDiff(snapshot(meta, before, AUDIT), snapshot(meta, item, AUDIT), AUDIT)
+    const changes = auditDiff(snapshot(meta, before, access.AUDIT), snapshot(meta, item, access.AUDIT), access.AUDIT)
     await writeAudit(trx, permit.actor, {
       resource: TABLE,
       recordId: id,
-      recordLabel: recordLabel(item),
+      recordLabel: access.recordLabel(item),
       actionType: 'update',
       actionName: t.auditActionName ?? t.key,
-      companyId: auditCompanyId(item),
+      companyId: access.auditCompanyId(item),
       changes,
       sensitiveFields: meta.audit?.sensitiveFields,
     })
     await t.after?.(trx, { ...ctx, item })
-    return reload(trx, permit, item)
+    return access.reload(trx, permit, item)
   }
 
   async function transition(
@@ -849,15 +653,15 @@ export function createStandardService<TItem extends StandardItem = StandardItem>
   }
 
   return {
-    get,
-    getOn,
-    list,
+    get: access.get,
+    getOn: access.getOn,
+    list: access.list,
     create,
-    createInTx,
+    createInTx: pipeline.createInTx,
     update,
-    updateInTx,
+    updateInTx: pipeline.updateInTx,
     remove,
-    removeInTx,
+    removeInTx: pipeline.removeInTx,
     bulkUpdate,
     bulkRemove,
     transition,
