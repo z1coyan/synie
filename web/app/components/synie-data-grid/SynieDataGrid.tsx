@@ -142,6 +142,14 @@ export interface SynieDataGridProps {
   defaultSort?: SortState
   /** 初始列筛选(如报表下钻带条件跳转);仅作初值,用户可照常改/清,变更预置条件需换 key 重挂 */
   defaultFilters?: FilterState
+  /**
+   * 搜索与右簇「筛选」之间的页面级插槽（快捷筛选按钮等）。
+   * 传入当前 filters 与 setFilters，页面自己画按钮。
+   */
+  toolbarExtra?: (ctx: {
+    filters: FilterState
+    setFilters: (next: FilterState | ((prev: FilterState) => FilterState)) => void
+  }) => ReactNode
   /** 列筛选变更回调(如建单时按公司列筛唯一值预填公司);不控 filter 状态 */
   onFiltersChange?: (filters: FilterState) => void
   /**
@@ -787,6 +795,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
       {(!props.hideSearch ||
         hasFilterable ||
         filterTags.length > 0 ||
+        props.toolbarExtra != null ||
         (!cardMode && actions.toolbarActions.length > 0) ||
         (cardMode && (hasSortable || cardToolbarActions.length > 0)) ||
         columnSettingsEnabled) && (
@@ -800,6 +809,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
             }}
           />
         )}
+        {props.toolbarExtra?.({ filters, setFilters })}
         <FilterTags
           items={filterTags}
           onChange={applyFilter}
