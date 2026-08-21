@@ -31,9 +31,10 @@ import { createMasterService } from '~/modules/manufacturing/master-service.ts'
 import { createOutputService } from '~/modules/manufacturing/output-service.ts'
 import { createPartyAddressService } from '~/modules/party/address-service.ts'
 import { createCustomerService, createEmployeeService, createSupplierService } from '~/modules/party/party-service.ts'
+import { createStorageService } from '~/platform/files/storage-service.ts'
 import { buildNumberingCatalog } from '~/platform/numbering/catalog.ts'
 import { createNumberingService } from '~/platform/numbering/service.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import type { Actor } from '~/platform/authz/core/index.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { testActor } from '~/platform/authz/testing.ts'
@@ -269,6 +270,37 @@ const CASES: ContractCase[] = [
       amount: '10',
     }),
     patch: () => ({ remarks: `合同借款改-${crypto.randomUUID().slice(0, 8)}` }),
+  },
+  {
+    title: '存储接入',
+    resource: 'sysStorages',
+    make: (db, registry) => createStorageService({ db, registry })._standardForContract(),
+    // LOCAL 根目录必填；接入名小写字母开头
+    valid: () => ({
+      name: `ct${crypto.randomUUID().replace(/-/g, '').slice(0, 10)}`,
+      label: `合同存储-${crypto.randomUUID().slice(0, 8)}`,
+      kind: 'LOCAL',
+      root: '/tmp/synie-contract',
+    }),
+    patch: () => ({ label: `合同存储改-${crypto.randomUUID().slice(0, 8)}` }),
+  },
+  {
+    title: '编号规则',
+    resource: 'sysNumberingRules',
+    make: (db, registry) =>
+      createNumberingService(db, buildNumberingCatalog(registry), registry)._rulesForContract(),
+    // 停用规则不撞「同资源唯一启用」部分唯一索引；segments 纯 text+seq 不依赖目录字段
+    valid: () => ({
+      resource: 'base.material',
+      name: `合同编号规则-${crypto.randomUUID().slice(0, 8)}`,
+      segments: [
+        { type: 'text', value: 'CT-' },
+        { type: 'seq', padding: 4 },
+      ],
+      perCompany: false,
+      enabled: false,
+    }),
+    patch: () => ({ name: `合同编号规则改-${crypto.randomUUID().slice(0, 8)}` }),
   },
 ]
 

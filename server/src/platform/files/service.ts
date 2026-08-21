@@ -34,6 +34,7 @@ import {
   type ReachabilityDeps,
 } from './reachability.ts'
 import { asDate } from '~/db/dates.ts'
+import { toReadSpec } from '../meta/read-spec.ts'
 import type {
   AttachInput,
   Attachment,
@@ -253,79 +254,50 @@ export function createFileService(deps: FileServiceDeps) {
   }
 
   async function listAttachments(permit: Permit, query: AttachmentQuery): Promise<AttachmentList> {
-    const limit = query.limit === undefined || query.limit === 0 ? 200 : query.limit
-    const offset = query.offset ?? 0
-    if (limit < 1 || limit > 200 || offset < 0) {
-      throw ApiError.validation('分页参数不合法', { limit: ['必须在 1 到 200 之间'] })
-    }
-
     // 可达性即「宿主行本身可见」；已按 owner_type 过滤时只编译该宿主类型的谓词
     const conditions = [ownerReachableWhere(reach, permit.actor, 'a', query.ownerType)]
     if (query.fileId) conditions.push(sql`a.file_id = ${query.fileId}::uuid`)
     if (query.ownerType) conditions.push(sql`a.owner_type = ${query.ownerType}`)
     if (query.ownerId) conditions.push(sql`a.owner_id = ${query.ownerId}::uuid`)
     if (query.category) conditions.push(sql`a.category = ${query.category}`)
-    const where = conjunction(conditions)
 
-    const countResult = await sql<{ count: string }>`
-      SELECT count(*)::text AS count
-      FROM sys_attachment a
-      JOIN sys_file f ON f.id = a.file_id
-      WHERE ${where}
-    `.execute(db)
-    const count = Number(countResult.rows[0]?.count ?? 0)
-
-    const rows = await sql<{
-      id: string
-      file_id: string
-      owner_type: string
-      owner_id: string
-      category: string
-      company_id: string | null
-      inserted_at: Date
-      f_id: string
-      f_storage: string
-      f_key: string
-      f_filename: string
-      f_content_type: string | null
-      f_size: string | null
-      f_sha256: string | null
-      f_inserted_at: Date
-      f_uploaded_by_id: string | null
-    }>`
-      SELECT
-        a.id, a.file_id, a.owner_type, a.owner_id, a.category, a.company_id, a.inserted_at,
-        f.id AS f_id, f.storage AS f_storage, f.key AS f_key, f.filename AS f_filename,
-        f.content_type AS f_content_type, f.size::text AS f_size, f.sha256 AS f_sha256,
-        f.inserted_at AS f_inserted_at, f.uploaded_by_id AS f_uploaded_by_id
-      FROM sys_attachment a
-      JOIN sys_file f ON f.id = a.file_id
-      WHERE ${where}
-      ORDER BY a.inserted_at, a.id
-      LIMIT ${limit} OFFSET ${offset}
-    `.execute(db)
-
-    const results: Attachment[] = rows.rows.map((row) => ({
-      id: row.id,
-      fileId: row.file_id,
-      ownerType: row.owner_type,
-      ownerId: row.owner_id,
-      category: row.category,
-      companyId: row.company_id,
-      insertedAt: asDate(row.inserted_at),
-      file: {
-        id: row.f_id,
-        storage: row.f_storage,
-        key: row.f_key,
-        filename: row.f_filename,
-        contentType: row.f_content_type,
-        size: row.f_size != null ? Number(row.f_size) : 0,
-        sha256: row.f_sha256 ?? '',
-        insertedAt: asDate(row.f_inserted_at),
-        uploadedById: row.f_uploaded_by_id,
-      },
-    }))
-    return { count, results }
+    // 默认 limit=200（normalizeListQuery 默认 20，此处显式覆盖；1–200 校验仍由它承担）
+    const limit = query.limit === undefined || query.limit === 0 ? 200 : query.limit
+    return listFromSource({
+      db,
+      resource: toReadSpec(attachmentResourceMeta()),
+      source: sql`FROM sys_attachment a JOIN sys_file f ON f.id = a.file_id`,
+      select: sql`
+        SELECT
+          a.id, a.file_id, a.owner_type, a.owner_id, a.category, a.company_id, a.inserted_at,
+          f.id AS f_id, f.storage AS f_storage, f.key AS f_key, f.filename AS f_filename,
+          f.content_type AS f_content_type, f.size::text AS f_size, f.sha256 AS f_sha256,
+          f.inserted_at AS f_inserted_at, f.uploaded_by_id AS f_uploaded_by_id
+      `,
+      defaultOrder: sql`a.inserted_at ASC, a.id ASC`,
+      query: { limit, offset: query.offset },
+      extraWhere: conjunction(conditions),
+      mapRow: (row) => ({
+        id: row.id as string,
+        fileId: row.file_id as string,
+        ownerType: row.owner_type as string,
+        ownerId: row.owner_id as string,
+        category: row.category as string,
+        companyId: row.company_id as string | null,
+        insertedAt: asDate(row.inserted_at as Date),
+        file: {
+          id: row.f_id as string,
+          storage: row.f_storage as string,
+          key: row.f_key as string,
+          filename: row.f_filename as string,
+          contentType: row.f_content_type as string | null,
+          size: row.f_size != null ? Number(row.f_size) : 0,
+          sha256: (row.f_sha256 as string | null) ?? '',
+          insertedAt: asDate(row.f_inserted_at as Date),
+          uploadedById: row.f_uploaded_by_id as string | null,
+        },
+      }),
+    })
   }
 
   async function download(permit: Permit, id: string): Promise<DownloadResult> {

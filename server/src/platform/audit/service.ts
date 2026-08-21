@@ -6,14 +6,11 @@
  * 编译形态即 `(col IS NULL OR col = ANY($ids))`——手滚 NULL-admitting 变体收编。
  */
 import type { ListQuery } from '@synie/shared'
-import { sql, type Expression, type Kysely, type SqlBool } from 'kysely'
-import { buildListQuery } from '~/db/filterbuild.ts'
-import { toReadSpec } from '~/platform/meta/read-spec.ts'
-import type { DB as Database } from '~/db/types.ts'
-import { compileRowFilter } from '~/db/authz-sql.ts'
+import { sql, type Kysely } from 'kysely'
+import { listAuthorized } from '~/db/list.ts'
 import { loadAuthorized } from '~/db/load.ts'
+import type { DB as Database } from '~/db/types.ts'
 import type { Permit } from '../authz/core/index.ts'
-import { ApiError } from '../http/errors.ts'
 import type { Registry } from '../meta/registry.ts'
 import { AUDIT_LOG_RESOURCE_NAME, auditLogResourceMeta } from './meta.ts'
 
@@ -50,34 +47,21 @@ export function createAuditService(db: Kysely<Database>, registry: Registry) {
     permit: Permit,
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: AuditLog[] }> {
-    // 对齐 server-go systemops：Audit 默认 limit=50
+    // 对齐 server-go systemops：Audit 默认 limit=50（normalizeListQuery 默认 20，此处显式覆盖；
+    // 1–200 边界校验仍由 normalizeListQuery 承担，报错形状不变）
     const limit = query.limit === undefined || query.limit === 0 ? 50 : query.limit
-    const offset = query.offset ?? 0
-    if (limit < 1 || limit > 200 || offset < 0) {
-      throw ApiError.validation('分页参数不合法', { limit: ['必须在 1 到 200 之间'] })
-    }
-    const built = buildListQuery(toReadSpec(auditLogResourceMeta()), {
-      limit,
-      offset,
-      search: query.search,
-      sort: query.sort,
-      filter: query.filter,
+    return listAuthorized({
+      db,
+      permit,
+      target,
+      alias: 'sys_audit_log',
+      resource: auditLogResourceMeta(),
+      source: sql`FROM sys_audit_log`,
+      select: sql`SELECT *`,
+      defaultOrder: sql`inserted_at DESC, id ASC`,
+      query: { ...query, limit },
+      mapRow: (row) => mapLog(row as never),
     })
-
-    const scopeClause = compileRowFilter(permit, target, 'sys_audit_log')
-
-    let countQ = db.selectFrom('sys_audit_log').select(db.fn.countAll<string>().as('count'))
-    if (built.where) countQ = countQ.where(built.where as Expression<SqlBool>)
-    countQ = countQ.where(scopeClause as Expression<SqlBool>)
-    const count = Number((await countQ.executeTakeFirstOrThrow()).count)
-
-    let rowsQ = db.selectFrom('sys_audit_log').selectAll()
-    if (built.where) rowsQ = rowsQ.where(built.where as Expression<SqlBool>)
-    rowsQ = rowsQ.where(scopeClause as Expression<SqlBool>)
-    if (built.orderBy) rowsQ = rowsQ.orderBy(built.orderBy as never).orderBy('id')
-    else rowsQ = rowsQ.orderBy('inserted_at', 'desc').orderBy('id')
-    const rows = await rowsQ.limit(limit).offset(offset).execute()
-    return { count, results: rows.map(mapLog) }
   }
 
   return { get, list }

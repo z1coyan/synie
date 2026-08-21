@@ -107,7 +107,7 @@ export interface StorageCreateInput {
   secretAccessKey?: string | null
 }
 
-/** 三态补丁：undefined=未传，null=清空，string=设值 */
+/** 三态补丁：undefined=未传，null=清空，string=设值（present-key 语义由内核承接） */
 export interface StorageUpdateInput {
   label?: string
   root?: string | null
@@ -117,17 +117,6 @@ export interface StorageUpdateInput {
   prefix?: string | null
   accessKeyId?: string | null
   secretAccessKey?: string
-  /** 哪些可选字段出现在请求体中（含显式 null） */
-  present: {
-    label?: boolean
-    root?: boolean
-    endpoint?: boolean
-    region?: boolean
-    bucket?: boolean
-    prefix?: boolean
-    accessKeyId?: boolean
-    secretAccessKey?: boolean
-  }
 }
 
 export interface StorageList {

@@ -14,7 +14,6 @@ import { attachmentDto, storageDto, storedFileDto } from './dto.ts'
 import { ATTACHMENT_RESOURCE_NAME, FILE_RESOURCE_NAME, STORAGE_RESOURCE_NAME } from './meta.ts'
 import type { FileService } from './service.ts'
 import type { StorageService } from './storage-service.ts'
-import type { StorageUpdateInput } from './types.ts'
 
 const UUID = z.string().uuid()
 
@@ -253,21 +252,9 @@ export function storageRoutes(deps: StorageRoutesDeps) {
         if (raw && typeof raw === 'object' && 'label' in raw && raw.label === null) {
           throw ApiError.validation('请求参数错误', { label: ['label 不能为 null'] })
         }
+        // present-key 语义（出现即写/null 清空/缺省不动）由内核承接
         const body = c.req.valid('json')
-        const present: StorageUpdateInput['present'] = {
-          label: Object.prototype.hasOwnProperty.call(raw, 'label'),
-          root: Object.prototype.hasOwnProperty.call(raw, 'root'),
-          endpoint: Object.prototype.hasOwnProperty.call(raw, 'endpoint'),
-          region: Object.prototype.hasOwnProperty.call(raw, 'region'),
-          bucket: Object.prototype.hasOwnProperty.call(raw, 'bucket'),
-          prefix: Object.prototype.hasOwnProperty.call(raw, 'prefix'),
-          accessKeyId: Object.prototype.hasOwnProperty.call(raw, 'accessKeyId'),
-          secretAccessKey: Object.prototype.hasOwnProperty.call(raw, 'secretAccessKey'),
-        }
-        const value = await storages.update(permitOf(c), c.req.valid('param').id, {
-          ...body,
-          present,
-        })
+        const value = await storages.update(permitOf(c), c.req.valid('param').id, body)
         return c.json(storageDto(value))
       },
     )

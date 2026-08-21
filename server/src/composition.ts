@@ -83,7 +83,7 @@ function assembleDomain(
   // 判定入口（无状态，归宿解析的记忆化在 Registry 内）：平台服务与路由共用同一份声明
   const authz = createAuthzEnforcer(opts.registry)
   const files = createFileService({ db, owners, authz })
-  const storages = createStorageService({ db, authz })
+  const storages = createStorageService({ db, registry: opts.registry })
   // 存储对账（jobs/filesclean 的领域逻辑；不进 HTTP 面，仅后台调度消费）
   const fileReconcile = createFileReconcileService({ db })
   const audit = createAuditService(db, opts.registry)

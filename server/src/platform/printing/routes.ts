@@ -117,14 +117,9 @@ export function systemPrintingRoutes(deps: PrintingRoutesDeps) {
       zValidator('param', idParam, validationHook),
       zValidator('json', updateSchema, validationHook),
       async (c) => {
-        const raw = (await c.req.json()) as Record<string, unknown>
+        // present-key 语义（出现即写/null 清空/缺省不动）由内核承接
         const body = c.req.valid('json')
-        const value = await printing.update(permitOf(c), c.req.valid('param').id, {
-          name: body.name,
-          fileId: body.fileId,
-          remarks: body.remarks,
-          remarksPresent: Object.prototype.hasOwnProperty.call(raw, 'remarks'),
-        })
+        const value = await printing.update(permitOf(c), c.req.valid('param').id, body)
         return c.json(templateDto(value))
       },
     )

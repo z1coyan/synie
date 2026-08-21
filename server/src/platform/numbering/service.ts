@@ -5,27 +5,35 @@
  * 计数器与规则共用 `sys.numbering_rule` 权限前缀（计数器 meta 无独立 actions），
  * 故路由一律按规则资源取凭证——与迁移前的门控码逐字一致。
  * `next/nextInTx` 是跨域取号基础设施，不经权限（调用方业务码覆盖）。
+ *
+ * 规则 CRUD 走标准动作内核（createStandardService；segments 的 jsonb[] 编解码
+ * 在 meta 字段 codec 声明）；计数器是 via 派生资源（内核不收 via），其读/校正
+ * 与取号/目录留手写。
  */
 import type { ListQuery } from '@synie/shared'
-import { sql, type Expression, type Kysely, type SqlBool } from 'kysely'
-import { buildListQuery } from '~/db/filterbuild.ts'
+import { sql, type Kysely } from 'kysely'
+import { listFromSource } from '~/db/list.ts'
 import { toReadSpec } from '~/platform/meta/read-spec.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
-import type { DB as Database, Json } from '~/db/types.ts'
-import { auditCreated, auditDestroyed, auditDiff, writeAudit } from '../audit/write.ts'
+import type { DB as Database } from '~/db/types.ts'
+import { auditDiff, writeAudit } from '../audit/write.ts'
 import { auditFieldsOf } from '../audit/spec.ts'
 import { loadAuthorized } from '~/db/load.ts'
 import type { Permit } from '../authz/core/index.ts'
 import { ApiError } from '../http/errors.ts'
 import type { Registry } from '../meta/registry.ts'
+import { createStandardService, type StandardHookContext } from '../standard/service.ts'
 import type { NumberingCatalog } from './catalog.ts'
 import { asDate } from '~/db/dates.ts'
 import {
   COUNTER_RESOURCE_NAME,
   RULE_RESOURCE_NAME,
   counterResourceMeta,
-  ruleResourceMeta,
+  normalizeSegments,
+  type Segment,
 } from './meta.ts'
+
+export type { Segment } from './meta.ts'
 
 /** 对齐 server-go numberingWriteError：同一资源只能有一条启用规则 */
 const ENABLED_PER_RESOURCE_MSG = '该资源已有启用的编号规则,同一资源只能启用一条'
@@ -39,15 +47,6 @@ function numberingWriteError(fallback: string, err: unknown): ApiError {
   return new ApiError('internal', fallback, { cause: err })
 }
 
-export interface Segment {
-  type: string
-  value?: string | null
-  field?: string | null
-  label?: string | null
-  format?: string | null
-  padding?: number | null
-}
-
 export interface Rule {
   id: string
   resource: string
@@ -57,6 +56,7 @@ export interface Rule {
   enabled: boolean
   insertedAt: Date
   updatedAt: Date
+  [key: string]: unknown
 }
 
 export interface Counter {
@@ -83,7 +83,6 @@ export interface UpdateRuleInput {
   enabled?: boolean
 }
 
-const RULE_AUDIT = auditFieldsOf(ruleResourceMeta())
 const COUNTER_AUDIT = auditFieldsOf(counterResourceMeta())
 const DATE_FORMAT_RE = /^(?:YYYY|YY|MM|DD)+$/
 
@@ -92,8 +91,49 @@ export function createNumberingService(
   catalog: NumberingCatalog,
   registry: Registry,
 ) {
-  const ruleTarget = registry.authzTarget(RULE_RESOURCE_NAME)
   const counterTarget = registry.authzTarget(COUNTER_RESOURCE_NAME)
+
+  // 规则 CRUD 标准派生：审计三型/无差异早退/授权锁行由内核承接（语义逐字来自手写实现）
+  const rules = createStandardService<Rule>({
+    db,
+    registry,
+    resource: RULE_RESOURCE_NAME,
+    defaultOrder: sql`inserted_at DESC, id ASC`,
+    writeErrors: [{ code: '23505', message: ENABLED_PER_RESOURCE_MSG }],
+    hooks: { validate: validateRuleDraft },
+  })
+
+  /**
+   * 段校验（纯函数，不碰库）。create 落库前 trim 并补缺省（历史 create 口径：
+   * perCompany/enabled 缺省 true、resource/name 去空白）；update 保持原始形
+   * （历史 update 不 trim，校验用 trim 后值、落库用原值）。
+   */
+  function validateRuleDraft({ action, draft }: StandardHookContext): void {
+    if (action === 'create') {
+      if (typeof draft.resource === 'string') draft.resource = draft.resource.trim()
+      if (typeof draft.name === 'string') draft.name = draft.name.trim()
+      if (draft.perCompany === undefined) draft.perCompany = true
+      if (draft.enabled === undefined) draft.enabled = true
+    }
+    validateCreate(
+      {
+        resource: String(draft.resource ?? ''),
+        name: String(draft.name ?? ''),
+        segments: (draft.segments as Segment[] | undefined) ?? [],
+      },
+      catalog,
+    )
+  }
+
+  /**
+   * 内核内部错误兜底文案是「保存{label}失败」，且审计等管线内异常不经 mapWriteError；
+   * 统一过一遍历史 numberingWriteError，对齐逐动作文案与 23505 → conflict。
+   */
+  function translateRuleWriteError(fallback: string, err: unknown): ApiError {
+    if (err instanceof ApiError && err.code !== 'internal') return err
+    const cause = err instanceof ApiError ? (err.cause ?? err) : err
+    return numberingWriteError(fallback, cause)
+  }
 
   async function numberableResources(permit: Permit) {
     void permit
@@ -101,144 +141,41 @@ export function createNumberingService(
   }
 
   async function getRule(permit: Permit, id: string): Promise<Rule> {
-    const row = await loadAuthorized({
-      db,
-      permit,
-      target: ruleTarget,
-      table: 'sys_numbering_rule',
-      id,
-      notFoundMessage: '编号规则不存在',
-    })
-    return mapRule(row as never)
+    return rules.get(permit, id)
   }
 
   async function listRules(
     permit: Permit,
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: Rule[] }> {
-    void permit
-    const limit = query.limit === undefined || query.limit === 0 ? 20 : query.limit
-    const offset = query.offset ?? 0
-    if (limit < 1 || limit > 200 || offset < 0) {
-      throw ApiError.validation('分页参数不合法', { limit: ['必须在 1 到 200 之间'] })
-    }
-    const built = buildListQuery(toReadSpec(ruleResourceMeta()), {
-      limit,
-      offset,
-      search: query.search,
-      sort: query.sort,
-      filter: query.filter,
-    })
-    let countQ = db.selectFrom('sys_numbering_rule').select(db.fn.countAll<string>().as('count'))
-    if (built.where) countQ = countQ.where(built.where as Expression<SqlBool>)
-    const count = Number((await countQ.executeTakeFirstOrThrow()).count)
-
-    let rowsQ = db.selectFrom('sys_numbering_rule').selectAll()
-    if (built.where) rowsQ = rowsQ.where(built.where as Expression<SqlBool>)
-    if (built.orderBy) rowsQ = rowsQ.orderBy(built.orderBy as never).orderBy('id')
-    else rowsQ = rowsQ.orderBy('inserted_at', 'desc').orderBy('id')
-    const rows = await rowsQ.limit(limit).offset(offset).execute()
-    return { count, results: rows.map(mapRule) }
+    // 全局资源（无公司维度）：guard 已完成码级判定，行筛选编译为空集
+    return rules.list(permit, query)
   }
 
   async function create(permit: Permit, input: CreateRuleInput): Promise<Rule> {
-    validateCreate(input, catalog)
-    const perCompany = input.perCompany ?? true
-    const enabled = input.enabled ?? true
     try {
-      return await withTx(db, async (trx) => {
-        const inserted = await insertRule(trx, {
-          resource: input.resource.trim(),
-          name: input.name.trim(),
-          segments: input.segments,
-          perCompany,
-          enabled,
-        })
-        await writeAudit(trx, permit.actor, {
-          resource: 'sys_numbering_rule',
-          recordId: inserted.id,
-          recordLabel: inserted.name,
-          actionType: 'create',
-          actionName: 'create',
-          changes: auditCreated(ruleSnap(inserted), RULE_AUDIT),
-        })
-        return inserted
-      })
+      return await rules.create(permit, { ...input })
     } catch (err) {
-      throw numberingWriteError('创建编号规则失败', err)
+      throw translateRuleWriteError('创建编号规则失败', err)
     }
   }
 
   async function updateRule(permit: Permit, id: string, input: UpdateRuleInput): Promise<Rule> {
     try {
-      return await withTx(db, async (trx) => {
-        const row = await loadAuthorized({
-          db: trx,
-          permit,
-          target: ruleTarget,
-          table: 'sys_numbering_rule',
-          id,
-          forUpdate: true,
-          notFoundMessage: '编号规则不存在',
-        })
-        const before = mapRule(row as never)
-        const after: Rule = {
-          ...before,
-          name: input.name !== undefined ? input.name : before.name,
-          segments: input.segments ?? before.segments,
-          perCompany: input.perCompany ?? before.perCompany,
-          enabled: input.enabled ?? before.enabled,
-        }
-        validateCreate(
-          {
-            resource: after.resource,
-            name: after.name,
-            segments: after.segments,
-            perCompany: after.perCompany,
-            enabled: after.enabled,
-          },
-          catalog,
-        )
-        const changes = auditDiff(ruleSnap(before), ruleSnap(after), RULE_AUDIT)
-        if (Object.keys(changes).length === 0) return before
-        const updated = await updateRuleRow(trx, id, after)
-        await writeAudit(trx, permit.actor, {
-          resource: 'sys_numbering_rule',
-          recordId: id,
-          recordLabel: updated.name,
-          actionType: 'update',
-          actionName: 'update',
-          changes,
-        })
-        return updated
-      })
+      return await rules.update(permit, id, { ...input })
     } catch (err) {
-      throw numberingWriteError('更新编号规则失败', err)
+      throw translateRuleWriteError('更新编号规则失败', err)
     }
   }
 
   async function deleteRule(permit: Permit, id: string): Promise<void> {
-    await withTx(db, async (trx) => {
-      const row = await loadAuthorized({
-        db: trx,
-        permit,
-        target: ruleTarget,
-        table: 'sys_numbering_rule',
-        id,
-        forUpdate: true,
-        notFoundMessage: '编号规则不存在',
-      })
-      const rule = mapRule(row as never)
-      await trx.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
-      await writeAudit(trx, permit.actor, {
-        resource: 'sys_numbering_rule',
-        recordId: id,
-        recordLabel: rule.name,
-        actionType: 'destroy',
-        actionName: 'destroy',
-        changes: auditDestroyed(ruleSnap(rule), RULE_AUDIT),
-      })
-    })
+    try {
+      await rules.remove(permit, id)
+    } catch (err) {
+      // 历史 deleteRule 不包写错误：内部错误还原为原始异常（onError 统一 500 固定文案）
+      if (err instanceof ApiError && err.code === 'internal' && err.cause) throw err.cause
+      throw err
+    }
   }
 
   async function getCounter(permit: Permit, id: string): Promise<Counter> {
@@ -257,29 +194,17 @@ export function createNumberingService(
     permit: Permit,
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: Counter[] }> {
+    // 全局资源（无公司维度）：guard 已完成码级判定，列表无需行筛选
     void permit
-    const limit = query.limit === undefined || query.limit === 0 ? 20 : query.limit
-    const offset = query.offset ?? 0
-    if (limit < 1 || limit > 200 || offset < 0) {
-      throw ApiError.validation('分页参数不合法', { limit: ['必须在 1 到 200 之间'] })
-    }
-    const built = buildListQuery(toReadSpec(counterResourceMeta()), {
-      limit,
-      offset,
-      search: query.search,
-      sort: query.sort,
-      filter: query.filter,
+    return listFromSource({
+      db,
+      resource: toReadSpec(counterResourceMeta()),
+      source: sql`FROM sys_numbering_counter`,
+      select: sql`SELECT *`,
+      defaultOrder: sql`scope_key ASC, id ASC`,
+      query,
+      mapRow: (row) => mapCounter(row as never),
     })
-    let countQ = db.selectFrom('sys_numbering_counter').select(db.fn.countAll<string>().as('count'))
-    if (built.where) countQ = countQ.where(built.where as Expression<SqlBool>)
-    const count = Number((await countQ.executeTakeFirstOrThrow()).count)
-
-    let rowsQ = db.selectFrom('sys_numbering_counter').selectAll()
-    if (built.where) rowsQ = rowsQ.where(built.where as Expression<SqlBool>)
-    if (built.orderBy) rowsQ = rowsQ.orderBy(built.orderBy as never).orderBy('id')
-    else rowsQ = rowsQ.orderBy('scope_key').orderBy('id')
-    const rows = await rowsQ.limit(limit).offset(offset).execute()
-    return { count, results: rows.map(mapCounter) }
   }
 
   async function updateCounter(permit: Permit, id: string, value: number): Promise<Counter> {
@@ -451,6 +376,8 @@ export function createNumberingService(
     nextInTx,
     assigned,
     assignedInTx,
+    /** 标准动作合同套件接入点（同 mfg/payroll 先例） */
+    _rulesForContract: () => rules,
   }
 }
 
@@ -508,65 +435,7 @@ function validateSegments(
   return ''
 }
 
-/** jsonb[] 写入：将段数组编成字面量，避免驱动把 text 再 JSON 编码成标量 */
-function segmentsArraySql(segments: Segment[]) {
-  const literal = JSON.stringify(segments).replace(/'/g, "''")
-  return sql.raw(`ARRAY(SELECT value FROM jsonb_array_elements('${literal}'::jsonb))`)
-}
-
-async function insertRule(
-  db: DbHandle,
-  input: { resource: string; name: string; segments: Segment[]; perCompany: boolean; enabled: boolean },
-): Promise<Rule> {
-  const result = await sql<{
-    id: string
-    resource: string
-    name: string
-    segments: Json
-    per_company: boolean
-    enabled: boolean
-    inserted_at: Date
-    updated_at: Date
-  }>`
-    INSERT INTO sys_numbering_rule (resource, name, segments, per_company, enabled)
-    VALUES (
-      ${input.resource},
-      ${input.name},
-      ${segmentsArraySql(input.segments)},
-      ${input.perCompany},
-      ${input.enabled}
-    )
-    RETURNING id, resource, name, to_json(segments) AS segments, per_company, enabled, inserted_at, updated_at
-  `.execute(db)
-  const row = result.rows[0]
-  if (!row) throw new ApiError('internal', '创建编号规则失败')
-  return mapRule(row)
-}
-
-async function updateRuleRow(db: DbHandle, id: string, rule: Rule): Promise<Rule> {
-  const result = await sql<{
-    id: string
-    resource: string
-    name: string
-    segments: Json
-    per_company: boolean
-    enabled: boolean
-    inserted_at: Date
-    updated_at: Date
-  }>`
-    UPDATE sys_numbering_rule
-    SET name = ${rule.name},
-        segments = ${segmentsArraySql(rule.segments)},
-        per_company = ${rule.perCompany},
-        enabled = ${rule.enabled},
-        updated_at = (now() AT TIME ZONE 'utc')
-    WHERE id = ${id}::uuid
-    RETURNING id, resource, name, to_json(segments) AS segments, per_company, enabled, inserted_at, updated_at
-  `.execute(db)
-  const row = result.rows[0]
-  if (!row) throw new ApiError('not_found', '编号规则不存在')
-  return mapRule(row)
-}
+/** jsonb[] 写入的编解码已收编进 meta 字段 codec（segmentsCodec），内核写管线消费 */
 
 async function incrementCounter(db: DbHandle, ruleId: string, scopeKey: string): Promise<number> {
   const result = await sql<{ value: string }>`
@@ -662,21 +531,6 @@ function mapRule(row: {
   }
 }
 
-function normalizeSegments(raw: unknown): Segment[] {
-  if (!Array.isArray(raw)) return []
-  return raw.map((item) => {
-    const s = item as Record<string, unknown>
-    return {
-      type: String(s.type ?? ''),
-      value: (s.value as string | null | undefined) ?? null,
-      field: (s.field as string | null | undefined) ?? null,
-      label: (s.label as string | null | undefined) ?? null,
-      format: (s.format as string | null | undefined) ?? null,
-      padding: typeof s.padding === 'number' ? s.padding : s.padding == null ? null : Number(s.padding),
-    }
-  })
-}
-
 function mapCounter(row: {
   id: string
   rule_id: string
@@ -692,16 +546,6 @@ function mapCounter(row: {
     value: Number(row.value),
     insertedAt: asDate(row.inserted_at),
     updatedAt: asDate(row.updated_at),
-  }
-}
-
-function ruleSnap(rule: Rule): Record<string, unknown> {
-  return {
-    resource: rule.resource,
-    name: rule.name,
-    segments: rule.segments,
-    per_company: rule.perCompany,
-    enabled: rule.enabled,
   }
 }
 

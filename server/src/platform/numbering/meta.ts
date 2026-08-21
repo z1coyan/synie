@@ -1,7 +1,47 @@
-import type { ResourceMeta } from '../meta/types.ts'
+import { sql } from 'kysely'
+import type { FieldDbCodec, ResourceMeta } from '../meta/types.ts'
 
 export const RULE_RESOURCE_NAME = 'sysNumberingRules'
 export const COUNTER_RESOURCE_NAME = 'sysNumberingCounters'
+
+export interface Segment {
+  type: string
+  value?: string | null
+  field?: string | null
+  label?: string | null
+  format?: string | null
+  padding?: number | null
+}
+
+/** db jsonb[] → wire 段数组（键位补全为 null；与历史 mapRule 口径一致） */
+export function normalizeSegments(raw: unknown): Segment[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((item) => {
+    const s = item as Record<string, unknown>
+    return {
+      type: String(s.type ?? ''),
+      value: (s.value as string | null | undefined) ?? null,
+      field: (s.field as string | null | undefined) ?? null,
+      label: (s.label as string | null | undefined) ?? null,
+      format: (s.format as string | null | undefined) ?? null,
+      padding: typeof s.padding === 'number' ? s.padding : s.padding == null ? null : Number(s.padding),
+    }
+  })
+}
+
+/**
+ * segments 列（jsonb[]）编解码：绑参会被驱动把元素再 JSON 编码成标量，
+ * 故写入编成字面量 SQL（与历史 segmentsArraySql 同形）；审计快照保留调用方
+ * 原始形（与手写 ruleSnap 的 before 规范化/after 原始 口径逐字一致）。
+ */
+const segmentsCodec: FieldDbCodec = {
+  fromDb: (value) => normalizeSegments(value),
+  toSnapshot: (value) => value,
+  toSql: (value) => {
+    const literal = JSON.stringify(value ?? []).replace(/'/g, "''")
+    return sql.raw(`ARRAY(SELECT value FROM jsonb_array_elements('${literal}'::jsonb))`)
+  },
+}
 
 export function ruleResourceMeta(): ResourceMeta {
   return {
@@ -44,6 +84,7 @@ export function ruleResourceMeta(): ResourceMeta {
         type: 'string',
         label: '编号段',
         required: true,
+        codec: segmentsCodec,
       },
       {
         name: 'per_company',

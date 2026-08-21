@@ -10,6 +10,7 @@ export interface Template {
   fileId: string
   insertedAt: Date
   updatedAt: Date
+  [key: string]: unknown
 }
 
 export interface CreateInput {
@@ -22,9 +23,8 @@ export interface CreateInput {
 export interface UpdateInput {
   name?: string
   fileId?: string
-  /** 三态：undefined=不改；null=清空；string=设值 */
+  /** 三态：undefined=不改；null=清空；string=设值（present-key 语义由内核承接） */
   remarks?: string | null | undefined
-  remarksPresent?: boolean
 }
 
 export type TemplateListQuery = ListQuery

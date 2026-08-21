@@ -49,7 +49,7 @@ run('PG 集成（files / storages）', () => {
   owners.register('acc_gl_journal', { resource: 'accGlJournals', table: 'acc_gl_journal' })
 
   const files = createFileService({ db, owners, authz })
-  const storages = createStorageService({ db, authz })
+  const storages = createStorageService({ db, registry })
 
   /** 取一张真凭证（走 decide，与路由 guard 同一路径） */
   function permitOf(resource: string, action: string, input: TestActorInput): Permit {

@@ -15,7 +15,7 @@
 | 文件 | 职责 |
 |------|------|
 | `service.ts` | 上传/下载/挂接/删除；默认存储写入；公司范围列表 |
-| `storage-service.ts` | 存储接入 CRUD + 设默认（advisory lock 串行） |
+| `storage-service.ts` | 存储接入 CRUD（标准派生）+ 设默认（advisory lock 串行，手写弹射） |
 | `object-storage.ts` | 本地磁盘 + S3/OSS（SigV4，含预签名 GET） |
 | `owner-registry.ts` | 宿主白名单（自 `meta.attachments` 派生，携宿主资源名） |
 | `reachability.ts` | 文件/挂接可达性单实现；`resolveOwner` 固化 `company_id` |
@@ -28,7 +28,7 @@
 const owners = buildOwnerRegistryFromMeta(registry.list())
 const authz = createAuthzEnforcer(registry)
 const files = createFileService({ db, owners, authz })
-const storages = createStorageService({ db, authz })
+const storages = createStorageService({ db, registry })
 registerFileResources(registry)
 app.route('/files', fileRoutes({ auth, authz, files }))
 app.route('/system/storages', storageRoutes({ auth, authz, storages }))

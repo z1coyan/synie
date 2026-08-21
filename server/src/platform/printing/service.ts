@@ -6,24 +6,25 @@
  * 打印的「请求形态派生动作码」（S9：mode + arity → print/batch_print/export）
  * 在**路由**里派生：先经字段目录把客户端 prefix 解析成 sealed registry 资源，
  * 再取凭证；本服务不再见到权限码，也不再从客户端 prefix 拼码。
+ *
+ * 模板 CRUD（get/list/create/update/delete）走标准动作内核：授权锁行、审计三型、
+ * 无差异早退由内核承接；模板名校验/绑定资源目录/文件 id 走 validate 钩子（纯函数），
+ * 模板文件内容校验（读存储 + xlsx 占位符）走 beforeWrite，挂接同步走 afterWrite/
+ * beforeDelete。setDefault/unsetDefault 是跨行串行化流程（advisory lock + 旧默认
+ * 逐行 unset 审计），按动作弹射留手写——与派生动作对路由不可区分。
  */
 import { sql, type Kysely } from 'kysely'
-import { listAuthorized } from '~/db/list.ts'
 import { loadAuthorized } from '~/db/load.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import {
-  auditCreated,
-  auditDestroyed,
-  auditDiff,
-  writeAudit,
-} from '../audit/write.ts'
+import { auditDiff, writeAudit } from '../audit/write.ts'
 import { auditFieldsOf } from '../audit/spec.ts'
 import type { Permit } from '../authz/core/index.ts'
-import type { Actor } from '../authz/actor.ts'
+import type { Actor } from '../authz/core/index.ts'
 import { ApiError } from '../http/errors.ts'
 import type { Registry } from '../meta/registry.ts'
+import { createStandardService, type StandardHookContext } from '../standard/service.ts'
 import type { FieldCatalog } from './catalog.ts'
 import type { DocBuilder } from './docbuilder.ts'
 import {
@@ -87,16 +88,83 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     return catalog
   }
 
+  // 模板 CRUD 标准派生：授权锁行/审计三型/无差异早退由内核承接（语义逐字来自手写实现）
+  const templates = createStandardService<Template>({
+    db,
+    registry: deps.registry,
+    resource: RESOURCE_NAME,
+    defaultOrder: sql`inserted_at DESC`,
+    writeErrors: [{ code: '23505', message: '同一资源只能有一个默认模板' }],
+    hooks: {
+      validate: validateTemplateDraft,
+      beforeWrite: (_trx, { draft }) =>
+        validateTemplateFileContent(String(draft.resource ?? ''), String(draft.fileId ?? '')),
+      afterWrite: async (trx, { action, item, before }) => {
+        // 挂接同步：create 一律建；update 仅文件变更时重建
+        if (action === 'create' || before?.fileId !== item.fileId) {
+          await syncAttachment(trx, String(item.id), String(item.fileId))
+        }
+      },
+      beforeDelete: async (trx, { item }) => {
+        await trx
+          .deleteFrom('sys_attachment')
+          .where('owner_type', '=', 'sys_print_template')
+          .where('owner_id', '=', String(item.id))
+          .execute()
+      },
+    },
+  })
+
+  /** 模板名/绑定资源/文件 id 校验（纯函数，不碰库；可原地规范化 draft） */
+  function validateTemplateDraft({ draft }: StandardHookContext): void {
+    if (typeof draft.name === 'string') draft.name = draft.name.trim()
+    const name = String(draft.name ?? '')
+    if (!name) {
+      throw ApiError.validation('模板名称不能为空', { name: ['不能为空'] })
+    }
+    if ([...name].length > 64) {
+      throw ApiError.validation('模板名称最多 64 个字符', { name: ['最多 64 个字符'] })
+    }
+    const resource = String(draft.resource ?? '')
+    if (!catalog.get(resource)) {
+      throw ApiError.validation(`不支持的资源类型 ${resource}`, {
+        resource: ['不在打印字段目录中'],
+      })
+    }
+    if (!draft.fileId) {
+      throw ApiError.validation('请上传模板文件', { fileId: ['不能为空'] })
+    }
+  }
+
+  /** 模板文件内容校验（读存储 + xlsx 占位符）：事务内写前钩子 */
+  async function validateTemplateFileContent(resource: string, fileId: string): Promise<void> {
+    let file: { filename: string }
+    let raw: Uint8Array
+    try {
+      ;({ file, content: raw } = await files.readStoredFile(fileId))
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'not_found') {
+        throw ApiError.validation('模板文件不存在', { fileId: ['模板文件不存在'] })
+      }
+      throw ApiError.validation('无法读取模板文件', { fileId: ['无法读取模板文件'] })
+    }
+    if (!file.filename.toLowerCase().endsWith('.xlsx')) {
+      throw ApiError.validation('只接受 .xlsx 模板文件', {
+        fileId: ['只接受 .xlsx 模板文件'],
+      })
+    }
+    let placeholders
+    try {
+      placeholders = extractPlaceholders(raw)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '无法解析模板'
+      throw ApiError.validation(message, { fileId: [message] })
+    }
+    catalog.validatePlaceholders(resource, placeholders)
+  }
+
   async function get(permit: Permit, id: string): Promise<Template> {
-    const row = await loadAuthorized({
-      db,
-      permit,
-      target: templateTarget,
-      table: TEMPLATE_TABLE,
-      id,
-      notFoundMessage: '打印模板不存在',
-    })
-    return mapTemplate(row as never)
+    return templates.get(permit, id)
   }
 
   /** 渲染链路取模板：门控已由路由的打印凭证承担，此处只做存在性查找 */
@@ -111,30 +179,7 @@ export function createPrintingService(deps: PrintingServiceDeps) {
   }
 
   async function list(permit: Permit, query: TemplateListQuery): Promise<TemplateList> {
-    return listAuthorized({
-      db,
-      permit,
-      target: templateTarget,
-      alias: TEMPLATE_TABLE,
-      resource: printTemplateResourceMeta(),
-      source: sql`FROM sys_print_template`,
-      select: sql`
-        SELECT id, name, resource, is_default, remarks, file_id, inserted_at, updated_at
-      `,
-      defaultOrder: sql`inserted_at DESC`,
-      query,
-      mapRow: (row) =>
-        mapTemplate({
-          id: String(row.id),
-          name: String(row.name),
-          resource: String(row.resource),
-          is_default: Boolean(row.is_default),
-          remarks: (row.remarks as string | null) ?? null,
-          file_id: String(row.file_id),
-          inserted_at: row.inserted_at as Date,
-          updated_at: row.updated_at as Date,
-        }),
-    })
+    return templates.list(permit, query)
   }
 
   /** 可用模板：门控（sys.print_template:read 或该资源的 print/export/batch_print）在路由 anyOf */
@@ -157,75 +202,19 @@ export function createPrintingService(deps: PrintingServiceDeps) {
   }
 
   async function create(permit: Permit, input: CreateInput): Promise<Template> {
-    const name = input.name.trim()
-    await validateTemplateFile(name, input.resource, input.fileId)
     try {
-      return await withTx(db, async (tx) => {
-        const row = await tx
-          .insertInto('sys_print_template')
-          .values({
-            name,
-            resource: input.resource,
-            file_id: input.fileId,
-            remarks: input.remarks ?? null,
-          })
-          .returningAll()
-          .executeTakeFirstOrThrow()
-        const value = mapTemplate(row)
-        await syncAttachment(tx, value.id, value.fileId)
-        await writeTemplateAudit(
-          tx,
-          permit.actor,
-          value,
-          'create',
-          'create',
-          auditCreated(templateSnapshot(value), TEMPLATE_AUDIT_FIELDS),
-        )
-        return value
-      })
+      return await templates.create(permit, { ...input })
     } catch (err) {
-      throw templateWriteError('创建打印模板失败', err)
+      throw translateTemplateWriteError('创建打印模板失败', err)
     }
   }
 
   async function update(permit: Permit, id: string, input: UpdateInput): Promise<Template> {
-    return withTx(db, async (tx) => {
-      const before = await lockTemplate(tx, permit, id)
-      const after = { ...before }
-      if (input.name !== undefined) after.name = input.name.trim()
-      if (input.fileId !== undefined) after.fileId = input.fileId
-      if (input.remarksPresent) {
-        after.remarks = input.remarks ?? null
-      }
-      await validateTemplateFile(after.name, after.resource, after.fileId)
-      const changes = auditDiff(
-        templateSnapshot(before),
-        templateSnapshot(after),
-        TEMPLATE_AUDIT_FIELDS,
-      )
-      if (Object.keys(changes).length === 0) return before
-      try {
-        const row = await tx
-          .updateTable('sys_print_template')
-          .set({
-            name: after.name,
-            file_id: after.fileId,
-            remarks: after.remarks,
-            updated_at: sql`(now() AT TIME ZONE 'utc')`,
-          })
-          .where('id', '=', id)
-          .returningAll()
-          .executeTakeFirstOrThrow()
-        const value = mapTemplate(row)
-        if (before.fileId !== value.fileId) {
-          await syncAttachment(tx, value.id, value.fileId)
-        }
-        await writeTemplateAudit(tx, permit.actor, value, 'update', 'update', changes)
-        return value
-      } catch (err) {
-        throw templateWriteError('更新打印模板失败', err)
-      }
-    })
+    try {
+      return await templates.update(permit, id, { ...input })
+    } catch (err) {
+      throw translateTemplateWriteError('更新打印模板失败', err)
+    }
   }
 
   async function setDefault(permit: Permit, id: string): Promise<Template> {
@@ -322,27 +311,11 @@ export function createPrintingService(deps: PrintingServiceDeps) {
   }
 
   async function remove(permit: Permit, id: string): Promise<void> {
-    await withTx(db, async (tx) => {
-      const value = await lockTemplate(tx, permit, id)
-      await tx
-        .deleteFrom('sys_attachment')
-        .where('owner_type', '=', 'sys_print_template')
-        .where('owner_id', '=', id)
-        .execute()
-      try {
-        await tx.deleteFrom('sys_print_template').where('id', '=', id).execute()
-      } catch (err) {
-        throw templateWriteError('删除打印模板失败', err)
-      }
-      await writeTemplateAudit(
-        tx,
-        permit.actor,
-        value,
-        'destroy',
-        'destroy',
-        auditDestroyed(templateSnapshot(value), TEMPLATE_AUDIT_FIELDS),
-      )
-    })
+    try {
+      await templates.remove(permit, id)
+    } catch (err) {
+      throw translateTemplateWriteError('删除打印模板失败', err)
+    }
   }
 
   /**
@@ -450,50 +423,6 @@ export function createPrintingService(deps: PrintingServiceDeps) {
       if (err instanceof ApiError) throw err
       throw renderError(err)
     }
-  }
-
-  async function validateTemplateFile(
-    name: string,
-    resource: string,
-    fileId: string,
-  ): Promise<void> {
-    if (!name) {
-      throw ApiError.validation('模板名称不能为空', { name: ['不能为空'] })
-    }
-    if ([...name].length > 64) {
-      throw ApiError.validation('模板名称最多 64 个字符', { name: ['最多 64 个字符'] })
-    }
-    if (!catalog.get(resource)) {
-      throw ApiError.validation(`不支持的资源类型 ${resource}`, {
-        resource: ['不在打印字段目录中'],
-      })
-    }
-    if (!fileId) {
-      throw ApiError.validation('请上传模板文件', { fileId: ['不能为空'] })
-    }
-    let file: { filename: string }
-    let raw: Uint8Array
-    try {
-      ;({ file, content: raw } = await files.readStoredFile(fileId))
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'not_found') {
-        throw ApiError.validation('模板文件不存在', { fileId: ['模板文件不存在'] })
-      }
-      throw ApiError.validation('无法读取模板文件', { fileId: ['无法读取模板文件'] })
-    }
-    if (!file.filename.toLowerCase().endsWith('.xlsx')) {
-      throw ApiError.validation('只接受 .xlsx 模板文件', {
-        fileId: ['只接受 .xlsx 模板文件'],
-      })
-    }
-    let placeholders
-    try {
-      placeholders = extractPlaceholders(raw)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '无法解析模板'
-      throw ApiError.validation(message, { fileId: [message] })
-    }
-    catalog.validatePlaceholders(resource, placeholders)
   }
 
   /** 授权闸 + 行锁：与 loadAuthorized 同一路径，不命中一律 not_found */
@@ -612,6 +541,17 @@ function templateWriteError(message: string, err: unknown): ApiError {
     }
   }
   return mapWriteError(err, message, [])
+}
+
+/**
+ * 内核写管线内部错误兜底文案是「保存{label}失败」，且审计/挂接等管线内异常不经
+ * mapWriteError；统一过一遍历史 templateWriteError，对齐逐动作文案与
+ * 23503 → validation（模板文件不存在）。
+ */
+function translateTemplateWriteError(message: string, err: unknown): ApiError {
+  if (err instanceof ApiError && err.code !== 'internal') return err
+  const cause = err instanceof ApiError ? (err.cause ?? err) : err
+  return templateWriteError(message, cause)
 }
 
 function renderFilename(
