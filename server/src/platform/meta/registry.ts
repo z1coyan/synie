@@ -8,8 +8,7 @@ import type {
   ResourceSummary,
 } from '@synie/shared'
 import { assertValidAuditDeclaration } from '../audit/spec.ts'
-import { hasPermission, type Actor } from '../authz/actor.ts'
-import { topAtom } from '../authz/core/index.ts'
+import { hasPermission, topAtom, type Actor } from '../authz/core/index.ts'
 import { ApiError } from '../http/errors.ts'
 import {
   buildNormalizedResource,

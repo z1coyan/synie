@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import type { Actor } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { createTodoSourceRegistry } from './source-registry.ts'
 import { createTodoService, todoPermit } from './service.ts'

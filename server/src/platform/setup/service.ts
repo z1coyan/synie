@@ -10,7 +10,7 @@ import type { DB as Database } from '~/db/types.ts'
 import { syncUserCredential } from '../auth/credentials.ts'
 import { hashPassword } from '../auth/password.ts'
 import type { TokenManager } from '../auth/token.ts'
-import type { Actor } from '../authz/actor.ts'
+import type { Actor } from '../authz/core/index.ts'
 import { ApiError } from '../http/errors.ts'
 
 /** 示例数据摘要（wire 形状；实现在 modules/setup） */

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { createDb } from '~/db/index.ts'
 import { createRegistry } from '~/platform/meta/registry.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import type { Actor } from '~/platform/authz/core/index.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { ROLE_MENU_RESOURCE, ROLE_RESOURCE, USER_RESOURCE } from './meta.ts'

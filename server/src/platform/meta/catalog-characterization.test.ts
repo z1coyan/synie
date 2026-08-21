@@ -3,7 +3,7 @@
  * contract 后 Meta 响应仅为 ResourceDocument v3。
  */
 import { describe, expect, test } from 'bun:test'
-import type { Actor } from '../authz/actor.ts'
+import type { Actor } from '../authz/core/index.ts'
 import { createSealedResourceRegistry } from './register-all.ts'
 import { CURRENCY_RESOURCE_NAME } from '~/modules/base/meta.ts'
 import { testActor, type TestActorInput } from '~/platform/authz/testing.ts'

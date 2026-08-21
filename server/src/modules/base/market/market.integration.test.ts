@@ -8,7 +8,7 @@ import { createManufacturingSettingService } from '~/modules/manufacturing/setti
 import { createSalesSettingService } from '~/modules/trading/settings.ts'
 import { createSettingsService } from '~/platform/settings/service.ts'
 import { buildTestApp, testDatabaseUrl } from '../../../../test/helpers.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import type { Actor } from '~/platform/authz/core/index.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'

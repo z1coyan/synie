@@ -4,7 +4,7 @@ import { createInventoryEngine } from '~/engines/inventory/index.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import { createDemandService } from './demand-service.ts'
-import { adjustDemandOrdered, adjustDemandReceived } from './helpers.ts'
+import { adjustDemandOrdered } from './helpers.ts'
 import { createMasterService } from './master-service.ts'
 import { allManufacturingResourceMetas } from './meta.ts'
 import { createMoldDesignService } from './mold-design-service.ts'
@@ -18,7 +18,7 @@ export {
   createWorkOrderDocBuilder,
   registerWorkOrderDocBuilder,
 } from './work-order-docbuilder.ts'
-export { adjustDemandOrdered, adjustDemandReceived }
+export { adjustDemandOrdered }
 export {
   createManufacturingSettingService,
   manufacturingSettingResourceMeta,

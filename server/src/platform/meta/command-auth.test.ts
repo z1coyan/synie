@@ -1,14 +1,12 @@
 /**
- * 已迁移语义 command：未授权直接调用领域服务仍 fail-closed（forbidden）。
+ * 已迁移语义 command：未授权主体不持有对应码（fail-closed 由 guard/decide 执行，见 authz 合同测试）。
  * 权限码与 ResourceDefinition / CommandDocument.requiredCapability 同源常量。
  */
 import { describe, expect, test } from 'bun:test'
-import type { Actor } from '../authz/actor.ts'
-import { ApiError } from '../http/errors.ts'
+import { hasPermission, type Actor } from '../authz/core/index.ts'
 import { SYS_STORAGE } from '../files/permissions.ts'
 import { HR_ATTENDANCE_DAY } from '~/modules/hr/permissions.ts'
 import { ACC_BANK_TRANSACTION } from '~/modules/finance/permissions.ts'
-import { requirePermission } from '../authz/actor.ts'
 import { createSealedResourceRegistry } from './register-all.ts'
 import { testActor } from '~/platform/authz/testing.ts'
 
@@ -40,12 +38,7 @@ describe('语义 command 鉴权与 Catalog 对齐', () => {
     )
 
     const denied = actor([SYS_STORAGE.read])
-    expect(() => requirePermission(denied, SYS_STORAGE.update)).toThrow(ApiError)
-    try {
-      requirePermission(denied, SYS_STORAGE.update)
-    } catch (e) {
-      expect(e).toMatchObject({ code: 'forbidden' })
-    }
+    expect(hasPermission(denied, SYS_STORAGE.update)).toBe(false)
   })
 
   test('recalc：collection command；无 update 则 forbidden', () => {
@@ -62,12 +55,7 @@ describe('语义 command 鉴权与 Catalog 对齐', () => {
     ).toBe(HR_ATTENDANCE_DAY.recalc)
 
     const denied = actor([HR_ATTENDANCE_DAY.read])
-    expect(() => requirePermission(denied, HR_ATTENDANCE_DAY.recalc)).toThrow()
-    try {
-      requirePermission(denied, HR_ATTENDANCE_DAY.recalc)
-    } catch (e) {
-      expect(e).toMatchObject({ code: 'forbidden' })
-    }
+    expect(hasPermission(denied, HR_ATTENDANCE_DAY.recalc)).toBe(false)
   })
 
   test('reconcile：语义 key 非 export；无 update 则 forbidden', () => {
@@ -85,12 +73,7 @@ describe('语义 command 鉴权与 Catalog 对齐', () => {
     ).toBe(ACC_BANK_TRANSACTION.reconcile)
 
     const denied = actor([ACC_BANK_TRANSACTION.read])
-    expect(() => requirePermission(denied, ACC_BANK_TRANSACTION.reconcile)).toThrow()
-    try {
-      requirePermission(denied, ACC_BANK_TRANSACTION.reconcile)
-    } catch (e) {
-      expect(e).toMatchObject({ code: 'forbidden' })
-    }
+    expect(hasPermission(denied, ACC_BANK_TRANSACTION.reconcile)).toBe(false)
   })
 
   test('标准 CRUD 不进入 commands', () => {

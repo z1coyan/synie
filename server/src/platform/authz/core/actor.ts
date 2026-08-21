@@ -24,6 +24,17 @@ export interface Actor {
   grants: ReadonlyMap<string, ScopeSet>
 }
 
+/**
+ * 码持有查询：superAdmin/system 恒真，否则查精确码。
+ * 仅供**呈现投影**（如 Registry.canRead 决定文档是否可见）使用；
+ * 授权判定唯一入口是 decide()，本函数不产生任何行级语义。
+ */
+export function hasPermission(actor: Actor | null, code: string): boolean {
+  if (!actor) return false
+  if (actor.superAdmin || actor.kind === 'system') return true
+  return actor.grants.has(code)
+}
+
 /** system 主体的固定身份（无用户行；不设 superAdmin，靠 kind 旁路） */
 export const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000'
 

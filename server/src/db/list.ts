@@ -2,7 +2,6 @@ import type { ListQuery } from '@synie/shared'
 import { sql, type RawBuilder } from 'kysely'
 import { buildListQuery } from '~/db/filterbuild.ts'
 import type { DbHandle } from '~/db/tx.ts'
-import { companyFilter, type Actor } from '~/platform/authz/actor.ts'
 import type { Permit } from '~/platform/authz/core/index.ts'
 import { compileRowFilter, conjunction } from '~/db/authz-sql.ts'
 import { ApiError } from '~/platform/http/errors.ts'
@@ -23,23 +22,6 @@ export function normalizeListQuery(query: Partial<ListQuery>): ListQuery {
     search: query.search,
     sort: query.sort,
     filter: query.filter,
-  }
-}
-
-/**
- * 公司数据范围 WHERE 片段；empty 时调用方应直接返回空列表 / not_found。
- * @deprecated 扫荡期过渡：改用 listAuthorized（Permit 编译，无 empty 早退义务）
- */
-export function companyScopeWhere(
-  actor: Actor | null,
-  column = 'company_id',
-): { empty: boolean; where: RawBuilder<unknown> | null } {
-  const scope = companyFilter(actor)
-  if (scope.bypass) return { empty: false, where: null }
-  if (scope.ids.length === 0) return { empty: true, where: sql`false` }
-  return {
-    empty: false,
-    where: sql`${sql.raw(column)} = ANY(${[...scope.ids]}::uuid[])`,
   }
 }
 

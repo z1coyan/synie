@@ -1,5 +1,5 @@
 import { sql } from 'kysely'
-import type { Actor } from '~/platform/authz/actor.ts'
+import type { Actor } from '~/platform/authz/core/index.ts'
 import { permitFor } from './permit.ts'
 import {
   accountByCode,

@@ -1,5 +1,5 @@
 import { decimal } from '@synie/shared'
-import type { Actor } from '~/platform/authz/actor.ts'
+import type { Actor } from '~/platform/authz/core/index.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { daysAgo, type MasterData, type SeedCtx } from './helpers.ts'
 import { permitFor } from './permit.ts'

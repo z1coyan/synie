@@ -8,7 +8,7 @@
  * 本目录不得 import 任何 db / http / meta 模块。
  */
 export type { Actor } from './actor.ts'
-export { SYSTEM_USER_ID, systemActor } from './actor.ts'
+export { hasPermission, SYSTEM_USER_ID, systemActor } from './actor.ts'
 export type { CodeRequirement, Decision, DecisionRequest, Permit } from './decide.ts'
 export { allOf, anyOf, decide, one, systemPermit } from './decide.ts'
 export type { RowFilter } from './row-filter.ts'

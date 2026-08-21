@@ -1,4 +1,4 @@
-import type { Actor } from '~/platform/authz/actor.ts'
+import type { Actor } from '~/platform/authz/core/index.ts'
 import {
   createSideFulfillment,
   createSideOrder,

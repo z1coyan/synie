@@ -158,10 +158,7 @@ export function normalizeList(query: ListQueryInput) {
 }
 
 /** 采购链投影（已下单/已收）：实现见 platform/posting/controlled-projection（W0 T0.3） */
-export {
-  adjustDemandOrdered,
-  adjustDemandReceived,
-} from '~/platform/posting/controlled-projection.ts'
+export { adjustDemandOrdered } from '~/platform/posting/controlled-projection.ts'
 
 export function numStr(v: unknown): string {
   if (v == null) return '0'

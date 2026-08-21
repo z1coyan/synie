@@ -10,7 +10,7 @@
 import { describe, expect, test } from 'bun:test'
 import { Glob } from 'bun'
 
-/** 旧授权原语（platform/authz/actor.ts 与 db/list.ts 的过渡层导出） */
+/** 旧授权原语（platform/authz/actor.ts 与 db/list.ts 的过渡层导出，两文件已随工单 09-12 删除；本清单防回退） */
 const FORBIDDEN = [
   'requirePermission',
   'hasPermission',

@@ -1,15 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  canAccessCompany,
-  companyFilter,
-  hasPermission,
-  requirePermission,
-  type Actor,
-} from '~/platform/authz/actor.ts'
+import { decide, hasPermission, one, type Actor } from '~/platform/authz/core/index.ts'
 import { actorFromFacts } from '~/platform/authz/index.ts'
-import { decide, one } from '~/platform/authz/core/index.ts'
 import { testActor } from '~/platform/authz/testing.ts'
-import { ApiError } from '~/platform/http/errors.ts'
 
 /**
  * 授权矩阵规格（换代版）：精确码匹配（无通配）/ 公司隔离 fail-closed /
@@ -32,28 +24,44 @@ describe('授权矩阵规格', () => {
     }
   })
 
-  test('公司隔离 fail-closed：无公司授权不可访问任何公司', () => {
+  test('公司边界由 decide 编译（穷举见 core/decide.test.ts）：零授权公司 → none，授权清单 → ids', () => {
     const empty = testActor({ permissions: ['sys.user:read'] })
-    expect(companyFilter(empty)).toEqual({ bypass: false, ids: [] })
-    expect(canAccessCompany(empty, 'c1')).toBe(false)
-    expect(canAccessCompany(null, 'c1')).toBe(false)
-    expect(companyFilter(null)).toEqual({ bypass: false, ids: [] })
-  })
-
-  test('公司授权清单：仅命中授权公司', () => {
+    const denied = decide(empty, {
+      resource: 'sysUsers',
+      action: 'read',
+      requirement: one('sys.user:read'),
+    })
+    expect(denied.outcome).toBe('permit')
+    if (denied.outcome === 'permit') {
+      expect(denied.permit.rowFilter.company).toBe('none')
+    }
     const scoped = testActor({
       permissions: ['sys.audit_log:read'],
       companyIds: ['c-a', 'c-b'],
     })
-    expect(canAccessCompany(scoped, 'c-a')).toBe(true)
-    expect(canAccessCompany(scoped, 'c-x')).toBe(false)
-    expect(companyFilter(scoped)).toEqual({ bypass: false, ids: ['c-a', 'c-b'] })
+    const permitted = decide(scoped, {
+      resource: 'sysAuditLogs',
+      action: 'read',
+      requirement: one('sys.audit_log:read'),
+    })
+    expect(permitted.outcome).toBe('permit')
+    if (permitted.outcome === 'permit') {
+      expect(permitted.permit.rowFilter.company).toEqual({ ids: ['c-a', 'c-b'] })
+    }
+    expect(hasPermission(null, 'sys.user:read')).toBe(false)
   })
 
   test('全公司授权绕过数据范围但不绕过功能权限', () => {
     const all = testActor({ allCompanies: true, permissions: ['sys.user:read'] })
-    expect(companyFilter(all).bypass).toBe(true)
-    expect(canAccessCompany(all, 'any')).toBe(true)
+    const decision = decide(all, {
+      resource: 'sysUsers',
+      action: 'read',
+      requirement: one('sys.user:read'),
+    })
+    expect(decision.outcome).toBe('permit')
+    if (decision.outcome === 'permit') {
+      expect(decision.permit.rowFilter.company).toBe('bypass')
+    }
     expect(hasPermission(all, 'sys.user:read')).toBe(true)
     expect(hasPermission(all, 'sys.user:delete')).toBe(false)
   })
@@ -61,31 +69,47 @@ describe('授权矩阵规格', () => {
   test('超管绕过权限与公司范围', () => {
     const admin = testActor({ superAdmin: true })
     expect(hasPermission(admin, 'sys.role_permission:create')).toBe(true)
-    expect(canAccessCompany(admin, 'x')).toBe(true)
-    expect(companyFilter(admin).bypass).toBe(true)
+    const decision = decide(admin, {
+      resource: 'sysRolePermissions',
+      action: 'create',
+      requirement: one('sys.role_permission:create'),
+    })
+    expect(decision.outcome).toBe('permit')
+    if (decision.outcome === 'permit') {
+      expect(decision.permit.rowFilter).toEqual({ company: 'bypass', atoms: ['all'] })
+    }
   })
 
   test('system 主体绕过权限与公司范围', () => {
     const system = testActor({ kind: 'system', allCompanies: true })
     expect(hasPermission(system, 'sys.role_permission:create')).toBe(true)
-    expect(companyFilter(system).bypass).toBe(true)
+    const decision = decide(system, {
+      resource: 'sysRolePermissions',
+      action: 'create',
+      requirement: one('sys.role_permission:create'),
+    })
+    expect(decision.outcome).toBe('permit')
+    if (decision.outcome === 'permit') {
+      expect(decision.permit.rowFilter).toEqual({ company: 'bypass', atoms: ['all'] })
+    }
   })
 
-  test('requirePermission fail-closed 抛 403', () => {
+  test('判定 fail-closed：码不满足一律 deny（HTTP 层由 guard 映射 forbidden）', () => {
     const actor: Actor = testActor({ permissions: ['sys.user:read'], companyIds: ['c1'] })
-    expect(() => requirePermission(actor, 'sys.user:read')).not.toThrow()
-    for (const [subject, code] of [
-      [actor, 'sys.user:delete'],
-      [null, 'sys.user:read'],
-    ] as const) {
-      try {
-        requirePermission(subject, code)
-        throw new Error('应抛出 forbidden')
-      } catch (err) {
-        expect(err).toBeInstanceOf(ApiError)
-        expect((err as ApiError).code).toBe('forbidden')
-      }
-    }
+    expect(
+      decide(actor, {
+        resource: 'sysUsers',
+        action: 'read',
+        requirement: one('sys.user:read'),
+      }).outcome,
+    ).toBe('permit')
+    expect(
+      decide(actor, {
+        resource: 'sysUsers',
+        action: 'delete',
+        requirement: one('sys.user:delete'),
+      }),
+    ).toEqual({ outcome: 'deny', reason: 'code', missing: ['sys.user:delete'] })
   })
 
   test('多角色并集：同码不同范围取格上最大，不同码各自累积', () => {

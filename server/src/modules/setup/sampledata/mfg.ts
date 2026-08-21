@@ -1,4 +1,4 @@
-import type { Actor } from '~/platform/authz/actor.ts'
+import type { Actor } from '~/platform/authz/core/index.ts'
 import type { MasterData } from './helpers.ts'
 import { permitFor } from './permit.ts'
 import type { MfgResult, SampleDataDeps } from './types.ts'

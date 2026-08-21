@@ -1,6 +1,6 @@
 import type { DbHandle } from '~/db/tx.ts'
 import type { Json } from '~/db/types.ts'
-import type { Actor } from '../authz/actor.ts'
+import type { Actor } from '../authz/core/index.ts'
 
 /**
  * 审计写钩子（files/settings/numbering 等域 create/update/delete 共用）。

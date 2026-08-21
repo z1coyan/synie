@@ -1,17 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  canAccessCompany,
-  companyFilter,
-  hasPermission,
-  type Actor,
-} from '~/platform/authz/actor.ts'
+import { hasPermission, type Actor } from '~/platform/authz/core/index.ts'
 import { testActor } from '~/platform/authz/testing.ts'
 
 /**
- * 扫荡期过渡层（platform/authz/actor.ts）在 Actor v2 之上的行为契约。
- * 判定内核本体的穷举单测在 src/platform/authz/core/decide.test.ts。
+ * core `hasPermission`（呈现投影用的码持有查询）行为契约。
+ * 判定内核本体的穷举单测在 src/platform/authz/core/decide.test.ts；
+ * 公司边界语义由 decide 的 RowFilter.company 承载（见 test/iam-authz-matrix.test.ts）。
  */
-describe('过渡层：码级判定', () => {
+describe('hasPermission：码级判定', () => {
   test('精确码命中，无通配展开', () => {
     const actor = testActor({ permissions: ['sales.order:read'], companyIds: ['c1'] })
     expect(hasPermission(actor, 'sales.order:read')).toBe(true)
@@ -22,39 +18,28 @@ describe('过渡层：码级判定', () => {
   })
 })
 
-describe('过渡层：Actor', () => {
-  const base: Actor = testActor({
-    userId: 'u1',
-    username: 'zhang',
-    permissions: ['sales.order:read'],
-    companyIds: ['c1', 'c2'],
-  })
-
-  test('超管绕过一切检查', () => {
+describe('hasPermission：主体旁路', () => {
+  test('超管与 system 恒真', () => {
     const admin = testActor({ superAdmin: true })
     expect(hasPermission(admin, 'whatever:code')).toBe(true)
-    expect(companyFilter(admin).bypass).toBe(true)
-    expect(canAccessCompany(admin, 'cX')).toBe(true)
+    const system = testActor({ kind: 'system' })
+    expect(hasPermission(system, 'whatever:code')).toBe(true)
   })
 
-  test('全公司授权绕过公司过滤但不绕过功能权限', () => {
-    const all = testActor({ allCompanies: true, permissions: ['sales.order:read'] })
-    expect(companyFilter(all).bypass).toBe(true)
-    expect(canAccessCompany(all, 'cX')).toBe(true)
-    expect(hasPermission(all, 'sales.order:audit')).toBe(false)
-  })
-
-  test('普通用户按权限码与公司清单判定', () => {
+  test('普通用户按权限码判定；全公司授权不放大功能权限', () => {
+    const base: Actor = testActor({
+      userId: 'u1',
+      username: 'zhang',
+      permissions: ['sales.order:read'],
+      companyIds: ['c1', 'c2'],
+    })
     expect(hasPermission(base, 'sales.order:read')).toBe(true)
     expect(hasPermission(base, 'sales.order:update')).toBe(false)
-    expect(companyFilter(base)).toEqual({ bypass: false, ids: ['c1', 'c2'] })
-    expect(canAccessCompany(base, 'c1')).toBe(true)
-    expect(canAccessCompany(base, 'c3')).toBe(false)
+    const all = testActor({ allCompanies: true, permissions: ['sales.order:read'] })
+    expect(hasPermission(all, 'sales.order:audit')).toBe(false)
   })
 
   test('null actor fail-closed', () => {
     expect(hasPermission(null, 'x')).toBe(false)
-    expect(canAccessCompany(null, 'c1')).toBe(false)
-    expect(companyFilter(null)).toEqual({ bypass: false, ids: [] })
   })
 })

@@ -2,7 +2,7 @@
  * 全业务链示例数据编排（对齐 server-go sampledata.Seed）。
  * 整组成功标记：银行账号 377601886688901；中途失败留下半成品时整组 wipe 后重跑。
  */
-import type { Actor } from '~/platform/authz/actor.ts'
+import type { Actor } from '~/platform/authz/core/index.ts'
 import {
   alreadySeeded,
   loadCompany,

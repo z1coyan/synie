@@ -2,7 +2,7 @@ import type { DbHandle } from '~/db/tx.ts'
 import { auditCreated, writeAudit } from '~/platform/audit/write.ts'
 import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { warehouseResourceMeta } from '~/modules/inventory/meta.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import type { Actor } from '~/platform/authz/core/index.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 

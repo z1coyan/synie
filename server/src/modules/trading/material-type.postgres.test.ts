@@ -8,7 +8,7 @@ import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import { createInventoryEngine } from '~/engines/inventory/index.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import type { Actor } from '~/platform/authz/core/index.ts'
 import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import {
   ORDER_BYPRODUCT_RESOURCE,

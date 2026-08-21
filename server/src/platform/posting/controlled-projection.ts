@@ -278,40 +278,6 @@ export async function adjustDemandReceivedQty(
   }
 }
 
-/**
- * 单行需求已收调整（制造 helpers 旧签名兼容）。
- * 注意：此路径会按 base 直接改 status（与 recompute 路径不同）；仅保留 API 兼容。
- */
-export async function adjustDemandReceived(
-  db: DbHandle,
-  id: string,
-  delta: string | number,
-  options?: ControlledProjectionOptions,
-): Promise<void> {
-  const row = await sql<{ received_qty: string; base_qty: string }>`
-    SELECT received_qty::text AS received_qty, base_qty::text AS base_qty
-    FROM mfg_demand_item WHERE id = ${id}::uuid FOR UPDATE
-  `.execute(db)
-  const r = row.rows[0]
-  if (!r) throw new ApiError('not_found', '需求行不存在')
-  const next = decimal(r.received_qty).add(delta)
-  if (next.isNegative()) {
-    throw new ApiError('conflict', '已收数量不能为负')
-  }
-  const status = !next.lt(decimal(r.base_qty)) ? 'completed' : 'pending'
-  await sql`
-    UPDATE mfg_demand_item
-    SET received_qty = ${wireRequiredDecimal(next)},
-        status = ${status},
-        updated_at = (now() AT TIME ZONE 'utc')
-    WHERE id = ${id}::uuid
-  `.execute(db)
-  if (options?.afterAdjust) {
-    const direction: 1 | -1 = decimal(delta).isNegative() ? -1 : 1
-    await options.afterAdjust(db, { rowId: id, next, direction })
-  }
-}
-
 // ---------------------------------------------------------------------------
 // 3 已对账 — reconciled_qty
 // ---------------------------------------------------------------------------

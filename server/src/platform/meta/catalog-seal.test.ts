@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { createRegistry } from './registry.ts'
 import { createSealedResourceRegistry, registerAllResources } from './register-all.ts'
 import { currencyResourceMeta, companyResourceMeta } from '~/modules/base/meta.ts'
-import type { Actor } from '../authz/actor.ts'
+import type { Actor } from '../authz/core/index.ts'
 import { decodeResourceDocument } from '@synie/shared'
 import { testActor } from '~/platform/authz/testing.ts'
 

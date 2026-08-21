@@ -14,7 +14,7 @@
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Actor } from '../src/platform/authz/actor.ts'
+import type { Actor } from '../src/platform/authz/core/index.ts'
 import { createSealedResourceRegistry } from '../src/platform/meta/register-all.ts'
 import { CURRENCY_RESOURCE_NAME } from '../src/modules/base/meta.ts'
 import {

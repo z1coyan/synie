@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import type { AuthService } from '~/platform/auth/service.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import type { Actor } from '~/platform/authz/core/index.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { onError } from '~/platform/http/errors.ts'
 import { purchaseFulfillmentHeadRoutes, salesFulfillmentHeadRoutes } from './fulfillment/routes.ts'

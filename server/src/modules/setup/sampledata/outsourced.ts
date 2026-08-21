@@ -3,7 +3,7 @@ import {
   ORDER_MATERIAL_RESOURCE,
 } from '~/modules/trading/order/outsourced-config.ts'
 import { orderSpec } from '~/modules/trading/order/spec.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import type { Actor } from '~/platform/authz/core/index.ts'
 import { createSideReconciliation } from './chains.ts'
 import { daysAgo, type MasterData, type SeedCtx } from './helpers.ts'
 import { createBOMComponent } from './mfg.ts'
