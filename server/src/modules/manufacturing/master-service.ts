@@ -594,6 +594,17 @@ export function createMasterService(
 
     applyRouteTemplate,
 
+    /** 路由派生用的底层标准服务（路由层对派生/手写不可区分；facade 方法仍供聚合与编排用） */
+    standard: {
+      operations: operations as StandardService,
+      templates: templates as StandardService,
+      boms: boms as StandardService,
+      templateItems: templateItems as StandardChildService,
+      components: components as StandardChildService,
+      routes: routes as StandardChildService,
+      byproducts: byproducts as StandardChildService,
+    },
+
     _templateAggregateForContract: (): AggregateService => templateAggregate,
     _bomAggregateForContract: (): AggregateService => bomAggregate,
     _operationsForContract: (): StandardService => operations as unknown as StandardService,

@@ -146,7 +146,13 @@ function headMeta(
         sortable: true,
         maxLength: 64,
       }),
-      field('note', 'note', 'string', '备注', { filterable: true, sortable: true, maxLength: 255 }),
+      // nullable：wire 可显式写 null 清空（与既有手写 headCreate/headUpdate 一致）
+      field('note', 'note', 'string', '备注', {
+        filterable: true,
+        sortable: true,
+        maxLength: 255,
+        nullable: true,
+      }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         readonly: true,
         filterable: true,
@@ -175,13 +181,15 @@ function routeFields(): ResourceMeta['fields'] {
   return [
     field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
     field('seq', 'seq', 'integer', '工序顺序', { required: true, filterable: true, sortable: true }),
+    // nullable：wire 可显式写 null 清空（与既有手写 routeItemCreate/Update 一致）
     field('requirement', 'requirement', 'string', '工艺要求', {
       filterable: true,
       sortable: true,
       maxLength: 512,
+      nullable: true,
     }),
+    // wire 可选：缺省由服务钩子落 false（与既有手写 routeItemCreate 一致）
     field('is_outsourced', 'isOutsourced', 'boolean', '外协标记', {
-      required: true,
       filterable: true,
       sortable: true,
     }),
@@ -281,6 +289,7 @@ export function bomResourceMeta(): ResourceMeta {
         filterable: true,
         sortable: true,
         maxLength: 64,
+        nullable: true,
       }),
       field('status', 'status', 'enum', '状态', {
         filterable: true,
@@ -288,7 +297,13 @@ export function bomResourceMeta(): ResourceMeta {
         readonly: true,
         enumOptions: bomStatusOptions,
       }),
-      field('note', 'note', 'string', '备注', { filterable: true, sortable: true, maxLength: 255 }),
+      // nullable：wire 可显式写 null 清空（与既有手写 BOM update 一致）
+      field('note', 'note', 'string', '备注', {
+        filterable: true,
+        sortable: true,
+        maxLength: 255,
+        nullable: true,
+      }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         readonly: true,
         filterable: true,
@@ -358,8 +373,15 @@ export function bomComponentResourceMeta(): ResourceMeta {
       field('loss_rate', 'lossRate', 'decimal', '损耗率(空即无损耗)', {
         filterable: true,
         sortable: true,
+        nullable: true,
       }),
-      field('note', 'note', 'string', '备注', { filterable: true, sortable: true }),
+      // maxLength/nullable 对齐既有手写 BOM 配料 schema（此前 meta 与手写两份事实漂移）
+      field('note', 'note', 'string', '备注', {
+        filterable: true,
+        sortable: true,
+        maxLength: 255,
+        nullable: true,
+      }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         readonly: true,
         filterable: true,
@@ -438,7 +460,13 @@ export function bomByproductResourceMeta(): ResourceMeta {
         filterable: true,
         sortable: true,
       }),
-      field('note', 'note', 'string', '备注', { filterable: true, sortable: true }),
+      // maxLength/nullable 对齐既有手写 BOM 副产品 schema（此前 meta 与手写两份事实漂移）
+      field('note', 'note', 'string', '备注', {
+        filterable: true,
+        sortable: true,
+        maxLength: 255,
+        nullable: true,
+      }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         readonly: true,
         filterable: true,

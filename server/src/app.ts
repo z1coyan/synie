@@ -522,6 +522,7 @@ export function buildApp(deps: AppDeps) {
       manufacturingRoutes({
         auth: deps.auth,
         authz: deps.authz,
+        registry: deps.registry,
         master: deps.manufacturing.master,
         demands: deps.manufacturing.demands,
         workOrders: deps.manufacturing.workOrders,

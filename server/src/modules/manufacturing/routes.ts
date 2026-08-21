@@ -8,7 +8,16 @@ import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { validationHook } from '~/platform/http/zod.ts'
-import { idParam } from '~/platform/standard/routes.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
+import {
+  idParam,
+  standardChildRoutes,
+  standardRoutes,
+  type StandardGuardOverride,
+  type StandardRouteEndpoint,
+  type StandardRouteService,
+} from '~/platform/standard/routes.ts'
+import type { StandardItem } from '~/platform/standard/service.ts'
 import { MATERIAL_RESOURCE } from '~/modules/inventory/material-service.ts'
 import { DEMAND_ITEM_RESOURCE, DEMAND_RESOURCE, type DemandService } from './demand-service.ts'
 import {
@@ -29,8 +38,6 @@ import {
 } from './output-service.ts'
 import { WORK_ORDER_RESOURCE, type WorkOrderService } from './work-order-service.ts'
 import {
-  bomByproductWire,
-  bomComponentWire,
   bomRouteWire,
   bomWire,
   demandItemWire,
@@ -38,14 +45,12 @@ import {
   listWire,
   moldDesignWire,
   occupancyWire,
-  operationWire,
   outputItemWire,
   outputWire,
-  templateItemWire,
-  templateWire,
   workOrderWire,
 } from './wire.ts'
 
+/** 流程单据（需求/工单/入库）的列表查询仍手写：companyId 是公司域资源的扩展键 */
 const listQuerySchema = z
   .object({
     limit: z.number().int().min(0).max(200).optional(),
@@ -56,21 +61,6 @@ const listQuerySchema = z
       .optional(),
     filter: z.record(z.string(), z.unknown()).optional(),
     companyId: z.string().uuid().optional(),
-  })
-  .strict()
-
-const headCreate = z
-  .object({
-    code: z.string().max(32).nullable().optional(),
-    name: z.string().min(1).max(64),
-    note: z.string().max(255).nullable().optional(),
-  })
-  .strict()
-
-const headUpdate = z
-  .object({
-    name: z.string().min(1).max(64).optional(),
-    note: z.string().max(255).nullable().optional(),
   })
   .strict()
 
@@ -89,26 +79,6 @@ const moldDesignUpdate = z
     spec: z.string().max(128).nullable().optional(),
     moldType: z.enum(['STAMPING', 'FORMING', 'POSITIONING', 'OTHER']).optional(),
     unitId: z.string().uuid().optional(),
-  })
-  .strict()
-
-const routeItemCreate = z
-  .object({
-    templateId: z.string().uuid().optional(),
-    bomId: z.string().uuid().optional(),
-    operationId: z.string().uuid(),
-    seq: z.number().int(),
-    requirement: z.string().max(512).nullable().optional(),
-    isOutsourced: z.boolean().optional(),
-  })
-  .strict()
-
-const routeItemUpdate = z
-  .object({
-    operationId: z.string().uuid().optional(),
-    seq: z.number().int().optional(),
-    requirement: z.string().max(512).nullable().optional(),
-    isOutsourced: z.boolean().optional(),
   })
   .strict()
 
@@ -132,6 +102,7 @@ function present(raw: Record<string, unknown>, key: string): boolean {
 export interface ManufacturingRouteDeps {
   auth: AuthService
   authz: AuthzEnforcer
+  registry: Registry
   master: MasterService
   demands: DemandService
   workOrders: WorkOrderService
@@ -142,7 +113,15 @@ export interface ManufacturingRouteDeps {
 /**
  * 挂载于 /manufacturing。
  *
- * 全部端点逐个挂 `guard(资源, 动作)`（requireAuth 之后），handler 用 `permitOf(c)` 取凭证。
+ * 平坦主数据（工序 / 工艺模板 / BOM 头与子行 / 模具设计读与删）由 `platform/standard`
+ * 派生：zod 与 DTO 自 meta 派生（与既有手写 wire 逐字对齐），guard 超词表部分经
+ * `guards` 端点级覆盖声明（子行写 anyOf、模具连带写物料 allOf），不再整域手写。
+ * 按动作弹射保留手写的端点（同路径先注册胜出，见各子路由注释）：
+ * - BOM create（status 双写形 + 同事务建后启用）、activate/deactivate/apply-route-template
+ * - 模具设计 create/update（写面跨模具+物料两实体，meta 表达不了）
+ * 需求编排（履约需求单安排/指派）与工单/入库流程整段手写——它们是流程不是平坦 CRUD。
+ *
+ * 手写端点逐个挂 `guard(资源, 动作)`（requireAuth 之后），handler 用 `permitOf(c)` 取凭证。
  * 跨资源门控用 guard 的 allOf（附加码从 `authz.targetOf(资源).prefix` 拼，不写字面量）：
  * 从需求行建工单要 `mfg.demand:read`、入库行引用工单要 `mfg.work_order:read`、
  * 工单内嵌建 BOM 要 `mfg.bom:create`、模具设计连带写物料要 `base.material:*`、
@@ -150,7 +129,7 @@ export interface ManufacturingRouteDeps {
  * 子行 create「持 create 或 update 均可」用 guard 的 anyOf（旧 requireCreateOrUpdate 已删）。
  */
 export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
-  const { auth, authz, master, demands, workOrders, outputs, moldDesigns } = deps
+  const { auth, authz, registry, master, demands, workOrders, outputs, moldDesigns } = deps
   const demandGuard = (action: string, options?: { allOf?: readonly string[] }) =>
     authz.guard(DEMAND_RESOURCE, action, options)
   const demandItemGuard = (action: string) => authz.guard(DEMAND_ITEM_RESOURCE, action)
@@ -162,8 +141,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
   /** 附加码从 meta 解析的前缀拼，不写字面量权限码 */
   const codeOf = (resource: string, action: string) =>
     `${authz.targetOf(resource).prefix}:${action}`
-  const operationGuard = (action: string) => authz.guard(OPERATION_RESOURCE, action)
-  const templateGuard = (action: string) => authz.guard(TEMPLATE_RESOURCE, action)
   const bomGuard = (action: string, options?: { allOf?: readonly string[] }) =>
     authz.guard(BOM_RESOURCE, action, options)
   /** 模具设计与物料 1:1：每次写模具必然连带写物料，故声明式 allOf 同名动作码 */
@@ -174,597 +151,255 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       material ? { allOf: [codeOf(MATERIAL_RESOURCE, material)] } : undefined,
     )
   /** 子行写：持归宿的 update 或 create 均可（对齐迁移前 requireCreateOrUpdate） */
-  const childWriteAnyOf = (resource: string) => [
-    codeOf(resource, 'update'),
-    codeOf(resource, 'create'),
-  ]
-  const childGuard = (resource: string) => (action: string, anyOf?: readonly string[]) =>
-    authz.guard(resource, action, anyOf ? { anyOf } : undefined)
-  const templateItemGuard = childGuard(TEMPLATE_ITEM_RESOURCE)
-  const componentGuard = childGuard(BOM_COMPONENT_RESOURCE)
-  const bomRouteGuard = childGuard(BOM_ROUTE_RESOURCE)
-  const byproductGuard = childGuard(BOM_BYPRODUCT_RESOURCE)
+  const childWriteGuards = (
+    resource: string,
+  ): Partial<Record<StandardRouteEndpoint, StandardGuardOverride>> => ({
+    create: {
+      action: 'update',
+      options: { anyOf: [codeOf(resource, 'update'), codeOf(resource, 'create')] },
+    },
+    delete: { action: 'update' },
+  })
+
+  // —— 模具设计：读/删派生；create/update 写面跨模具+物料两实体（name/spec/unitId 是
+  // 物料列），meta 派生 schema 表达不了，按动作弹射保留手写（先注册，同路径胜出）——
+  const moldStandard: StandardRouteService = {
+    stampedColumns: new Set(),
+    get: async (permit, id) => (await moldDesigns.get(permit, id)) as unknown as StandardItem,
+    list: async (permit, query) => {
+      const result = await moldDesigns.list(permit, query)
+      return {
+        count: result.count,
+        results: result.results.map((item) => item as unknown as StandardItem),
+      }
+    },
+    create: async (permit, input) =>
+      (await moldDesigns.create(
+        permit,
+        input as { name: string; spec?: string | null; moldType: string; unitId: string },
+      )) as unknown as StandardItem,
+    update: async (permit, id, patch) =>
+      (await moldDesigns.update(permit, id, {
+        name: patch.name as string | undefined,
+        spec: patch.spec as string | null | undefined,
+        specPresent: present(patch, 'spec'),
+        moldType: patch.moldType as string | undefined,
+        unitId: patch.unitId as string | undefined,
+      })) as unknown as StandardItem,
+    remove: (permit, id) => moldDesigns.remove(permit, id),
+    bulkUpdate: async (permit, ids, patch) => {
+      const items: StandardItem[] = []
+      for (const id of [...new Set(ids)]) {
+        items.push((await moldStandard.update(permit, id, patch)) as StandardItem)
+      }
+      return items
+    },
+    bulkRemove: async (permit, ids) => {
+      const unique = [...new Set(ids)]
+      for (const id of unique) await moldDesigns.remove(permit, id)
+      return unique.length
+    },
+  }
+  /** 写模具必连带写物料：allOf 物料同名动作码（与手写 moldGuard 同一事实） */
+  const moldWriteAllOf = (material: 'create' | 'update' | 'delete') => ({
+    options: { allOf: [codeOf(MATERIAL_RESOURCE, material)] },
+  })
+  const moldDesignRoutes = new Hono<AppEnv>()
+    .use('*', requireAuth(auth))
+    .post(
+      '/',
+      moldGuard('create', 'create'),
+      zValidator('json', moldDesignCreate, validationHook),
+      async (c) => {
+        const item = await moldDesigns.create(permitOf(c), c.req.valid('json'))
+        return c.json(moldDesignWire(item), 201)
+      },
+    )
+    .patch(
+      '/:id',
+      moldGuard('update', 'update'),
+      zValidator('param', idParam, validationHook),
+      zValidator('json', moldDesignUpdate, validationHook),
+      async (c) => {
+        const raw = (await c.req.json()) as Record<string, unknown>
+        const body = c.req.valid('json')
+        const item = await moldDesigns.update(permitOf(c), c.req.valid('param').id, {
+          ...body,
+          specPresent: present(raw, 'spec'),
+        })
+        return c.json(moldDesignWire(item))
+      },
+    )
+    .route(
+      '/',
+      standardRoutes({
+        auth,
+        authz,
+        registry,
+        resource: MOLD_DESIGN_RESOURCE,
+        service: moldStandard,
+        guards: {
+          create: moldWriteAllOf('create'),
+          update: moldWriteAllOf('update'),
+          delete: moldWriteAllOf('delete'),
+          bulkUpdate: moldWriteAllOf('update'),
+          bulkDelete: moldWriteAllOf('delete'),
+        },
+      }),
+    )
+
+  // —— BOM：query/get/patch/delete 派生；create（status 双写形 + 同事务建后启用）与
+  // 启停/套用模板动作按动作弹射保留手写（先注册，同路径胜出）——
+  const bomRoutes = new Hono<AppEnv>()
+    .use('*', requireAuth(auth))
+    .post(
+      '/',
+      bomGuard('create'),
+      zValidator(
+        'json',
+        z
+          .object({
+            code: z.string().max(32).nullable().optional(),
+            materialId: z.string().uuid(),
+            planName: z.string().max(64).nullable().optional(),
+            note: z.string().max(255).nullable().optional(),
+            status: z.enum(['DRAFT', 'ACTIVE', 'draft', 'active']).optional(),
+          })
+          .strict(),
+        validationHook,
+      ),
+      async (c) => {
+        const body = c.req.valid('json')
+        const item = await master.createBom(permitOf(c), {
+          code: body.code,
+          materialId: body.materialId,
+          planName: body.planName,
+          note: body.note,
+          status: body.status
+            ? (body.status.toLowerCase() as 'draft' | 'active')
+            : undefined,
+        })
+        return c.json(bomWire(item), 201)
+      },
+    )
+    .post(
+      '/:id/activate',
+      bomGuard('update'),
+      zValidator('param', idParam, validationHook),
+      async (c) => {
+        const item = await master.activateBom(permitOf(c), c.req.valid('param').id)
+        return c.json(bomWire(item))
+      },
+    )
+    .post(
+      '/:id/deactivate',
+      bomGuard('update'),
+      zValidator('param', idParam, validationHook),
+      async (c) => {
+        const item = await master.deactivateBom(permitOf(c), c.req.valid('param').id)
+        return c.json(bomWire(item))
+      },
+    )
+    .post(
+      '/:id/apply-route-template',
+      bomGuard('update', { allOf: [codeOf(TEMPLATE_RESOURCE, 'read')] }),
+      zValidator('param', idParam, validationHook),
+      zValidator(
+        'json',
+        z.object({ templateId: z.string().uuid() }).strict(),
+        validationHook,
+      ),
+      async (c) => {
+        const routes = await master.applyRouteTemplate(
+          permitOf(c),
+          c.req.valid('param').id,
+          c.req.valid('json').templateId,
+        )
+        return c.json({ count: routes.length, results: routes.map(bomRouteWire) })
+      },
+    )
+    .route(
+      '/',
+      standardRoutes({
+        auth,
+        authz,
+        registry,
+        resource: BOM_RESOURCE,
+        service: master.standard.boms,
+      }),
+    )
 
   return (
     new Hono<AppEnv>()
       .use('*', requireAuth(auth))
-      // —— 工序 ——
-      .post(
-        '/operations/query',
-        operationGuard('read'),
-        zValidator('json', listQuerySchema, validationHook),
-        async (c) => {
-          const result = await master.listOperations(permitOf(c), toList(c.req.valid('json')))
-          return c.json(listWire(result, operationWire))
-        },
-      )
-      .post(
+      // —— 主数据（standardRoutes 派生，zod/DTO 自 meta）——
+      .route(
         '/operations',
-        operationGuard('create'),
-        zValidator('json', headCreate, validationHook),
-        async (c) => {
-          const body = c.req.valid('json')
-          const item = await master.createOperation(permitOf(c), body)
-          return c.json(operationWire(item), 201)
-        },
+        standardRoutes({
+          auth,
+          authz,
+          registry,
+          resource: OPERATION_RESOURCE,
+          service: master.standard.operations,
+        }),
       )
-      .get(
-        '/operations/:id',
-        operationGuard('read'),
-        zValidator('param', idParam, validationHook),
-        async (c) => c.json(operationWire(await master.getOperation(permitOf(c), c.req.valid('param').id))),
-      )
-      .patch(
-        '/operations/:id',
-        operationGuard('update'),
-        zValidator('param', idParam, validationHook),
-        zValidator('json', headUpdate, validationHook),
-        async (c) => {
-          const raw = (await c.req.json()) as Record<string, unknown>
-          const body = c.req.valid('json')
-          const item = await master.updateOperation(permitOf(c), c.req.valid('param').id, {
-            name: body.name,
-            note: body.note,
-            notePresent: present(raw, 'note'),
-          })
-          return c.json(operationWire(item))
-        },
-      )
-      .delete(
-        '/operations/:id',
-        operationGuard('delete'),
-        zValidator('param', idParam, validationHook),
-        async (c) => {
-          await master.deleteOperation(permitOf(c), c.req.valid('param').id)
-          return c.body(null, 204)
-        },
-      )
-      // —— 模具设计 ——
-      .post(
-        '/mold-designs/query',
-        moldGuard('read'),
-        zValidator('json', listQuerySchema, validationHook),
-        async (c) => {
-          const result = await moldDesigns.list(permitOf(c), toList(c.req.valid('json')))
-          return c.json(listWire(result, moldDesignWire))
-        },
-      )
-      .post(
-        '/mold-designs',
-        moldGuard('create', 'create'),
-        zValidator('json', moldDesignCreate, validationHook),
-        async (c) => {
-          const item = await moldDesigns.create(permitOf(c), c.req.valid('json'))
-          return c.json(moldDesignWire(item), 201)
-        },
-      )
-      .get(
-        '/mold-designs/:id',
-        moldGuard('read'),
-        zValidator('param', idParam, validationHook),
-        async (c) =>
-          c.json(moldDesignWire(await moldDesigns.get(permitOf(c), c.req.valid('param').id))),
-      )
-      .patch(
-        '/mold-designs/:id',
-        moldGuard('update', 'update'),
-        zValidator('param', idParam, validationHook),
-        zValidator('json', moldDesignUpdate, validationHook),
-        async (c) => {
-          const raw = (await c.req.json()) as Record<string, unknown>
-          const body = c.req.valid('json')
-          const item = await moldDesigns.update(permitOf(c), c.req.valid('param').id, {
-            ...body,
-            specPresent: present(raw, 'spec'),
-          })
-          return c.json(moldDesignWire(item))
-        },
-      )
-      .delete(
-        '/mold-designs/:id',
-        moldGuard('delete', 'delete'),
-        zValidator('param', idParam, validationHook),
-        async (c) => {
-          await moldDesigns.remove(permitOf(c), c.req.valid('param').id)
-          return c.body(null, 204)
-        },
-      )
-      // —— 工艺模板 ——
-      .post(
-        '/process-templates/query',
-        templateGuard('read'),
-        zValidator('json', listQuerySchema, validationHook),
-        async (c) => {
-          const result = await master.listTemplates(permitOf(c), toList(c.req.valid('json')))
-          return c.json(listWire(result, templateWire))
-        },
-      )
-      .post(
+      .route('/mold-designs', moldDesignRoutes)
+      .route(
         '/process-templates',
-        templateGuard('create'),
-        zValidator('json', headCreate, validationHook),
-        async (c) => {
-          const item = await master.createTemplate(permitOf(c), c.req.valid('json'))
-          return c.json(templateWire(item), 201)
-        },
+        standardRoutes({
+          auth,
+          authz,
+          registry,
+          resource: TEMPLATE_RESOURCE,
+          service: master.standard.templates,
+        }),
       )
-      .get(
-        '/process-templates/:id',
-        templateGuard('read'),
-        zValidator('param', idParam, validationHook),
-        async (c) => c.json(templateWire(await master.getTemplate(permitOf(c), c.req.valid('param').id))),
-      )
-      .patch(
-        '/process-templates/:id',
-        templateGuard('update'),
-        zValidator('param', idParam, validationHook),
-        zValidator('json', headUpdate, validationHook),
-        async (c) => {
-          const raw = (await c.req.json()) as Record<string, unknown>
-          const body = c.req.valid('json')
-          const item = await master.updateTemplate(permitOf(c), c.req.valid('param').id, {
-            name: body.name,
-            note: body.note,
-            notePresent: present(raw, 'note'),
-          })
-          return c.json(templateWire(item))
-        },
-      )
-      .delete(
-        '/process-templates/:id',
-        templateGuard('delete'),
-        zValidator('param', idParam, validationHook),
-        async (c) => {
-          await master.deleteTemplate(permitOf(c), c.req.valid('param').id)
-          return c.body(null, 204)
-        },
-      )
-      // —— 工艺模板行 ——
-      .post(
-        '/process-template-items/query',
-        templateItemGuard('read'),
-        zValidator('json', listQuerySchema, validationHook),
-        async (c) => {
-          const body = c.req.valid('json')
-          const filter = body.filter as Record<string, { value?: string }> | undefined
-          const templateId =
-            typeof filter?.templateId === 'object' && filter.templateId && 'value' in filter.templateId
-              ? String(filter.templateId.value)
-              : undefined
-          const result = await master.listTemplateItems(permitOf(c), { ...toList(body), templateId })
-          return c.json(listWire(result, templateItemWire))
-        },
-      )
-      .post(
+      .route(
         '/process-template-items',
-        templateItemGuard('update', childWriteAnyOf(TEMPLATE_ITEM_RESOURCE)),
-        zValidator(
-          'json',
-          routeItemCreate.extend({ templateId: z.string().uuid() }).strict(),
-          validationHook,
-        ),
-        async (c) => {
-          const body = c.req.valid('json')
-          const item = await master.createTemplateItem(permitOf(c), {
-            templateId: body.templateId,
-            operationId: body.operationId,
-            seq: body.seq,
-            requirement: body.requirement,
-            isOutsourced: body.isOutsourced,
-          })
-          return c.json(templateItemWire(item), 201)
-        },
+        standardChildRoutes({
+          auth,
+          authz,
+          registry,
+          resource: TEMPLATE_ITEM_RESOURCE,
+          service: master.standard.templateItems,
+          guards: childWriteGuards(TEMPLATE_ITEM_RESOURCE),
+        }),
       )
-      .get(
-        '/process-template-items/:id',
-        templateItemGuard('read'),
-        zValidator('param', idParam, validationHook),
-        async (c) =>
-          c.json(templateItemWire(await master.getTemplateItem(permitOf(c), c.req.valid('param').id))),
-      )
-      .patch(
-        '/process-template-items/:id',
-        templateItemGuard('update'),
-        zValidator('param', idParam, validationHook),
-        zValidator('json', routeItemUpdate, validationHook),
-        async (c) => {
-          const raw = (await c.req.json()) as Record<string, unknown>
-          const body = c.req.valid('json')
-          const item = await master.updateTemplateItem(permitOf(c), c.req.valid('param').id, {
-            operationId: body.operationId,
-            seq: body.seq,
-            requirement: body.requirement,
-            requirementPresent: present(raw, 'requirement'),
-            isOutsourced: body.isOutsourced,
-          })
-          return c.json(templateItemWire(item))
-        },
-      )
-      .delete(
-        '/process-template-items/:id',
-        templateItemGuard('update'),
-        zValidator('param', idParam, validationHook),
-        async (c) => {
-          await master.deleteTemplateItem(permitOf(c), c.req.valid('param').id)
-          return c.body(null, 204)
-        },
-      )
-      // —— BOM ——
-      .post(
-        '/boms/query',
-        bomGuard('read'),
-        zValidator('json', listQuerySchema, validationHook),
-        async (c) => {
-          const result = await master.listBoms(permitOf(c), toList(c.req.valid('json')))
-          return c.json(listWire(result, bomWire))
-        },
-      )
-      .post(
-        '/boms',
-        bomGuard('create'),
-        zValidator(
-          'json',
-          z
-            .object({
-              code: z.string().max(32).nullable().optional(),
-              materialId: z.string().uuid(),
-              planName: z.string().max(64).nullable().optional(),
-              note: z.string().max(255).nullable().optional(),
-              status: z.enum(['DRAFT', 'ACTIVE', 'draft', 'active']).optional(),
-            })
-            .strict(),
-          validationHook,
-        ),
-        async (c) => {
-          const body = c.req.valid('json')
-          const item = await master.createBom(permitOf(c), {
-            code: body.code,
-            materialId: body.materialId,
-            planName: body.planName,
-            note: body.note,
-            status: body.status
-              ? (body.status.toLowerCase() as 'draft' | 'active')
-              : undefined,
-          })
-          return c.json(bomWire(item), 201)
-        },
-      )
-      .get(
-        '/boms/:id',
-        bomGuard('read'),
-        zValidator('param', idParam, validationHook),
-        async (c) => c.json(bomWire(await master.getBom(permitOf(c), c.req.valid('param').id))),
-      )
-      .patch(
-        '/boms/:id',
-        bomGuard('update'),
-        zValidator('param', idParam, validationHook),
-        zValidator(
-          'json',
-          z
-            .object({
-              planName: z.string().max(64).nullable().optional(),
-              note: z.string().max(255).nullable().optional(),
-            })
-            .strict(),
-          validationHook,
-        ),
-        async (c) => {
-          const raw = (await c.req.json()) as Record<string, unknown>
-          const body = c.req.valid('json')
-          const item = await master.updateBom(permitOf(c), c.req.valid('param').id, {
-            planName: body.planName,
-            planNamePresent: present(raw, 'planName'),
-            note: body.note,
-            notePresent: present(raw, 'note'),
-          })
-          return c.json(bomWire(item))
-        },
-      )
-      .delete(
-        '/boms/:id',
-        bomGuard('delete'),
-        zValidator('param', idParam, validationHook),
-        async (c) => {
-          await master.deleteBom(permitOf(c), c.req.valid('param').id)
-          return c.body(null, 204)
-        },
-      )
-      .post(
-        '/boms/:id/activate',
-        bomGuard('update'),
-        zValidator('param', idParam, validationHook),
-        async (c) => {
-          const item = await master.activateBom(permitOf(c), c.req.valid('param').id)
-          return c.json(bomWire(item))
-        },
-      )
-      .post(
-        '/boms/:id/deactivate',
-        bomGuard('update'),
-        zValidator('param', idParam, validationHook),
-        async (c) => {
-          const item = await master.deactivateBom(permitOf(c), c.req.valid('param').id)
-          return c.json(bomWire(item))
-        },
-      )
-      .post(
-        '/boms/:id/apply-route-template',
-        bomGuard('update', { allOf: [codeOf(TEMPLATE_RESOURCE, 'read')] }),
-        zValidator('param', idParam, validationHook),
-        zValidator(
-          'json',
-          z.object({ templateId: z.string().uuid() }).strict(),
-          validationHook,
-        ),
-        async (c) => {
-          const routes = await master.applyRouteTemplate(
-            permitOf(c),
-            c.req.valid('param').id,
-            c.req.valid('json').templateId,
-          )
-          return c.json({ count: routes.length, results: routes.map(bomRouteWire) })
-        },
-      )
-      // —— BOM 配料 ——
-      .post(
-        '/bom-components/query',
-        componentGuard('read'),
-        zValidator('json', listQuerySchema, validationHook),
-        async (c) => {
-          const body = c.req.valid('json')
-          const filter = body.filter as Record<string, { value?: string }> | undefined
-          const bomId =
-            typeof filter?.bomId === 'object' && filter.bomId && 'value' in filter.bomId
-              ? String(filter.bomId.value)
-              : undefined
-          const result = await master.listComponents(permitOf(c), { ...toList(body), bomId })
-          return c.json(listWire(result, bomComponentWire))
-        },
-      )
-      .post(
+      .route('/boms', bomRoutes)
+      .route(
         '/bom-components',
-        componentGuard('update', childWriteAnyOf(BOM_COMPONENT_RESOURCE)),
-        zValidator(
-          'json',
-          z
-            .object({
-              bomId: z.string().uuid(),
-              materialId: z.string().uuid(),
-              unitId: z.string().uuid(),
-              quantity: z.string().min(1),
-              lossRate: z.string().nullable().optional(),
-              note: z.string().max(255).nullable().optional(),
-            })
-            .strict(),
-          validationHook,
-        ),
-        async (c) => {
-          const item = await master.createComponent(permitOf(c), c.req.valid('json'))
-          return c.json(bomComponentWire(item), 201)
-        },
+        standardChildRoutes({
+          auth,
+          authz,
+          registry,
+          resource: BOM_COMPONENT_RESOURCE,
+          service: master.standard.components,
+          guards: childWriteGuards(BOM_COMPONENT_RESOURCE),
+        }),
       )
-      .get(
-        '/bom-components/:id',
-        componentGuard('read'),
-        zValidator('param', idParam, validationHook),
-        async (c) =>
-          c.json(bomComponentWire(await master.getComponent(permitOf(c), c.req.valid('param').id))),
-      )
-      .patch(
-        '/bom-components/:id',
-        componentGuard('update'),
-        zValidator('param', idParam, validationHook),
-        zValidator(
-          'json',
-          z
-            .object({
-              materialId: z.string().uuid().optional(),
-              unitId: z.string().uuid().optional(),
-              quantity: z.string().min(1).optional(),
-              lossRate: z.string().nullable().optional(),
-              note: z.string().max(255).nullable().optional(),
-            })
-            .strict(),
-          validationHook,
-        ),
-        async (c) => {
-          const raw = (await c.req.json()) as Record<string, unknown>
-          const body = c.req.valid('json')
-          const item = await master.updateComponent(permitOf(c), c.req.valid('param').id, {
-            materialId: body.materialId,
-            unitId: body.unitId,
-            quantity: body.quantity,
-            lossRate: body.lossRate,
-            lossRatePresent: present(raw, 'lossRate'),
-            note: body.note,
-            notePresent: present(raw, 'note'),
-          })
-          return c.json(bomComponentWire(item))
-        },
-      )
-      .delete(
-        '/bom-components/:id',
-        componentGuard('update'),
-        zValidator('param', idParam, validationHook),
-        async (c) => {
-          await master.deleteComponent(permitOf(c), c.req.valid('param').id)
-          return c.body(null, 204)
-        },
-      )
-      // —— BOM 路线 ——
-      .post(
-        '/bom-routes/query',
-        bomRouteGuard('read'),
-        zValidator('json', listQuerySchema, validationHook),
-        async (c) => {
-          const body = c.req.valid('json')
-          const filter = body.filter as Record<string, { value?: string }> | undefined
-          const bomId =
-            typeof filter?.bomId === 'object' && filter.bomId && 'value' in filter.bomId
-              ? String(filter.bomId.value)
-              : undefined
-          const result = await master.listRoutes(permitOf(c), { ...toList(body), bomId })
-          return c.json(listWire(result, bomRouteWire))
-        },
-      )
-      .post(
+      .route(
         '/bom-routes',
-        bomRouteGuard('update', childWriteAnyOf(BOM_ROUTE_RESOURCE)),
-        zValidator(
-          'json',
-          z
-            .object({
-              bomId: z.string().uuid(),
-              operationId: z.string().uuid(),
-              seq: z.number().int(),
-              requirement: z.string().max(512).nullable().optional(),
-              isOutsourced: z.boolean().optional(),
-            })
-            .strict(),
-          validationHook,
-        ),
-        async (c) => {
-          const item = await master.createRoute(permitOf(c), c.req.valid('json'))
-          return c.json(bomRouteWire(item), 201)
-        },
+        standardChildRoutes({
+          auth,
+          authz,
+          registry,
+          resource: BOM_ROUTE_RESOURCE,
+          service: master.standard.routes,
+          guards: childWriteGuards(BOM_ROUTE_RESOURCE),
+        }),
       )
-      .get(
-        '/bom-routes/:id',
-        bomRouteGuard('read'),
-        zValidator('param', idParam, validationHook),
-        async (c) => c.json(bomRouteWire(await master.getRoute(permitOf(c), c.req.valid('param').id))),
-      )
-      .patch(
-        '/bom-routes/:id',
-        bomRouteGuard('update'),
-        zValidator('param', idParam, validationHook),
-        zValidator('json', routeItemUpdate, validationHook),
-        async (c) => {
-          const raw = (await c.req.json()) as Record<string, unknown>
-          const body = c.req.valid('json')
-          const item = await master.updateRoute(permitOf(c), c.req.valid('param').id, {
-            operationId: body.operationId,
-            seq: body.seq,
-            requirement: body.requirement,
-            requirementPresent: present(raw, 'requirement'),
-            isOutsourced: body.isOutsourced,
-          })
-          return c.json(bomRouteWire(item))
-        },
-      )
-      .delete(
-        '/bom-routes/:id',
-        bomRouteGuard('update'),
-        zValidator('param', idParam, validationHook),
-        async (c) => {
-          await master.deleteRoute(permitOf(c), c.req.valid('param').id)
-          return c.body(null, 204)
-        },
-      )
-      // —— BOM 副产品 ——
-      .post(
-        '/bom-byproducts/query',
-        byproductGuard('read'),
-        zValidator('json', listQuerySchema, validationHook),
-        async (c) => {
-          const body = c.req.valid('json')
-          const filter = body.filter as Record<string, { value?: string }> | undefined
-          const bomId =
-            typeof filter?.bomId === 'object' && filter.bomId && 'value' in filter.bomId
-              ? String(filter.bomId.value)
-              : undefined
-          const result = await master.listByproducts(permitOf(c), { ...toList(body), bomId })
-          return c.json(listWire(result, bomByproductWire))
-        },
-      )
-      .post(
+      .route(
         '/bom-byproducts',
-        byproductGuard('update', childWriteAnyOf(BOM_BYPRODUCT_RESOURCE)),
-        zValidator(
-          'json',
-          z
-            .object({
-              bomId: z.string().uuid(),
-              materialId: z.string().uuid(),
-              unitId: z.string().uuid(),
-              quantity: z.string().min(1),
-              note: z.string().max(255).nullable().optional(),
-            })
-            .strict(),
-          validationHook,
-        ),
-        async (c) => {
-          const item = await master.createByproduct(permitOf(c), c.req.valid('json'))
-          return c.json(bomByproductWire(item), 201)
-        },
+        standardChildRoutes({
+          auth,
+          authz,
+          registry,
+          resource: BOM_BYPRODUCT_RESOURCE,
+          service: master.standard.byproducts,
+          guards: childWriteGuards(BOM_BYPRODUCT_RESOURCE),
+        }),
       )
-      .get(
-        '/bom-byproducts/:id',
-        byproductGuard('read'),
-        zValidator('param', idParam, validationHook),
-        async (c) =>
-          c.json(bomByproductWire(await master.getByproduct(permitOf(c), c.req.valid('param').id))),
-      )
-      .patch(
-        '/bom-byproducts/:id',
-        byproductGuard('update'),
-        zValidator('param', idParam, validationHook),
-        zValidator(
-          'json',
-          z
-            .object({
-              materialId: z.string().uuid().optional(),
-              unitId: z.string().uuid().optional(),
-              quantity: z.string().min(1).optional(),
-              note: z.string().max(255).nullable().optional(),
-            })
-            .strict(),
-          validationHook,
-        ),
-        async (c) => {
-          const raw = (await c.req.json()) as Record<string, unknown>
-          const body = c.req.valid('json')
-          const item = await master.updateByproduct(permitOf(c), c.req.valid('param').id, {
-            materialId: body.materialId,
-            unitId: body.unitId,
-            quantity: body.quantity,
-            note: body.note,
-            notePresent: present(raw, 'note'),
-          })
-          return c.json(bomByproductWire(item))
-        },
-      )
-      .delete(
-        '/bom-byproducts/:id',
-        byproductGuard('update'),
-        zValidator('param', idParam, validationHook),
-        async (c) => {
-          await master.deleteByproduct(permitOf(c), c.req.valid('param').id)
-          return c.body(null, 204)
-        },
-      )
-      // —— 履约需求 ——
+      // —— 履约需求（流程，手写）——
       .post(
         '/demands/query',
         demandGuard('read'),
